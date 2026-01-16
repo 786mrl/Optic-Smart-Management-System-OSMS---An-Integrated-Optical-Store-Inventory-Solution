@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Jan 15, 2026 at 09:14 PM
+-- Generation Time: Jan 16, 2026 at 03:18 PM
 -- Server version: 10.1.38-MariaDB
 -- PHP Version: 7.3.2
 
@@ -46,6 +46,15 @@ CREATE TABLE `frame_staging` (
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
+--
+-- Dumping data for table `frame_staging`
+--
+
+INSERT INTO `frame_staging` (`ufc`, `brand`, `frame_code`, `frame_size`, `color_code`, `material`, `lens_shape`, `structure`, `size_range`, `buy_price`, `sell_price`, `price_secret_code`, `stock`, `created_at`, `updated_at`) VALUES
+('BVLGARI-1303-49-17-138-col.4', 'BVLGARI', '1303', '49-17-138', 'col.4', 'PLASTIC', 'Oval', 'semi-rimless', 'small', '70000.00', '350000.00', 'LZKH00', 3, '2026-01-16 11:52:21', '2026-01-16 11:59:15'),
+('MARXSTUDIO-Mstm-161-50-18-C5', 'MARX STUDIO', 'Mst m-161', '50-18', 'C5', 'PLASTIC', 'Square', 'full-rim', 'medium', '105000.00', '630000.00', 'LZMI30', 1, '2026-01-16 12:06:22', '2026-01-16 12:06:22'),
+('PRADA-1376-52-15-140-col.5', 'PRADA', '1376', '52-15-140', 'col.5', 'TITANIUM', 'Cat Eye', 'full-rim', 'medium', '0.00', '0.00', '', 2, '2026-01-16 12:04:35', '2026-01-16 12:04:35');
+
 -- --------------------------------------------------------
 
 --
@@ -72,7 +81,7 @@ INSERT INTO `settings` (`setting_key`, `setting_value`, `description`) VALUES
 ('low_stock_threshold', '5', 'Global Low Stock Warning Limit (Units)'),
 ('receipt_footer_msg', 'Terima kasih telah berbelanja di LENZA OPTIC!', 'Custom Message at the Receipt Footer'),
 ('starting_invoice_number', '15.20', 'The starting sequence/text string for invoice numbering (resets automatically).'),
-('store_address', 'JL. APEL RAYA NO. 51, KURANJI, PADANG, SUMATERA BARAT, 25157', 'Store Physical Address'),
+('store_address', 'JL. APEL RAYA NO. 51, KURANJI, PADANG, SUMATERA BARAT, 25157, Indonesia', 'Store Physical Address'),
 ('store_name', 'LENZA OPTIC', 'Store Name for Receipts and Reports'),
 ('store_phone', '+62 812 6764 6916', 'Store Contact Phone Number'),
 ('tax_rate_percent', '11.0', 'Sales Tax / VAT Percentage'),
