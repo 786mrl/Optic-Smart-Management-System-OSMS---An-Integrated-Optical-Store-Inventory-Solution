@@ -25,55 +25,62 @@ if (!isset($_SESSION['user_id'])) {
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    <div class="header-container">
+        <button class="logout-btn" onclick="alert('Logging out...'); window.location.href='logout.php';">
+            <span>Logout</span>
+        </button>
 
-    <header class="main-header">
-        <div class="header-content">
-            <div class="brand-info">
-                <img src="<?php echo htmlspecialchars($BRAND_IMAGE_PATH); ?>" alt="Brand Logo" class="brand-logo">
-                
-                <h1 class="brand-name"><?php echo htmlspecialchars($STORE_NAME); ?></h1>
-                
-                <p class="store-address"><?php echo htmlspecialchars($STORE_ADDRESS); ?></p> 
-            </div>            
-            <a href="logout.php" class="logout-button">Logout</a>
+        <div class="brand-section">
+            <div class="logo-box">
+                <img src="<?php echo htmlspecialchars($BRAND_IMAGE_PATH); ?>" alt="Brand Logo" style="height: 40px;">
         </div>
-    </header>
+            <h1 class="company-name"><?php echo htmlspecialchars($STORE_NAME); ?></h1>
+            <p class="company-address"><?php echo htmlspecialchars($STORE_ADDRESS); ?></p>
+        </div>
+    </div>
 
-    <main class="main-content">
-        <h3>Select Module:</h3>
-        <div class="button-container">
-            
-            <a href="inventory.php" class="menu-button" id="btn-inventory">
-                Inventory Management
-            </a>
-            
-            <a href="customer.php" class="menu-button" id="btn-customer">
-                Customer Data Management
-            </a>
-            
-            <?php if ($current_role === 'admin'): ?>
-            <a href="admin.php" class="menu-button" id="btn-admin">
+    <div class="selection-container">
+        <button class="neu-button" onclick="selectBtn(this); window.location.href='inventory.php';">
+            <span class="icon">👓</span>
+            Inventory Management
+            <div class="led"></div>
+        </button>
+
+        <button class="neu-button" onclick="selectBtn(this); window.location.href='customer.php';">
+            <span class="icon">📇</span>
+            Customer Data Management
+            <div class="led"></div>
+        </button>
+
+        <?php if ($current_role === 'admin'): ?>
+            <button class="neu-button active" onclick="selectBtn(this); window.location.href='admin.php';">
+                <span class="icon">⚙️</span>
                 Administration
-            </a>
-            <?php endif; ?>
-            
-            <?php if ($current_role === 'admin'): ?>
-            <a href="bi_report.php" class="menu-button" id="btn-bi">
+                <div class="led"></div>
+            </button>
+
+            <button class="neu-button" onclick="selectBtn(this); window.location.href='bi_report.php';">
+                <span class="icon">📊</span>
                 Business Intelligence Report
-            </a>
-            <?php endif; ?>
-            
-            <?php if ($current_role === 'staff'): ?>
-                <div></div>
-                <div></div>
-            <?php endif; ?>
+                <div class="led"></div>
+            </button>
+        <?php endif; ?>
+        
+        <footer class="footer-container">
+            <div class="footer-text">
+                <?php echo $COPYRIGHT_FOOTER; ?>
+            </div>
+        </footer>  
+    </div>
 
-        </div>
-    </main>
-
-    <footer>
-        <p><?php echo $COPYRIGHT_FOOTER; ?></p>
-    </footer>
+    <script>
+        function selectBtn(element) {
+            document.querySelectorAll('.neu-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            element.classList.add('active');
+        }
+    </script>
     
 </body>
 </html>

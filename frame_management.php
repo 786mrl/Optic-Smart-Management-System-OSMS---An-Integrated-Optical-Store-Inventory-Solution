@@ -23,48 +23,68 @@ $role = $_SESSION['role'] ?? 'staff';
 </head>
 <body>
 
-    <header class="main-header">
-        <div class="header-content">
-            <div class="brand-info">
-                <img src="<?php echo htmlspecialchars($BRAND_IMAGE_PATH); ?>" alt="Brand Logo" class="brand-logo">
-                
-                <h1 class="brand-name"><?php echo htmlspecialchars($STORE_NAME); ?></h1>
-                
-                <p class="store-address"><?php echo htmlspecialchars($STORE_ADDRESS); ?></p> 
-            </div>            
-            <a href="logout.php" class="logout-button">Logout</a>
+    <div class="header-container">
+        <button class="logout-btn" onclick="alert('Logging out...'); window.location.href='logout.php';">
+            <span>Logout</span>
+        </button>
+
+        <div class="brand-section">
+            <div class="logo-box">
+                <img src="<?php echo htmlspecialchars($BRAND_IMAGE_PATH); ?>" alt="Brand Logo" style="height: 40px;">
+            </div>
+            <h1 class="company-name"><?php echo htmlspecialchars($STORE_NAME); ?></h1>
+            <p class="company-address"><?php echo htmlspecialchars($STORE_ADDRESS); ?></p>
         </div>
-    </header>
+    </div>
 
-    <main class="main-content">
-        <h3>Frame Management Modules</h3>
-        
-        <div class="second_layer-button-container">
-            <a href="frame_data_entry.php" class="second_layer-tool-button second_layer-button">
-                Frame Data Entry
-            </a>
-            
-            <a href="pending_records_frame.php" class="second_layer-tool-button second_layer-button">
-                Pending Records (Staging)
-            </a>
+    <div class="selection-container">
+        <button class="neu-button" onclick="selectBtn(this); window.location.href='frame_data_entry.php';">
+            <span class="icon">📥</span>
+            Frame Data Entry
+            <div class="led"></div>
+        </button>
 
-            <?php if ($role === 'admin'): ?>
-                <a href="frame_master_database.php" class="second_layer-tool-button second_layer-button">
+        <button class="neu-button" onclick="selectBtn(this); window.location.href='pending_records_frame.php';">
+            <span class="icon">⏳</span>
+            Pending Records (Staging)
+            <div class="led"></div>
+        </button>
+
+        <?php if ($role === 'admin'): ?>
+            <button class="neu-button active" onclick="selectBtn(this); window.location.href='frame_master_database.php';">
+                <span class="icon">🗄️</span>
                 Frame Master Database
-                </a>
-                
-                <a href="customer_frame_purchase.php" class="second_layer-tool-button second_layer-button">
-                    Customer Purchase History
-                </a>
-            <?php endif; ?>
-        </div>
-        
-        <p style="margin-top: 40px;"><a href="index.php" class="link-back">Back to Main Menu</a></p>
-    </main>
+                <div class="led"></div>
+            </button>
 
-    <footer>
-        <p><?php echo $COPYRIGHT_FOOTER; ?></p>
-    </footer>
+            <button class="neu-button" onclick="selectBtn(this); window.location.href='customer_frame_purchase.php';">
+                <span class="icon">📜</span>
+                Customer Purchase History
+                <div class="led"></div>
+            </button>
+        <?php endif; ?>
+        
+        <footer style="background-color: #1e2124">
+            <button style="width: auto; height: auto" class="neu-button" onclick="selectBtn(this); window.location.href='inventory.php';">
+                BACK TO PREVIOUS PAGE
+            </button>
+        </footer>
+        
+        <footer class="footer-container">
+            <div class="footer-text">
+                <?php echo $COPYRIGHT_FOOTER; ?>
+            </div>
+        </footer>  
+    </div>
+
+    <script>
+        function selectBtn(element) {
+            document.querySelectorAll('.neu-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            element.classList.add('active');
+        }
+    </script>
 
 </body>
 </html>

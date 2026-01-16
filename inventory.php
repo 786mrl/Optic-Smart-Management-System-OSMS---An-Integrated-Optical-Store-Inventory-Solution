@@ -21,41 +21,59 @@ $username = $_SESSION['username'] ?? 'User';
 </head>
 <body>
 
-    <header class="main-header">
-        <div class="header-content">
-            <div class="brand-info">
-                <img src="<?php echo htmlspecialchars($BRAND_IMAGE_PATH); ?>" alt="Brand Logo" class="brand-logo">
-                
-                <h1 class="brand-name"><?php echo htmlspecialchars($STORE_NAME); ?></h1>
-                
-                <p class="store-address"><?php echo htmlspecialchars($STORE_ADDRESS); ?></p> 
-            </div>            
-            <a href="logout.php" class="logout-button">Logout</a>
+    <div class="header-container">
+        <button class="logout-btn" onclick="alert('Logging out...'); window.location.href='logout.php';">
+            <span>Logout</span>
+        </button>
+
+        <div class="brand-section">
+            <div class="logo-box">
+                <img src="<?php echo htmlspecialchars($BRAND_IMAGE_PATH); ?>" alt="Brand Logo" style="height: 40px;">
+            </div>
+            <h1 class="company-name"><?php echo htmlspecialchars($STORE_NAME); ?></h1>
+            <p class="company-address"><?php echo htmlspecialchars($STORE_ADDRESS); ?></p>
         </div>
-    </header>
+    </div>
 
-    <main class="main-content">
-        <h3>Select Module</h3>
-        
-        <div class="second_layer-button-container">
-            <a href="frame_management.php" class="second_layer-tool-button second_layer-button">
-                Frame Management
-            </a>
-            
-            <a href="lense_management.php" class="second_layer-tool-button second_layer-button">
-                Lense Management
-            </a>
-            <a href="other_management.php" class="second_layer-tool-button second_layer-button">
-                Other
-            </a>
-        </div>
-        
-        <p style="margin-top: 40px;"><a href="index.php" class="link-back">Back to Main Menu</a></p>
-    </main>
+    <div class="selection-container">
+        <button class="neu-button" onclick="selectBtn(this); window.location.href='frame_management.php';">
+            <span class="icon">👓</span>
+            Frame Management
+            <div class="led"></div>
+        </button>
 
-    <footer>
-        <p><?php echo $COPYRIGHT_FOOTER; ?></p>
-    </footer>
+        <button class="neu-button" onclick="selectBtn(this); window.location.href='lense_management.php';">
+            <span class="icon">🔍</span>
+            Lense Management
+            <div class="led"></div>
+        </button>
 
+        <button class="neu-button active" onclick="selectBtn(this); window.location.href='other_management.php';">
+            <span class="icon">🔘</span>
+            Other
+            <div class="led"></div>
+        </button>
+
+        <footer style="background-color: #1e2124">
+            <button style="width: auto; height: auto" class="neu-button" onclick="selectBtn(this); window.location.href='index.php';">
+                BACK TO PREVIOUS PAGE
+            </button>
+        </footer>
+
+        <footer class="footer-container">
+            <div class="footer-text">
+                <?php echo $COPYRIGHT_FOOTER; ?>
+            </div>
+        </footer>  
+    </div>
+
+    <script>
+        function selectBtn(element) {
+            document.querySelectorAll('.neu-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            element.classList.add('active');
+        }
+    </script>
 </body>
 </html>

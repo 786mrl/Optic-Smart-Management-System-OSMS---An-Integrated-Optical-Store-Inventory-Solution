@@ -39,17 +39,16 @@ if ($_SESSION['role'] !== 'admin') {
     </header>
 
     <main class="main-content">
-        <h3>Admin Tools for <?php echo htmlspecialchars($username); ?></h3>
-        
-        <div class="second_layer-button-container">
-            <a href="approve_users.php" class="second_layer-tool-button second_layer-button">
+        <h3>Admin Tools</h3>        
+        <div class="button-container">
+            <a href="approve_users.php" class="menu-button">
                 Approve New Staff Users
             </a>
             
-            <a href="manage_roles.php" class="second_layer-tool-button second_layer-button">
+            <a href="manage_roles.php" class="menu-button">
                 Manage User Roles
             </a>
-            <a href="system_config.php" class="second_layer-tool-button second_layer-button">
+            <a href="system_config.php" class="menu-button">
                 System Configuration
             </a>
         </div>

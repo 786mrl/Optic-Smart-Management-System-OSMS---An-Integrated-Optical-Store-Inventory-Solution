@@ -7,7 +7,7 @@ if (!isset($_SESSION['user_id'])) {
 
 $username = $_SESSION['username'] ?? 'User';
 $role = $_SESSION['role'] ?? 'staff';
-$redirect_time_ms = 3000;
+$redirect_time_ms = 3500;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -17,28 +17,25 @@ $redirect_time_ms = 3000;
     <title>Welcome to Lenza Optic POS</title>
     <link rel="stylesheet" href="style.css">
 </head>
-<body class="login-body">
-    <div class="welcome-box">
-        <h1>Welcome!</h1>
-        <p>You have successfully logged in as:</p>
-        
-        <h2><?php echo htmlspecialchars(ucfirst($username)); ?> (<?php echo htmlspecialchars(ucfirst($role)); ?>)</h2>
-        
-        <div class="loading-bar">
-            <div id="loading-progress" class="loading-progress" 
-                 style="transition: width <?php echo $redirect_time_ms / 1000; ?>s linear;">
-            </div>
+<body>
+    <div class="welcome-container">
+        <div class="profile-circle">
+            👤
         </div>
-        <p style="margin-top: 10px; font-size: 0.9em; color: #777;">Redirecting to Dashboard...</p>
-    </div>
 
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            var progressBar = document.getElementById('loading-progress');
-            progressBar.style.width = '100%';
-        });
+        <h1>Welcome,</h1>
+        <span class="user-name"><?php echo htmlspecialchars(ucfirst($username)); ?></span>
         
+        <p class="status-msg">Preparing your Dashboard...</p>
+
+        <div class="loader-track">
+            <div class="loader-fill"></div>
+        </div>
+    </div>
+    <script>        
+        // Simulate redirect to main page after 3.5 seconds
         setTimeout(function() {
+            console.log("Redirecting to Dashboard...");
             window.location.href = 'index.php';
         }, <?php echo $redirect_time_ms; ?>);
     </script>

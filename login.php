@@ -54,16 +54,32 @@ close_db_connection($conn);
     <title>User Login</title>
     <link rel="stylesheet" href="style.css">
 </head>
-<body class="login-body">
-    <div class="login-container">
-        <h2>System Login</h2>
+<body>
+    <div class="login-card">
+        <div class="login-logo">🔐</div>
+
+        <h2>Welcome</h2>
+        <p class="subtitle">Please login to access your dashboard</p>
+
+        
         <?php echo $message; ?>
-        <form action="login.php" method="POST" class="login-form">
-            <input type="text" name="username" placeholder="Username" required>
-            <input type="password" name="password" placeholder="Password" required>
-            <button type="submit" class="login-button">Login</button>
+        <form action="login.php" method="POST" >
+            <div class="input-group">
+                <div class="input-wrapper">
+                    <input type="text" name="username" placeholder="Enter your username" required>
+                </div>
+            </div>
+
+            <div class="input-group">
+                <div class="input-wrapper">
+                    <input type="password" name="password" placeholder="Enter your password" required>
+                </div>
+            </div>
+
+            <button type="submit" class="login-btn">LOGIN TO SYSTEM</button>
         </form>
-        <p>No account? <a href="create_user.php" class="link-create-user">Create User</a></p>
+        
+        <a href="create_user.php" class="forgot-pass">No Account? Create Account</a>
     </div>
 </body>
 </html>
