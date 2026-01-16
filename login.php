@@ -54,7 +54,7 @@ close_db_connection($conn);
     <title>User Login</title>
     <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body style="overflow: hidden; margin: 0;">
     <div class="login-card">
         <div class="login-logo">🔐</div>
 

@@ -26,7 +26,7 @@ if (!isset($_SESSION['user_id'])) {
 </head>
 <body>
     <div class="header-container">
-        <button class="logout-btn" onclick="alert('Logging out...'); window.location.href='logout.php';">
+        <button class="logout-btn" onclick="window.location.href='logout.php';">
             <span>Logout</span>
         </button>
 
@@ -40,26 +40,26 @@ if (!isset($_SESSION['user_id'])) {
     </div>
 
     <div class="selection-container">
-        <button class="neu-button" onclick="selectBtn(this); window.location.href='inventory.php';">
+        <button class="neu-button" data-url="inventory.php" onclick="handleButtonClick(this)">
             <span class="icon">👓</span>
             Inventory Management
             <div class="led"></div>
         </button>
 
-        <button class="neu-button" onclick="selectBtn(this); window.location.href='customer.php';">
+        <button class="neu-button" data-url="customer.php" onclick="handleButtonClick(this)">
             <span class="icon">📇</span>
             Customer Data Management
             <div class="led"></div>
         </button>
 
         <?php if ($current_role === 'admin'): ?>
-            <button class="neu-button active" onclick="selectBtn(this); window.location.href='admin.php';">
+            <button class="neu-button" data-url="admin.php" onclick="handleButtonClick(this)">
                 <span class="icon">⚙️</span>
                 Administration
                 <div class="led"></div>
             </button>
 
-            <button class="neu-button" onclick="selectBtn(this); window.location.href='bi_report.php';">
+            <button class="neu-button" data-url="bi_report.php" onclick="handleButtonClick(this)">
                 <span class="icon">📊</span>
                 Business Intelligence Report
                 <div class="led"></div>
@@ -74,12 +74,35 @@ if (!isset($_SESSION['user_id'])) {
     </div>
 
     <script>
-        function selectBtn(element) {
-            document.querySelectorAll('.neu-button').forEach(btn => {
-                btn.classList.remove('active');
-            });
+        // Function executed when a button is clicked
+        function handleButtonClick(element) {
+            // 1. Get the URL from the data-url attribute
+            const targetUrl = element.getAttribute('data-url');
+            
+            // 2. Save this URL to localStorage as the active button identity
+            localStorage.setItem('activeMenuUrl', targetUrl);
+            
+            // 3. Add the active class immediately (for an instant visual effect)
+            document.querySelectorAll('.neu-button').forEach(btn => btn.classList.remove('active'));
             element.classList.add('active');
+
+            // 4. Navigate to the page
+            window.location.href = targetUrl;
         }
+
+        // Function that runs automatically when the page is refreshed or returned to (Back)
+        window.addEventListener('DOMContentLoaded', () => {
+            const activeUrl = localStorage.getItem('activeMenuUrl');
+            
+            if (activeUrl) {
+                document.querySelectorAll('.neu-button').forEach(btn => {
+                    // If the button's data-url matches the one in memory, activate it!
+                    if (btn.getAttribute('data-url') === activeUrl) {
+                        btn.classList.add('active');
+                    }
+                });
+            }
+        });
     </script>
     
 </body>

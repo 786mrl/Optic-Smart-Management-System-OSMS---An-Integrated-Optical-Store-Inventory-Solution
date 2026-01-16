@@ -25,40 +25,83 @@ if ($_SESSION['role'] !== 'admin') {
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <header class="main-header">
-        <div class="header-content">
-            <div class="brand-info">
-                <img src="<?php echo htmlspecialchars($BRAND_IMAGE_PATH); ?>" alt="Brand Logo" class="brand-logo">
-                
-                <h1 class="brand-name"><?php echo htmlspecialchars($STORE_NAME); ?></h1>
-                
-                <p class="store-address"><?php echo htmlspecialchars($STORE_ADDRESS); ?></p> 
-            </div>            
-            <a href="logout.php" class="logout-button">Logout</a>
-        </div>
-    </header>
+    <div class="header-container">
+        <button class="logout-btn" onclick="window.location.href='logout.php';">
+            <span>Logout</span>
+        </button>
 
-    <main class="main-content">
-        <h3>Admin Tools</h3>        
-        <div class="button-container">
-            <a href="approve_users.php" class="menu-button">
-                Approve New Staff Users
-            </a>
-            
-            <a href="manage_roles.php" class="menu-button">
-                Manage User Roles
-            </a>
-            <a href="system_config.php" class="menu-button">
-                System Configuration
-            </a>
+        <div class="brand-section">
+            <div class="logo-box">
+                <img src="<?php echo htmlspecialchars($BRAND_IMAGE_PATH); ?>" alt="Brand Logo" style="height: 40px;">
         </div>
+            <h1 class="company-name"><?php echo htmlspecialchars($STORE_NAME); ?></h1>
+            <p class="company-address"><?php echo htmlspecialchars($STORE_ADDRESS); ?></p>
+        </div>
+    </div>
+
+    <div class="selection-container">
+        <button class="neu-button" data-url="approve_users.php" onclick="handleButtonClick(this)">
+            <span class="icon">✅</span>
+            Approve New Staff Users
+            <div class="led"></div>
+        </button>
+
+        <button class="neu-button" data-url="manage_roles.php" onclick="handleButtonClick(this)">
+            <span class="icon">🤝</span>
+            Manage User Roles
+            <div class="led"></div>
+        </button>
+
+        <button class="neu-button" data-url="system_config.php" onclick="handleButtonClick(this)">
+            <span class="icon">⚙️</span>
+            System Configuration
+            <div class="led"></div>
+        </button>
+
+        <footer style="background-color: #1e2124">
+            <button style="width: auto; height: auto" class="neu-button" data-url="index.php" onclick="handleButtonClick(this)">
+                BACK TO PREVIOUS PAGE
+            </button>
+        </footer>
         
-        <p style="margin-top: 40px;"><a href="index.php" class="link-back">Back to Main Menu</a></p>
-    </main>
+        <footer class="footer-container">
+            <div class="footer-text">
+                <?php echo $COPYRIGHT_FOOTER; ?>
+            </div>
+        </footer>  
+    </div>
 
-    <footer>
-        <p><?php echo $COPYRIGHT_FOOTER; ?></p>
-    </footer>
+    <script>
+        // Function executed when a button is clicked
+        function handleButtonClick(element) {
+            // 1. Get the URL from the data-url attribute
+            const targetUrl = element.getAttribute('data-url');
+            
+            // 2. Save this URL to localStorage as the active button identity
+            localStorage.setItem('activeMenuUrl', targetUrl);
+            
+            // 3. Add the active class immediately (for an instant visual effect)
+            document.querySelectorAll('.neu-button').forEach(btn => btn.classList.remove('active'));
+            element.classList.add('active');
+
+            // 4. Navigate to the page
+            window.location.href = targetUrl;
+        }
+
+        // Function that runs automatically when the page is refreshed or returned to (Back)
+        window.addEventListener('DOMContentLoaded', () => {
+            const activeUrl = localStorage.getItem('activeMenuUrl');
+            
+            if (activeUrl) {
+                document.querySelectorAll('.neu-button').forEach(btn => {
+                    // If the button's data-url matches the one in memory, activate it!
+                    if (btn.getAttribute('data-url') === activeUrl) {
+                        btn.classList.add('active');
+                    }
+                });
+            }
+        });
+    </script>
     
 </body>
 </html>
