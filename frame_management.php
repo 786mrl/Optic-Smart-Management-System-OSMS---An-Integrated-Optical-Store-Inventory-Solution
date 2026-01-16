@@ -22,59 +22,60 @@ $role = $_SESSION['role'] ?? 'staff';
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-
-    <div class="header-container">
-        <button class="logout-btn" onclick="alert('Logging out...'); window.location.href='logout.php';">
-            <span>Logout</span>
-        </button>
-
-        <div class="brand-section">
-            <div class="logo-box">
-                <img src="<?php echo htmlspecialchars($BRAND_IMAGE_PATH); ?>" alt="Brand Logo" style="height: 40px;">
+    <div class="main-wrapper">
+        <div class="content-area">
+            <div class="header-container">
+                <button class="logout-btn" onclick="window.location.href='logout.php';">
+                    <span>Logout</span>
+                </button>
+            
+                <div class="brand-section">
+                    <div class="logo-box">
+                        <img src="<?php echo htmlspecialchars($BRAND_IMAGE_PATH); ?>" alt="Brand Logo" style="height: 40px;">
+                    </div>
+                    <h1 class="company-name"><?php echo htmlspecialchars($STORE_NAME); ?></h1>
+                    <p class="company-address"><?php echo htmlspecialchars($STORE_ADDRESS); ?></p>
+                </div>
             </div>
-            <h1 class="company-name"><?php echo htmlspecialchars($STORE_NAME); ?></h1>
-            <p class="company-address"><?php echo htmlspecialchars($STORE_ADDRESS); ?></p>
+            
+            <div class="selection-container">
+                <div class="button-grid">
+                    <button class="neu-button" data-url="frame_data_entry.php" onclick="handleButtonClick(this)">
+                        <span class="icon">📥</span>
+                        Frame Data Entry
+                        <div class="led"></div>
+                    </button>
+                
+                    <button class="neu-button" data-url="pending_records_frame.php" onclick="handleButtonClick(this)">
+                        <span class="icon">⏳</span>
+                        Pending Records (Staging)
+                        <div class="led"></div>
+                    </button>
+                
+                    <?php if ($role === 'admin'): ?>
+                        <button class="neu-button" data-url="frame_master_database.php" onclick="handleButtonClick(this)">
+                            <span class="icon">🗄️</span>
+                            Frame Master Database
+                            <div class="led"></div>
+                        </button>
+                
+                        <button class="neu-button" data-url="customer_frame_purchase.php" onclick="handleButtonClick(this)">
+                            <span class="icon">📜</span>
+                            Customer Purchase History
+                            <div class="led"></div>
+                        </button>
+                    <?php endif; ?>
+                </div>            
+            </div>
         </div>
-    </div>
 
-    <div class="selection-container">
-        <button class="neu-button" data-url="frame_data_entry.php" onclick="handleButtonClick(this)">
-            <span class="icon">📥</span>
-            Frame Data Entry
-            <div class="led"></div>
-        </button>
+        <div class="btn-group">
+            <button type="button" class="back-main" onclick="window.location.href='inventory.php'">BACK TO PREVIOUS PAGE</button>
+        </div>
 
-        <button class="neu-button" data-url="pending_records_frame.php" onclick="handleButtonClick(this)">
-            <span class="icon">⏳</span>
-            Pending Records (Staging)
-            <div class="led"></div>
-        </button>
-
-        <?php if ($role === 'admin'): ?>
-            <button class="neu-button" data-url="frame_master_database.php" onclick="handleButtonClick(this)">
-                <span class="icon">🗄️</span>
-                Frame Master Database
-                <div class="led"></div>
-            </button>
-
-            <button class="neu-button" data-url="customer_frame_purchase.php" onclick="handleButtonClick(this)">
-                <span class="icon">📜</span>
-                Customer Purchase History
-                <div class="led"></div>
-            </button>
-        <?php endif; ?>
-        
-        <footer style="background-color: #1e2124">
-            <button style="width: auto; height: auto" class="neu-button" data-url="inventory.php" onclick="handleButtonClick(this)">
-                BACK TO PREVIOUS PAGE
-            </button>
-        </footer>
-        
         <footer class="footer-container">
-            <div class="footer-text">
-                <?php echo $COPYRIGHT_FOOTER; ?>
-            </div>
-        </footer>  
+            <p class="footer-text"><?php echo $COPYRIGHT_FOOTER; ?></p>
+        </footer>
     </div>
 
     <script>
@@ -108,6 +109,5 @@ $role = $_SESSION['role'] ?? 'staff';
             }
         });
     </script>
-
 </body>
 </html>

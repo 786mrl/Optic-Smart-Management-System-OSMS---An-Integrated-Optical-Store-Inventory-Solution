@@ -28,6 +28,7 @@
             align-items: center;
             min-height: 100vh;
             padding: 40px 20px;
+            flex-direction: column;
         }
 
         .main-card {
@@ -244,6 +245,21 @@
                         inset -4px -4px 8px var(--shadow-light);
         }
 
+        /* --- FOOTER (DI BAWAH SEKALI) --- */
+        footer {
+            width: 100%;
+            max-width: 1100px;
+            text-align: center;
+            padding-top: 40px;
+            border-top: 1px solid var(--shadow-light);
+        }
+
+        .footer-text {
+            font-size: 12px;
+            color: var(--text-muted);
+            opacity: 0.7;
+        }
+
         /* RESPONSIVE */
         @media (max-width: 750px) {
             .input-group, .input-group:nth-child(3):last-child { 
@@ -335,6 +351,10 @@
             <button type="submit" class="submit-main">Update Configuration</button>
         </form>
     </div>
+    
+    <footer>
+        <p class="footer-text">© 2026 PT. Teknologi Modern Dashboard — Terminal v2.0.1-Stable</p>
+    </footer>
 
     <script>
         function toggleNeu(el) {

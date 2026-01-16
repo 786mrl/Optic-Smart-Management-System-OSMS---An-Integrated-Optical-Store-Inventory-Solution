@@ -25,53 +25,58 @@ if (!isset($_SESSION['user_id'])) {
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div class="header-container">
-        <button class="logout-btn" onclick="window.location.href='logout.php';">
-            <span>Logout</span>
-        </button>
 
-        <div class="brand-section">
-            <div class="logo-box">
-                <img src="<?php echo htmlspecialchars($BRAND_IMAGE_PATH); ?>" alt="Brand Logo" style="height: 40px;">
-        </div>
-            <h1 class="company-name"><?php echo htmlspecialchars($STORE_NAME); ?></h1>
-            <p class="company-address"><?php echo htmlspecialchars($STORE_ADDRESS); ?></p>
-        </div>
-    </div>
-
-    <div class="selection-container">
-        <button class="neu-button" data-url="inventory.php" onclick="handleButtonClick(this)">
-            <span class="icon">👓</span>
-            Inventory Management
-            <div class="led"></div>
-        </button>
-
-        <button class="neu-button" data-url="customer.php" onclick="handleButtonClick(this)">
-            <span class="icon">📇</span>
-            Customer Data Management
-            <div class="led"></div>
-        </button>
-
-        <?php if ($current_role === 'admin'): ?>
-            <button class="neu-button" data-url="admin.php" onclick="handleButtonClick(this)">
-                <span class="icon">⚙️</span>
-                Administration
-                <div class="led"></div>
+<div class="main-wrapper">
+    <div class="content-area">
+        <div class="header-container">
+            <button class="logout-btn" onclick="window.location.href='logout.php';">
+                <span>Logout</span>
             </button>
-
-            <button class="neu-button" data-url="bi_report.php" onclick="handleButtonClick(this)">
-                <span class="icon">📊</span>
-                Business Intelligence Report
-                <div class="led"></div>
-            </button>
-        <?php endif; ?>
         
-        <footer class="footer-container">
-            <div class="footer-text">
-                <?php echo $COPYRIGHT_FOOTER; ?>
+            <div class="brand-section">
+                <div class="logo-box">
+                    <img src="<?php echo htmlspecialchars($BRAND_IMAGE_PATH); ?>" alt="Brand Logo" style="height: 40px;">
             </div>
-        </footer>  
+                <h1 class="company-name"><?php echo htmlspecialchars($STORE_NAME); ?></h1>
+                <p class="company-address"><?php echo htmlspecialchars($STORE_ADDRESS); ?></p>
+            </div>
+        </div>
+        
+        <div class="selection-container">
+            <div class="button-grid">
+                <button class="neu-button" data-url="inventory.php" onclick="handleButtonClick(this)">
+                    <span class="icon">👓</span>
+                    Inventory Management
+                    <div class="led"></div>
+                </button>
+            
+                <button class="neu-button" data-url="customer.php" onclick="handleButtonClick(this)">
+                    <span class="icon">📇</span>
+                    Customer Data Management
+                    <div class="led"></div>
+                </button>
+            
+                <?php if ($current_role === 'admin'): ?>
+                    <button class="neu-button" data-url="admin.php" onclick="handleButtonClick(this)">
+                        <span class="icon">⚙️</span>
+                        Administration
+                        <div class="led"></div>
+                    </button>
+            
+                    <button class="neu-button" data-url="bi_report.php" onclick="handleButtonClick(this)">
+                        <span class="icon">📊</span>
+                        Business Intelligence Report
+                        <div class="led"></div>
+                    </button>
+                <?php endif; ?>
+            </div>
+        </div>
     </div>
+
+    <footer class="footer-container">
+        <p class="footer-text"><?php echo $COPYRIGHT_FOOTER; ?></p>
+    </footer>
+</div>
 
     <script>
         // Function executed when a button is clicked

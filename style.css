@@ -227,19 +227,26 @@ h1 {
     flex-wrap: wrap;
     justify-content: center;
     gap: 25px;
-    width: 100%;
+    flex: 1.5;
     max-width: 500px;
     padding: 20px;
+    flex-direction: column;
+    border-radius: 40px;
 }
 
 /* --- ADDITIONAL HEADER STYLING --- */
 
 .header-container {
-    width: 100%;
-    max-width: 600px; 
-    margin: 0 auto 30px auto;
+    flex: 1;
+    max-width: 350px; 
+    margin-left: auto;
     position: relative;
     padding: 20px;
+    justify-content: center;
+    align-items: center;
+    display: flex;
+    flex-direction: column;
+    text-align: center;
 }
 
 .brand-section {
@@ -280,9 +287,8 @@ h1 {
 
 /* Neumorphic Logout Button */
 .logout-btn {
-    position: absolute;
-    top: 0;
-    right: 0;
+    /* position: absolute; */
+    margin-top: 25px;
     padding: 10px 20px;
     border: none;
     border-radius: 12px;
@@ -294,6 +300,8 @@ h1 {
     box-shadow: 5px 5px 10px var(--shadow-dark), 
                 -5px -5px 10px var(--shadow-light);
     transition: all 0.2s ease;
+    align-self: flex-end; 
+    margin-right: -30px;
 }
 
 .logout-btn:hover {
@@ -367,13 +375,14 @@ h1 {
 .footer-container {
     width: 100%;
     text-align: center;
-    padding: 40px 20px;
+    padding: 40px 0px;
     margin-top: auto;
-    background-color: var(--bg-color);
+    background-color:1px solid  var(--bg-color);
 }
 
 .footer-text {
     font-size: 12px;
+    width: 100%;
     color: var(--text-muted);
     letter-spacing: 1px;
     display: inline-block;
@@ -462,16 +471,39 @@ h1 {
         box-shadow: 0 0 8px var(--accent-color);
     }
 
-    /* --- SUBMIT BUTTON --- */
+    /* --- BUTTON GROUP (SUBMIT & BACK) --- */
+    .btn-group {
+        margin-top: 0px;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        place-items: center;
+    }
+    .back-main {
+        width: 40%;
+        padding: 15px;
+        border: none;
+        border-radius: 15px;
+        background: var(--bg-color);
+        color: var(--text-muted);
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        box-shadow: 5px 5px 10px var(--shadow-dark), 
+                    -5px -5px 10px var(--shadow-light);
+    }
+    .back-main:active {
+        box-shadow: inset 4px 4px 8px var(--shadow-dark), 
+                    inset -4px -4px 8px var(--shadow-light);
+}
     .submit-main {
         width: 100%;
-        margin-top: 40px;
         padding: 18px;
         border: none;
         border-radius: 15px;
         background: var(--bg-color);
         color: var(--accent-color);
-        font-size: 16px;
+        font-size: 14px;
         font-weight: 700;
         cursor: pointer;
         box-shadow: 8px 8px 16px var(--shadow-dark), 
@@ -488,6 +520,33 @@ h1 {
         box-shadow: inset 4px 4px 8px var(--shadow-dark), 
                     inset -4px -4px 8px var(--shadow-light);
     }
+
+.main-wrapper{
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    width: 100%;
+}
+.content-area {
+    display: flex;
+    flex: 1;
+    gap: 40px;
+    padding: 40px 20px;
+    max-width: 1200px;
+    margin: 0 auto;
+    width: 100%;
+}
+.button-grid {
+    display: grid;
+    flex-wrap: wrap;
+    gap: 20px;
+    justify-content: center;
+    max-width: 340px;
+    margin: 0 auto;
+}
+.button-grid button {
+    width: 160px;
+}
 /*..............................................................................................*/
 
 .main-header {
@@ -1052,7 +1111,13 @@ footer {
     text-align: center; 
     margin-top: 30px; 
 }
-/*..............................................................................*/
+
+
+
+/*+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
+
+
+
 /* --- ANIMATIONS --- */
 @keyframes fadeIn {
     from { opacity: 0; transform: translateY(20px); }
@@ -1072,6 +1137,40 @@ footer {
 
 /* --- MOBILE RESPONSIVENESS --- */
 @media (max-width: 480px) {
+    .content-area {
+        flex-direction: column;
+        align-items: center;
+        padding: 20px 15px;
+        gap: 30px;
+    }
+    .header-container {
+        max-width: 100%;
+        margin-left: 0;
+        margin-bottom: 20px;
+    }
+
+    .selection-container {
+        min-width: 100%;
+        padding: 30px 20px;
+    }
+
+    .button-grid {
+        display: flex;
+        gap: 15px;
+        width: 100%;
+    }
+
+    .neu-btn {
+        width: 100%;
+        height: 100px;
+        font-size: 14px;
+        border-radius: 20px;
+    }
+
+    .neu-btn:last-child:nth-child(odd) {
+        grid-column: 1 / span 2;
+        width: 100%;
+    }
     .login-card {
         padding: 40px 25px;
         box-shadow: 10px 10px 30px var(--shadow-dark), 
@@ -1094,16 +1193,19 @@ footer {
     .neu-button, .neu-button:nth-child(3):last-child {
         flex: 0 0 100%;
     }
-
-    .header-container {
-        margin-bottom: 20px;
-    }
     .logout-btn {
-        position: relative;
-        margin-bottom: 20px;
-        display: block;
-        width: 100px;
-        margin-left: auto;
+        position: absolute; 
+        top: 0;             
+        right: 0;        
+        margin: 0;      
+        padding: 8px 15px;
+        font-size: 10px;
+        border-radius: 15px; /* Opsional: tumpulkan hanya sisi kiri bawah */
+        box-shadow: -2px 2px 10px var(--shadow-dark); /* Bayangan halus */
+        align-self: center;
+        margin-right: 0;
+        width: 30%;
+        height: 15%;
     }
     .company-name {
         font-size: 18px;

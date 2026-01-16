@@ -20,53 +20,55 @@ $username = $_SESSION['username'] ?? 'User';
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-
-    <div class="header-container">
-        <button class="logout-btn" onclick="alert('Logging out...'); window.location.href='logout.php';">
-            <span>Logout</span>
-        </button>
-
-        <div class="brand-section">
-            <div class="logo-box">
-                <img src="<?php echo htmlspecialchars($BRAND_IMAGE_PATH); ?>" alt="Brand Logo" style="height: 40px;">
+    <div class="main-wrapper">
+        <div class="content-area">
+            <div class="header-container">
+                <button class="logout-btn" onclick="window.location.href='logout.php';">
+                    <span>Logout</span>
+                </button>
+            
+                <div class="brand-section">
+                    <div class="logo-box">
+                        <img src="<?php echo htmlspecialchars($BRAND_IMAGE_PATH); ?>" alt="Brand Logo" style="height: 40px;">
+                    </div>
+                    <h1 class="company-name"><?php echo htmlspecialchars($STORE_NAME); ?></h1>
+                    <p class="company-address"><?php echo htmlspecialchars($STORE_ADDRESS); ?></p>
+                </div>
             </div>
-            <h1 class="company-name"><?php echo htmlspecialchars($STORE_NAME); ?></h1>
-            <p class="company-address"><?php echo htmlspecialchars($STORE_ADDRESS); ?></p>
+            
+            <div class="selection-container">
+                <div class="button-grid">
+                    <button class="neu-button" data-url="frame_management.php" onclick="handleButtonClick(this)">
+                        <span class="icon">👓</span>
+                        Frame Management
+                        <div class="led"></div>
+                    </button>
+                
+                    <button class="neu-button" data-url="lense_management.php" onclick="handleButtonClick(this)">
+                        <span class="icon">🔍</span>
+                        Lense Management
+                        <div class="led"></div>
+                    </button>
+                
+                    <button class="neu-button" data-url="other_management.php" onclick="handleButtonClick(this)">
+                        <span class="icon">🔘</span>
+                        Other
+                        <div class="led"></div>
+                    </button>
+                </div>
+            </div>
+
         </div>
-    </div>
-
-    <div class="selection-container">
-        <button class="neu-button" data-url="frame_management.php" onclick="handleButtonClick(this)">
-            <span class="icon">👓</span>
-            Frame Management
-            <div class="led"></div>
-        </button>
-
-        <button class="neu-button" data-url="lense_management.php" onclick="handleButtonClick(this)">
-            <span class="icon">🔍</span>
-            Lense Management
-            <div class="led"></div>
-        </button>
-
-        <button class="neu-button" data-url="other_management.php" onclick="handleButtonClick(this)">
-            <span class="icon">🔘</span>
-            Other
-            <div class="led"></div>
-        </button>
-
-        <footer style="background-color: #1e2124">
-            <button style="width: auto; height: auto" class="neu-button" data-url="index.php" onclick="handleButtonClick(this)">
-                BACK TO PREVIOUS PAGE
-            </button>
-        </footer>
+        
+        <div class="btn-group">
+            <button type="button" class="back-main" onclick="window.location.href='index.php'">BACK TO PREVIOUS PAGE</button>
+        </div>
 
         <footer class="footer-container">
-            <div class="footer-text">
-                <?php echo $COPYRIGHT_FOOTER; ?>
-            </div>
-        </footer>  
-    </div>
-
+            <p class="footer-text"><?php echo $COPYRIGHT_FOOTER; ?></p>
+        </footer>
+    </div>    
+    
     <script>
         // Function executed when a button is clicked
         function handleButtonClick(element) {
@@ -98,6 +100,5 @@ $username = $_SESSION['username'] ?? 'User';
             }
         });
     </script>
-
 </body>
 </html>
