@@ -63,12 +63,6 @@ p.subtitle {
     margin-bottom: 40px;
 }
 
-/* --- INPUT STYLING --- */
-.input-group {
-    margin-bottom: 25px;
-    text-align: left;
-}
-
 label {
     display: block;
     font-size: 11px;
@@ -77,6 +71,8 @@ label {
     margin-bottom: 10px;
     margin-left: 15px;
     text-transform: uppercase;
+    /* frame data entry */
+    letter-spacing: 1px;
 }
 
 .input-wrapper {
@@ -85,7 +81,7 @@ label {
     align-items: center;
 }
 
-input {
+input, select {
     width: 100%;
     border: none;
     outline: none;
@@ -389,6 +385,109 @@ h1 {
     text-transform: uppercase;
 }
 
+/* --- 4. FRAME DATA ENTRY --- */
+.main-card {
+    background-color: var(--bg-color);
+    width: 100%;
+    max-width: 600px;
+    padding: 40px;
+    border-radius: 40px;
+    box-shadow: 20px 20px 60px var(--shadow-dark), 
+                -20px -20px 60px var(--shadow-light);
+}
+    /* --- GRID LOGIC (2 TOP, 1 MIDDLE) --- */
+    .form-grid {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 25px;
+    }
+
+    .input-group {
+        flex: 0 0 calc(50% - 13px);
+        display: flex;
+        flex-direction: column;
+        margin-bottom: 25px;
+        text-align: left;
+    }
+
+    /* 3rd element automatically moves to center */
+    .input-group:nth-child(3):last-child, 
+    .selection-label {
+        flex: 0 0 100%;
+    }
+
+    /* --- SELECTION BUTTONS (WINDOWS STYLE) --- */
+    .selection-wrapper {
+        display: flex;
+        gap: 15px;
+        width: 100%;
+        margin-top: 10px;
+    }
+
+    .neu-btn {
+        flex: 1;
+        background: var(--bg-color);
+        border: none;
+        padding: 20px;
+        border-radius: 18px;
+        color: var(--text-muted);
+        font-weight: 600;
+        cursor: pointer;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+        box-shadow: 6px 6px 12px var(--shadow-dark), 
+                    -6px -6px 12px var(--shadow-light);
+        transition: all 0.3s ease;
+    }
+
+    .neu-btn.active {
+        box-shadow: inset 4px 4px 8px var(--shadow-dark), 
+                    inset -4px -4px 8px var(--shadow-light);
+        color: var(--accent-color);
+    }
+
+    .led {
+        width: 5px;
+        height: 5px;
+        background: #444;
+        border-radius: 50%;
+        transition: 0.3s;
+    }
+
+    .active .led {
+        background: var(--accent-color);
+        box-shadow: 0 0 8px var(--accent-color);
+    }
+
+    /* --- SUBMIT BUTTON --- */
+    .submit-main {
+        width: 100%;
+        margin-top: 40px;
+        padding: 18px;
+        border: none;
+        border-radius: 15px;
+        background: var(--bg-color);
+        color: var(--accent-color);
+        font-size: 16px;
+        font-weight: 700;
+        cursor: pointer;
+        box-shadow: 8px 8px 16px var(--shadow-dark), 
+                    -8px -8px 16px var(--shadow-light);
+        transition: 0.2s;
+    }
+
+    .submit-main:hover {
+        transform: scale(0.99);
+        color: #fff;
+    }
+
+    .submit-main:active {
+        box-shadow: inset 4px 4px 8px var(--shadow-dark), 
+                    inset -4px -4px 8px var(--shadow-light);
+    }
 /*..............................................................................................*/
 
 .main-header {
@@ -647,8 +746,6 @@ footer {
     align-items: center;
 }
 
-.user-creation-form input[type="text"],
-.user-creation-form input[type="password"],
 .user-creation-form select {
     padding: 10px;
     border: 1px solid #555;
@@ -773,19 +870,6 @@ footer {
     margin-bottom: 15px;
 }
 
-.input-group {
-    margin-bottom: 15px;
-}
-
-.input-group label {
-    display: block;
-    color: white;
-    font-weight: bold;
-    margin-bottom: 5px;
-}
-
-.config-form input[type="text"],
-.config-form input[type="number"],
 .config-form textarea {
     width: 100%;
     padding: 10px;
@@ -799,16 +883,6 @@ footer {
 .config-form textarea {
     resize: vertical;
     min-height: 80px;
-}
-
-.input-group small {
-    display: block;
-    color: #AAAAAA;
-    font-size: 0.8em;
-    margin-top: 3px;
-}
-
-.read-only-section input {
     background-color: #4A5659 !important; /* Darker background for read-only fields */
     color: #EEEEEE !important;
 }
@@ -854,9 +928,7 @@ footer {
 
 /* Frame data entry */
 .form-container { background: #34495e; padding: 20px; border-radius: 8px; max-width: 600px; margin: auto; }
-.input-box { margin-bottom: 15px; }
-label { display: block; margin-bottom: 5px; }
-input, select { width: 100%; padding: 8px; border-radius: 4px; border: none; }
+
 .price-display { background: #27ae60; padding: 10px; margin-top: 10px; font-weight: bold; text-align: center; }
 .hidden { display: none; }
 .inv_btn_red {
@@ -1035,5 +1107,18 @@ input, select { width: 100%; padding: 8px; border-radius: 4px; border: none; }
     }
     .company-name {
         font-size: 18px;
+    }
+
+    .input-group, .input-group:nth-child(3):last-child { 
+        flex: 0 0 100%;
+    }    
+
+    .selection-wrapper { 
+        flex-direction: column;
+    }
+
+    .main-card, .header-container {
+        margin-bottom: 20px;
+        padding: 10px
     }
 }

@@ -101,23 +101,29 @@ if (isset($_POST['submit_frame'])) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Frame Entry - <?php echo htmlspecialchars($STORE_NAME); ?></title>
     <link rel="stylesheet" href="style.css">
+    <style>
+        h2 {
+            text-align: center;
+            margin-bottom: 35px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+        }
+    </style>
 </head>
-<body>
+<body style="min-height: 100vh; padding: 40px 20px;">
 
-    <header class="main-header">
-        <div class="header-content">
-            <div class="brand-info">
-                <img src="<?php echo htmlspecialchars($BRAND_IMAGE_PATH); ?>" alt="Brand Logo" class="brand-logo">
-                <h1 class="brand-name"><?php echo htmlspecialchars($STORE_NAME); ?></h1>
-                <p class="store-address"><?php echo htmlspecialchars($STORE_ADDRESS); ?></p> 
-            </div>            
-            <a href="logout.php" class="logout-button">Logout</a>
+    <div class="header-container">
+        <button class="logout-btn" onclick="alert('Logging out...'); window.location.href='logout.php';">
+            <span>Logout</span>
+        </button>
+
+        <div class="brand-section">
+            <div class="logo-box">
+                <img src="<?php echo htmlspecialchars($BRAND_IMAGE_PATH); ?>" alt="Brand Logo" style="height: 40px;">
+            </div>
+            <h1 class="company-name"><?php echo htmlspecialchars($STORE_NAME); ?></h1>
+            <p class="company-address"><?php echo htmlspecialchars($STORE_ADDRESS); ?></p>
         </div>
-    </header>
-
-    <div class="header-section">
-        <h1>FRAME DATA ENTRY</h1>
-        <p>Logged in as: <?php echo strtoupper($role); ?></p>
     </div>
 
     <?php if(isset($success)): ?>
@@ -125,117 +131,192 @@ if (isset($_POST['submit_frame'])) {
             <strong><?php echo $success; ?></strong>
         </div>
     <?php endif; ?>
+    
+    <div class="main-card">
+        <h2>FRAME DATA ENTRY</h2>
 
-    <div class="form-container">
-        <form method="POST">
-            <div class="input-box">
-                <label>Frame Brand</label>
-                <input type="text" name="brand" required placeholder="e.g. RAYBAN">
-            </div>
+        <form method="POST" onsubmit="event.preventDefault()">
+            <div class="form-grid">
+                <!-- FRAME NAME -->
+                <div class="input-group">
+                    <label for="brand">Frame Brand</label>
+                    <input type="text" id="brand" name="brand" required placeholder="e.g. RAYBAN">
+                </div>
 
-            <div class="input-box">
-                <label>Frame Code</label>
-                <input type="text" name="frame_code" placeholder="lz-786">
-            </div>
+                <!-- FRAME CODE -->
+                <div class="input-group">
+                    <label for="frame_code">Frame Code</label>
+                    <input type="text" id="frame_code" name="frame_code" placeholder="lz-786">
+                </div>
 
-            <div class="input-box">
-                <label>Frame Size</label>
-                <input type="text" name="frame_size" placeholder="00-00-786">
-            </div>
+                <!-- FRAME SIZE -->
+                <div class="input-group">
+                    <label for="frame_size">Frame Size</label>
+                    <input type="text" id="frame_size" name="frame_size" placeholder="00-00-786">
+                </div>
 
-            <div class="input-box">
+                <!-- HAS COLOR CODE? -->
                 <label>Has Color Code?</label>
-                <select name="has_color_code" id="color_opt" onchange="toggleColor()">
-                    <option value="no">No (Auto-Generate)</option>
-                    <option value="yes">Yes (Manual Input)</option>
-                </select>
-            </div>
+                <input type="hidden" name="has_color_code" id="has_color_code_input" value="no">
+                <div id="color_opt" class="selection-wrapper">
+                    <button value="no" type="button" class="neu-btn active" onclick="toggleNeu(this, 'has_color_code_input', true)">
+                        <span>No (Auto-Generate)</span>
+                        <div class="led"></div>
+                    </button>
+                    <button value="yes" type="button" class="neu-btn" onclick="toggleNeu(this, 'has_color_code_input', true)">
+                        <span>Yes (Manual Input)</span>
+                        <div class="led"></div>
+                    </button>
+                </div>
 
-            <div id="col_name_box" class="input-box">
-                <label>Color Name (Black, Gold, etc)</label>
-                <input type="text" name="color_name">
-            </div>
+                <!-- FRAME COLOR, CODE GENERATE -->
+                <div id="col_name_box" class="input-group">
+                    <label for="color_code_generate">Frame Color</label>
+                    <input type="text" id="color_code_generate" name="color_name" placeholder="Black Gold">
+                </div>
 
-            <div id="col_manual_box" class="input-box hidden">
-                <label>Manual Color Code</label>
-                <input type="text" name="color_manual_code">
-            </div>
+                <!-- FRAME COLOR, MANUAL -->
+                <div id="col_manual_box" class="input-group hidden">
+                    <label for="color_code_manual">Frame Color</label>
+                    <input type="text" id="color_code_manual" name="color_manual_code" placeholder="C1">
+                </div>
 
-            <div class="input-box">
-                <label>Material</label>
-                <select name="material">
-                    <?php foreach(loadJson('materials.json') as $m) echo "<option value='$m'>$m</option>"; ?>
-                </select>
-            </div>
+                <!-- MATERIAL -->
+                <div class="input-group">
+                    <label>Material</label>
+                    <select name="material">
+                        <?php foreach(loadJson('materials.json') as $m) echo "<option value='$m'>$m</option>"; ?>
+                    </select>
+                </div>
 
-            <div class="input-box">
-                <label>Lens Shape</label>
-                <select name="lens_shape">
-                    <?php foreach(loadJson('shapes.json') as $s) echo "<option value='$s'>$s</option>"; ?>
-                </select>
-            </div>
+                <!-- LENS SHAPE -->
+                <div class="input-group">
+                    <label>Lens Shape</label>
+                    <select name="lens_shape">
+                        <?php foreach(loadJson('shapes.json') as $s) echo "<option value='$s'>$s</option>"; ?>
+                    </select>
+                </div>
 
-            <div class="input-box">
-                <label>Frame Structure</label>
-                <select name="structure">
-                    <option value="full-rim">Full Rim</option>
-                    <option value="semi-rimless">Semi Rimless</option>
-                    <option value="rimless">Rimless</option>
-                </select>
-            </div>
+                <!-- FRAME STRUCTURE -->
+                <div class="input-group">
+                    <label>FRAME STRUCTURE</label>
+                    <input type="hidden" name="structure" id="frame_structure_input" value="full-rim">
+                    <div class="selection-wrapper">
+                        <button value="full-rim" type="button" class="neu-btn active"onclick="toggleNeu(this, 'frame_structure_input')">
+                            <span>Full Rim</span>
+                            <div class="led"></div>
+                        </button>
+                        <button value="semi-rimless" type="button" class="neu-btn"onclick="toggleNeu(this, 'frame_structure_input')">
+                            <span>Semi Rimless</span>
+                            <div class="led"></div>
+                        </button>
+                        <button value="rimless" type="button" class="neu-btn"onclick="toggleNeu(this, 'frame_structure_input')">
+                            <span>Rimless</span>
+                            <div class="led"></div>
+                        </button>
+                    </div>
+                </div>
 
-            <div class="input-box">
-                <label>Size Range</label>
-                <select name="size_range">
-                    <option value="small">Small</option>
-                    <option value="medium">Medium</option>
-                    <option value="large">Large</option>
-                </select>
-            </div>
+                <!-- FRAME SIZE RANGE -->
+                <div class="input-group">
+                    <label>SIZE RANGE</label>
+                    <input type="hidden" name="size_range" id="frame_size_range_input" value="small">
+                    <div class="selection-wrapper">
+                        <button value="small" type="button" class="neu-btn active"onclick="toggleNeu(this, 'frame_size_range_input')">
+                            <span>Small</span>
+                            <div class="led"></div>
+                        </button>
+                        <button value="medium" type="button" class="neu-btn"onclick="toggleNeu(this, 'frame_size_range_input')">
+                            <span>Medium</span>
+                            <div class="led"></div>
+                        </button>
+                        <button value="large" type="button" class="neu-btn"onclick="toggleNeu(this, 'frame_size_range_input')">
+                            <span>Large</span>
+                            <div class="led"></div>
+                        </button>
+                    </div>
+                </div>
 
-            <div class="input-box">
-                <label>Total Frame (Stock)</label>
-                <input type="number" name="total_frame" value="1" min="1" required style="background: #2c3e50; color: white; border: 1px solid #72ad46;">
-            </div>
+                <!-- FRAME TOTAL -->
+                <div class="input-group">
+                    <label for="total_frame">Total Frame (Stock)</label>
+                    <input type="number" id="total_frame" name="total_frame" value="1" min="1" required>
+                </div>
 
-            <?php if ($role === 'admin'): ?>
-            <div class="input-box">
-                <label>Cost Price (IDR)</label>
-                <input type="number" name="buy_price" id="buy_price" oninput="calculatePrice()">
-                <div class="price-display" id="sell_display">Selling Price: IDR 0</div>
-            </div>
-            <?php endif; ?>
+                <!-- COST PRICE -->
+                <?php if ($role === 'admin'): ?>
+                    <div class="input-group">
+                        <label for="buy_price">Cost Price (IDR)</label>
+                        <input type="number" id="buy_price" name="buy_price" oninput="calculatePrice()">
+                    </div>
+                    <div class="submit-main" id="sell_display">Selling Price: IDR 0</div>
+                <?php endif; ?>
 
-            <button type="submit" name="submit_frame" class="inv_btn_red">SAVE DATA</button>
-            <button onclick="window.location.href='manage_settings.php'" class="inv_btn_blue">UPDATE SETTINGS</button>
-            <p style="margin-top: 40px;"><a href="index.php" class="link-back">Back to Main Menu</a></p>
+                <button type="submit" name="submit_frame" class="submit-main" style="width: 40%">SAVE DATA</button>
+                <button class="submit-main" style="width: 40%" onclick="window.location.href='manage_settings.php'">UPDATE SETTINGS</button>
+
+                <footer style="background-color: #1e2124">
+                    <button style="width: auto; height: auto" class="neu-button" data-url="inventory.php" onclick="handleButtonClick(this)">
+                        BACK TO PREVIOUS PAGE
+                    </button>
+                </footer>
+            </div>
         </form>
+
+        <footer class="footer-container">
+            <div class="footer-text">
+                <?php echo $COPYRIGHT_FOOTER; ?>
+            </div>
+        </footer> 
     </div>
 
     <script>
-    function toggleColor() {
-        var opt = document.getElementById('color_opt').value;
-        document.getElementById('col_name_box').classList.toggle('hidden', opt === 'yes');
-        document.getElementById('col_manual_box').classList.toggle('hidden', opt === 'no');
-    }
+        function toggleColor() {
+            var opt = document.getElementById('color_opt').value;
+            document.getElementById('col_name_box').classList.toggle('hidden', opt === 'yes');
+            document.getElementById('col_manual_box').classList.toggle('hidden', opt === 'no');
+        }
 
-    function calculatePrice() {
-        var buy = document.getElementById('buy_price').value;
-        var sell = 0;
-        if (buy < 20000) sell = buy * 4.2;
-        else if (buy <= 55000) sell = buy * 4.5;
-        else if (buy <= 65000) sell = buy * 4.8;
-        else if (buy <= 90000) sell = buy * 5.0;
-        else sell = buy * 6.0;
+        function calculatePrice() {
+            var buy = document.getElementById('buy_price').value;
+            var sell = 0;
+            if (buy < 20000) sell = buy * 4.2;
+            else if (buy <= 55000) sell = buy * 4.5;
+            else if (buy <= 65000) sell = buy * 4.8;
+            else if (buy <= 90000) sell = buy * 5.0;
+            else sell = buy * 6.0;
 
-        sell = Math.ceil(sell / 5000) * 5000;
-        document.getElementById('sell_display').innerText = "Selling Price: IDR " + sell.toLocaleString();
-    }
+            sell = Math.ceil(sell / 5000) * 5000;
+            document.getElementById('sell_display').innerText = "Selling Price: IDR " + sell.toLocaleString();
+        }
+
+        function toggleNeu(el, hiddenInputId, isColorToggle = false) {
+            // 1. Get the value from the clicked button
+            const val = el.value;
+            
+            // 2. Update button visuals
+            const parent = el.parentElement;
+            parent.querySelectorAll('.neu-btn').forEach(b => b.classList.remove('active'));
+            el.classList.add('active');
+            
+            // 3. Save the value to the corresponding hidden input
+            document.getElementById(hiddenInputId).value = val;
+
+            // 4. If this is a color toggle, execute show/hide logic
+            if (isColorToggle) {
+                const colNameBox = document.getElementById('col_name_box');
+                const colManualBox = document.getElementById('col_manual_box');
+                
+                if (val === 'yes') {
+                    colNameBox.classList.add('hidden');
+                    colManualBox.classList.remove('hidden');
+                } else {
+                    colNameBox.classList.remove('hidden');
+                    colManualBox.classList.add('hidden');
+                }
+            }
+        }
     </script>
-
-    <footer>
-        <p><?php echo $COPYRIGHT_FOOTER; ?></p>
-    </footer>
 
 </body>
 </html>

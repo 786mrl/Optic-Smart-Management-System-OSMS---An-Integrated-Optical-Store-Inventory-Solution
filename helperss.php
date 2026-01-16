@@ -330,25 +330,6 @@
                         </button>
                     </div>
                 </div>
-
-                <div class="input-group">
-                    <label>Username</label>
-                    <input type="text" placeholder="Admin_01">
-                </div>
-
-                <div class="input-group">
-                    <label>Suhu Sistem</label>
-                    <input type="text" placeholder="45°C">
-                </div>
-
-                <div class="input-group">
-                    <label>Kategori Server</label>
-                    <select>
-                        <option>Mainframe</option>
-                        <option>Database</option>
-                        <option>Cloud Storage</option>
-                    </select>
-                </div>
             </div>
 
             <button type="submit" class="submit-main">Update Configuration</button>
