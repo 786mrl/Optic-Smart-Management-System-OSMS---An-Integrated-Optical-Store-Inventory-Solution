@@ -29,48 +29,74 @@ if (isset($_POST['action']) && $role == 'admin') {
         // 1. UPDATE/ADD MARGIN
         if ($_POST['action'] == 'update_margin') {
             $new_margins = [];
+
+            // GET EXISTING DATA FROM TABLE (If update form is pressed)
             if (isset($_POST['max'])) {
                 foreach ($_POST['max'] as $index => $max_val) {
-                    $clean_max = str_replace(',', '', $max_val);
                     $new_margins[] = [
-                        "max" => (int)$clean_max,
+                        "max" => (int)str_replace(',', '', $max_val),
                         "percent" => (int)$_POST['percent'][$index]
                     ];
                 }
+            } 
+            // IF "ADD NEW" FORM IS PRESSED (Data $_POST['max'] is empty)
+            // Then we take current data from the JSON file so it is not lost
+            else {
+                $new_margins = $data['margins'];
             }
-            // Add new entry if input exists
+
+            // ADD NEW DATA (If there is Add New input)
             if (!empty($_POST['add_max'])) {
                 $new_margins[] = [
                     "max" => (int)str_replace(',', '', $_POST['add_max']),
                     "percent" => (int)$_POST['add_percent']
                 ];
             }
-            // Auto-sort by max price to maintain calculation logic consistency
+
+            // Sort & Save
             usort($new_margins, function($a, $b) { return $a['max'] - $b['max']; });
             $data['margins'] = $new_margins;
-        } 
+        }
         // 2. DELETE MARGIN
         elseif ($_POST['action'] == 'delete_margin') {
-            unset($data['margins'][$_POST['item_key']]);
-            $data['margins'] = array_values($data['margins']);
+            // Ensure the correct item_key is used
+            if (isset($_POST['item_key'])) {
+                unset($data['margins'][$_POST['item_key']]);
+                $data['margins'] = array_values($data['margins']);
+            }
         }
         // 3. UPDATE/ADD SECRET CODE
         elseif ($_POST['action'] == 'update_secret') {
-            if (isset($_POST['secret'])) {
-                foreach ($_POST['secret'] as $char => $val) {
-                    $data['secret_map'][$char] = (int)str_replace(',', '', $val);
+            $new_map = [];
+
+            // GET EXISTING DATA FROM TABLE
+            if (isset($_POST['secret_chars'])) {
+                foreach ($_POST['secret_chars'] as $idx => $char) {
+                    $char = strtoupper($char);
+                    $new_map[$char] = (int)str_replace(',', '', $_POST['secret_values'][$idx]);
                 }
+            } 
+            // IF ADD NEW (Data $_POST['secret_chars'] is empty), use current JSON data
+            else {
+                $new_map = $data['secret_map'];
             }
-            // Add new code mapping (e.g., M)
+
+            // ADD NEW DATA
             if (!empty($_POST['add_char'])) {
-                $char = strtoupper($_POST['add_char']);
-                $val = (int)str_replace(',', '', $_POST['add_secret_val']);
-                $data['secret_map'][$char] = $val;
+                $new_char = strtoupper($_POST['add_char']);
+                $new_val = (int)str_replace(',', '', $_POST['add_secret_val']);
+                $new_map[$new_char] = $new_val;
             }
+
+            $data['secret_map'] = $new_map;
         }
         // 4. DELETE SECRET CODE
         elseif ($_POST['action'] == 'delete_secret') {
-            unset($data['secret_map'][$_POST['item_key']]);
+            // FIX: Your HTML uses 'item_key_secret'
+            $key_to_delete = $_POST['item_key_secret'];
+            if (isset($data['secret_map'][$key_to_delete])) {
+                unset($data['secret_map'][$key_to_delete]);
+            }
         }
     }
 
@@ -94,172 +120,278 @@ $price_rules = json_decode(file_get_contents($json_path . "price_rules.json"), t
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-
-<header class="main-header">
-    <div class="header-content">
-        <div class="brand-info">
-            <img src="<?php echo htmlspecialchars($BRAND_IMAGE_PATH); ?>" alt="Brand Logo" class="brand-logo">
-            <h1 class="brand-name"><?php echo htmlspecialchars($STORE_NAME); ?></h1>
-            <p class="store-address"><?php echo htmlspecialchars($STORE_ADDRESS); ?></p> 
-        </div>            
-        <a href="logout.php" class="logout-button">Logout</a>
-    </div>
-</header>
-
-<div class="container">
-    <h1>System Configuration</h1>
-
-    <div class="settings-card">
-        <h3 class="h3_display">1. Frame Material List</h3>
-
-        <table style="margin-left: auto; margin-right: auto;">
-            <thead>
-                <tr>
-                    <th style="text-align: center; padding: 12px; vertical-align: middle">Material Name</th>
-                    <th style="text-align: center; padding: 12px; vertical-align: middle; visibility: hidden;">Action</th>
-                    <th style="text-align: center; padding: 12px; vertical-align: middle;">Action</th>
-                </tr>
-            </thead>
-            <tbody>
-                <?php foreach($materials as $k => $v): ?>
-                    <tr>
-                        <td><input style="text-align: center" type="text" name="secret_chars[]" value="<?php echo $v; ?>"></td>
-                        
-                        <?php if($role == 'admin'): ?>
-                        <td>
-                            <form method="POST">
-                                <input type="hidden" name="target_file" value="materials.json">
-                                <input type="hidden" name="item_key" value="<?php echo $k; ?>">
-                                <td>
-                                <button type="submit" name="action" value="delete" class="btn-del-row" onclick="return confirm('Delete material: <?php echo $v; ?>?')">x</button>
-                                </td>
-                            </form>
-                        </td>
-                        <?php endif; ?>
-                    </tr>
-                <?php endforeach; ?>
-            </tbody>
-        </table>
-
-        <form method="POST">
-            <input type="hidden" name="target_file" value="materials.json">
-            <input type="text" name="new_value" placeholder="Add New Materials..." required style="width: 70%;">
-            <button type="submit" name="action" value="add" class="btn-save" style="width:25%; margin:0;">Add</button>
-        </form>
-    </div>
-
-    <hr style="border: 1px solid #4d5459; margin: 30px 0;">
-
-    <div class="settings-card">
-        <h3 class="h3_display">2. Lens Shape List</h3>
+    <div class="main-wrapper">
+        <div class="content-area" style="flex-direction: column">
+            <div class="header-container"  style="
+            margin-left: auto; 
+            margin-right: auto; 
+            width: 100%;">
+                <button class="logout-btn" onclick="window.location.href='logout.php';">
+                    <span>Logout</span>
+                </button>
+            
+                <div class="brand-section">
+                    <div class="logo-box">
+                        <img src="<?php echo htmlspecialchars($BRAND_IMAGE_PATH); ?>" alt="Brand Logo" style="height: 40px;">
+                    </div>
+                    <h1 class="company-name"><?php echo htmlspecialchars($STORE_NAME); ?></h1>
+                    <p class="company-address"><?php echo htmlspecialchars($STORE_ADDRESS); ?></p>
+                </div>
+            </div>
         
-        <table style="margin-left: auto; margin-right: auto;">
-            <thead>
-                <tr>
-                    <th style="text-align: center; padding: 12px; vertical-align: middle">Shape Name</th>
-                    <th style="text-align: center; padding: 12px; vertical-align: middle; visibility: hidden;">Action</th>
-                    <th style="text-align: center; padding: 12px; vertical-align: middle;">Action</th>
-                </tr>
-            </thead>
-            <tbody>
-                <?php foreach($shapes as $k => $v): ?>
-                    <tr>
-                        <td> <input style="text-align: center" type="text" name="secret_chars[]" value="<?php echo $v; ?>"></td>
+            <div class="main-card" style="
+            margin-left: auto; 
+            margin-right: auto; 
+            width: 100%;">
+                <h1>System Configuration</h1>
+            
+                <!-- FRAME MATERIAL LIST -->
+                <div class="window-card">
+                    <h2>FRAME MATERIAL LIST</h2>
+            
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Material Name</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            
+                            <tbody>
+                                <?php foreach($materials as $k => $v): ?>
+                                    <tr>
+                                        <td>
+                                            <input style="text-align: center" type="text" name="material_names[]" value="<?php echo $v; ?>">
+                                        </td>
 
-                        <?php if($role == 'admin'): ?>
-                        <td>
-                            <form method="POST" style="display:inline;">
-                                <input type="hidden" name="target_file" value="shapes.json">
-                                <input type="hidden" name="item_key" value="<?php echo $k; ?>">
-                                <td>
-                                <button type="submit" name="action" value="delete" class="btn-del-row" onclick="return confirm('Delete shape: <?php echo $v; ?>?')">x</button>
-                                </td>
+                                        <?php if($role == 'admin'): ?>
+                                            <td align="center">
+                                                <form method="POST" style="display: inline;">
+                                                    <input type="hidden" name="target_file" value="materials.json">
+                                                    <input type="hidden" name="item_key" value="<?php echo $k; ?>">
+                                                    <button type="submit" name="action" value="delete" class="btn-delete" 
+                                                            onclick="return confirm('Delete material: <?php echo $v; ?>?')">
+                                                        DELETE
+                                                    </button>
+                                                </form>
+                                            </td>
+                                        <?php endif; ?>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
                     
+                    <form method="POST" class="form-update">
+                        <div class="input-wrapper">
+                            <input type="hidden" name="target_file" value="materials.json">
+                            <input type="text" name="new_value" placeholder="Add New Materials..." required>
+                        </div>
+                        <button type="submit" name="action" value="add" class="btn-update">Update Data</button>
+                    </form>
+                </div>
+            
+                <!-- LENS SHAPE LIST -->
+                <div class="window-card">
+                    <h2>LENS SHAPE LIST</h2>
+            
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Shape Name</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            
+                            <tbody>
+                                <?php foreach($shapes as $k => $v): ?>
+                                    <tr>
+                                        <td>
+                                            <input style="text-align: center" type="text" name="shape_names[]" value="<?php echo $v; ?>">
+                                        </td>
+
+                                        <?php if($role == 'admin'): ?>
+                                            <td align="center">
+                                                <form method="POST" style="margin: 0;">
+                                                    <input type="hidden" name="target_file" value="shapes.json">
+                                                    <input type="hidden" name="item_key" value="<?php echo $k; ?>">
+                                                    <button type="submit" name="action" value="delete" class="btn-delete" 
+                                                            onclick="return confirm('Delete shape: <?php echo $v; ?>?')">
+                                                        DELETE
+                                                    </button>
+                                                </form>
+                                            </td>
+                                        <?php endif; ?>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <form method="POST" class="add-form">
+                        <div class="input-wrapper">
+                            <input type="hidden" name="target_file" value="shapes.json">
+                            <input type="text" name="new_value" placeholder="Add New Lense Shape..." required>
+                        </div>
+                        <button type="submit" name="action" value="add" class="btn-update">Update Data</button>
+                    </form>
+                </div>
+            
+                <!-- PRICE MARGIN RULES -->
+                <div class="window-card">
+                    <h2>PRICE MARGIN RULES</h2>
+
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Max Buy Price (IDR)</th>
+                                    <th>Margin (%)</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <form method="POST" id="update-form">
+                                    <input type="hidden" name="target_file" value="price_rules.json">
+                                    <input type="hidden" name="action" value="update_margin">
+
+                                    <?php foreach($price_rules['margins'] as $index => $m): ?>
+                                        <tr>
+                                            <td>
+                                                <input style="text-align: center" type="text" name="max[]" 
+                                                    value="<?php echo number_format($m['max']); ?>" onkeyup="formatNumber(this)">
+                                            </td>
+                                            <td>
+                                                <input style="text-align: center" type="text" name="percent[]" 
+                                                    value="<?php echo $m['percent']; ?>">
+                                            </td>
+                                            <td>
+                                                <button type="button" class="btn-delete" 
+                                                        onclick="if(confirm('Delete?')) { document.getElementById('delete-form-<?php echo $index; ?>').submit(); }">
+                                                    DELETE
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                </form>
+                            </tbody>
+                        </table>
+
+                        <?php foreach($price_rules['margins'] as $index => $m): ?>
+                            <form id="delete-form-<?php echo $index; ?>" method="POST" style="display:none;">
+                                <input type="hidden" name="target_file" value="price_rules.json">
+                                <input type="hidden" name="action" value="delete_margin">
+                                <input type="hidden" name="item_key" value="<?php echo $index; ?>">
                             </form>
-                        </td>
-                        <?php endif; ?>
-                    </tr>
-                <?php endforeach; ?>
-            </tbody>
-        </table>
+                        <?php endforeach; ?>
 
-        <form method="POST" class="add-form">
-            <input type="hidden" name="target_file" value="shapes.json">
-            <input type="text" name="new_value" placeholder="Add New Lense Shape" required style="width: 70%;">
-            <button type="submit" name="action" value="add" class="btn-save" style="width:25%; margin:0;">Add</button>
-        </form>
+                        <div style="margin-top: 15px; text-align: center;">
+                            <button type="submit" form="update-form" class="btn-update">Save & Sort Margin Rules</button>
+                        </div>
+                    </div>
+                    
+                    <form method="POST" class="add-form">
+                        <input type="hidden" name="target_file" value="price_rules.json">
+                        <input type="hidden" name="action" value="update_margin"> <div class="input-wrapper" style="display: flex; gap: 10px;">
+                            <input type="text" name="add_max" placeholder="New Max Price..." onkeyup="formatNumber(this)" required>
+                            <input type="text" name="add_percent" placeholder="New Margin %" required>
+                        </div>
+                        <button type="submit" class="btn-update">Add New Rule</button>
+                    </form>
+                </div>
+            
+                <!-- SECRET CODE MAPING -->
+                <div class="window-card">
+                    <h2>SECRET CODE MAPPING</h2>
+
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Character</th>
+                                    <th>Value (IDR)</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <form method="POST" id="form-update-secret">
+                                    <input type="hidden" name="target_file" value="price_rules.json">
+                                    <input type="hidden" name="action" value="update_secret">
+                                    
+                                    <?php foreach($price_rules['secret_map'] as $char => $val): ?>
+                                        <tr>
+                                            <td>
+                                                <input style="text-align: center; text-transform: uppercase;" 
+                                                    type="text" name="secret_chars[]" value="<?php echo $char; ?>" maxlength="1">
+                                            </td>
+                                            <td>
+                                                <input style="text-align: center" type="text" 
+                                                    name="secret_values[]" 
+                                                    value="<?php echo number_format($val); ?>" 
+                                                    onkeyup="formatNumber(this)">
+                                            </td>
+                                            <td>
+                                                <button type="button" class="btn-delete" 
+                                                        onclick="if(confirm('Delete code: <?php echo $char; ?>?')) { document.getElementById('delete-secret-<?php echo $char; ?>').submit(); }">
+                                                    DELETE
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                </form>
+                            </tbody>
+                        </table>
+
+                        <div style="margin-top: 15px; text-align: center;">
+                            <button type="submit" form="form-update-secret" class="btn-update">Save Secret Codes</button>
+                        </div>
+
+                        <?php foreach($price_rules['secret_map'] as $char => $val): ?>
+                            <form id="delete-secret-<?php echo $char; ?>" method="POST" style="display:none;">
+                                <input type="hidden" name="target_file" value="price_rules.json">
+                                <input type="hidden" name="action" value="delete_secret">
+                                <input type="hidden" name="item_key_secret" value="<?php echo $char; ?>">
+                            </form>
+                        <?php endforeach; ?>
+                    </div>
+                    
+                    <form method="POST" class="add-form">
+                        <input type="hidden" name="target_file" value="price_rules.json">
+                        <input type="hidden" name="action" value="update_secret">
+                        <div class="input-wrapper" style="display: flex; gap: 10px;">
+                            <input type="text" name="add_char" placeholder="Ex: M" maxlength="1" 
+                                style="text-transform: uppercase; text-align: center;" required>
+                            
+                            <input type="text" name="add_secret_val" placeholder="Value (IDR)" 
+                                onkeyup="formatNumber(this)" style="text-align: center;" required>
+                        </div>
+                        <button type="submit" class="btn-update">Add New Secret Code</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        
+        <div class="btn-group">
+            <button type="button" class="back-main" onclick="window.location.href='frame_data_entry.php'">BACK TO PREVIOUS PAGE</button>
+        </div>
+
+        <footer class="footer-container">
+            <p class="footer-text"><?php echo $COPYRIGHT_FOOTER; ?></p>
+        </footer>
     </div>
 
-    <div class="settings-card">
-        <h3 class="h3_display">Price Margin Rules</h3>
-        <form method="POST">
-            <input type="hidden" name="target_file" value="price_rules.json">
-            <table style="margin-left: auto; margin-right: auto;">
-                <tr><th>Max Buy Price (IDR)</th><th>Margin (%)</th><th>Action</th></tr>
-                <?php foreach($price_rules['margins'] as $index => $m): ?>
-                <tr>
-                    <td><input style="text-align: center" type="text" name="max[]" value="<?php echo number_format($m['max']); ?>" onkeyup="formatNumber(this)"></td>
-                    <td><input style="text-align: center" type="text" name="percent[]" value="<?php echo $m['percent']; ?>"></td>
-                    <td align="center">
-                        <button type="submit" name="action" value="delete_margin" onclick="document.getElementsByName('item_key')[0].value='<?php echo $index; ?>'; return confirm('Delete this row?')" class="btn-del-row">×</button>
-                    </td>
-                </tr>
-                <?php endforeach; ?>
-                <tr class="add-row">
-                    <td><input type="text" name="add_max" placeholder="New Max Price..." onkeyup="formatNumber(this)" style="text-align: center"></td>
-                    <td><input type="text" name="add_percent" placeholder="New Margin %" style="text-align: center"></td>
-                    <td align="center" style="width: 100px;" ><small>New</small></td>
-                </tr>
-            </table>
-            <input type="hidden" name="item_key" value="">
-            <button type="submit" name="action" value="update_margin" class="btn-save">Save & Sort Margin Rules</button>
-        </form>
-    </div>
-
-    <div class="settings-card">
-        <h3 class="h3_display">Secret Code Mapping</h3>
-        <form method="POST">
-            <input type="hidden" name="target_file" value="price_rules.json">
-            <table style="margin-left: auto; margin-right: auto;">
-                <tr><th>Character</th><th>Value (IDR)</th><th>Action</th></tr>
-                <?php foreach($price_rules['secret_map'] as $char => $val): ?>
-                <tr>
-                    <td><input style="text-align: center" type="text" name="secret_chars[]" value="<?php echo $char; ?>"></td>
-                    <td><input style="text-align: center" type="text" name="secret[<?php echo $char; ?>]" value="<?php echo number_format($val); ?>" onkeyup="formatNumber(this)"></td>
-                    <td align="center">
-                        <button type="submit" name="action" value="delete_secret" onclick="document.getElementsByName('item_key_secret')[0].value='<?php echo $char; ?>'; return confirm('Delete this code?')" class="btn-del-row">×</button>
-                    </td>
-                </tr>
-                <?php endforeach; ?>
-                <tr class="add-row">
-                    <td><input type="text" name="add_char" placeholder="Ex: M" maxlength="1" style="text-transform: uppercase;text-align: center"></td>
-                    <td><input type="text" name="add_secret_val" placeholder="Value (Ex: 500,000)" onkeyup="formatNumber(this)" style="text-align: center"></td>
-                    <td align="center" style="width: 100px;" ><small>New</small></td>
-                </tr>
-            </table>
-            <input type="hidden" name="item_key_secret" value="">
-            <button type="submit" name="action" value="update_secret" class="btn-save">Save Secret Codes</button>
-        </form>
-    </div>
-
-    <p style="margin-top: 40px;"><a href="frame_data_entry.php" class="link-back">Back to Frame Entry</a></p>
-</div>
-
-<script>
-/**
- * Formats input numbers with thousands separators
- */
-function formatNumber(input) {
-    let value = input.value.replace(/,/g, '');
-    if (!isNaN(value) && value !== "") {
-        input.value = parseFloat(value).toLocaleString('en-US');
-    }
-}
-</script>
-
-<footer>
-    <p><?php echo $COPYRIGHT_FOOTER; ?></p>
-</footer>
-
+    <script>
+        /**
+         * Formats input numbers with thousands separators
+         */
+        function formatNumber(input) {
+            let value = input.value.replace(/,/g, '');
+            if (!isNaN(value) && value !== "") {
+                input.value = parseFloat(value).toLocaleString('en-US');
+            }
+        }
+    </script>
 </body>
 </html>

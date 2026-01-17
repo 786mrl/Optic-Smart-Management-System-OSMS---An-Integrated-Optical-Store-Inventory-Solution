@@ -102,7 +102,13 @@ if (isset($_POST['submit_frame'])) {
     if ($stmt->execute()) {
         if (!file_exists('qrcodes')) mkdir('qrcodes');
         QRcode::png($ufc, "qrcodes/$ufc.png", QR_ECLEVEL_L, 4);
-        $success = "Data Saved Successfully! UFC: $ufc | Total Stock Added: $input_stock";
+        
+        // Store message in session, not a regular variable
+        $_SESSION['success_msg'] = "Data Saved Successfully! UFC: $ufc | Total Stock Added: $input_stock";
+        
+        // Redirect to the same page to clear POST data
+        header("Location: " . $_SERVER['PHP_SELF']);
+        exit(); // Stop script execution to prevent further processing
     }
 }
 ?>
@@ -156,19 +162,19 @@ if (isset($_POST['submit_frame'])) {
                         <!-- FRAME NAME -->
                         <div class="input-group">
                             <label for="brand">Frame Brand</label>
-                            <input type="text" id="brand" name="brand" required placeholder="e.g. RAYBAN">
+                            <input type="text" id="brand" name="brand" required placeholder="e.g. RAYBAN" style="text-transform: uppercase;">
                         </div>
         
                         <!-- FRAME CODE -->
                         <div class="input-group">
                             <label for="frame_code">Frame Code</label>
-                            <input type="text" id="frame_code" name="frame_code" placeholder="lz-786">
+                            <input type="text" id="frame_code" name="frame_code" placeholder="lz-786" style="text-transform: uppercase;">
                         </div>
         
                         <!-- FRAME SIZE -->
                         <div class="input-group">
                             <label for="frame_size">Frame Size</label>
-                            <input type="text" id="frame_size" name="frame_size" placeholder="00-00-786">
+                            <input type="text" id="frame_size" name="frame_size" placeholder="00-00-786" inputmode="decimal" pattern="[0-9\+\-\*\/]*">
                         </div>
         
                         <!-- HAS COLOR CODE? -->
@@ -190,13 +196,13 @@ if (isset($_POST['submit_frame'])) {
                         <!-- FRAME COLOR, CODE GENERATE -->
                         <div id="col_name_box" class="input-group">
                             <label for="color_code_generate">Frame Color</label>
-                            <input type="text" id="color_code_generate" name="color_name" placeholder="Black Gold">
+                            <input type="text" id="color_code_generate" name="color_name" placeholder="BLACK GOLD" style="text-transform: uppercase;">
                         </div>
         
                         <!-- FRAME COLOR, MANUAL -->
                         <div id="col_manual_box" class="input-group hidden">
                             <label for="color_code_manual">Frame Color</label>
-                            <input type="text" id="color_code_manual" name="color_manual_code" placeholder="C1">
+                            <input type="text" id="color_code_manual" name="color_manual_code" placeholder="C1" style="text-transform: uppercase;">
                         </div>
         
                         <!-- MATERIAL -->
@@ -221,15 +227,15 @@ if (isset($_POST['submit_frame'])) {
                             <input type="hidden" name="structure" id="frame_structure_input" value="full-rim">
                             <div class="selection-wrapper">
                                 <button style="min-width: 100px;" value="full-rim" type="button" class="neu-btn active"onclick="toggleNeu(this, 'frame_structure_input')">
-                                    <span>Full Rim</span>
+                                    <span>FULL RIM</span>
                                     <div class="led"></div>
                                 </button>
                                 <button style="min-width: 100px;" value="semi-rimless" type="button" class="neu-btn"onclick="toggleNeu(this, 'frame_structure_input')">
-                                    <span>Semi Rimless</span>
+                                    <span>SEMI RIMLESS</span>
                                     <div class="led"></div>
                                 </button>
                                 <button style="min-width: 100px;" value="rimless" type="button" class="neu-btn"onclick="toggleNeu(this, 'frame_structure_input')">
-                                    <span>Rimless</span>
+                                    <span>RIMLESS</span>
                                     <div class="led"></div>
                                 </button>
                             </div>
@@ -241,15 +247,15 @@ if (isset($_POST['submit_frame'])) {
                             <input type="hidden" name="size_range" id="frame_size_range_input" value="small">
                             <div class="selection-wrapper">
                                 <button style="min-width: 100px;" value="small" type="button" class="neu-btn active"onclick="toggleNeu(this, 'frame_size_range_input')">
-                                    <span>Small</span>
+                                    <span>SMALL</span>
                                     <div class="led"></div>
                                 </button>
                                 <button style="min-width: 100px;" value="medium" type="button" class="neu-btn"onclick="toggleNeu(this, 'frame_size_range_input')">
-                                    <span>Medium</span>
+                                    <span>MEDIUM</span>
                                     <div class="led"></div>
                                 </button>
                                 <button style="min-width: 100px;" value="large" type="button" class="neu-btn"onclick="toggleNeu(this, 'frame_size_range_input')">
-                                    <span>Large</span>
+                                    <span>LARGE</span>
                                     <div class="led"></div>
                                 </button>
                             </div>
@@ -265,24 +271,36 @@ if (isset($_POST['submit_frame'])) {
                         <?php if ($role === 'admin'): ?>
                             <div class="input-group">
                                 <label for="buy_price">Cost Price (IDR)</label>
-                                <input type="number" id="buy_price" name="buy_price" oninput="calculatePrice()">
+                                <input type="password" id="buy_price" name="buy_price" oninput="calculatePrice()" inputmode="numeric" autocomplete="off">
                             </div>
                             <div class="submit-main" id="sell_display">Selling Price: IDR 0</div>
                         <?php endif; ?>
                         
+                        <!-- Submit and Update Settings -->
                         <div class="btn-group">
                             <button type="submit" name="submit_frame" class="submit-main">SAVE DATA</button>
                             <button class="submit-main" onclick="window.location.href='manage_settings.php'">UPDATE SETTINGS</button>
-                            <?php if(isset($success)): ?>
+                            <!-- Alert if success -->
+                            <?php if(isset($_SESSION['success_msg'])): ?>
+                                <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
                                 <script>
                                     Swal.fire({
-                                        title: 'Berhasil!',
-                                        text: '<?php echo $success; ?>',
+                                        title: 'SUCCESS',
+                                        text: '<?php echo $_SESSION['success_msg']; ?>',
                                         icon: 'success',
-                                        confirmButtonText: 'Oke',
-                                        confirmButtonColor: '#28a745'
+                                        iconColor: '#00ff88',
+                                        background: '#2e3133',
+                                        confirmButtonText: 'GREAT',
+                                        customClass: {
+                                            popup: 'neumorph-alert',
+                                            title: 'neumorph-title',
+                                            htmlContainer: 'neumorph-content',
+                                            confirmButton: 'neumorph-button'
+                                        },
+                                        buttonsStyling: false
                                     });
                                 </script>
+                                <?php unset($_SESSION['success_msg']); // Delete message after it is displayed ?>
                             <?php endif; ?>
                         </div>
                     </div>

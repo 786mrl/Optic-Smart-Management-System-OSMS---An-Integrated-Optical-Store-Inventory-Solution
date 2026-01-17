@@ -51,6 +51,9 @@ close_db_connection($conn);
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>User Login</title>
     <link rel="stylesheet" href="style.css">
 </head>
@@ -81,5 +84,22 @@ close_db_connection($conn);
         
         <a href="create_user.php" class="forgot-pass">No Account? Create Account</a>
     </div>
+
+    <script>
+        // 1. Replace the current page history so the user cannot return to the admin page
+        if (window.history.replaceState) {
+            window.history.replaceState(null, null, window.location.href);
+        }
+
+        // 2. Prevent back navigation by pushing a new state
+        window.history.pushState(null, null, window.location.href);
+        window.onpopstate = function() {
+            // If the user presses back, force them to stay on this page
+            window.history.pushState(null, null, window.location.href);
+            
+            // Optional: Provide a small message or leave it as is to feel like a logged-out application
+            console.log("Back button disabled after logout.");
+        };
+    </script>
 </body>
 </html>

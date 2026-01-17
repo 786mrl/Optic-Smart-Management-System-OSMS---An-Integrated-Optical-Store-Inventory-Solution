@@ -57,7 +57,6 @@ $username = $_SESSION['username'] ?? 'User';
                     </button>
                 </div>
             </div>
-
         </div>
         
         <div class="btn-group">
