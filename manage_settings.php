@@ -230,7 +230,7 @@ $price_rules = json_decode(file_get_contents($json_path . "price_rules.json"), t
                         </table>
                     </div>
                     
-                    <form method="POST" class="add-form">
+                    <form method="POST" class="form-update">
                         <div class="input-wrapper">
                             <input type="hidden" name="target_file" value="shapes.json">
                             <input type="text" name="new_value" placeholder="Add New Lense Shape..." required>
@@ -292,7 +292,7 @@ $price_rules = json_decode(file_get_contents($json_path . "price_rules.json"), t
                         </div>
                     </div>
                     
-                    <form method="POST" class="add-form">
+                    <form method="POST" class="form-update">
                         <input type="hidden" name="target_file" value="price_rules.json">
                         <input type="hidden" name="action" value="update_margin"> <div class="input-wrapper" style="display: flex; gap: 10px;">
                             <input type="text" name="add_max" placeholder="New Max Price..." onkeyup="formatNumber(this)" required>
@@ -357,7 +357,7 @@ $price_rules = json_decode(file_get_contents($json_path . "price_rules.json"), t
                         <?php endforeach; ?>
                     </div>
                     
-                    <form method="POST" class="add-form">
+                    <form method="POST" class="form-update">
                         <input type="hidden" name="target_file" value="price_rules.json">
                         <input type="hidden" name="action" value="update_secret">
                         <div class="input-wrapper" style="display: flex; gap: 10px;">
