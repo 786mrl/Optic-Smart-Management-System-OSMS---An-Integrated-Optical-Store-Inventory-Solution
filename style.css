@@ -31,6 +31,10 @@ body {
     padding: 20px;
 }
 
+.hidden {
+    display: none !important;
+}
+
 /* Container for messages/alerts */
 .alert-container {
     padding: 15px;

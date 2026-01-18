@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Jan 18, 2026 at 03:10 PM
+-- Generation Time: Jan 18, 2026 at 05:47 PM
 -- Server version: 10.1.38-MariaDB
 -- PHP Version: 7.3.2
 
@@ -57,9 +57,11 @@ INSERT INTO `frame_staging` (`ufc`, `brand`, `frame_code`, `frame_size`, `color_
 ('CHANEL-58472-52-16-145-c5', 'CHANEL', '58472', '52-16-145', 'c5', 'PLASTIC', 'Square', 'full-rim', 'medium', '68000.00', '340000.00', 'LZK40', 1, '2026-01-17 04:25:34', '2026-01-17 04:25:34'),
 ('EYEWEAR-2247-53-18-145-C1', 'EYE WEAR', '2247', '53-18-145', 'C1', 'PLASTIC', 'Square', 'full-rim', 'medium', '78000.00', '390000.00', 'LZKH40', 1, '2026-01-17 03:20:23', '2026-01-17 03:20:23'),
 ('HUMANSKULL-H1520-45-23-140-C2', 'HUMAN SKULL', 'H1520', '45-23-140', 'C2', 'PLASTIC', 'Oval', 'full-rim', 'medium', '38000.00', '175000.00', 'LZIH25', 1, '2026-01-17 04:14:20', '2026-01-17 04:14:20'),
+('KELLYS-Kel53006-52-19-145-col.7', 'KELLYS', 'Kel53006', '52-19-145', 'col.7', 'B TITANIUM', 'SQUARE', 'full-rim', 'medium', '43000.00', '195000.00', 'LZIH45', 2, '2026-01-18 16:44:46', '2026-01-18 16:45:51'),
 ('LENZA-lz-786-00-00-786-col.6', 'LENZA', 'lz-786', '00-00-786', 'col.6', 'METAL', 'Aviator', 'full-rim', 'large', '31000.00', '140000.00', 'LZI40', 3, '2026-01-17 03:25:32', '2026-01-17 03:25:32'),
 ('MARXSTUDIO-Mstm-161-50-18-C5', 'MARX STUDIO', 'Mst m-161', '50-18', 'C5', 'PLASTIC', 'Square', 'full-rim', 'medium', '105000.00', '630000.00', 'LZMI30', 1, '2026-01-16 12:06:22', '2026-01-16 12:06:22'),
 ('PRADA-1376-52-15-140-col.5', 'PRADA', '1376', '52-15-140', 'col.5', 'TITANIUM', 'Cat Eye', 'full-rim', 'medium', '0.00', '0.00', '', 2, '2026-01-16 12:04:35', '2026-01-16 12:04:35'),
+('RAIS-Umi-786-00-00-786-C1', 'RAIS', 'Umi-786', '00-00-786', 'C1', 'METAL', 'SQUARE', 'full-rim', 'medium', '600000.00', '0.00', 'LZ00', 1, '2026-01-18 16:43:32', '2026-01-18 16:43:32'),
 ('TAKEYAMA-TAKE648-52-15-140-C5', 'TAKEYAMA', 'TAKE 648', '52-15-140', 'C5', 'METAL', 'Cat Eye', 'full-rim', 'medium', '36000.00', '165000.00', 'LZIH15', 1, '2026-01-17 03:36:35', '2026-01-17 03:36:35'),
 ('Z-GENERATION-28631-50-23-137-C12', 'Z-GENERATION', '28631', '50-23-137', 'C12', 'METAL', 'Square', 'full-rim', 'medium', '56000.00', '270000.00', 'LZJH20', 1, '2026-01-17 03:43:44', '2026-01-17 03:43:44'),
 ('Z-GENERATION-a262021-49-17-140-C1', 'Z-GENERATION', 'a26 2021', '49-17-140', 'C1', 'METAL', 'Square', 'full-rim', 'medium', '56000.00', '270000.00', 'LZJH20', 1, '2026-01-17 04:13:07', '2026-01-17 04:13:07');
@@ -82,15 +84,15 @@ CREATE TABLE `settings` (
 
 INSERT INTO `settings` (`setting_key`, `setting_value`, `description`) VALUES
 ('backup_location', '/var/www/backup/optic_pos/', 'Server Path for Backup File Storage'),
-('brand_image_location', 'image/brand_image.png', 'File path or URL for the company brand logo image.'),
+('brand_image_location', 'image/brand_logo_1768752417.png', 'File path or URL for the company brand logo image.'),
 ('copyright_footer', '© 2026 LENZA OPTIC. All rights reserved.', 'The copyright message displayed in the footer of all application pages.'),
 ('currency_code', 'IDR', 'Currency Code (e.g., IDR, USD)'),
 ('invoice_format_prefix', '[data_sequence]/LO-C/[invoice_number]/[test_result_table_number]/[month]/[year]', 'Prefix for Invoice Numbering (e.g., INV-2026-...)'),
 ('last_backup_date', '2026-01-01', 'Date of the Last System Backup (Auto-updated)'),
 ('low_stock_threshold', '5', 'Global Low Stock Warning Limit (Units)'),
 ('receipt_footer_msg', 'Terima kasih telah berbelanja di LENZA OPTIC!', 'Custom Message at the Receipt Footer'),
-('starting_invoice_number', '15.20', 'The starting sequence/text string for invoice numbering (resets automatically).'),
-('store_address', 'JL. APEL RAYA NO. 51, KURANJI, PADANG, SUMATERA BARAT, 25157, Indonesia', 'Store Physical Address'),
+('starting_invoice_number', '16.31', 'The starting sequence/text string for invoice numbering (resets automatically).'),
+('store_address', 'Jl. Apel Raya, No. 51, Kuranji, Padang, Sumatera Barat, 25157, Indonesia', 'Store Physical Address'),
 ('store_name', 'LENZA OPTIC', 'Store Name for Receipts and Reports'),
 ('store_phone', '+62 812 6764 6916', 'Store Contact Phone Number'),
 ('tax_rate_percent', '11.0', 'Sales Tax / VAT Percentage'),

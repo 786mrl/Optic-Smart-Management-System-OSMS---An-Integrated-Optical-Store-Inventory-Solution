@@ -9,7 +9,9 @@ if (!isset($_SESSION['user_id'])) { header("Location: index.php"); exit(); }
 $role = $_SESSION['role'] ?? 'staff';
 
 function loadJson($file) {
-    return json_decode(file_get_contents("data_json/$file"), true);
+    $path = "data_json/$file";
+    if (!file_exists($path)) return []; 
+    return json_decode(file_get_contents($path), true);
 }
 
 if (isset($_POST['submit_frame'])) {
@@ -20,7 +22,7 @@ if (isset($_POST['submit_frame'])) {
     // color
     if ($_POST['has_color_code'] == 'no') {
         $colors = loadJson('colors.json');
-        $input_color = strtolower($_POST['color_name']);
+        $input_color = strtolower($_POST['color_name'] ?? '');
         if (!isset($colors[$input_color])) {
             $next_col = "col." . (count($colors) + 1);
             $colors[$input_color] = $next_col;
@@ -318,41 +320,45 @@ if (isset($_POST['submit_frame'])) {
     </div>
 
     <script>
-        function toggleColor() {
-            // Get the value from the hidden input instead of the div
-            var opt = document.getElementById('has_color_code_input').value;
-            
-            // If 'yes', hide col_name_box and show col_manual_box
-            document.getElementById('col_name_box').classList.toggle('hidden', opt === 'yes');
-            document.getElementById('col_manual_box').classList.toggle('hidden', opt === 'no');
-        }
+        // Dynamically fetching margin data from PHP to JS
+        const priceRules = <?php echo file_get_contents("data_json/price_rules.json"); ?>;
+        const margins = priceRules.margins;
 
         function calculatePrice() {
-            var buy = document.getElementById('buy_price').value;
-            var sell = 0;
-            if (buy < 20000) sell = buy * 4.2;
-            else if (buy <= 55000) sell = buy * 4.5;
-            else if (buy <= 65000) sell = buy * 4.8;
-            else if (buy <= 90000) sell = buy * 5.0;
-            else sell = buy * 6.0;
+            let buy = parseFloat(document.getElementById('buy_price').value);
+            let sell = 0;
 
-            sell = Math.ceil(sell / 5000) * 5000;
-            document.getElementById('sell_display').innerText = "Selling Price: IDR " + sell.toLocaleString();
+            if (!isNaN(buy) && buy > 0) {
+                // Find the appropriate margin rule from the JSON data
+                let rule = margins.find(m => buy <= m.max);
+                
+                // If price exceeds the highest max, use the percentage from the last rule
+                if (!rule) {
+                    rule = margins[margins.length - 1];
+                }
+
+                // Calculation: cost price + (cost price * percentage / 100)
+                sell = buy + (buy * (rule.percent / 100));
+
+                // Round up to the nearest multiple of 5,000 (matching your PHP logic)
+                sell = Math.ceil(sell / 5000) * 5000;
+            }
+
+            document.getElementById('sell_display').innerText = "Selling Price: IDR " + sell.toLocaleString('id-ID');
         }
 
+        // 1. Primary Toggle Function
         function toggleNeu(el, hiddenInputId, isColorToggle = false) {
-            // 1. Get the value from the clicked button
             const val = el.value;
             
-            // 2. Update button visuals
+            // Update button visuals
             const parent = el.parentElement;
             parent.querySelectorAll('.neu-btn').forEach(b => b.classList.remove('active'));
             el.classList.add('active');
             
-            // 3. Save the value to the corresponding hidden input
+            // Save value to hidden input for form submission
             document.getElementById(hiddenInputId).value = val;
 
-            // 4. If this is a color toggle, execute show/hide logic
             if (isColorToggle) {
                 const colNameBox = document.getElementById('col_name_box');
                 const colManualBox = document.getElementById('col_manual_box');
@@ -366,6 +372,25 @@ if (isset($_POST['submit_frame'])) {
                 }
             }
         }
+
+        // 2. Execution on Page Load (Place at the bottom of the script)
+        document.addEventListener('DOMContentLoaded', function() {
+            // Execute for all button groups that have the 'active' class by default
+            document.querySelectorAll('.neu-btn.active').forEach(btn => {
+                
+                // Find the associated hidden input ID (from the onclick attribute)
+                // or execute manually for specific cases
+                if (btn.closest('#color_opt')) {
+                    toggleNeu(btn, 'has_color_code_input', true);
+                } else {
+                    // Logic for 'structure' and 'size_range' groups
+                    const parent = btn.closest('.input-group');
+                    const hiddenInput = parent.querySelector('input[type="hidden"]');
+                    
+                    if(hiddenInput) toggleNeu(btn, hiddenInput.id, false);
+                }
+            });
+        });
     </script>
 
 </body>
