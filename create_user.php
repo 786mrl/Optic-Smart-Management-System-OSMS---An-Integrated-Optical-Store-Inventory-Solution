@@ -103,18 +103,15 @@
         <?php echo $message; ?>
         <form action="create_user.php" method="POST" onsubmit="return validatePassword()">
                 <div class="form-group">
-                    <label>Username</label>
                     <input class="input-neu" type="text" name="username" placeholder="Username" required>
                 </div>    
     
                 <div class="form-group">
-                    <label>Password</label>
-                    <input type="password" class="input-neu" name="password" id="password"  placeholder="••••••••" required>
+                    <input type="password" class="input-neu" name="password" id="password"  placeholder="Password" required>
                 </div>
     
                 <div class="form-group">
-                    <label>Repeat Password</label>
-                    <input type="password" class="input-neu"  name="confirm_password" id="confirm_password" placeholder="••••••••" required onkeyup="validatePassword()">
+                    <input type="password" class="input-neu"  name="confirm_password" id="confirm_password" placeholder="Repeat Password" required onkeyup="validatePassword()">
                 </div>
                 
                 <div id="password_error" style="margin-bottom: 15px;"></div>

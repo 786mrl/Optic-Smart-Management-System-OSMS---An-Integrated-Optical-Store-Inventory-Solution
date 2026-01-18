@@ -1,16 +1,16 @@
 <?php
-session_start();
-include 'db_config.php';
-include 'config_helper.php';
+    session_start();
+    include 'db_config.php';
+    include 'config_helper.php';
 
-// Pastikan user sudah login
-if (!isset($_SESSION['user_id'])) {
-    header("Location: index.php");
-    exit();
-}
+    // Pastikan user sudah login
+    if (!isset($_SESSION['user_id'])) {
+        header("Location: index.php");
+        exit();
+    }
 
-$username = $_SESSION['username'] ?? 'User';
-$role = $_SESSION['role'] ?? 'staff'; 
+    $username = $_SESSION['username'] ?? 'User';
+    $role = $_SESSION['role'] ?? 'staff'; 
 ?>
 
 <!DOCTYPE html>

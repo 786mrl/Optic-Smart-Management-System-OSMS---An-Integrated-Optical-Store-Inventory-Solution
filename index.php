@@ -1,5 +1,5 @@
 <?php
-// index.php
+// index.php theme: Dark Neumorphism
 session_start();
 $current_role = $_SESSION['role'];
 $username = $_SESSION['username'];

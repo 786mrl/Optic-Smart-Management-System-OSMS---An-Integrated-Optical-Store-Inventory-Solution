@@ -279,7 +279,7 @@ if (isset($_POST['submit_frame'])) {
                         <!-- Submit and Update Settings -->
                         <div class="btn-group">
                             <button type="submit" name="submit_frame" class="submit-main">SAVE DATA</button>
-                            <button class="submit-main" onclick="window.location.href='manage_settings.php'">UPDATE SETTINGS</button>
+                            <button type="button" class="submit-main" onclick="window.location.href='manage_settings.php'">UPDATE SETTINGS</button>
                             <!-- Alert if success -->
                             <?php if(isset($_SESSION['success_msg'])): ?>
                                 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>

@@ -1,19 +1,19 @@
 <?php
-// admin.php
-session_start();
+    // admin.php
+    session_start();
 
-$username = $_SESSION['username'] ?? 'Guest';
-$current_role = $_SESSION['role'] ?? 'N/A';
+    $username = $_SESSION['username'] ?? 'Guest';
+    $current_role = $_SESSION['role'] ?? 'N/A';
 
-include 'db_config.php';      // 1. DB Connection
-include 'config_helper.php';  // 2. Fetch Global Settings (STORE_NAME, BRAND_IMAGE_PATH)
+    include 'db_config.php';      // 1. DB Connection
+    include 'config_helper.php';  // 2. Fetch Global Settings (STORE_NAME, BRAND_IMAGE_PATH)
 
-// Check if user is logged in and is an Admin
-if ($_SESSION['role'] !== 'admin') {
-    // Redirect non-admins or guests
-    header("Location: index.php"); 
-    exit();
-}
+    // Check if user is logged in and is an Admin
+    if ($_SESSION['role'] !== 'admin') {
+        // Redirect non-admins or guests
+        header("Location: index.php"); 
+        exit();
+    }
 ?>
 
 <!DOCTYPE html>
@@ -25,50 +25,52 @@ if ($_SESSION['role'] !== 'admin') {
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div class="header-container">
-        <button class="logout-btn" onclick="window.location.href='logout.php';">
-            <span>Logout</span>
-        </button>
-
-        <div class="brand-section">
-            <div class="logo-box">
-                <img src="<?php echo htmlspecialchars($BRAND_IMAGE_PATH); ?>" alt="Brand Logo" style="height: 40px;">
-        </div>
-            <h1 class="company-name"><?php echo htmlspecialchars($STORE_NAME); ?></h1>
-            <p class="company-address"><?php echo htmlspecialchars($STORE_ADDRESS); ?></p>
-        </div>
-    </div>
-
-    <div class="selection-container">
-        <button class="neu-button" data-url="approve_users.php" onclick="handleButtonClick(this)">
-            <span class="icon">✅</span>
-            Approve New Staff Users
-            <div class="led"></div>
-        </button>
-
-        <button class="neu-button" data-url="manage_roles.php" onclick="handleButtonClick(this)">
-            <span class="icon">🤝</span>
-            Manage User Roles
-            <div class="led"></div>
-        </button>
-
-        <button class="neu-button" data-url="system_config.php" onclick="handleButtonClick(this)">
-            <span class="icon">⚙️</span>
-            System Configuration
-            <div class="led"></div>
-        </button>
-
-        <footer style="background-color: #1e2124">
-            <button style="width: auto; height: auto" class="neu-button" data-url="index.php" onclick="handleButtonClick(this)">
-                BACK TO PREVIOUS PAGE
-            </button>
-        </footer>
+    <div class="main-wrapper">
+        <div class="content-area">
+            <div class="header-container">
+                <button class="logout-btn" onclick="window.location.href='logout.php';">
+                    <span>Logout</span>
+                </button>
         
-        <footer class="footer-container">
-            <div class="footer-text">
-                <?php echo $COPYRIGHT_FOOTER; ?>
+                <div class="brand-section">
+                    <div class="logo-box">
+                        <img src="<?php echo htmlspecialchars($BRAND_IMAGE_PATH); ?>" alt="Brand Logo" style="height: 40px;">
+                </div>
+                    <h1 class="company-name"><?php echo htmlspecialchars($STORE_NAME); ?></h1>
+                    <p class="company-address"><?php echo htmlspecialchars($STORE_ADDRESS); ?></p>
+                </div>
             </div>
-        </footer>  
+            
+            <div class="selection-container">
+                <div class="button-grid">
+                    <button class="neu-button" data-url="approve_users.php" onclick="handleButtonClick(this)">
+                        <span class="icon">✅</span>
+                        Approve New Staff Users
+                        <div class="led"></div>
+                    </button>
+            
+                    <button class="neu-button" data-url="manage_roles.php" onclick="handleButtonClick(this)">
+                        <span class="icon">🤝</span>
+                        Manage User Roles
+                        <div class="led"></div>
+                    </button>
+            
+                    <button class="neu-button" data-url="system_config.php" onclick="handleButtonClick(this)">
+                        <span class="icon">⚙️</span>
+                        System Configuration
+                        <div class="led"></div>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="btn-group">
+            <button type="button" class="back-main" onclick="window.location.href='index.php'">BACK TO PREVIOUS PAGE</button>
+        </div>
+
+        <footer class="footer-container">
+            <p class="footer-text"><?php echo $COPYRIGHT_FOOTER; ?></p>
+        </footer>
     </div>
 
     <script>
