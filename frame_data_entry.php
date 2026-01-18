@@ -319,7 +319,10 @@ if (isset($_POST['submit_frame'])) {
 
     <script>
         function toggleColor() {
-            var opt = document.getElementById('color_opt').value;
+            // Get the value from the hidden input instead of the div
+            var opt = document.getElementById('has_color_code_input').value;
+            
+            // If 'yes', hide col_name_box and show col_manual_box
             document.getElementById('col_name_box').classList.toggle('hidden', opt === 'yes');
             document.getElementById('col_manual_box').classList.toggle('hidden', opt === 'no');
         }
