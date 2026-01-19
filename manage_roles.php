@@ -223,6 +223,7 @@
                                         <th>Actions Control</th>
                                     </tr>
                                 </thead>
+                                
                                 <tbody>
                                     <?php foreach ($all_users as $user): ?>
                                         <tr>

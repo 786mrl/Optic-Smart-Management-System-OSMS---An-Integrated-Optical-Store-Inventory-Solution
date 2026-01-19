@@ -447,7 +447,7 @@ h1 {
 .main-card {
     background-color: var(--bg-color);
     width: 100%;
-    max-width: 600px;
+    max-width: none;
     padding: 40px;
     border-radius: 40px;
     box-shadow: 20px 20px 60px var(--shadow-dark), 
@@ -575,6 +575,7 @@ h1 {
     flex-direction: column;
     min-height: 100vh;
     width: 100%;
+    max-width: 1400px;
 }
 .content-area {
     display: flex;
@@ -903,7 +904,6 @@ tr td {
 /* --- MAIN CONTAINER --- */
 .glass-window {
     width: 100%;
-    max-width: 1000px;
     background: linear-gradient(145deg, #23272b, #1e2124);
     border-radius: 30px;
     padding: 35px;

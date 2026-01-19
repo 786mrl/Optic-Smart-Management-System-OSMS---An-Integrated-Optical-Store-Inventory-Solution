@@ -175,7 +175,7 @@
                         <!-- FRAME CODE -->
                         <div class="input-group">
                             <label for="frame_code">Frame Code</label>
-                            <input type="text" id="frame_code" name="frame_code" placeholder="lz-786" style="text-transform: uppercase;">
+                            <input type="text" id="frame_code" name="frame_code" pattern="[A-Za-z0-9\-]+" placeholder="lz-786" style="text-transform: uppercase;">
                         </div>
         
                         <!-- FRAME SIZE -->
