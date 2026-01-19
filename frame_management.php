@@ -52,6 +52,12 @@
                         <div class="led"></div>
                     </button>
                 
+                    <button class="neu-button" data-url="scan_frame.php" onclick="handleButtonClick(this)">
+                        <span class="icon">📷</span>
+                        Scan Frame (Preview)
+                        <div class="led"></div>
+                    </button>
+                
                     <?php if ($role === 'admin'): ?>
                         <button class="neu-button" data-url="frame_master_database.php" onclick="handleButtonClick(this)">
                             <span class="icon">🗄️</span>

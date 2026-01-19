@@ -1,118 +1,123 @@
 <?php
-session_start();
-include 'db_config.php';
-include 'config_helper.php';
-include 'phpqrcode/qrlib.php'; 
+    session_start();
+    include 'db_config.php';
+    include 'config_helper.php';
+    include 'phpqrcode/qrlib.php'; 
 
-if (!isset($_SESSION['user_id'])) { header("Location: index.php"); exit(); }
+    if (!isset($_SESSION['user_id'])) { header("Location: index.php"); exit(); }
 
-$role = $_SESSION['role'] ?? 'staff';
+    $role = $_SESSION['role'] ?? 'staff';
 
-function loadJson($file) {
-    $path = "data_json/$file";
-    if (!file_exists($path)) return []; 
-    return json_decode(file_get_contents($path), true);
-}
-
-if (isset($_POST['submit_frame'])) {
-    $brand = strtoupper($_POST['brand']);
-    $f_code = !empty($_POST['frame_code']) ? $_POST['frame_code'] : "lz-786";
-    $f_size = !empty($_POST['frame_size']) ? $_POST['frame_size'] : "00-00-786";
-    
-    // color
-    if ($_POST['has_color_code'] == 'no') {
-        $colors = loadJson('colors.json');
-        $input_color = strtolower($_POST['color_name'] ?? '');
-        if (!isset($colors[$input_color])) {
-            $next_col = "col." . (count($colors) + 1);
-            $colors[$input_color] = $next_col;
-            file_put_contents("data_json/colors.json", json_encode($colors));
-        }
-        $color_code = $colors[$input_color];
-    } else {
-        $color_code = $_POST['color_manual_code'];
+    function loadJson($file) {
+        $path = "data_json/$file";
+        if (!file_exists($path)) return []; 
+        return json_decode(file_get_contents($path), true);
     }
 
-    // ufc (unique frame code)
-    $ufc = str_replace(' ', '', "$brand-$f_code-$f_size-$color_code");
-
-    // stock, default 1
-    $input_stock = !empty($_POST['total_frame']) ? (int)$_POST['total_frame'] : 1;
-
-    // price & secret selling price code
-    $buy_price = ($role === 'admin') ? (float)$_POST['buy_price'] : 0;
-    $sell_price = 0;
-    $secret_code = "";
-
-    if ($buy_price > 0) {
-        $rules = loadJson('price_rules.json');
-        foreach ($rules['margins'] as $m) {
-            if ($buy_price <= $m['max']) {
-                $sell_price = $buy_price + ($buy_price * ($m['percent'] / 100));
-                break;
+    if (isset($_POST['submit_frame'])) {
+        $brand = strtoupper($_POST['brand']);
+        $f_code = !empty($_POST['frame_code']) ? $_POST['frame_code'] : "lz-786";
+        $f_size = !empty($_POST['frame_size']) ? $_POST['frame_size'] : "00-00-786";
+        
+        // color
+        if ($_POST['has_color_code'] == 'no') {
+            $colors = loadJson('colors.json');
+            $input_color = strtolower($_POST['color_name'] ?? '');
+            if (!isset($colors[$input_color])) {
+                $next_col = "col." . (count($colors) + 1);
+                $colors[$input_color] = $next_col;
+                file_put_contents("data_json/colors.json", json_encode($colors));
             }
+            $color_code = $colors[$input_color];
+        } else {
+            $color_code = $_POST['color_manual_code'];
         }
-        $sell_price = ceil($sell_price / 5000) * 5000;
 
-        $temp_sell = $sell_price;
-        $secret_code = "LZ";
-        $map = $rules['secret_map'];
-        arsort($map); 
-        
-        foreach ($map as $char => $val) {
-            if ($temp_sell >= $val) {
-                $secret_code .= $char;
-                $temp_sell -= $val;
+        // ufc (unique frame code)
+        $ufc = str_replace(' ', '', "$brand-$f_code-$f_size-$color_code");
+
+        // stock, default 1
+        $input_stock = !empty($_POST['total_frame']) ? (int)$_POST['total_frame'] : 1;
+
+        // price & secret selling price code
+        $buy_price = ($role === 'admin') ? (float)$_POST['buy_price'] : 0;
+        $sell_price = 0;
+        $secret_code = "";
+
+        if ($buy_price > 0) {
+            $rules = loadJson('price_rules.json');
+            foreach ($rules['margins'] as $m) {
+                if ($buy_price <= $m['max']) {
+                    $sell_price = $buy_price + ($buy_price * ($m['percent'] / 100));
+                    break;
+                }
             }
-        }
-        $secret_code .= str_pad(($temp_sell / 1000), 2, "0", STR_PAD_LEFT);
-    }
+            $sell_price = ceil($sell_price / 5000) * 5000;
 
-    // query: insert or update stoce also overwrite
-    $stmt = $conn->prepare("INSERT INTO frame_staging 
-        (ufc, brand, frame_code, frame_size, color_code, material, lens_shape, structure, size_range, buy_price, sell_price, price_secret_code, stock) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON DUPLICATE KEY UPDATE 
-        brand=VALUES(brand), 
-        frame_code=VALUES(frame_code), 
-        frame_size=VALUES(frame_size), 
-        color_code=VALUES(color_code), 
-        material=VALUES(material), 
-        lens_shape=VALUES(lens_shape), 
-        structure=VALUES(structure), 
-        size_range=VALUES(size_range), 
-        buy_price=VALUES(buy_price), 
-        sell_price=VALUES(sell_price), 
-        price_secret_code=VALUES(price_secret_code), 
-        stock=stock+VALUES(stock)");
-    
-    $stmt->bind_param("sssssssssddsi", 
-    $ufc, 
-    $brand, 
-    $f_code, 
-    $f_size, 
-    $color_code, 
-    $_POST['material'], 
-    $_POST['lens_shape'], 
-    $_POST['structure'], 
-    $_POST['size_range'], 
-    $buy_price, 
-    $sell_price, 
-    $secret_code, 
-    $input_stock);
-    
-    if ($stmt->execute()) {
-        if (!file_exists('qrcodes')) mkdir('qrcodes');
-        QRcode::png($ufc, "qrcodes/$ufc.png", QR_ECLEVEL_L, 4);
+            $temp_sell = $sell_price;
+            $secret_code = "LZ";
+            $map = $rules['secret_map'];
+            arsort($map); 
+            
+            foreach ($map as $char => $val) {
+                if ($temp_sell >= $val) {
+                    $secret_code .= $char;
+                    $temp_sell -= $val;
+                }
+            }
+            $secret_code .= str_pad(($temp_sell / 1000), 2, "0", STR_PAD_LEFT);
+        }
+
+        // stock age
+        $stock_age = !empty($_POST['stock_age']) ? $_POST['stock_age'] : "new";
+
+        // query: insert or update stoce also overwrite
+        $stmt = $conn->prepare("INSERT INTO frame_staging 
+            (ufc, brand, frame_code, frame_size, color_code, material, lens_shape, structure, size_range, buy_price, sell_price, price_secret_code, stock, stock_age) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE 
+            brand=VALUES(brand), 
+            frame_code=VALUES(frame_code), 
+            frame_size=VALUES(frame_size), 
+            color_code=VALUES(color_code), 
+            material=VALUES(material), 
+            lens_shape=VALUES(lens_shape), 
+            structure=VALUES(structure), 
+            size_range=VALUES(size_range), 
+            buy_price=VALUES(buy_price), 
+            sell_price=VALUES(sell_price), 
+            price_secret_code=VALUES(price_secret_code), 
+            stock=stock+VALUES(stock),
+            stock_age=VALUES(stock_age)");
         
-        // Store message in session, not a regular variable
-        $_SESSION['success_msg'] = "Data Saved Successfully! UFC: $ufc | Total Stock Added: $input_stock";
+        $stmt->bind_param("sssssssssddsis", 
+        $ufc, 
+        $brand, 
+        $f_code, 
+        $f_size, 
+        $color_code, 
+        $_POST['material'], 
+        $_POST['lens_shape'], 
+        $_POST['structure'], 
+        $_POST['size_range'], 
+        $buy_price, 
+        $sell_price, 
+        $secret_code, 
+        $input_stock,
+        $stock_age);
         
-        // Redirect to the same page to clear POST data
-        header("Location: " . $_SERVER['PHP_SELF']);
-        exit(); // Stop script execution to prevent further processing
+        if ($stmt->execute()) {
+            if (!file_exists('qrcodes')) mkdir('qrcodes');
+            QRcode::png($ufc, "qrcodes/$ufc.png", QR_ECLEVEL_L, 4);
+            
+            // Store message in session, not a regular variable
+            $_SESSION['success_msg'] = "Data Saved Successfully! UFC: $ufc | Total Stock Added: $input_stock";
+            
+            // Redirect to the same page to clear POST data
+            header("Location: " . $_SERVER['PHP_SELF']);
+            exit(); // Stop script execution to prevent further processing
+        }
     }
-}
 ?>
 
 <!DOCTYPE html>
@@ -267,6 +272,26 @@ if (isset($_POST['submit_frame'])) {
                         <div class="input-group">
                             <label for="total_frame">Total Frame (Stock)</label>
                             <input type="number" id="total_frame" name="total_frame" value="1" min="1" required>
+                        </div>
+
+                        <!-- STOCK AGE -->
+                        <div class="input-group">
+                            <label style="width: 100%; text-align: center; margin-bottom: 0;">STOCK AGE</label>
+                            <input type="hidden" name="stock_age" id="stock_age_input" value="new">
+                            <div class="selection-wrapper">
+                                <button style="min-width: 100px;" value="very old" type="button" class="neu-btn" onclick="toggleNeu(this, 'stock_age_input')">
+                                    <span>VERY OLD</span>
+                                    <div class="led"></div>
+                                </button>
+                                <button style="min-width: 100px;" value="old" type="button" class="neu-btn" onclick="toggleNeu(this, 'stock_age_input')">
+                                    <span>OLD</span>
+                                    <div class="led"></div>
+                                </button>
+                                <button style="min-width: 100px;" value="new" type="button" class="neu-btn active" onclick="toggleNeu(this, 'stock_age_input')">
+                                    <span>NEW</span>
+                                    <div class="led"></div>
+                                </button>
+                            </div>
                         </div>
         
                         <!-- COST PRICE -->

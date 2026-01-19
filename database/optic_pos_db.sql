@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Jan 18, 2026 at 05:47 PM
+-- Generation Time: Jan 19, 2026 at 07:57 AM
 -- Server version: 10.1.38-MariaDB
 -- PHP Version: 7.3.2
 
@@ -25,6 +25,43 @@ SET time_zone = "+00:00";
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `frames_main`
+--
+
+CREATE TABLE `frames_main` (
+  `ufc` varchar(100) NOT NULL,
+  `brand` varchar(50) DEFAULT NULL,
+  `frame_code` varchar(50) DEFAULT NULL,
+  `frame_size` varchar(50) DEFAULT NULL,
+  `color_code` varchar(50) DEFAULT NULL,
+  `material` varchar(50) DEFAULT NULL,
+  `lens_shape` varchar(50) DEFAULT NULL,
+  `structure` enum('full-rim','semi-rimless','rimless') DEFAULT NULL,
+  `size_range` enum('small','medium','large') DEFAULT NULL,
+  `buy_price` decimal(15,2) DEFAULT NULL,
+  `sell_price` decimal(15,2) DEFAULT NULL,
+  `price_secret_code` varchar(20) DEFAULT NULL,
+  `stock` int(11) DEFAULT '0',
+  `stock_age` enum('very old','old','new') DEFAULT NULL,
+  `is_printed` tinyint(1) DEFAULT '0'
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `frame_sales`
+--
+
+CREATE TABLE `frame_sales` (
+  `id` int(11) NOT NULL,
+  `ufc` varchar(100) DEFAULT NULL,
+  `customer_code` varchar(30) DEFAULT NULL,
+  `sale_date` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `frame_staging`
 --
 
@@ -42,6 +79,7 @@ CREATE TABLE `frame_staging` (
   `sell_price` decimal(15,2) DEFAULT '0.00',
   `price_secret_code` varchar(20) DEFAULT NULL,
   `stock` int(11) DEFAULT '1',
+  `stock_age` enum('very old','old','new') DEFAULT 'new',
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
@@ -50,21 +88,37 @@ CREATE TABLE `frame_staging` (
 -- Dumping data for table `frame_staging`
 --
 
-INSERT INTO `frame_staging` (`ufc`, `brand`, `frame_code`, `frame_size`, `color_code`, `material`, `lens_shape`, `structure`, `size_range`, `buy_price`, `sell_price`, `price_secret_code`, `stock`, `created_at`, `updated_at`) VALUES
-('BOSS-E0419-54-17-140-C2', 'BOSS', 'E0419', '54-17-140', 'C2', 'PLASTIC', 'Square', 'full-rim', 'medium', '56000.00', '270000.00', 'LZJH20', 1, '2026-01-17 03:45:43', '2026-01-17 03:45:43'),
-('BVLGARI-1303-49-17-138-col.4', 'BVLGARI', '1303', '49-17-138', 'col.4', 'PLASTIC', 'Oval', 'semi-rimless', 'small', '70000.00', '350000.00', 'LZKH00', 3, '2026-01-16 11:52:21', '2026-01-16 11:59:15'),
-('CEVIRO-lz-786-00-00-786-col.1', 'CEVIRO', 'lz-786', '00-00-786', 'col.1', 'METAL', 'Aviator', 'full-rim', 'medium', '30000.00', '135000.00', 'LZI35', 2, '2026-01-17 03:37:41', '2026-01-17 03:42:32'),
-('CHANEL-58472-52-16-145-c5', 'CHANEL', '58472', '52-16-145', 'c5', 'PLASTIC', 'Square', 'full-rim', 'medium', '68000.00', '340000.00', 'LZK40', 1, '2026-01-17 04:25:34', '2026-01-17 04:25:34'),
-('EYEWEAR-2247-53-18-145-C1', 'EYE WEAR', '2247', '53-18-145', 'C1', 'PLASTIC', 'Square', 'full-rim', 'medium', '78000.00', '390000.00', 'LZKH40', 1, '2026-01-17 03:20:23', '2026-01-17 03:20:23'),
-('HUMANSKULL-H1520-45-23-140-C2', 'HUMAN SKULL', 'H1520', '45-23-140', 'C2', 'PLASTIC', 'Oval', 'full-rim', 'medium', '38000.00', '175000.00', 'LZIH25', 1, '2026-01-17 04:14:20', '2026-01-17 04:14:20'),
-('KELLYS-Kel53006-52-19-145-col.7', 'KELLYS', 'Kel53006', '52-19-145', 'col.7', 'B TITANIUM', 'SQUARE', 'full-rim', 'medium', '43000.00', '195000.00', 'LZIH45', 2, '2026-01-18 16:44:46', '2026-01-18 16:45:51'),
-('LENZA-lz-786-00-00-786-col.6', 'LENZA', 'lz-786', '00-00-786', 'col.6', 'METAL', 'Aviator', 'full-rim', 'large', '31000.00', '140000.00', 'LZI40', 3, '2026-01-17 03:25:32', '2026-01-17 03:25:32'),
-('MARXSTUDIO-Mstm-161-50-18-C5', 'MARX STUDIO', 'Mst m-161', '50-18', 'C5', 'PLASTIC', 'Square', 'full-rim', 'medium', '105000.00', '630000.00', 'LZMI30', 1, '2026-01-16 12:06:22', '2026-01-16 12:06:22'),
-('PRADA-1376-52-15-140-col.5', 'PRADA', '1376', '52-15-140', 'col.5', 'TITANIUM', 'Cat Eye', 'full-rim', 'medium', '0.00', '0.00', '', 2, '2026-01-16 12:04:35', '2026-01-16 12:04:35'),
-('RAIS-Umi-786-00-00-786-C1', 'RAIS', 'Umi-786', '00-00-786', 'C1', 'METAL', 'SQUARE', 'full-rim', 'medium', '600000.00', '0.00', 'LZ00', 1, '2026-01-18 16:43:32', '2026-01-18 16:43:32'),
-('TAKEYAMA-TAKE648-52-15-140-C5', 'TAKEYAMA', 'TAKE 648', '52-15-140', 'C5', 'METAL', 'Cat Eye', 'full-rim', 'medium', '36000.00', '165000.00', 'LZIH15', 1, '2026-01-17 03:36:35', '2026-01-17 03:36:35'),
-('Z-GENERATION-28631-50-23-137-C12', 'Z-GENERATION', '28631', '50-23-137', 'C12', 'METAL', 'Square', 'full-rim', 'medium', '56000.00', '270000.00', 'LZJH20', 1, '2026-01-17 03:43:44', '2026-01-17 03:43:44'),
-('Z-GENERATION-a262021-49-17-140-C1', 'Z-GENERATION', 'a26 2021', '49-17-140', 'C1', 'METAL', 'Square', 'full-rim', 'medium', '56000.00', '270000.00', 'LZJH20', 1, '2026-01-17 04:13:07', '2026-01-17 04:13:07');
+INSERT INTO `frame_staging` (`ufc`, `brand`, `frame_code`, `frame_size`, `color_code`, `material`, `lens_shape`, `structure`, `size_range`, `buy_price`, `sell_price`, `price_secret_code`, `stock`, `stock_age`, `created_at`, `updated_at`) VALUES
+('BOSS-E0419-54-17-140-C2', 'BOSS', 'E0419', '54-17-140', 'C2', 'PLASTIC', 'Square', 'full-rim', 'medium', '56000.00', '270000.00', 'LZJH20', 1, 'new', '2026-01-17 03:45:43', '2026-01-17 03:45:43'),
+('BVLGARI-1303-49-17-138-col.4', 'BVLGARI', '1303', '49-17-138', 'col.4', 'PLASTIC', 'Oval', 'semi-rimless', 'small', '70000.00', '350000.00', 'LZKH00', 3, 'new', '2026-01-16 11:52:21', '2026-01-16 11:59:15'),
+('CEVIRO-lz-786-00-00-786-col.1', 'CEVIRO', 'lz-786', '00-00-786', 'col.1', 'METAL', 'Aviator', 'full-rim', 'medium', '30000.00', '135000.00', 'LZI35', 2, 'new', '2026-01-17 03:37:41', '2026-01-17 03:42:32'),
+('CHANEL-58472-52-16-145-c5', 'CHANEL', '58472', '52-16-145', 'c5', 'PLASTIC', 'Square', 'full-rim', 'medium', '68000.00', '340000.00', 'LZK40', 1, 'new', '2026-01-17 04:25:34', '2026-01-17 04:25:34'),
+('EYEWEAR-2247-53-18-145-', 'EYE WEAR', '2247', '53-18-145', '', 'TITANIUM', 'SQUARE', 'semi-rimless', 'medium', '55000.00', '250000.00', 'LZJH00', 1, 'very old', '2026-01-19 04:57:55', '2026-01-19 04:57:55'),
+('HUMANSKULL-H1520-45-23-140-C2', 'HUMAN SKULL', 'H1520', '45-23-140', 'C2', 'PLASTIC', 'Oval', 'full-rim', 'medium', '38000.00', '175000.00', 'LZIH25', 1, 'new', '2026-01-17 04:14:20', '2026-01-17 04:14:20'),
+('KELLYS-Kel53006-52-19-145-col.7', 'KELLYS', 'Kel53006', '52-19-145', 'col.7', 'B TITANIUM', 'SQUARE', 'full-rim', 'medium', '43000.00', '195000.00', 'LZIH45', 2, 'new', '2026-01-18 16:44:46', '2026-01-18 16:45:51'),
+('LENZA-lz-786-00-00-786-col.6', 'LENZA', 'lz-786', '00-00-786', 'col.6', '', 'Aviator', 'full-rim', 'large', '31000.00', '140000.00', 'LZI40', 3, 'new', '2026-01-17 03:25:32', '2026-01-19 04:59:37'),
+('MARXSTUDIO-Mstm-161-50-18-C5', 'MARX STUDIO', 'Mst m-161', '50-18', 'C5', 'PLASTIC', 'Square', 'full-rim', 'medium', '105000.00', '630000.00', 'LZMI30', 1, 'new', '2026-01-16 12:06:22', '2026-01-16 12:06:22'),
+('RAIS-Umi-786-00-00-786-C1', 'RAIS', 'Umi-786', '00-00-786', 'C1', 'METAL', 'SQUARE', 'full-rim', 'medium', '600000.00', '0.00', 'LZ00', 1, 'new', '2026-01-18 16:43:32', '2026-01-18 16:43:32'),
+('TAKEYAMA-TAKE648-52-15-140-C5', 'TAKEYAMA', 'TAKE 648', '52-15-140', 'C5', 'METAL', 'Cat Eye', 'full-rim', 'medium', '36000.00', '165000.00', 'LZIH15', 1, 'new', '2026-01-17 03:36:35', '2026-01-17 03:36:35'),
+('UMI-786-umi-00-00-786-c1', 'UMI', '786-umi', '00-00-786', 'c1', 'B TITANIUM', 'SQUARE', 'rimless', 'medium', '0.00', '0.00', '', 1, 'new', '2026-01-19 04:32:59', '2026-01-19 05:00:20'),
+('UNDERMASK-61830-50-20-143-Col.213', 'UNDERMASK', '61830', '50-20-143', 'Col. 213', 'PLASTIC', 'AVIATOR', 'full-rim', 'medium', '34000.00', '155000.00', 'LZIH05', 1, 'very old', '2026-01-19 03:25:45', '2026-01-19 03:25:45'),
+('Z-GENERATION-28631-50-23-137-C12', 'Z-GENERATION', '28631', '50-23-137', 'C12', 'METAL', 'Square', 'full-rim', 'medium', '56000.00', '270000.00', 'LZJH20', 1, 'new', '2026-01-17 03:43:44', '2026-01-17 03:43:44'),
+('Z-GENERATION-a262021-49-17-140-C1', 'Z-GENERATION', 'a26 2021', '49-17-140', 'C1', 'METAL', 'Square', 'full-rim', 'medium', '0.00', '0.00', '', 1, 'new', '2026-01-17 04:13:07', '2026-01-19 05:00:44');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `inventory_logs`
+--
+
+CREATE TABLE `inventory_logs` (
+  `id` int(11) NOT NULL,
+  `action_type` enum('new_entry','update_stock') DEFAULT NULL,
+  `ufc` varchar(100) DEFAULT NULL,
+  `qty_moved` int(11) DEFAULT NULL,
+  `admin_name` varchar(50) DEFAULT NULL,
+  `moved_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 -- --------------------------------------------------------
 
@@ -129,10 +183,29 @@ INSERT INTO `users` (`user_id`, `username`, `password_hash`, `role`, `is_approve
 --
 
 --
+-- Indexes for table `frames_main`
+--
+ALTER TABLE `frames_main`
+  ADD PRIMARY KEY (`ufc`);
+
+--
+-- Indexes for table `frame_sales`
+--
+ALTER TABLE `frame_sales`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `ufc` (`ufc`);
+
+--
 -- Indexes for table `frame_staging`
 --
 ALTER TABLE `frame_staging`
   ADD PRIMARY KEY (`ufc`);
+
+--
+-- Indexes for table `inventory_logs`
+--
+ALTER TABLE `inventory_logs`
+  ADD PRIMARY KEY (`id`);
 
 --
 -- Indexes for table `settings`
@@ -152,10 +225,32 @@ ALTER TABLE `users`
 --
 
 --
+-- AUTO_INCREMENT for table `frame_sales`
+--
+ALTER TABLE `frame_sales`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `inventory_logs`
+--
+ALTER TABLE `inventory_logs`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
 -- AUTO_INCREMENT for table `users`
 --
 ALTER TABLE `users`
   MODIFY `user_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=17;
+
+--
+-- Constraints for dumped tables
+--
+
+--
+-- Constraints for table `frame_sales`
+--
+ALTER TABLE `frame_sales`
+  ADD CONSTRAINT `frame_sales_ibfk_1` FOREIGN KEY (`ufc`) REFERENCES `frames_main` (`ufc`);
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
