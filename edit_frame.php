@@ -19,6 +19,23 @@
 
     if (!$current_data) { die("Data not found!"); }
 
+    // ... after fetching $current_data ...
+    $colors_json = loadJson('colors.json');
+    $display_color_name = ""; 
+    $has_manual_code = ($_POST['has_color_code'] ?? 'yes'); // Default status from previous data
+
+    // Check if the color code in DB is generated (format: col.N)
+    if (strpos($current_data['color_code'], 'col.') !== false) {
+        // Search for "Key" (Color Name) based on "Value" (Code col.N)
+        $found_name = array_search($current_data['color_code'], $colors_json);
+        if ($found_name !== false) {
+            $display_color_name = strtoupper($found_name);
+            $has_manual_code = 'no'; // Set status to 'no' so the Auto box is displayed
+        }
+    } else {
+        $has_manual_code = 'yes'; // Manual color (direct code)
+    }
+
     function loadJson($file) {
         $path = "data_json/$file";
         return file_exists($path) ? json_decode(file_get_contents($path), true) : [];
@@ -29,6 +46,10 @@
         $f_code = !empty($_POST['frame_code']) ? $_POST['frame_code'] : "lz-786";
         $f_size = !empty($_POST['frame_size']) ? $_POST['frame_size'] : "00-00-786";
         
+        $material = $_POST['material'] ?? $current_data['material'];
+        $lens_shape = $_POST['lens_shape'] ?? $current_data['lens_shape'];
+        $structure = $_POST['structure'] ?? $current_data['structure'];
+        $size_range = $_POST['size_range'] ?? $current_data['size_range'];
         // Color Logic
         if ($_POST['has_color_code'] == 'no') {
             $colors = loadJson('colors.json');
@@ -36,7 +57,7 @@
             if (!isset($colors[$input_color])) {
                 $next_col = "col." . (count($colors) + 1);
                 $colors[$input_color] = $next_col;
-                file_put_contents("data_json/colors.json", json_encode($colors));
+                file_put_contents("data_json/colors.json", json_encode($colors, JSON_PRETTY_PRINT));
             }
             $color_code = $colors[$input_color];
         } else {
@@ -103,7 +124,7 @@
 
             $conn->commit();
             $_SESSION['success_msg'] = "Data Updated Successfully! UFC: $new_ufc";
-            header("Location: frame_management.php");
+            header("Location: edit_frame.php?ufc=" . urlencode($new_ufc));
             exit();
         } catch (Exception $e) {
             $conn->rollback();
@@ -178,6 +199,7 @@
             box-shadow: 5px 5px 10px var(--shadow-dark), 
                     -5px -5px 10px var(--shadow-light) !important;
             border: none !important;
+            margin: 10px !important;
         }
 
         .swal2-confirm-neu:active {
@@ -191,47 +213,94 @@
             border-radius: 15px !important;
             box-shadow: 5px 5px 10px var(--shadow-dark), 
                     -5px -5px 10px var(--shadow-light) !important;
+            margin: 10px !important;
+        }
+
+        .swal2-confirm-neu:hover {
+            color: #00d4ff !important;
+            box-shadow: 8px 8px 15px var(--shadow-dark), 
+                        -8px -8px 15px var(--shadow-light) !important;
+        }
+
+        .swal2-cancel-neu:hover {
+            color: #ff7675 !important;
+            box-shadow: 8px 8px 15px var(--shadow-dark), 
+                        -8px -8px 15px var(--shadow-light) !important;
         }
     </style>
 </head>
 <body>
     <div class="main-wrapper">
+        
+    <div class="content-area" style="flex-direction: column">
         <div class="content-area" style="flex-direction: column">
-            <div class="main-card" style="margin: 20px auto; width: 100%;">
+            <div class="header-container" style="
+            margin-left: auto; 
+            margin-right: auto; 
+            width: 100%;">
+                <button style="display:none" class="logout-btn" onclick="window.location.href='logout.php';">
+                    <span>Logout</span>
+                </button>
+        
+                <div class="brand-section">
+                    <div class="logo-box">
+                        <img src="<?php echo htmlspecialchars($BRAND_IMAGE_PATH); ?>" alt="Brand Logo" style="height: 40px;">
+                    </div>
+                    <h1 class="company-name"><?php echo htmlspecialchars($STORE_NAME); ?></h1>
+                    <p class="company-address"><?php echo htmlspecialchars($STORE_ADDRESS); ?></p>
+                </div>
+            </div>
+    
+            
+            <div class="main-card" style="
+            margin-left: auto; 
+            margin-right: auto; 
+            width: 100%;">
                 <h2>EDIT FRAME DATA</h2>
+
                 <form method="POST" id="editFrameForm">
                     <div class="form-grid">
+                        <!-- FRAME NAME -->
                         <div class="input-group">
                             <label>Frame Brand</label>
-                            <input type="text" name="brand" required value="<?php echo $current_data['brand']; ?>" style="text-transform: uppercase;">
-                        </div>
-                        <div class="input-group">
-                            <label>Frame Code</label>
-                            <input type="text" name="frame_code" pattern="[A-Za-z0-9\-]+" value="<?php echo $current_data['frame_code']; ?>" style="text-transform: uppercase;">
-                        </div>
-                        <div class="input-group">
-                            <label>Frame Size</label>
-                            <input type="text" name="frame_size" value="<?php echo $current_data['frame_size']; ?>">
+                            <input type="text" name="brand" required value="<?php echo htmlspecialchars($current_data['brand']); ?>" style="text-transform: uppercase;">
                         </div>
 
+                        <!-- FRAME CODE -->
+                        <div class="input-group">
+                            <label>Frame Code</label>
+                            <input type="text" name="frame_code" pattern="[A-Za-z0-9\-]+" value="<?php echo htmlspecialchars($current_data['frame_code']); ?>" style="text-transform: uppercase;">
+                        </div>
+
+                        <!-- FRAME SIZE -->
+                        <div class="input-group">
+                            <label>Frame Size</label>
+                            <input type="text" name="frame_size" value="<?php echo htmlspecialchars($current_data['frame_size']); ?>">
+                        </div>
+
+                        <!-- HAS COLOR CODE? -->
                         <div class="input-group">
                             <label style="width: 100%; text-align: center;">Manual Color Code?</label>
-                            <input type="hidden" name="has_color_code" id="has_color_code_input" value="yes">
+                            <input type="hidden" name="has_color_code" id="has_color_code_input" value="<?php echo $has_manual_code; ?>">
                             <div id="color_opt" class="selection-wrapper">
-                                <button value="no" type="button" class="neu-btn" onclick="toggleNeu(this, 'has_color_code_input', true)"><span>NO</span><div class="led"></div></button>
-                                <button value="yes" type="button" class="neu-btn active" onclick="toggleNeu(this, 'has_color_code_input', true)"><span>YES</span><div class="led"></div></button>
+                                <button value="no" type="button" class="neu-btn <?php echo ($has_manual_code == 'no') ? 'active' : ''; ?>" onclick="toggleNeu(this, 'has_color_code_input', true)"><span>NO</span><div class="led"></div></button>
+                                <button value="yes" type="button" class="neu-btn <?php echo ($has_manual_code == 'yes') ? 'active' : ''; ?>" onclick="toggleNeu(this, 'has_color_code_input', true)"><span>YES</span><div class="led"></div></button>
                             </div>
                         </div>
 
-                        <div id="col_name_box" class="input-group hidden">
-                            <label>Frame Color Name</label>
-                            <input type="text" name="color_name" placeholder="e.g. BLACK GOLD">
+                        <!-- FRAME COLOR, CODE GENERATE -->
+                        <div id="col_name_box" class="input-group <?php echo ($has_manual_code == 'yes') ? 'hidden' : ''; ?>">
+                            <label>Frame Color</label>
+                            <input type="text" name="color_name" value="<?php echo htmlspecialchars($display_color_name); ?>" placeholder="e.g. BLACK GOLD" style="text-transform: uppercase;">
                         </div>
-                        <div id="col_manual_box" class="input-group">
+                        
+                        <!-- FRAME COLOR, MANUAL -->
+                        <div id="col_manual_box" class="input-group <?php echo ($has_manual_code == 'no') ? 'hidden' : ''; ?>">
                             <label>Color Code</label>
-                            <input type="text" name="color_manual_code" value="<?php echo $current_data['color_code']; ?>" style="text-transform: uppercase;">
+                            <input type="text" name="color_manual_code" value="<?php echo htmlspecialchars($current_data['color_code']); ?>" style="text-transform: uppercase;">
                         </div>
 
+                        <!-- MATERIAL -->
                         <div class="input-group">
                             <label>Material</label>
                             <select name="material">
@@ -241,6 +310,7 @@
                             </select>
                         </div>
 
+                        <!-- LENS SHAPE -->
                         <div class="input-group">
                             <label>Lens Shape</label>
                             <select name="lens_shape">
@@ -250,6 +320,7 @@
                             </select>
                         </div>
 
+                        <!-- FRAME STRUCTURE -->
                         <div class="input-group">
                             <label style="width: 100%; text-align: center;">STRUCTURE</label>
                             <input type="hidden" name="structure" id="frame_structure_input" value="<?php echo $current_data['structure']; ?>">
@@ -263,6 +334,7 @@
                             </div>
                         </div>
 
+                        <!-- FRAME SIZE RANGE -->
                         <div class="input-group">
                             <label style="width: 100%; text-align: center;">SIZE RANGE</label>
                             <input type="hidden" name="size_range" id="frame_size_range_input" value="<?php echo $current_data['size_range']; ?>">
@@ -276,14 +348,16 @@
                             </div>
                         </div>
 
+                        <!-- TOTAL FRAME -->
                         <div class="input-group">
                             <label>Total Frame (Stock)</label>
-                            <input type="number" name="total_frame" value="<?php echo $current_data['stock']; ?>" required>
+                            <input type="number" name="total_frame" value="<?php echo htmlspecialchars($current_data['stock']); ?>" required>
                         </div>
 
+                        <!-- STOCK AGE -->
                         <div class="input-group">
                             <label style="width: 100%; text-align: center;">STOCK AGE</label>
-                            <input type="hidden" name="stock_age" id="stock_age_input" value="<?php echo $current_data['stock_age']; ?>">
+                            <input type="hidden" name="stock_age" id="stock_age_input" value="<?php echo htmlspecialchars($current_data['stock_age']); ?>">
                             <div class="selection-wrapper">
                                 <?php $ages = ['very old', 'old', 'new']; 
                                 foreach($ages as $ag): ?>
@@ -294,6 +368,7 @@
                             </div>
                         </div>
 
+                        <!-- COST PRICE -->
                         <?php if ($role === 'admin'): ?>
                             <div class="input-group">
                                 <label>Cost Price (IDR)</label>
@@ -302,15 +377,23 @@
                             <div class="submit-main" id="sell_display">Selling Price: IDR <?php echo number_format($current_data['sell_price'], 0, ',', '.'); ?></div>
                         <?php endif; ?>
 
+                        <!-- SUBMIT -->
                         <div class="btn-group">
                             <button type="button" onclick="confirmUpdate()" class="submit-main">UPDATE DATA</button>
-                            <button type="button" class="back-main" onclick="window.location.href='pending_records_frame.php'">CANCEL</button>
                         </div>
 
                     </div>
                 </form>
             </div>
         </div>
+
+        <div class="btn-group">
+            <button type="button" class="back-main" onclick="window.location.href='pending_records_frame.php'">BACK TO PREVIOUS PAGE</button>
+        </div>
+    
+        <footer class="footer-container">
+            <p class="footer-text"><?php echo $COPYRIGHT_FOOTER; ?></p>
+        </footer>
     </div>
 
     <script>
@@ -337,6 +420,13 @@
             if (isColorToggle) {
                 document.getElementById('col_name_box').classList.toggle('hidden', val === 'yes');
                 document.getElementById('col_manual_box').classList.toggle('hidden', val === 'no');
+                
+                // Additional tip: Clear hidden inputs to make 'required' validation easier
+                if(val === 'yes') {
+                    document.querySelector('input[name="color_name"]').value = '';
+                } else {
+                    document.querySelector('input[name="color_manual_code"]').value = '';
+                }
             }
         }
 
@@ -382,6 +472,23 @@
                 }
             });
         }
+
+        <?php if (isset($_SESSION['success_msg'])): ?>
+            Swal.fire({
+                icon: 'success',
+                title: 'Success!',
+                text: '<?php echo $_SESSION['success_msg']; ?>',
+                timer: 2000,
+                showConfirmButton: false,
+                background: '#23272a',
+                color: '#fff',
+                customClass: { 
+                    popup: 'swal2-popup-neu',
+                    title: 'swal2-title-neu' 
+                }
+            });
+            <?php unset($_SESSION['success_msg']); ?>
+        <?php endif; ?>
     </script>
 </body>
 </html>

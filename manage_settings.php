@@ -143,10 +143,10 @@ $price_rules = json_decode(file_get_contents($json_path . "price_rules.json"), t
             margin-left: auto; 
             margin-right: auto; 
             width: 100%;">
-                <h1>System Configuration</h1>
+                <h1 style="text-align: center; margin-bottom: 40px;">System Configuration</h1>
             
                 <!-- FRAME MATERIAL LIST -->
-                <div class="window-card">
+                <div class="window-card" style="margin: auto; margin-bottom: 40px;">
                     <h2>FRAME MATERIAL LIST</h2>
             
                     <div class="table-container">
@@ -193,7 +193,7 @@ $price_rules = json_decode(file_get_contents($json_path . "price_rules.json"), t
                 </div>
             
                 <!-- LENS SHAPE LIST -->
-                <div class="window-card">
+                <div class="window-card" style="margin: auto; margin-bottom: 40px;">
                     <h2>LENS SHAPE LIST</h2>
             
                     <div class="table-container">
@@ -240,7 +240,7 @@ $price_rules = json_decode(file_get_contents($json_path . "price_rules.json"), t
                 </div>
             
                 <!-- PRICE MARGIN RULES -->
-                <div class="window-card">
+                <div class="window-card" style="margin: auto; margin-bottom: 40px;">
                     <h2>PRICE MARGIN RULES</h2>
 
                     <div class="table-container">
@@ -303,7 +303,7 @@ $price_rules = json_decode(file_get_contents($json_path . "price_rules.json"), t
                 </div>
             
                 <!-- SECRET CODE MAPING -->
-                <div class="window-card">
+                <div class="window-card" style="margin: auto; margin-bottom: 40px;">
                     <h2>SECRET CODE MAPPING</h2>
 
                     <div class="table-container">

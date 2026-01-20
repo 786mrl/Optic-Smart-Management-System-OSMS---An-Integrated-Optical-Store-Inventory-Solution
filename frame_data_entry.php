@@ -268,7 +268,7 @@
                             </div>
                         </div>
         
-                        <!-- FRAME TOTAL -->
+                        <!-- TOTAL FRAME -->
                         <div class="input-group">
                             <label for="total_frame">Total Frame (Stock)</label>
                             <input type="number" id="total_frame" name="total_frame" value="1" min="1" required>

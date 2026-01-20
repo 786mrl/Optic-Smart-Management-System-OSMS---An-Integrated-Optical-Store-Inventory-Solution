@@ -1,4 +1,4 @@
-2026-01-18 17:44:46: <br />
+2026-01-20 12:20:30: <br />
 <b>Warning</b>:  file_put_contents(C:\xampp\htdocs\optic_pos\phpqrcode\cache\frame_2.dat): failed to open stream: No such file or directory in <b>C:\xampp\htdocs\optic_pos\phpqrcode\qrspec.php</b> on line <b>568</b><br />
 <br />
 <b>Warning</b>:  mkdir(): No such file or directory in <b>C:\xampp\htdocs\optic_pos\phpqrcode\qrmask.php</b> on line <b>154</b><br />
@@ -32,7 +32,7 @@
 <b>Warning</b>:  mkdir(): No such file or directory in <b>C:\xampp\htdocs\optic_pos\phpqrcode\qrmask.php</b> on line <b>154</b><br />
 <br />
 <b>Warning</b>:  file_put_contents(C:\xampp\htdocs\optic_pos\phpqrcode\cache\mask_7\mask_25_7.dat): failed to open stream: No such file or directory in <b>C:\xampp\htdocs\optic_pos\phpqrcode\qrmask.php</b> on line <b>155</b><br />
-2026-01-18 17:45:51: <br />
+2026-01-20 12:20:54: <br />
 <b>Warning</b>:  file_put_contents(C:\xampp\htdocs\optic_pos\phpqrcode\cache\frame_2.dat): failed to open stream: No such file or directory in <b>C:\xampp\htdocs\optic_pos\phpqrcode\qrspec.php</b> on line <b>568</b><br />
 <br />
 <b>Warning</b>:  mkdir(): No such file or directory in <b>C:\xampp\htdocs\optic_pos\phpqrcode\qrmask.php</b> on line <b>154</b><br />
@@ -66,7 +66,7 @@
 <b>Warning</b>:  mkdir(): No such file or directory in <b>C:\xampp\htdocs\optic_pos\phpqrcode\qrmask.php</b> on line <b>154</b><br />
 <br />
 <b>Warning</b>:  file_put_contents(C:\xampp\htdocs\optic_pos\phpqrcode\cache\mask_7\mask_25_7.dat): failed to open stream: No such file or directory in <b>C:\xampp\htdocs\optic_pos\phpqrcode\qrmask.php</b> on line <b>155</b><br />
-2026-01-20 12:24:57: <br />
+2026-01-20 13:06:32: <br />
 <b>Warning</b>:  file_put_contents(C:\xampp\htdocs\optic_pos\phpqrcode\cache\frame_2.dat): failed to open stream: No such file or directory in <b>C:\xampp\htdocs\optic_pos\phpqrcode\qrspec.php</b> on line <b>568</b><br />
 <br />
 <b>Warning</b>:  mkdir(): No such file or directory in <b>C:\xampp\htdocs\optic_pos\phpqrcode\qrmask.php</b> on line <b>154</b><br />
