@@ -28,12 +28,27 @@
         $all_data = array_reverse($all_data);
 
         // Global Indicator Logic
+        // 1. Calculate Rows on Page 1
         $total_label = count($all_data);
         $rows_used_global = [];
         $available_rows_pg1 = ($max_rows - $start_row) + 1;
         $labels_pg1_count = min($total_label, $available_rows_pg1 * $cols);
         $rows_pg1_count = ceil($labels_pg1_count / $cols);
-        for($i = $start_row; $i < ($start_row + $rows_pg1_count); $i++) { $rows_used_global[] = $i; }
+        for($i = $start_row; $i < ($start_row + $rows_pg1_count); $i++) { 
+            $rows_used_global[] = $i;
+        }
+        // 2. Calculate Rows on Page 2 (If there is remaining data)
+        if ($total_label > ($available_rows_pg1 * $cols)) {
+            $remaining_labels = $total_label - ($available_rows_pg1 * $cols);
+            $rows_pg2_count = ceil($remaining_labels / $cols);
+            
+            for($i = 1; $i <= $rows_pg2_count; $i++) {
+                // Use array_unique logic: if the row already exists (due to overlapping logic), avoid duplicates
+                if (!in_array($i, $rows_used_global)) {
+                    $rows_used_global[] = $i;
+                }
+            }
+        }
         
         // Data Splitting
         $capacity_pg1 = $available_rows_pg1 * $cols;
@@ -250,23 +265,23 @@
     </div>
 
     <script>
-    function confirmPrint() {
-        // Additional protection on the client side
-        const startRow = parseInt(document.getElementsByName('start_row')[0].value);
-        if (startRow > 12) {
-            alert("Sorry, printing is not allowed if the start row is greater than 12.");
-            return;
-        }
-        
-        const isMultiPage = <?php echo !empty($page2_data) ? 'true' : 'false'; ?>;
-        if (isMultiPage) {
-            if (confirm("⚠️ Data overflows to the second page! Prepare 2 label sheets. Continue?")) {
+        function confirmPrint() {
+            // Additional protection on the client side
+            const startRow = parseInt(document.getElementsByName('start_row')[0].value);
+            if (startRow > 12) {
+                alert("Sorry, printing is not allowed if the start row is greater than 12.");
+                return;
+            }
+            
+            const isMultiPage = <?php echo !empty($page2_data) ? 'true' : 'false'; ?>;
+            if (isMultiPage) {
+                if (confirm("⚠️ Data overflows to the second page! Prepare 2 label sheets. Continue?")) {
+                    window.print();
+                }
+            } else {
                 window.print();
             }
-        } else {
-            window.print();
         }
-    }
     </script>
 </body>
 </html>
