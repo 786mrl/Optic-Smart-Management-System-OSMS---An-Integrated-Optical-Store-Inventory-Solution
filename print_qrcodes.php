@@ -1,52 +1,52 @@
 <?php
-include 'db_config.php';
-$STORE_NAME = "OPTIC POS"; 
-$STORE_ADDRESS = "123 Sample Street Ave, City"; 
-$BRAND_IMAGE_PATH = "logo.png"; 
+    include 'db_config.php';
+    $STORE_NAME = "OPTIC POS"; 
+    $STORE_ADDRESS = "123 Sample Street Ave, City"; 
+    $BRAND_IMAGE_PATH = "logo.png"; 
 
-session_start(); 
+    session_start(); 
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['selected_ufc'])) {
-    $_SESSION['print_ufc_list'] = $_POST['selected_ufc'];
-}
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['selected_ufc'])) {
+        $_SESSION['print_ufc_list'] = $_POST['selected_ufc'];
+    }
 
-$selected_ufcs = isset($_SESSION['print_ufc_list']) ? $_SESSION['print_ufc_list'] : [];
-$start_row = isset($_GET['start_row']) ? (int)$_GET['start_row'] : 1;
-$max_rows = 17;
-$cols = 7;
+    $selected_ufcs = isset($_SESSION['print_ufc_list']) ? $_SESSION['print_ufc_list'] : [];
+    $start_row = isset($_GET['start_row']) ? (int)$_GET['start_row'] : 1;
+    $max_rows = 17;
+    $cols = 7;
 
-// NEW FEATURE: Check if start row is restricted (more than 12)
-$is_restricted = ($start_row > 12);
+    // NEW FEATURE: Check if start row is restricted (more than 12)
+    $is_restricted = ($start_row > 12);
 
-if (!empty($selected_ufcs)) {
-    $placeholders = implode(',', array_fill(0, count($selected_ufcs), '?'));
-    $stmt = $conn->prepare("SELECT ufc, brand, price_secret_code, stock_age FROM frame_staging WHERE ufc IN ($placeholders)");
-    $stmt->bind_param(str_repeat('s', count($selected_ufcs)), ...$selected_ufcs);
-    $stmt->execute();
-    $result = $stmt->get_result();
+    if (!empty($selected_ufcs)) {
+        $placeholders = implode(',', array_fill(0, count($selected_ufcs), '?'));
+        $stmt = $conn->prepare("SELECT ufc, brand, price_secret_code, stock_age FROM frame_staging WHERE ufc IN ($placeholders)");
+        $stmt->bind_param(str_repeat('s', count($selected_ufcs)), ...$selected_ufcs);
+        $stmt->execute();
+        $result = $stmt->get_result();
 
-    $all_data = [];
-    while ($row = $result->fetch_assoc()) { $all_data[] = $row; }
-    $all_data = array_reverse($all_data);
+        $all_data = [];
+        while ($row = $result->fetch_assoc()) { $all_data[] = $row; }
+        $all_data = array_reverse($all_data);
 
-    // Global Indicator Logic
-    $total_label = count($all_data);
-    $rows_used_global = [];
-    $available_rows_pg1 = ($max_rows - $start_row) + 1;
-    $labels_pg1_count = min($total_label, $available_rows_pg1 * $cols);
-    $rows_pg1_count = ceil($labels_pg1_count / $cols);
-    for($i = $start_row; $i < ($start_row + $rows_pg1_count); $i++) { $rows_used_global[] = $i; }
-    
-    // Data Splitting
-    $capacity_pg1 = $available_rows_pg1 * $cols;
-    $page1_data = array_slice($all_data, 0, $capacity_pg1);
-    $page2_data = array_slice($all_data, $capacity_pg1);
-    $empty_slots_pg1 = array_fill(0, ($start_row - 1) * $cols, null);
-    $render_pg1 = array_merge($page1_data, $empty_slots_pg1);
-    $render_pg2 = array_reverse($page2_data); 
-} else {
-    die("No data selected.");
-}
+        // Global Indicator Logic
+        $total_label = count($all_data);
+        $rows_used_global = [];
+        $available_rows_pg1 = ($max_rows - $start_row) + 1;
+        $labels_pg1_count = min($total_label, $available_rows_pg1 * $cols);
+        $rows_pg1_count = ceil($labels_pg1_count / $cols);
+        for($i = $start_row; $i < ($start_row + $rows_pg1_count); $i++) { $rows_used_global[] = $i; }
+        
+        // Data Splitting
+        $capacity_pg1 = $available_rows_pg1 * $cols;
+        $page1_data = array_slice($all_data, 0, $capacity_pg1);
+        $page2_data = array_slice($all_data, $capacity_pg1);
+        $empty_slots_pg1 = array_fill(0, ($start_row - 1) * $cols, null);
+        $render_pg1 = array_merge($page1_data, $empty_slots_pg1);
+        $render_pg2 = array_reverse($page2_data); 
+    } else {
+        die("No data selected.");
+    }
 ?>
 <!DOCTYPE html>
 <html>
@@ -106,6 +106,8 @@ if (!empty($selected_ufcs)) {
         .bg-yellow { background-color: #ffa502 !important; }
         .bg-green { background-color: #2ed573 !important; }
         .qr-img { height: 8.5mm; width: 8.5mm; }
+        /* ---CHANGE THIS TO SET POSITION IF START ROW > 1 */
+        .box-shifted { transform: translateY(-6mm); }
         .secret-code { font-size: 8pt; font-weight: bold; color: #ff0000 !important; margin-top: 0.3mm; }
 
         @media print {
@@ -166,11 +168,16 @@ if (!empty($selected_ufcs)) {
             </div>
             <div class="print-container">
                 <?php foreach ($render_pg1 as $item): ?>
-                    <div class="label-box <?php echo $item === null ? 'empty-slot' : ''; ?>">
+                    <div class="label-box <?php 
+                        echo $item === null ? 'empty-slot' : ''; 
+                        echo ($start_row > 1 && $item !== null) ? ' box-shifted' : ''; 
+                    ?>">
                         <?php if ($item): ?>
                             <span class="brand-header"><?php echo htmlspecialchars($item['brand']); ?></span>
                             <div class="age-indicator <?php echo ($item['stock_age'] === 'very old' ? 'bg-red' : ($item['stock_age'] === 'old' ? 'bg-yellow' : 'bg-green')); ?>"></div>
+                            
                             <img src="qrcodes/<?php echo $item['ufc']; ?>.png" class="qr-img">
+                            
                             <span class="secret-code"><?php echo htmlspecialchars($item['price_secret_code']); ?></span>
                         <?php endif; ?>
                     </div>
