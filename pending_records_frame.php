@@ -141,6 +141,7 @@
                 }
             }
         </style>
+        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     </head>
 
     <body>
@@ -406,14 +407,13 @@
                                             <button type="submit" class="submit-main">
                                                 🖨️ PRINT SELECTED QR
                                             </button>
-                                            <button type="submit" 
+                                            <button type="button" 
                                                     name="submit_to_main" 
-                                                    formaction="process_upload_main.php" 
                                                     class="submit-main" 
                                                     style="background: var(--accent-green); color: #191c1e;"
-                                                    onclick="return confirm('Move all staging data to the Main Database?')">
+                                                    onclick="confirmSaveToMain()">
                                                 SAVE DATA TO MAIN DATABASE
-                                            </button>                                            
+                                            </button>                                    
                                         </div>
                                     </div>
                                 </form>
@@ -445,6 +445,7 @@
                     checkbox.checked = source.checked;
                 });
             }
+
             document.addEventListener('DOMContentLoaded', function() {
                 const masterCheckbox = document.getElementById('selectAllStaging');
                 const itemCheckboxes = document.querySelectorAll('.staging-checkbox');
@@ -456,6 +457,52 @@
                     });
                 });
             });
+
+            async function confirmSaveToMain() {
+                // 1. Show SweetAlert to request password
+                const { value: password } = await Swal.fire({
+                    title: 'VERIFICATION REQUIRED',
+                    text: 'Please enter your login password to authorize data migration to Main Database.',
+                    input: 'password',
+                    inputPlaceholder: 'Enter your password',
+                    icon: 'warning',
+                    background: '#23272a',
+                    color: '#ffffff',
+                    showCancelButton: true,
+                    confirmButtonText: 'AUTHORIZE & SAVE',
+                    cancelButtonText: 'CANCEL',
+                    customClass: {
+                        popup: 'neumorph-alert',
+                        confirmButton: 'btn-table'
+                    }
+                });
+
+                // 2. If user enters a password (does not click cancel)
+                if (password) {
+                    const form = document.getElementById('printForm');
+                    
+                    // Add hidden input for password
+                    const pwdInput = document.createElement('input');
+                    pwdInput.type = 'hidden';
+                    pwdInput.name = 'admin_password_verify';
+                    pwdInput.value = password;
+                    form.appendChild(pwdInput);
+                    
+                    // Add hidden input to indicate the submit button was clicked
+                    const actionInput = document.createElement('input');
+                    actionInput.type = 'hidden';
+                    actionInput.name = 'submit_to_main';
+                    actionInput.value = '1';
+                    form.appendChild(actionInput);
+                    
+                    // Set form destination manually
+                    form.action = 'process_upload_main.php';
+                    form.method = 'POST';
+                    
+                    // 3. Submit Form
+                    form.submit();
+                }
+            }
         </script>
 
         <!-- ALERT IF SUCCESS TO UPLOAD TO MAIN DATABASE -->

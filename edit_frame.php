@@ -283,7 +283,7 @@
                         <!-- FRAME CODE -->
                         <div class="input-group">
                             <label>Frame Code</label>
-                            <input type="text" name="frame_code" pattern="[A-Za-z0-9\-]+" value="<?php echo htmlspecialchars($current_data['frame_code']); ?>" style="text-transform: uppercase;">
+                            <input type="text" name="frame_code" value="<?php echo htmlspecialchars($current_data['frame_code']); ?>" style="text-transform: uppercase;">
                         </div>
 
                         <!-- FRAME SIZE -->
