@@ -1,8 +1,6 @@
 <?php
     include 'db_config.php';
-    $STORE_NAME = "OPTIC POS"; 
-    $STORE_ADDRESS = "123 Sample Street Ave, City"; 
-    $BRAND_IMAGE_PATH = "logo.png"; 
+    include 'config_helper.php';
 
     session_start(); 
 
@@ -51,7 +49,10 @@
 <!DOCTYPE html>
 <html>
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Label Print - Dark Neumorphism</title>
+    <link rel="stylesheet" href="style.css">
     <style>
         /* CSS REMAINS THE SAME AS YOUR ORIGINAL CODE */
         :root {
@@ -80,7 +81,14 @@
 
         @page { size: A4 portrait; margin: 0; }
         body { font-family: 'Segoe UI', sans-serif; margin: 0; padding: 0; background-color: var(--bg-color); color: var(--text-main); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-        .no-print { padding: 20px; background: var(--bg-color); box-shadow: 10px 10px 20px var(--neu-shadow-dark), -10px -10px 20px var(--neu-shadow-light); margin-bottom: 30px; text-align: center; }
+        .no-print { 
+            padding: 20px; 
+            background: var(--bg-color); 
+            box-shadow: 10px 10px 20px var(--neu-shadow-dark), -10px -10px 20px var(--neu-shadow-light); 
+            margin-bottom: 30px; 
+            text-align: center;
+            border-radius: 30px;
+        }
         .header-container { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; padding: 0 50px; }
         .brand-section { text-align: center; flex-grow: 1; }
         .company-name { margin: 5px 0 0 0; font-size: 1.5rem; letter-spacing: 1px; }
@@ -106,108 +114,140 @@
         .bg-yellow { background-color: #ffa502 !important; }
         .bg-green { background-color: #2ed573 !important; }
         .qr-img { height: 8.5mm; width: 8.5mm; }
-        /* ---CHANGE THIS TO SET POSITION IF START ROW > 1 */
-        .box-shifted { transform: translateY(-6mm); }
+        .box-shifted { transform: translateY(-7.3mm); }
         .secret-code { font-size: 8pt; font-weight: bold; color: #ff0000 !important; margin-top: 0.3mm; }
 
+        .main-wrapper {
+            background-color: var(--bg-color);
+            padding: 30px;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center; /* Ensures content is centered */
+        }
+        .neumorphic-card {
+            background: var(--bg-color);
+            border-radius: 30px;
+            padding: 40px;
+            box-shadow: 20px 20px 60px var(--neu-shadow-dark), 
+                    -20px -20px 60px var(--neu-shadow-light);
+            width: fit-content; /* Follows the width of the label content */
+            margin: 20px auto;
+        }
         @media print {
+            .main-wrapper { padding: 0; background: #fff; }
+            .neumorphic-card { 
+                box-shadow: none; 
+                padding: 0; 
+                margin: 0; 
+                border-radius: 0;
+            }
             .no-print { display: none; }
             body { background: #fff; }
         }
     </style>
 </head>
 <body>
-
-    <div class="no-print">
-        <div class="header-container">
-            <button class="logout-btn" onclick="window.location.href='pending_records_frame.php';">
-                <span>← Back</span>
-            </button>
-            <div class="brand-section">
-                <img src="<?php echo htmlspecialchars($BRAND_IMAGE_PATH); ?>" alt="Logo" style="height: 40px;">
-                <h1 class="company-name"><?php echo htmlspecialchars($STORE_NAME); ?></h1>
-                <p class="company-address"><?php echo htmlspecialchars($STORE_ADDRESS); ?></p>
+    <div class="main-wrapper">
+        <div class="no-print">
+                <div class="header-container" style="
+                margin-left: auto; 
+                margin-right: auto; 
+                width: 100%;">        
+                    <div class="brand-section">
+                        <div class="logo-box">
+                            <img src="<?php echo htmlspecialchars($BRAND_IMAGE_PATH); ?>" alt="Brand Logo" style="height: 40px;">
+                        </div>
+                        <h1 class="company-name"><?php echo htmlspecialchars($STORE_NAME); ?></h1>
+                        <p class="company-address"><?php echo htmlspecialchars($STORE_ADDRESS); ?></p>
+                    </div>
+                </div>
+    
+            <div class="control-panel">
+                <div style="display: flex; gap: 20px; align-items: center;">
+                    <form method="GET" style="display: flex; gap: 10px; align-items: center;">
+                        <span>Start Row:</span>
+                        <input type="number" name="start_row" style="width: auto" class="neu-input" value="<?php echo $start_row; ?>" min="1" max="17">
+                        <button type="submit" class="neu-btn">Set Position</button>
+                    </form>
+    
+                    <button onclick="confirmPrint()" 
+                            class="neu-btn neu-btn-print <?php echo ($is_restricted) ? 'btn-disabled' : ''; ?>" 
+                            <?php echo ($is_restricted) ? 'disabled' : ''; ?>>
+                        Print Labels
+                    </button>
+                </div>
+                
+                <?php if ($is_restricted): ?>
+                    <div class="warning-text">⚠️ Maximum start row is 12. Please change the position.</div>
+                <?php endif; ?>
             </div>
-            <div style="width: 120px;"></div>
-        </div>
-
-        <div class="control-panel">
-            <div style="display: flex; gap: 20px; align-items: center;">
-                <form method="GET" style="display: flex; gap: 10px; align-items: center;">
-                    <span>Start Row:</span>
-                    <input type="number" name="start_row" class="neu-input" value="<?php echo $start_row; ?>" min="1" max="17">
-                    <button type="submit" class="neu-btn">Set Position</button>
-                </form>
-
-                <button onclick="confirmPrint()" 
-                        class="neu-btn neu-btn-print <?php echo ($is_restricted) ? 'btn-disabled' : ''; ?>" 
-                        <?php echo ($is_restricted) ? 'disabled' : ''; ?>>
-                    Print Labels
-                </button>
+    
+            <div class="checklist-container">
+                <?php 
+                for ($r = 1; $r <= $max_rows; $r++) {
+                    $isActive = in_array($r, $rows_used_global);
+                    echo "<div class='check-item ".($isActive ? 'active' : '')."'>".($isActive ? "✓" : $r)."</div>";
+                }
+                ?>
             </div>
             
-            <?php if ($is_restricted): ?>
-                <div class="warning-text">⚠️ Maximum start row is 12. Please change the position.</div>
+    
+            <div class="btn-group">
+                <button type="button" class="back-main" onclick="window.location.href='pending_records_frame.php'">BACK TO PREVIOUS PAGE</button>
+            </div>
+        </div>
+
+        <div class="neumorphic-card">
+            <div class="page-break">
+                <div class="wrapper">
+                    <div class="row-numbers" style="visibility: <?php echo ($start_row === 1) ? 'visible' : 'hidden'; ?>;">
+                        <?php for ($i = $max_rows; $i >= 1; $i--): ?><div class="row-num"><?php echo $i; ?></div><?php endfor; ?>
+                    </div>
+                    <div class="print-container">
+                    <?php foreach ($render_pg1 as $item): ?>
+                        <div class="label-box <?php 
+                            echo $item === null ? 'empty-slot' : ''; 
+                            echo ($start_row > 1 && $item !== null) ? ' box-shifted' : ''; 
+                        ?>">
+                            <?php if ($item): ?>
+                                <span class="brand-header"><?php echo htmlspecialchars($item['brand']); ?></span>
+                                <div class="age-indicator <?php echo ($item['stock_age'] === 'very old' ? 'bg-red' : ($item['stock_age'] === 'old' ? 'bg-yellow' : 'bg-green')); ?>"></div>
+                                
+                                <img src="qrcodes/<?php echo $item['ufc']; ?>.png" class="qr-img">
+                                
+                                <span class="secret-code"><?php echo htmlspecialchars($item['price_secret_code']); ?></span>
+                            <?php endif; ?>
+                        </div>
+                    <?php endforeach; ?>
+                    </div>
+                </div>
+            </div>
+        
+            <?php if (!empty($page2_data)): ?>
+                <div class="page-break">
+                    <div class="wrapper">
+                        <div class="row-numbers" style="visibility: visible;">
+                            <?php for ($i = $max_rows; $i >= 1; $i--): ?><div class="row-num"><?php echo $i; ?></div><?php endfor; ?>
+                        </div>
+                        <div class="print-container">
+                            <?php 
+                            $pg2_empty_slots = ($max_rows * $cols) - count($page2_data);
+                            for ($i = 0; $i < $pg2_empty_slots; $i++) echo '<div class="label-box" style="border:none !important;"></div>';
+                            foreach ($render_pg2 as $item): ?>
+                                <div class="label-box">
+                                    <span class="brand-header"><?php echo htmlspecialchars($item['brand']); ?></span>
+                                    <div class="age-indicator <?php echo ($item['stock_age'] === 'very old' ? 'bg-red' : ($item['stock_age'] === 'old' ? 'bg-yellow' : 'bg-green')); ?>"></div>
+                                    <img src="qrcodes/<?php echo $item['ufc']; ?>.png" class="qr-img">
+                                    <span class="secret-code"><?php echo htmlspecialchars($item['price_secret_code']); ?></span>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                </div>
             <?php endif; ?>
-        </div>
-
-        <div class="checklist-container">
-            <?php 
-            for ($r = 1; $r <= $max_rows; $r++) {
-                $isActive = in_array($r, $rows_used_global);
-                echo "<div class='check-item ".($isActive ? 'active' : '')."'>".($isActive ? "✓" : $r)."</div>";
-            }
-            ?>
-        </div>
+        </div>    
     </div>
-
-    <div class="page-break">
-        <div class="wrapper">
-            <div class="row-numbers" style="visibility: <?php echo ($start_row === 1) ? 'visible' : 'hidden'; ?>;">
-                <?php for ($i = $max_rows; $i >= 1; $i--): ?><div class="row-num"><?php echo $i; ?></div><?php endfor; ?>
-            </div>
-            <div class="print-container">
-                <?php foreach ($render_pg1 as $item): ?>
-                    <div class="label-box <?php 
-                        echo $item === null ? 'empty-slot' : ''; 
-                        echo ($start_row > 1 && $item !== null) ? ' box-shifted' : ''; 
-                    ?>">
-                        <?php if ($item): ?>
-                            <span class="brand-header"><?php echo htmlspecialchars($item['brand']); ?></span>
-                            <div class="age-indicator <?php echo ($item['stock_age'] === 'very old' ? 'bg-red' : ($item['stock_age'] === 'old' ? 'bg-yellow' : 'bg-green')); ?>"></div>
-                            
-                            <img src="qrcodes/<?php echo $item['ufc']; ?>.png" class="qr-img">
-                            
-                            <span class="secret-code"><?php echo htmlspecialchars($item['price_secret_code']); ?></span>
-                        <?php endif; ?>
-                    </div>
-                <?php endforeach; ?>
-            </div>
-        </div>
-    </div>
-
-    <?php if (!empty($page2_data)): ?>
-    <div class="page-break">
-        <div class="wrapper">
-            <div class="row-numbers" style="visibility: visible;">
-                <?php for ($i = $max_rows; $i >= 1; $i--): ?><div class="row-num"><?php echo $i; ?></div><?php endfor; ?>
-            </div>
-            <div class="print-container">
-                <?php 
-                $pg2_empty_slots = ($max_rows * $cols) - count($page2_data);
-                for ($i = 0; $i < $pg2_empty_slots; $i++) echo '<div class="label-box" style="border:none !important;"></div>';
-                foreach ($render_pg2 as $item): ?>
-                    <div class="label-box">
-                        <span class="brand-header"><?php echo htmlspecialchars($item['brand']); ?></span>
-                        <div class="age-indicator <?php echo ($item['stock_age'] === 'very old' ? 'bg-red' : ($item['stock_age'] === 'old' ? 'bg-yellow' : 'bg-green')); ?>"></div>
-                        <img src="qrcodes/<?php echo $item['ufc']; ?>.png" class="qr-img">
-                        <span class="secret-code"><?php echo htmlspecialchars($item['price_secret_code']); ?></span>
-                    </div>
-                <?php endforeach; ?>
-            </div>
-        </div>
-    </div>
-    <?php endif; ?>
 
     <script>
     function confirmPrint() {
