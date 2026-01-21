@@ -55,7 +55,7 @@
             $sell_price = ceil($sell_price / 5000) * 5000;
 
             $temp_sell = $sell_price;
-            $secret_code = "LZ";
+            $secret_code = "";
             $map = $rules['secret_map'];
             arsort($map); 
             
@@ -66,6 +66,7 @@
                 }
             }
             $secret_code .= str_pad(($temp_sell / 1000), 2, "0", STR_PAD_LEFT);
+            $secret_code .= "LZ";
         }
 
         // stock age
@@ -107,15 +108,34 @@
         $stock_age);
         
         if ($stmt->execute()) {
-            if (!file_exists('qrcodes')) mkdir('qrcodes');
-            QRcode::png($ufc, "qrcodes/$ufc.png", QR_ECLEVEL_L, 4);
+            // --- QR CODE CHECK LOGIC STARTS HERE ---
+            $main_qr_path = "main_qrcodes/$ufc.png";
+            $staging_qr_path = "qrcodes/$ufc.png";
+
+            // Ensure the staging folder exists
+            if (!file_exists('qrcodes')) mkdir('qrcodes', 0777, true);
+
+            // Check if the QR Code already exists in the main folder (main_qrcodes)
+            if (file_exists($main_qr_path)) {
+                // If it exists in main, we can copy it to staging or leave it as is
+                // Here I assume the staging system only needs to know the data is saved
+                $msg_extra = "(Existing QR Code found in main storage)";
+            } else {
+                // If NOT in main, check if it already exists in staging
+                if (!file_exists($staging_qr_path)) {
+                    // Generate new one if it truly does not exist anywhere
+                    QRcode::png($ufc, $staging_qr_path, QR_ECLEVEL_L, 4);
+                    $msg_extra = "(New QR Code generated)";
+                } else {
+                    $msg_extra = "(QR Code already exists in staging)";
+                }
+            }
+            // --- QR CODE CHECK LOGIC ENDS HERE ---
+
+            $_SESSION['success_msg'] = "Data Saved Successfully! UFC: $ufc | Stock Added: $input_stock $msg_extra";
             
-            // Store message in session, not a regular variable
-            $_SESSION['success_msg'] = "Data Saved Successfully! UFC: $ufc | Total Stock Added: $input_stock";
-            
-            // Redirect to the same page to clear POST data
             header("Location: " . $_SERVER['PHP_SELF']);
-            exit(); // Stop script execution to prevent further processing
+            exit();
         }
     }
 ?>

@@ -8,14 +8,14 @@
 
     // Action Process (Delete only for Admin)
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete' && $role === 'admin') {
-        $target_ufc = $_POST['ufc'];
+        $target_ufc = basename($_POST['ufc']);
 
         // 1. Get the QR Code filename based on UFC
         // Filename: ufc.png (e.g., LENZA-xxx.png)
         $qrCodePath = "qrcodes/" . $target_ufc . ".png";
 
         // 2. Delete the image file from the folder if it exists
-        if (file_exists($qrCodePath)) {
+        if (!empty($target_ufc) && file_exists($qrCodePath)) {
             unlink($qrCodePath);
         }
 
@@ -24,10 +24,9 @@
         $stmt->bind_param("s", $target_ufc);
         
         if ($stmt->execute()) {
+            $_SESSION['success_msg'] = "Record $target_ufc has been deleted.";
             header("Location: pending_records_frame.php");
             exit();
-        } else {
-            die("Error deleting record: " . $conn->error);
         }
     }
 ?>
@@ -122,9 +121,20 @@
                 height: 18px;
                 accent-color: var(--accent-green);
             }
-
+            
+            .neumorph-alert {
+                border-radius: 20px !important;
+                box-shadow: 10px 10px 20px #1a1d20, -10px -10px 20px #2c3134 !important;
+            }
             /* Responsif Mobile Fix */
             @media (max-width: 600px) {
+                .table-wrapper {
+                    overflow-x: auto;
+                }
+                table {
+                    table-layout: auto !important;
+                    min-width: 600px;
+                }
                 .table-wrapper td[data-label="SELECT"], 
                 .table-wrapper td[data-label="NO"] {
                     text-align: right !important;
@@ -297,7 +307,7 @@
                                                                     FIX DATA
                                                                 </button>
                                                                 
-                                                                <form method="POST" action="">
+                                                                <form method="POST" action="pending_records_frame.php">
                                                                     <input type="hidden" name="action" value="delete">
                                                                     <input type="hidden" name="ufc" value="<?php echo htmlspecialchars($rowCorrupt['ufc']); ?>">
                                                                     <button type="submit" class="btn-table btn-delete-row" 
@@ -335,66 +345,77 @@
 
                         <?php if ($role === 'admin'): ?>
                             <div id="staging-display-section" class="table-responsive_approve_user" style="<?php echo !$hasStagingData ? 'display:none;' : ''; ?>">
-                                <form id="printForm" action="print_qrcodes.php" method="POST" target="_blank">
-                                <div style="margin-bottom: 15px; display: flex; gap: 10px;">
-                                    <button type="submit" class="btn-table btn-set-price" style="background: var(--accent-gold); color: #000;">
-                                        🖨️ PRINT SELECTED QR
-                                    </button>
-                                </div>
+                                <h2 style="margin-bottom: 25px; font-size: 18px; color: var(--accent-green);">STAGING TABLE</h2>
 
-                                    <h2 style="margin-bottom: 25px; font-size: 18px; color: var(--accent-green);">STAGING TABLE</h2>
-                                    
-                                    <div class="table-wrapper">
-                                        <table style="table-layout: fixed; width: 100%;">
-                                            <colgroup>
-                                                <col style="width: 50px;"> <col style="width: 50px;"> <col style="width: 180px;"> <col style="width: 120px;"> <col style="width: 80px;">  <col style="width: 150px;"> <col style="width: 200px;"> </colgroup>
-                                            <thead>
-                                                <tr>
-                                                    <th><input type="checkbox" id="selectAllStaging" onclick="toggleSelectAll(this)"></th>
-                                                    <th>NO</th>
-                                                    <th>UFC</th>
-                                                    <th>BRAND</th>
-                                                    <th>STOCK</th>
-                                                    <th>SECRET CODE</th>
-                                                    <th>ACTIONS</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                <?php if ($hasStagingData): 
-                                                    $no = 1;
-                                                    while($rowStaging = $resultStaging->fetch_assoc()): ?>
-                                                        <tr>
-                                                            <td data-label="SELECT">
-                                                                <input type="checkbox" class="staging-checkbox" name="selected_ufc[]" value="<?php echo htmlspecialchars($rowStaging['ufc']); ?>">
-                                                            </td>
-                                                            <td data-label="NO"><?php echo $no++; ?></td>
-                                                            <td data-label="UFC"><strong style="color: var(--accent-green);"><?php echo $rowStaging['ufc'] ?: 'MISSING UFC'; ?></strong></td>
-                                                            <td data-label="BRAND"><?php echo $rowStaging['brand']; ?></td>
-                                                            <td data-label="STOCK"><?php echo $rowStaging['stock']; ?></td>
-                                                            <td data-label="SECRET CODE"><?php echo $rowStaging['price_secret_code']; ?></td>
-                                                            <td data-label="ACTIONS">
-                                                                <div class="action-btn-container">
-                                                                    <button type="button" class="btn-table btn-set-price" 
-                                                                            onclick="window.location.href='edit_frame.php?ufc=<?php echo urlencode($rowStaging['ufc']); ?>'">
-                                                                        EDIT
-                                                                    </button>
-                                                                    
-                                                                    <form method="POST" action="" style="display:inline;">
-                                                                        <input type="hidden" name="action" value="delete">
-                                                                        <input type="hidden" name="ufc" value="<?php echo htmlspecialchars($rowStaging['ufc']); ?>">
-                                                                        <button type="submit" class="btn-table btn-delete-row" 
-                                                                                onclick="return confirm('Permanently delete this record?')">
-                                                                            DELETE
+                                <form id="printForm" action="print_qrcodes.php" method="POST">
+                                    <div class="form-grid">
+                                        <div class="table-wrapper">
+                                            <table style="table-layout: fixed; width: 100%;">
+                                                <colgroup>
+                                                    <col style="width: 50px;"> <col style="width: 50px;"> <col style="width: 180px;"> <col style="width: 120px;"> <col style="width: 80px;">  <col style="width: 150px;"> <col style="width: 200px;"> </colgroup>
+                                                <thead>
+                                                    <tr>
+                                                        <th><input type="checkbox" id="selectAllStaging" onclick="toggleSelectAll(this)" checked></th>
+                                                        <th>NO</th>
+                                                        <th>UFC</th>
+                                                        <th>BRAND</th>
+                                                        <th>STOCK</th>
+                                                        <th>SECRET CODE</th>
+                                                        <th>ACTIONS</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    <?php if ($hasStagingData): 
+                                                        $no = 1;
+                                                        while($rowStaging = $resultStaging->fetch_assoc()): ?>
+                                                            <tr>
+                                                                <td data-label="SELECT">
+                                                                    <input type="checkbox" class="staging-checkbox" name="selected_ufc[]" 
+                                                                    value="<?php echo htmlspecialchars($rowStaging['ufc']); ?>" checked>
+                                                                </td>
+                                                                <td data-label="NO"><?php echo $no++; ?></td>
+                                                                <td data-label="UFC"><strong style="color: var(--accent-green);"><?php echo $rowStaging['ufc'] ?: 'MISSING UFC'; ?></strong></td>
+                                                                <td data-label="BRAND"><?php echo $rowStaging['brand']; ?></td>
+                                                                <td data-label="STOCK"><?php echo $rowStaging['stock']; ?></td>
+                                                                <td data-label="SECRET CODE"><?php echo $rowStaging['price_secret_code']; ?></td>
+                                                                <td data-label="ACTIONS">
+                                                                    <div class="action-btn-container">
+                                                                        <button type="button" class="btn-table btn-set-price" 
+                                                                                onclick="window.location.href='edit_frame.php?ufc=<?php echo urlencode($rowStaging['ufc']); ?>'">
+                                                                            EDIT
                                                                         </button>
-                                                                    </form>
-                                                                </div>
-                                                            </td>
-                                                        </tr>
-                                                    <?php endwhile; ?>
-                                                <?php endif; ?>
-                                            </tbody>
-                                        </table>
-                                    </div>                    
+                                                                        
+                                                                        <form method="POST" action="" style="display:inline;">
+                                                                            <input type="hidden" name="action" value="delete">
+                                                                            <input type="hidden" name="ufc" value="<?php echo htmlspecialchars($rowStaging['ufc']); ?>">
+                                                                            <button type="submit" class="btn-table btn-delete-row" 
+                                                                                    onclick="return confirm('Permanently delete this record?')">
+                                                                                DELETE
+                                                                            </button>
+                                                                        </form>
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                        <?php endwhile; ?>
+                                                    <?php endif; ?>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                        
+                                        <div class="btn-group">
+                                            <button type="submit" class="submit-main">
+                                                🖨️ PRINT SELECTED QR
+                                            </button>
+                                            <button type="submit" 
+                                                    name="submit_to_main" 
+                                                    formaction="process_upload_main.php" 
+                                                    class="submit-main" 
+                                                    style="background: var(--accent-green); color: #191c1e;"
+                                                    onclick="return confirm('Move all staging data to the Main Database?')">
+                                                SAVE DATA TO MAIN DATABASE
+                                            </button>                                            
+                                        </div>
+                                    </div>
                                 </form>
                             </div>
                         <?php endif; ?>
@@ -415,7 +436,7 @@
             <footer class="footer-container">
                 <p class="footer-text"><?php echo $COPYRIGHT_FOOTER; ?></p>
             </footer>
-        </div>
+        </div>        
 
         <script>
             function toggleSelectAll(source) {
@@ -424,6 +445,54 @@
                     checkbox.checked = source.checked;
                 });
             }
+            document.addEventListener('DOMContentLoaded', function() {
+                const masterCheckbox = document.getElementById('selectAllStaging');
+                const itemCheckboxes = document.querySelectorAll('.staging-checkbox');
+
+                itemCheckboxes.forEach(checkbox => {
+                    checkbox.addEventListener('change', function() {
+                        const totalChecked = document.querySelectorAll('.staging-checkbox:checked').length;
+                        masterCheckbox.checked = (totalChecked === itemCheckboxes.length);
+                    });
+                });
+            });
         </script>
+
+        <!-- ALERT IF SUCCESS TO UPLOAD TO MAIN DATABASE -->
+        <?php if(isset($_SESSION['success_msg'])): ?>
+            <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+            <script>
+                Swal.fire({
+                    title: 'SUCCESS',
+                    text: '<?php echo $_SESSION['success_msg']; ?>',
+                    icon: 'success',
+                    iconColor: '#00ff88',
+                    background: '#23272a', /* Matches your neumorphic theme */
+                    color: '#ffffff',
+                    confirmButtonText: 'GREAT',
+                    customClass: {
+                        popup: 'neumorph-alert',
+                        confirmButton: 'btn-table' 
+                    }
+                });
+            </script>
+            <?php unset($_SESSION['success_msg']); ?>
+        <?php endif; ?>
+
+        <!-- ALERT FOR ERROR -->
+        <?php if(isset($_SESSION['error_msg'])): ?>
+            <script>
+                Swal.fire({
+                    title: 'FAILED!',
+                    text: '<?php echo $_SESSION['error_msg']; ?>',
+                    icon: 'error',
+                    background: '#23272a',
+                    color: '#ffffff',
+                    confirmButtonText: 'OK'
+                });
+            </script>
+            <?php unset($_SESSION['error_msg']); ?>
+        <?php endif; ?>
+
     </body>
 </html>

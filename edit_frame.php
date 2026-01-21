@@ -84,27 +84,32 @@
             }
             $sell_price = ceil($sell_price / 5000) * 5000;
             $temp_sell = $sell_price;
-            $secret_code = "LZ";
+            $secret_code = "";
             $map = $rules['secret_map'];
             arsort($map); 
             foreach ($map as $char => $val) {
-                if ($temp_sell >= $val) { $secret_code .= $char; $temp_sell -= $val; }
+                if ($temp_sell >= $val) { 
+                    $secret_code .= $char; 
+                    $temp_sell -= $val; 
+                }
             }
             $secret_code .= str_pad(($temp_sell / 1000), 2, "0", STR_PAD_LEFT);
+            $secret_code .= "LZ";
         }
 
         $conn->begin_transaction();
         try {
             if ($new_ufc !== $old_ufc) {
-                // If key components change, delete the old record (a new UFC will be created)
+                // If UFC changes, delete the old record because UFC is the Primary Key
                 $del = $conn->prepare("DELETE FROM frame_staging WHERE ufc = ?");
                 $del->bind_param("s", $old_ufc);
                 $del->execute();
                 
-                // Delete old QR file if it exists
+                // Delete the old QR in the staging folder if it exists (since the UFC is no longer valid)
                 if (file_exists("qrcodes/$old_ufc.png")) unlink("qrcodes/$old_ufc.png");
             }
 
+            // Save or Update data to frame_staging
             $stmt = $conn->prepare("INSERT INTO frame_staging 
                 (ufc, brand, frame_code, frame_size, color_code, material, lens_shape, structure, size_range, buy_price, sell_price, price_secret_code, stock, stock_age) 
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -119,8 +124,17 @@
                             $secret_code, $input_stock, $stock_age);
             $stmt->execute();
 
-            if (!file_exists('qrcodes')) mkdir('qrcodes');
-            QRcode::png($new_ufc, "qrcodes/$new_ufc.png", QR_ECLEVEL_L, 4);
+            // --- QR CODE CHECK LOGIC ---
+            $qr_filename = "$new_ufc.png";
+            $staging_path = "qrcodes/" . $qr_filename;
+            $main_path = "main_qrcodes/" . $qr_filename; // Target folder for checking
+
+            // Only generate if it doesn't exist in the main_qrcodes folder 
+            // AND it also doesn't exist in the qrcodes (staging) folder
+            if (!file_exists($main_path) && !file_exists($staging_path)) {
+                if (!file_exists('qrcodes')) mkdir('qrcodes', 0777, true);
+                QRcode::png($new_ufc, $staging_path, QR_ECLEVEL_L, 4);
+            }
 
             $conn->commit();
             $_SESSION['success_msg'] = "Data Updated Successfully! UFC: $new_ufc";

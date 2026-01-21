@@ -8,6 +8,19 @@
         $_SESSION['print_ufc_list'] = $_POST['selected_ufc'];
     }
 
+    // Helper to determine QR Code location
+    function getQRCodePath($ufc) {
+        $staging_path = "qrcodes/" . $ufc . ".png";
+        $main_path = "main_qrcodes/" . $ufc . ".png";
+
+        // Prioritize checking in main_qrcodes according to your instructions
+        if (file_exists($main_path)) {
+            return $main_path;
+        } 
+        // If not found in main, use staging
+        return $staging_path;
+    }
+
     $selected_ufcs = isset($_SESSION['print_ufc_list']) ? $_SESSION['print_ufc_list'] : [];
     $start_row = isset($_GET['start_row']) ? (int)$_GET['start_row'] : 1;
     $max_rows = 17;
@@ -229,7 +242,7 @@
                                 <span class="brand-header"><?php echo htmlspecialchars($item['brand']); ?></span>
                                 <div class="age-indicator <?php echo ($item['stock_age'] === 'very old' ? 'bg-red' : ($item['stock_age'] === 'old' ? 'bg-yellow' : 'bg-green')); ?>"></div>
                                 
-                                <img src="qrcodes/<?php echo $item['ufc']; ?>.png" class="qr-img">
+                                <img src="<?php echo getQRCodePath($item['ufc']); ?>" class="qr-img">
                                 
                                 <span class="secret-code"><?php echo htmlspecialchars($item['price_secret_code']); ?></span>
                             <?php endif; ?>
@@ -253,7 +266,7 @@
                                 <div class="label-box">
                                     <span class="brand-header"><?php echo htmlspecialchars($item['brand']); ?></span>
                                     <div class="age-indicator <?php echo ($item['stock_age'] === 'very old' ? 'bg-red' : ($item['stock_age'] === 'old' ? 'bg-yellow' : 'bg-green')); ?>"></div>
-                                    <img src="qrcodes/<?php echo $item['ufc']; ?>.png" class="qr-img">
+                                    <img src="<?php echo getQRCodePath($item['ufc']); ?>" class="qr-img">
                                     <span class="secret-code"><?php echo htmlspecialchars($item['price_secret_code']); ?></span>
                                 </div>
                             <?php endforeach; ?>
