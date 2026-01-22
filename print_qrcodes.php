@@ -134,17 +134,68 @@
         .row-numbers { display: grid; grid-template-rows: repeat(<?php echo $max_rows; ?>, 16.5mm); margin-right: 4mm; }
         .row-num { display: flex; align-items: center; justify-content: center; font-size: 10pt; font-weight: bold; width: 8mm; border-right: 0.2mm solid #000; padding-right: 2mm; color: #000; }
         .print-container { display: grid; grid-template-columns: repeat(7, 25mm); grid-auto-rows: 15mm; row-gap: 1.5mm; column-gap: 1.5mm; }
-        .label-box { width: 25mm; height: 15mm; border: 1pt solid #000 !important; position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 1mm 0.5mm; box-sizing: border-box; background: #fff; overflow: hidden; }
+        .label-box { 
+            width: 25mm; 
+            height: 15mm; 
+            border: 1pt solid #000 !important; 
+            position: relative; 
+            display: flex; 
+            flex-direction: row; 
+            align-items: center; 
+            justify-content: center; 
+            padding: 1mm 0.5mm; 
+            box-sizing: border-box; 
+            background: #fff; 
+            overflow: hidden; 
+        }
         .empty-slot { border: none !important; }
-        .brand-header { font-size: 4pt; font-weight: bold; text-transform: uppercase; color: #000; margin-bottom: 0.2mm; text-align: center; width: 100%; white-space: nowrap; }
-        .age-indicator { position: absolute; top: 0.8mm; right: 0.8mm; width: 3.5mm; height: 3.5mm; border-radius: 50%; border: 0.15mm solid #000; }
+        .brand-header { 
+            font-size: 4pt; 
+            font-weight: bold; 
+            text-transform: uppercase; 
+            color: #000; 
+            /* margin-bottom: 0.2mm;  */
+            text-align: left; 
+            width: 100%; 
+            white-space: nowrap;
+            overflow: hidden;
+        }
+        .age-indicator {
+            /* position: absolute; 
+            top: 0.8mm; 
+            right: 0.8mm;  */
+            width: 3.5mm; 
+            height: 3.5mm; 
+            border-radius: 50%; 
+            border: 0.15mm solid #000;
+            margin-bottom: 0.5mm;
+        }
         .bg-red { background-color: #ff4757 !important; }
         .bg-yellow { background-color: #ffa502 !important; }
         .bg-green { background-color: #2ed573 !important; }
-        .qr-img { height: 8.5mm; width: 8.5mm; }
+        .qr-img { 
+            height: 12mm; 
+            width: 12mm;
+            flex-shrink: 0;
+        }
         .box-shifted { transform: translateY(-7.3mm); }
-        .secret-code { font-size: 8pt; font-weight: bold; color: #ff0000 !important; margin-top: 0.3mm; }
-
+        .secret-code { 
+            font-size: 8pt; 
+            font-weight: bold; 
+            color: #ff0000 !important; 
+            /* margin-top: 0.3mm;  */
+            line-height: 1;
+            margin-bottom: 0.3mm;
+        }
+        .label-details {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: flex-start;
+            padding-left: 1.5mm;
+            flex-grow: 1;
+            overflow: hidden;
+        }
         .main-wrapper {
             background-color: var(--bg-color);
             padding: 30px;
@@ -239,12 +290,13 @@
                             echo ($start_row > 1 && $item !== null) ? ' box-shifted' : ''; 
                         ?>">
                             <?php if ($item): ?>
-                                <span class="brand-header"><?php echo htmlspecialchars($item['brand']); ?></span>
-                                <div class="age-indicator <?php echo ($item['stock_age'] === 'very old' ? 'bg-red' : ($item['stock_age'] === 'old' ? 'bg-yellow' : 'bg-green')); ?>"></div>
-                                
                                 <img src="<?php echo getQRCodePath($item['ufc']); ?>" class="qr-img">
-                                
-                                <span class="secret-code"><?php echo htmlspecialchars($item['price_secret_code']); ?></span>
+
+                                <div class="label-details">
+                                    <div class="age-indicator <?php echo ($item['stock_age'] === 'very old' ? 'bg-red' : ($item['stock_age'] === 'old' ? 'bg-yellow' : 'bg-green')); ?>"></div>
+                                    <span class="secret-code"><?php echo htmlspecialchars($item['price_secret_code']); ?></span>
+                                    <span class="brand-header"><?php echo htmlspecialchars($item['brand']); ?></span>
+                                </div>
                             <?php endif; ?>
                         </div>
                     <?php endforeach; ?>
@@ -264,10 +316,13 @@
                             for ($i = 0; $i < $pg2_empty_slots; $i++) echo '<div class="label-box" style="border:none !important;"></div>';
                             foreach ($render_pg2 as $item): ?>
                                 <div class="label-box">
-                                    <span class="brand-header"><?php echo htmlspecialchars($item['brand']); ?></span>
-                                    <div class="age-indicator <?php echo ($item['stock_age'] === 'very old' ? 'bg-red' : ($item['stock_age'] === 'old' ? 'bg-yellow' : 'bg-green')); ?>"></div>
                                     <img src="<?php echo getQRCodePath($item['ufc']); ?>" class="qr-img">
-                                    <span class="secret-code"><?php echo htmlspecialchars($item['price_secret_code']); ?></span>
+
+                                    <div class="label-details">
+                                        <div class="age-indicator <?php echo ($item['stock_age'] === 'very old' ? 'bg-red' : ($item['stock_age'] === 'old' ? 'bg-yellow' : 'bg-green')); ?>"></div>
+                                        <span class="secret-code"><?php echo htmlspecialchars($item['price_secret_code']); ?></span>
+                                        <span class="brand-header"><?php echo htmlspecialchars($item['brand']); ?></span>
+                                    </div>
                                 </div>
                             <?php endforeach; ?>
                         </div>
