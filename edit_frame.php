@@ -43,25 +43,26 @@
 
     if (isset($_POST['update_frame'])) {
         $brand = strtoupper($_POST['brand']);
-        $f_code = !empty($_POST['frame_code']) ? $_POST['frame_code'] : "lz-786";
+        $f_code = !empty($_POST['frame_code']) ? strtoupper($_POST['frame_code']) : "lZ-786";
         $f_size = !empty($_POST['frame_size']) ? $_POST['frame_size'] : "00-00-786";
         
         $material = $_POST['material'] ?? $current_data['material'];
         $lens_shape = $_POST['lens_shape'] ?? $current_data['lens_shape'];
         $structure = $_POST['structure'] ?? $current_data['structure'];
         $size_range = $_POST['size_range'] ?? $current_data['size_range'];
+        
         // Color Logic
         if ($_POST['has_color_code'] == 'no') {
             $colors = loadJson('colors.json');
-            $input_color = strtolower($_POST['color_name'] ?? '');
+            $input_color = strtoupper(trim($_POST['color_name'] ?? ''));
             if (!isset($colors[$input_color])) {
-                $next_col = "col." . (count($colors) + 1);
+                $next_col = "COL." . (count($colors) + 1);
                 $colors[$input_color] = $next_col;
                 file_put_contents("data_json/colors.json", json_encode($colors, JSON_PRETTY_PRINT));
             }
             $color_code = $colors[$input_color];
         } else {
-            $color_code = $_POST['color_manual_code'];
+            $color_code = strtoupper($_POST['color_manual_code']);
         }
 
         // Generate New UFC

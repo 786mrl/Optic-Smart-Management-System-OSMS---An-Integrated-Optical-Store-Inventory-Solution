@@ -45,16 +45,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_to_main'])) {
                         stock, stock_age, created_at, updated_at
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON DUPLICATE KEY UPDATE 
-                        buy_price = VALUES(buy_price),
-                        sell_price = VALUES(sell_price),
-                        price_secret_code = VALUES(price_secret_code),
-                        material = VALUES(material),
-                        lens_shape = VALUES(lens_shape),
-                        structure = VALUES(structure),
-                        size_range = VALUES(size_range),
-                        stock_age = VALUES(stock_age),
-                        stock = stock + VALUES(stock),
-                        updated_at = VALUES(updated_at)";
+                    material = VALUES(material),
+                    lens_shape = VALUES(lens_shape),
+                    structure = VALUES(structure),
+                    size_range = VALUES(size_range),
+                    buy_price = VALUES(buy_price),
+                    sell_price = VALUES(sell_price),
+                    price_secret_code = VALUES(price_secret_code),
+                    stock = stock + VALUES(stock),
+                    updated_at = VALUES(updated_at)";
 
             $stmt = $conn->prepare($sql);
 

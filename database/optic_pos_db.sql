@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Jan 21, 2026 at 04:37 PM
+-- Generation Time: Jan 22, 2026 at 05:14 AM
 -- Server version: 10.1.38-MariaDB
 -- PHP Version: 7.3.2
 
@@ -53,7 +53,7 @@ CREATE TABLE `frames_main` (
 
 INSERT INTO `frames_main` (`ufc`, `brand`, `frame_code`, `frame_size`, `color_code`, `material`, `lens_shape`, `structure`, `size_range`, `buy_price`, `sell_price`, `price_secret_code`, `stock`, `stock_age`, `created_at`, `updated_at`) VALUES
 ('BOSS-E0419-54-17-140-C2', 'BOSS', 'E0419', '54-17-140', 'C2', 'B TITANIUM', 'AVIATOR', 'rimless', 'large', '66000.00', '320000.00', 'K20LZ', 5, 'very old', '2026-01-21 21:50:31', '2026-01-21 22:35:26'),
-('BRENDEN-brn-8654-50-18-138-col.1', 'BRENDEN', 'brn-8654', '50-18-138', 'col.1', 'PLASTIC', 'SQUARE', 'full-rim', 'medium', '20000.00', '90000.00', 'H40LZ', 1, 'very old', '2026-01-21 22:03:11', '2026-01-21 22:03:11'),
+('BRENDEN-brn-8654-50-18-138-col.1', 'BRENDEN', 'brn-8654', '50-18-138', 'col.1', 'B TITANIUM', 'AVIATOR', 'rimless', 'large', '23000.00', '105000.00', 'I05LZ', 5, 'very old', '2026-01-21 22:03:11', '2026-01-22 09:24:58'),
 ('BVLGARI-1303-49-17-138-col.4', 'BVLGARI', '1303', '49-17-138', 'col.4', 'PLASTIC', 'Oval', 'semi-rimless', 'small', '88000.00', '440000.00', 'KH00LZ', 4, 'new', '2026-01-21 21:50:31', '2026-01-21 22:16:08'),
 ('CEVIRO-lz-786-00-00-786-col.1', 'CEVIRO', 'lz-786', '00-00-786', 'col.1', 'METAL', 'Aviator', 'full-rim', 'medium', '30000.00', '135000.00', 'I35LZ', 2, 'new', '2026-01-21 21:50:31', '2026-01-21 21:50:31'),
 ('CHANEL-58472-52-16-145-c5', 'CHANEL', '58472', '52-16-145', 'c5', 'PLASTIC', 'Square', 'full-rim', 'medium', '68000.00', '340000.00', 'K40LZ', 1, 'new', '2026-01-21 21:50:31', '2026-01-21 21:50:31'),
@@ -100,6 +100,16 @@ CREATE TABLE `frame_staging` (
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+--
+-- Dumping data for table `frame_staging`
+--
+
+INSERT INTO `frame_staging` (`ufc`, `brand`, `frame_code`, `frame_size`, `color_code`, `material`, `lens_shape`, `structure`, `size_range`, `buy_price`, `sell_price`, `price_secret_code`, `stock`, `stock_age`, `created_at`, `updated_at`) VALUES
+('BEIDUIBEI-TR9123-50-22-137-C2', 'BEIDUIBEI', 'TR9123', '50-22-137', 'C2', 'PLASTIC', 'AVIATOR', 'full-rim', 'medium', '34000.00', '155000.00', 'IH05LZ', 1, 'very old', '2026-01-22 04:05:49', '2026-01-22 04:05:49'),
+('CHANEL-58472-52-16-145-c5', 'CHANEL', '58472', '52-16-145', 'c5', 'PRC', 'AVIATOR', 'semi-rimless', 'medium', '45000.00', '205000.00', 'J05LZ', 9, 'old', '2026-01-22 02:26:55', '2026-01-22 02:26:55'),
+('GNA-G083543-52-20-143-COL.9', 'GNA', 'G08 3543', '52-20-143', 'COL.9', 'B TITANIUM', 'SQUARE', 'full-rim', 'medium', '105000.00', '665000.00', 'NH15LZ', 1, 'old', '2026-01-22 04:13:42', '2026-01-22 04:13:42'),
+('PORSCHEDESIGN-Pd8517-57-16-140-col.8', 'PORSCHE DESIGN', 'Pd8517', '57-16-140', 'col.8', 'TITANIUM', 'SQUARE', 'semi-rimless', 'medium', '56000.00', '255000.00', 'JH05LZ', 1, 'old', '2026-01-22 02:29:47', '2026-01-22 02:29:47');
 
 -- --------------------------------------------------------
 

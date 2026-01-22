@@ -1,8 +1,11 @@
 [
     "PLASTIC",
-    "TITANIUM",
     "METAL",
     "PRC",
     "B TITANIUM",
-    "TR 90"
+    "TR",
+    "TR90",
+    "ACETATE",
+    "NYLON",
+    "OPTYL"
 ]

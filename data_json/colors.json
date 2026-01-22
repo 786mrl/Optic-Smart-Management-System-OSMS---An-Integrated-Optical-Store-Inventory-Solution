@@ -1,1 +1,11 @@
-{"black":"col.1","gold":"col.2","silver":"col.3","purple":"col.4","":"col.5","black rose gold":"col.6","black gold":"col.7"}
+{
+    "BLACK": "COL.1",
+    "GOLD": "COL.2",
+    "SILVER": "COL.3",
+    "PURPLE": "COL.4",
+    "GUN": "COL.5",
+    "BLACK ROSE GOLD": "COL.6",
+    "BLACK GOLD": "COL.7",
+    "DOFF": "COL.8",
+    "ORANGE": "COL.9"
+}
