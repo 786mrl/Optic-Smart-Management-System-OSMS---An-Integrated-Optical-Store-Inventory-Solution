@@ -14,6 +14,8 @@
     --danger: #ff4d4d;
     --success: #00ffaa;
     --text: #ffffff;
+    --accent: #00d4ff;
+    --muted: #6a6e73;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -1202,6 +1204,144 @@ tr td {
     100% { left: 110%; }
 }
 
+
+/* ----- SCAN FRAME ----- */
+.scanner-window {
+    width: 100%;
+    max-width: 400px;
+    background: var(--bg-color);
+    padding: 40px 30px;
+    border-radius: 40px;
+    box-shadow: 20px 20px 60px var(--shadow-dark), 
+                -20px -20px 60px var(--shadow-light);
+    text-align: center;
+}
+
+.header-info { margin-bottom: 30px; }
+.header-info h2 { font-size: 22px; margin-bottom: 8px; font-weight: 700;}
+/*  */
+.header-info p { font-size: 13px; color: var(--muted); }
+
+/* Scanner Container */
+.scanner-container {
+    position: relative;
+    border-radius: 30px;
+    overflow: hidden;
+    background: var(--bg-color);
+    box-shadow: inset 10px 10px 20px var(--shadow-dark), 
+                inset -10px -10px 20px var(--shadow-light);
+    padding: 10px;
+    width: 280px;
+    height: 280px;
+    margin: 0 auto 40px;
+    justify-content: center;
+    align-items: center;
+}
+
+/* Camera/Video Feed Simulation */
+.camera-feed {
+    width: 85%;
+    height: 85%;
+    background: #000;
+    border-radius: 20px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    position: relative;
+}
+
+#reader { width: 100%; border: none !important; border-radius: 20px; overflow: hidden; }
+#reader video { object-fit: cover; }
+
+/* Laser Line */
+#laser-line {
+    position: absolute;
+    width: 90%;
+    height: 2px;
+    background: var(--accent);
+    box-shadow: 0 0 15px var(--accent);
+    z-index: 10;
+    animation: scanLine 2s infinite ease-in-out;
+}
+
+/* Corner Markers */
+.corner {
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    border: 3px solid var(--accent);
+    z-index: 5;
+}
+.top-left { top: 15px; left: 15px; border-right: 0; border-bottom: 0; border-top-left-radius: 10px; }
+.top-right { top: 15px; right: 15px; border-left: 0; border-bottom: 0; border-top-right-radius: 10px; }
+.bottom-left { bottom: 15px; left: 15px; border-right: 0; border-top: 0; border-bottom-left-radius: 10px; }
+.bottom-right { bottom: 15px; right: 15px; border-left: 0; border-top: 0; border-bottom-right-radius: 10px; }
+
+
+@keyframes scanLine {
+    0% { top: 5%; }
+    100% { top: 95%; }
+}
+
+/*  */
+@keyframes scanMove {
+    0% { top: 10%; }
+    50% { top: 90%; }
+    100% { top: 10%; }
+}
+
+/* Result Card */
+.result-card {
+    display: none;
+    padding: 20px;
+    background: var(--bg-color);
+    border-radius: 25px;
+    box-shadow: inset 5px 5px 15px var(--shadow-dark), inset -5px -5px 15px var(--shadow-light);
+    margin-bottom: 20px;
+    animation: fadeIn 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.detail-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 12px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+}
+
+.detail-row span:first-child { color: var(--muted); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
+.detail-row span:last-child { color: var(--text); font-weight: 500; font-size: 13px; }
+
+/* Specific Highlight for Stock & Price */
+.detail-row.highlight span:last-child { color: var(--success); font-weight: 700; font-size: 15px; }
+
+.btn-action {
+    width: 100%;
+    padding: 18px;
+    border: none;
+    border-radius: 20px;
+    background: var(--bg-color);
+    color: var(--accent);
+    font-weight: 700;
+    /* font-size: 13px;
+    letter-spacing: 1px; */
+    cursor: pointer;
+    box-shadow: 8px 8px 16px var(--shadow-dark), 
+                -8px -8px 16px var(--shadow-light);
+    transition: all 0.2s ease;
+    /* margin-top: 15px; */
+}
+
+.btn-action:active {
+    box-shadow: inset 4px 4px 8px var(--shadow-dark), 
+                inset -4px -4px 8px var(--shadow-light);
+    transform: scale(0.98);
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
 /* --- MOBILE RESPONSIVENESS --- */
 @media (max-width: 480px) {
     .content-area {
@@ -1295,4 +1435,50 @@ tr td {
     .window-card { padding: 25px; }
     .input-grid { grid-template-columns: 1fr; }
     .input-group.full-width { grid-column: span 1; }
+
+    .scanner-window {
+        padding: 25px 20px;
+        border-radius: 30px; /* Sedikit lebih kotak agar tidak memakan ruang */
+        box-shadow: 10px 10px 30px var(--shadow-dark), 
+                    -10px -10px 30px var(--shadow-light);
+    }
+
+    .header-info h2 {
+        font-size: 18px; /* Kecilkan judul agar tidak memakan baris */
+    }
+
+    .scanner-container {
+        width: 100%; /* Gunakan lebar penuh layar HP */
+        height: auto;
+        aspect-ratio: 1 / 1; /* Pastikan kotak scanner tetap persegi sempurna */
+        margin-bottom: 25px;
+    }
+
+    #reader video {
+        border-radius: 15px;
+    }
+
+    .detail-row {
+        padding: 10px 0; /* Perkecil jarak baris agar info muat dalam satu layar */
+    }
+
+    .detail-row span:last-child {
+        font-size: 12px; /* Sesuaikan ukuran teks detail */
+    }
+
+    .btn-action {
+        padding: 15px; /* Sesuaikan ukuran tombol agar nyaman ditekan jempol */
+        font-size: 14px;
+    }
+
+    /* Hilangkan bayangan berlebih di mobile agar performa render lebih ringan */
+    .scanner-window {
+        box-shadow: 15px 15px 40px var(--shadow-dark);
+    }
+}
+
+/* Optimasi untuk HP dengan layar sangat kecil atau Landscape */
+@media screen and (max-height: 600px) {
+    .header-info { margin-bottom: 15px; }
+    .scanner-container { width: 200px; height: 200px; margin-bottom: 15px; }
 }

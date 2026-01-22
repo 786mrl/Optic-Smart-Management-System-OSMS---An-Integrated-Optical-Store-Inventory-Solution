@@ -89,6 +89,7 @@
             100% { top: 10%; }
         }
 
+        /* ------------------------------------------------------------- */
         /* Corner Markers */
         .corner {
             position: absolute;
@@ -130,7 +131,8 @@
                         inset -2px -2px 5px var(--shadow-light);
             color: var(--accent);
         }
-
+        /* ----------------------------------------------------------------- */
+        
         .btn-action {
             width: 100%;
             padding: 16px;
@@ -151,6 +153,7 @@
             transform: scale(0.98);
         }
 
+        /* --------------------------------------------------------------- */
         .btn-close {
             margin-top: 20px;
             background: transparent;
@@ -164,6 +167,7 @@
         .btn-close:hover {
             color: var(--text);
         }
+        /* --------------------------------------------------------------- */
     </style>
 </head>
 <body>

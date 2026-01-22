@@ -45,7 +45,7 @@ if (!isset($_SESSION['user_id'])) {
         <div class="selection-container">
             <div class="button-grid">
                 <button class="neu-button" data-url="inventory.php" onclick="handleButtonClick(this)">
-                    <span class="icon">👓</span>
+                    <span class="icon">🏬</span>
                     Inventory Management
                     <div class="led"></div>
                 </button>
