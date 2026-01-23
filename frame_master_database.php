@@ -232,7 +232,13 @@
                         ?>
                         <tr>
                             <td><?= $no++ ?></td>
-                            <td class="ufc-badge"><?= $row['ufc'] ?></td>
+                            <td class="ufc-badge">
+                                <div class="price-box">
+                                    <span class="price-hidden" style="font-family: sans-serif;"></span>
+                                    <span class="price-value"><?= $row['ufc'] ?></span>
+                                    <button type="button" class="btn-reveal" onclick="revealPrice(this)"><i class="fas fa-eye"></i></button>
+                                </div>
+                            </td>
                             <td>
                                 <span class="color-name"><?= $name ?></span>
                             </td>
