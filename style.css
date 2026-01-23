@@ -14,8 +14,10 @@
     --danger: #ff4d4d;
     --success: #00ffaa;
     --text: #ffffff;
-    --accent: #00d4ff;
+    --accent: linear-gradient(135deg, #00d4ff 0%, #0055ff 100%);
     --muted: #6a6e73;
+    --warning: #f1c40f;
+    --accent-solid: #00d4ff;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -59,7 +61,7 @@ body {
     border: 1px solid rgba(0, 255, 136, 0.2);
     background: rgba(0, 255, 136, 0.05);
 }
-
+.container { width: 100%; max-width: 1200px; }
 /* Error/Failure Variation */
 .alert-error {
     color: #ff4d4d;
@@ -1347,6 +1349,84 @@ tr td {
     opacity: 0.5;
     cursor: not-allowed;
     filter: grayscale(1);
+}
+
+/* main database display */
+ /* --- HEADER --- */
+ .header-area { margin-bottom: 30px; }
+ .header-area h1 { font-weight: 800; font-size: 24px; letter-spacing: 2px; margin: 0; }
+ .status-text { color: var(--accent-solid); font-size: 13px; font-weight: 600; text-transform: uppercase; margin-top: 5px; }
+
+ /* --- INPUT BAR --- */
+ .input-bar-container {
+     background: var(--card-bg);
+     padding: 20px;
+     border-radius: 25px;
+     box-shadow: 15px 15px 35px var(--shadow-dark), -10px -10px 30px var(--shadow-light);
+     display: flex; gap: 12px; margin-bottom: 40px;
+     align-items: center; border: 1px solid rgba(255,255,255,0.02);
+ }
+
+ .cmd-input {
+     flex: 1; background: var(--bg-color); border: 1px solid rgba(255,255,255,0.05);
+     padding: 15px 20px; border-radius: 15px; color: var(--accent-solid);
+     font-family: 'Courier New', monospace; outline: none;
+     box-shadow: inset 6px 6px 12px var(--shadow-dark);
+     text-transform: uppercase;
+ }
+
+ .btn-display {
+     background: var(--accent); border: none; padding: 0 30px; height: 50px;
+     border-radius: 15px; color: white; font-weight: 800; cursor: pointer;
+     box-shadow: 0 5px 15px rgba(0, 85, 255, 0.3); transition: 0.3s;
+ }
+
+ .btn-help {
+     background: var(--card-bg); border: none; width: 50px; height: 50px;
+     border-radius: 15px; color: var(--accent-solid); cursor: pointer;
+     box-shadow: 4px 4px 10px var(--shadow-dark), -2px -2px 8px var(--shadow-light);
+ }
+
+.ufc-badge { font-family: 'Courier New', monospace; font-weight: 800; color: #fff; }
+.color-code { font-size: 11px; color: var(--text-muted); }
+
+/* AGE DOTS */
+.age-dot { height: 20px; width: 20px; border-radius: 50%; display: inline-block; box-shadow: 0 0 8px currentColor; }
+.dot-new { color: var(--success); background: currentColor; }
+.dot-old { color: var(--warning); background: currentColor; }
+.dot-veryold { color: var(--danger); background: currentColor; }
+
+/* EMPTY STATE */
+/* .empty-state {
+    text-align: center; padding: 80px; background: var(--card-bg);
+    border-radius: 30px; box-shadow: 20px 20px 60px var(--shadow-dark);
+} */
+.price-box {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.price-value {
+    display: none; /* Hidden by default */
+}
+.price-hidden {
+    color: var(--text-muted);
+    font-style: italic;
+    font-size: 11px;
+}
+.btn-reveal {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: var(--accent-solid);
+    padding: 4px 8px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 10px;
+    transition: 0.2s;
+}
+.btn-reveal:hover {
+    background: var(--accent-solid);
+    color: white;
 }
 
 /* --- MOBILE RESPONSIVENESS --- */

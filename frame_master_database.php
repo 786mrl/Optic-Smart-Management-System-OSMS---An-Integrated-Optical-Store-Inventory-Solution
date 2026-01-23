@@ -81,6 +81,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Master Database - Cyber View</title>
+    <link rel="stylesheet" href="style.css">
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
@@ -170,6 +171,7 @@
         .empty-state {
             text-align: center; padding: 80px; background: var(--card-bg);
             border-radius: 30px; box-shadow: 20px 20px 60px var(--shadow-dark);
+            display: block;
         }
         .price-box {
             display: flex;
@@ -201,134 +203,169 @@
     </style>
 </head>
 <body>
+    <div class="main-wrapper">
+        <div class="content-area" style="flex-direction: column">
+            <div class="header-container" style="
+            margin-left: auto; 
+            margin-right: auto; 
+            width: 100%;">
+                <button class="logout-btn" onclick="window.location.href='logout.php';">
+                    <span>Logout</span>
+                </button>
+        
+                <div class="brand-section">
+                    <div class="logo-box">
+                        <img src="<?php echo htmlspecialchars($BRAND_IMAGE_PATH); ?>" alt="Brand Logo" style="height: 40px;">
+                </div>
+                    <h1 class="company-name"><?php echo htmlspecialchars($STORE_NAME); ?></h1>
+                    <p class="company-address"><?php echo htmlspecialchars($STORE_ADDRESS); ?></p>
+                </div>
+            </div>
 
-<div class="container">
-    <div class="header-area">
-        <h1>MASTER DATABASE</h1>
-        <div class="status-text"><?= $title_display ?></div>
+            <div class="selection-container" style="
+            margin-left: auto; 
+            margin-right: auto; 
+            width: 100%; max-width: none;">
+                <div class="container">
+                    <div class="header-area">
+                            <h1>MASTER DATABASE</h1>
+                            <div class="status-text"><?= $title_display ?></div>
+                        </div>
+
+                        <form method="GET" action="" class="input-bar-container">
+                            <input type="text" name="cmd" class="cmd-input" value="<?= htmlspecialchars($filter_command) ?>" placeholder="e.g: brand.takeyama.available">
+                            <button type="submit" name="display" value="true" class="btn-display">DISPLAY DATA</button>
+                            <button type="button" class="btn-help" onclick="showHelp()"><i class="fas fa-question"></i></button>
+                        </form>
+
+                        <?php if ($show_data && $result): ?>
+                            <?php if (mysqli_num_rows($result) > 0): ?>
+                                <div class="table-responsive">
+                                    <table>
+                                        <thead>
+                                            <tr>
+                                                <th>No</th><th>Brand</th><th>UFC</th><th>Color Details</th><th>Material</th><th>Shape</th>
+                                                <th>Size</th><?php if($role == 'admin'): ?><th>Buy</th><?php endif; ?>
+                                                <th>Sell</th><th>Secret</th><th>Stock</th><th>Age</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <?php $no = 1; while($row = mysqli_fetch_assoc($result)): 
+                                                $code = strtoupper(trim($row['color_code']));
+                                                $name = $color_map[$code] ?? $code;
+                                            ?>
+                                            <tr>
+                                                <td><?= $no++ ?></td>
+                                                <td style="font-weight: 800; color: var(--accent-solid); letter-spacing: 1px;">
+                                                    <?= strtoupper($row['brand']) ?>
+                                                </td>
+                                                <td class="ufc-badge">
+                                                    <div class="price-box">
+                                                        <span class="price-hidden" style="font-family: sans-serif;"></span>
+                                                        <span class="price-value"><?= $row['ufc'] ?></span>
+                                                        <button type="button" class="btn-reveal" onclick="revealPrice(this)"><i class="fas fa-eye"></i></button>
+                                                    </div>
+                                                </td>
+                                                <td>
+                                                    <span><?= $name ?></span>
+                                                </td>
+                                                <td><?= $row['material'] ?></td>
+                                                <td><?= $row['lens_shape'] ?></td>
+                                                <td><?= $row['size_range'] ?></td>
+                                                <?php if($role == 'admin'): ?>
+                                                    <td style="color: var(--success);">
+                                                        <div class="price-box">
+                                                            <span class="price-hidden"></span>
+                                                            <span class="price-value">IDR <?= number_format($row['buy_price'],0,',','.') ?></span>
+                                                            <button type="button" class="btn-reveal" onclick="revealPrice(this)"><i class="fas fa-eye"></i></button>
+                                                        </div>
+                                                    </td>
+                                                <?php endif; ?>
+
+                                                <td style="font-weight: 700;">
+                                                    <div class="price-box">
+                                                        <span class="price-hidden"></span>
+                                                        <span class="price-value">IDR <?= number_format($row['sell_price'],0,',','.') ?></span>
+                                                        <button type="button" class="btn-reveal" onclick="revealPrice(this)"><i class="fas fa-eye"></i></button>
+                                                    </div>
+                                                </td>
+                                                <td style="color: var(--danger); font-size: 14px; font-weight: bold; font-family: monospace;"><?= $row['price_secret_code'] ?></td>
+                                                <td style="text-align: center;"><strong><?= $row['stock'] ?></strong></td>
+                                                <td style="text-align: center;">
+                                                    <span class="age-dot dot-<?= str_replace(' ', '', $row['stock_age']) ?>" title="<?= strtoupper($row['stock_age']) ?>"></span>
+                                                </td>
+                                            </tr>
+                                            <?php endwhile; ?>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            <?php else: ?>
+                                <div class="empty-state">
+                                    <i class="fas fa-database" style="font-size: 50px; opacity: 0.2; margin-bottom: 20px;"></i>
+                                    <h2 style="color: var(--danger);">⚠️ NO DATA FOUND</h2>
+                                    <p style="color: var(--text-muted);">No frames matched the given command.</p>
+                                    <button class="btn-display" onclick="window.location.href='?'" style="margin-top: 20px;">RESET FILTER</button>
+                                </div>
+                            <?php endif; ?>
+                        <?php endif; ?>
+                    </div>
+            </div>
+        </div>
+
+        <div class="btn-group">
+            <button type="button" class="back-main" onclick="window.location.href='frame_management.php'">BACK TO PREVIOUS PAGE</button>
+        </div>
+
+        <footer class="footer-container">
+            <p class="footer-text"><?php echo $COPYRIGHT_FOOTER; ?></p>
+        </footer>
     </div>
 
-    <form method="GET" action="" class="input-bar-container">
-        <input type="text" name="cmd" class="cmd-input" value="<?= htmlspecialchars($filter_command) ?>" placeholder="e.g: brand.takeyama.available">
-        <button type="submit" name="display" value="true" class="btn-display">DISPLAY DATA</button>
-        <button type="button" class="btn-help" onclick="showHelp()"><i class="fas fa-question"></i></button>
-    </form>
+    
 
-    <?php if ($show_data && $result): ?>
-        <?php if (mysqli_num_rows($result) > 0): ?>
-            <div class="table-responsive">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>No</th><th>Brand</th><th>UFC</th><th>Color Details</th><th>Material</th><th>Shape</th>
-                            <th>Size</th><?php if($role == 'admin'): ?><th>Buy</th><?php endif; ?>
-                            <th>Sell</th><th>Secret</th><th>Stock</th><th>Age</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php $no = 1; while($row = mysqli_fetch_assoc($result)): 
-                            $code = strtoupper(trim($row['color_code']));
-                            $name = $color_map[$code] ?? $code;
-                        ?>
-                        <tr>
-                            <td><?= $no++ ?></td>
-                            <td style="font-weight: 800; color: var(--accent-solid); letter-spacing: 1px;">
-                                <?= strtoupper($row['brand']) ?>
-                            </td>
-                            <td class="ufc-badge">
-                                <div class="price-box">
-                                    <span class="price-hidden" style="font-family: sans-serif;"></span>
-                                    <span class="price-value"><?= $row['ufc'] ?></span>
-                                    <button type="button" class="btn-reveal" onclick="revealPrice(this)"><i class="fas fa-eye"></i></button>
-                                </div>
-                            </td>
-                            <td>
-                                <span><?= $name ?></span>
-                            </td>
-                            <td><?= $row['material'] ?></td>
-                            <td><?= $row['lens_shape'] ?></td>
-                            <td><?= $row['size_range'] ?></td>
-                            <?php if($role == 'admin'): ?>
-                                <td style="color: var(--success);">
-                                    <div class="price-box">
-                                        <span class="price-hidden"></span>
-                                        <span class="price-value">IDR <?= number_format($row['buy_price'],0,',','.') ?></span>
-                                        <button type="button" class="btn-reveal" onclick="revealPrice(this)"><i class="fas fa-eye"></i></button>
-                                    </div>
-                                </td>
-                            <?php endif; ?>
-
-                            <td style="font-weight: 700;">
-                                <div class="price-box">
-                                    <span class="price-hidden"></span>
-                                    <span class="price-value">IDR <?= number_format($row['sell_price'],0,',','.') ?></span>
-                                    <button type="button" class="btn-reveal" onclick="revealPrice(this)"><i class="fas fa-eye"></i></button>
-                                </div>
-                            </td>
-                            <td style="color: var(--danger); font-size: 14px; font-weight: bold; font-family: monospace;"><?= $row['price_secret_code'] ?></td>
-                            <td style="text-align: center;"><strong><?= $row['stock'] ?></strong></td>
-                            <td style="text-align: center;">
-                                <span class="age-dot dot-<?= str_replace(' ', '', $row['stock_age']) ?>" title="<?= strtoupper($row['stock_age']) ?>"></span>
-                            </td>
-                        </tr>
-                        <?php endwhile; ?>
-                    </tbody>
-                </table>
-            </div>
-        <?php else: ?>
-            <div class="empty-state">
-                <i class="fas fa-database" style="font-size: 50px; opacity: 0.2; margin-bottom: 20px;"></i>
-                <h2 style="color: var(--danger);">⚠️ NO DATA FOUND</h2>
-                <p style="color: var(--text-muted);">No frames matched the given command.</p>
-                <button class="btn-display" onclick="window.location.href='?'" style="margin-top: 20px;">RESET FILTER</button>
-            </div>
-        <?php endif; ?>
-    <?php endif; ?>
-</div>
-
-<script>
-    function showHelp() {
-        Swal.fire({
-            title: '<span style="color: #00d4ff">SEARCH COMMAND GUIDE</span>',
-            html: `
-                <div style="text-align: left; color: #ccc; font-size: 14px; line-height: 1.6;">
-                    <p>Format: <b>category.value.extra</b></p>
-                    <hr style="border: 0; border-top: 1px solid #333; margin: 10px 0;">
-                    • <b>all</b> : Show all data<br>
-                    • <b>brand.takeyama</b> : Filter by brand<br>
-                    • <b>shape.square</b> : Filter by lens shape<br>
-                    • <b>size.50-18</b> : Filter by specific size<br>
-                    <hr style="border: 0; border-top: 1px solid #333; margin: 10px 0;">
-                    <b>Extras:</b><br>
-                    • <b>.available</b> : Stock > 0 only<br>
-                    • <b>.new / .old / .very old</b> : Filter by stock age
-                </div>
-            `,
-            background: '#16181b',
-            confirmButtonColor: '#0055ff',
-            confirmButtonText: 'UNDERSTOOD'
-        });
-    }
-
-    function revealPrice(btn) {
-        const box = btn.parentElement;
-        const hiddenText = box.querySelector('.price-hidden');
-        const valueText = box.querySelector('.price-value');
-        const icon = btn.querySelector('i');
-
-        if (valueText.style.display === 'none' || valueText.style.display === '') {
-            valueText.style.display = 'inline';
-            hiddenText.style.display = 'none';
-            icon.classList.replace('fa-eye', 'fa-eye-slash');
-            btn.style.opacity = '0.5'; // Mark as revealed
-        } else {
-            valueText.style.display = 'none';
-            hiddenText.style.display = 'inline';
-            icon.classList.replace('fa-eye-slash', 'fa-eye');
-            btn.style.opacity = '1';
+    <script>
+        function showHelp() {
+            Swal.fire({
+                title: '<span style="color: #00d4ff">SEARCH COMMAND GUIDE</span>',
+                html: `
+                    <div style="text-align: left; color: #ccc; font-size: 14px; line-height: 1.6;">
+                        <p>Format: <b>category.value.extra</b></p>
+                        <hr style="border: 0; border-top: 1px solid #333; margin: 10px 0;">
+                        • <b>all</b> : Show all data<br>
+                        • <b>brand.takeyama</b> : Filter by brand<br>
+                        • <b>shape.square</b> : Filter by lens shape<br>
+                        • <b>size.50-18</b> : Filter by specific size<br>
+                        <hr style="border: 0; border-top: 1px solid #333; margin: 10px 0;">
+                        <b>Extras:</b><br>
+                        • <b>.available</b> : Stock > 0 only<br>
+                        • <b>.new / .old / .very old</b> : Filter by stock age
+                    </div>
+                `,
+                background: '#16181b',
+                confirmButtonColor: '#0055ff',
+                confirmButtonText: 'UNDERSTOOD'
+            });
         }
-    }
-</script>
+
+        function revealPrice(btn) {
+            const box = btn.parentElement;
+            const hiddenText = box.querySelector('.price-hidden');
+            const valueText = box.querySelector('.price-value');
+            const icon = btn.querySelector('i');
+
+            if (valueText.style.display === 'none' || valueText.style.display === '') {
+                valueText.style.display = 'inline';
+                hiddenText.style.display = 'none';
+                icon.classList.replace('fa-eye', 'fa-eye-slash');
+                btn.style.opacity = '0.5'; // Mark as revealed
+            } else {
+                valueText.style.display = 'none';
+                hiddenText.style.display = 'inline';
+                icon.classList.replace('fa-eye-slash', 'fa-eye');
+                btn.style.opacity = '1';
+            }
+        }
+    </script>
 
 </body>
 </html>
