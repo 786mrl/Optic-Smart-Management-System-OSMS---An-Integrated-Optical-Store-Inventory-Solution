@@ -5,7 +5,7 @@
 
     $role = $_SESSION['role'] ?? 'staff';
 
-    // 1. Load & Normalisasi Mapping Warna
+    // 1. Load & Normalize Color Mapping
     $color_map = [];
     $json_path = "data_json/colors.json";
     if (file_exists($json_path)) {
@@ -22,15 +22,15 @@
 
     $result = null;
     $where_clause = "";
-    $title_display = "Silahkan tekan Display untuk memuat data";
+    $title_display = "Please click Display to load data";
 
-    // pengaturan bagaiman aturan untuk input data yang akan dicari
+    // configuration for input search data rules
     if ($show_data) {
         $cmd = $filter_command;
         $parts = explode('.', $cmd);
         $cmd_type = $parts[0];
 
-        // LOGIKA SMART FILTER (Brand, Material, Shape, Structure, Size)
+        // SMART FILTER LOGIC (Brand, Material, Shape, Structure, Size)
         if (in_array($cmd_type, ['brand', 'material', 'shape', 'structure', 'size'])) {
             $val_main = mysqli_real_escape_string($conn, trim($parts[1] ?? ''));
             $extra_sql = "";
@@ -40,7 +40,7 @@
                 $p = trim($parts[$i]);
                 if ($p === 'available') {
                     $extra_sql .= " AND stock > 0";
-                    $labels[] = "TERSEDIA";
+                    $labels[] = "AVAILABLE";
                 } elseif (in_array($p, ['new', 'old', 'very old'])) {
                     $extra_sql .= " AND stock_age = '$p'";
                     $labels[] = strtoupper($p);
@@ -62,16 +62,16 @@
             $title_display = strtoupper($cmd_type) . ": " . strtoupper($val_main) . ($labels ? " (" . implode(" & ", $labels) . ")" : "");
 
         } elseif ($cmd_type === 'all') {
-            // all atau all.new
+            // all or all.new
             $age = isset($parts[1]) ? trim($parts[1]) : null;
             $where_clause = $age ? " WHERE stock_age = '$age'" : "";
-            $title_display = $age ? "Filter Stok: " . strtoupper($age) : "Menampilkan Semua Data Utama";
+            $title_display = $age ? "Stock Filter: " . strtoupper($age) : "Showing All Main Data";
 
         } else {
-            // Pencarian Umum
+            // General Search
             $search = mysqli_real_escape_string($conn, $cmd);
             $where_clause = " WHERE brand LIKE '%$search%' OR ufc LIKE '%$search%' OR lens_shape LIKE '%$search%'";
-            $title_display = "Hasil Pencarian: " . strtoupper($search);
+            $title_display = "Search Results: " . strtoupper($search);
         }
 
         $query = "SELECT * FROM frames_main" . $where_clause . " ORDER BY ufc ASC";
@@ -111,7 +111,7 @@
         <form method="GET" action="" class="filter-section">
             <div class="cmd-group">
                 <label style="font-size: 0.8em; color: #888; margin-bottom: 5px; display: block;">COMMAND INPUT</label>
-                <input type="text" name="cmd" class="cmd-input" value="<?= htmlspecialchars($filter_command) ?>" autocomplete="off" placeholder="Contoh: brand.takeyama.available">
+                <input type="text" name="cmd" class="cmd-input" value="<?= htmlspecialchars($filter_command) ?>" autocomplete="off" placeholder="Example: brand.takeyama.available">
             </div>
             <button type="submit" name="display" value="true" class="btn-display">DISPLAY DATA</button>
             <button type="button" onclick="showHelp()" style="background: #3498db; color: white; border: none; padding: 12px; border-radius: 8px; cursor: pointer; margin-left: 10px;">
@@ -156,7 +156,7 @@
                     </table>
                 <?php else: ?>
                     <div style="text-align: center; padding: 50px; color: #e74c3c;">
-                        <h2>⚠️ DATA TIDAK DITEMUKAN</h2>
+                        <h2>⚠️ NO DATA FOUND</h2>
                         <button onclick="window.location.href='frame_master_database.php'">Reset Filter</button>
                     </div>
                 <?php endif; ?>
@@ -167,16 +167,16 @@
     <script>
         function showHelp() {
             Swal.fire({
-                title: '<span style="color: #00ff88">PANDUAN PENCARIAN</span>',
+                title: '<span style="color: #00ff88">SEARCH GUIDE</span>',
                 html: `<div style="text-align: left; color: #eee; font-size: 0.9em;">
-                    <p>Format: <b>kategori.nilai.tambahan</b></p>
+                    <p>Format: <b>category.value.extra</b></p>
                     <hr>
-                    <li><b>all</b> : Semua data</li>
-                    <li><b>brand.[nama]</b> : brand.takeyama</li>
-                    <li><b>shape.[bentuk]</b> : shape.square</li>
-                    <li><b>size.[ukuran]</b> : size.50-18</li>
+                    <li><b>all</b> : All data</li>
+                    <li><b>brand.[name]</b> : e.g., brand.takeyama</li>
+                    <li><b>shape.[type]</b> : e.g., shape.square</li>
+                    <li><b>size.[value]</b> : e.g., size.50-18</li>
                     <hr>
-                    <p><b>Tambahan:</b> .available (stok > 0), .new, .old, .very old</p>
+                    <p><b>Extras:</b> .available (stock > 0), .new, .old, .very old</p>
                 </div>`,
                 background: '#2e3133',
                 confirmButtonColor: '#00ff88'

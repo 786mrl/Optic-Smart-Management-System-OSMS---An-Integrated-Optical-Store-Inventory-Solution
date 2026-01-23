@@ -3,15 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Frame Database Pro - Fixed</title>
+    <title>Frame Database - Pure Display</title>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
         :root {
             --bg-color: #0f1113;
             --card-bg: #16181b;
             --accent: linear-gradient(135deg, #00d4ff 0%, #0055ff 100%);
             --accent-solid: #00d4ff;
-            --danger: #ff4b2b;
             --shadow-dark: #08090a;
             --shadow-light: #1f2226;
             --text-main: #ffffff;
@@ -28,30 +28,27 @@
             justify-content: center;
         }
 
-        .main-container {
-            width: 100%;
-            max-width: 1100px;
-            overflow: hidden; /* Mencegah seluruh halaman meluap */
-        }
+        .main-container { width: 100%; max-width: 1000px; }
 
         /* --- INPUT AREA --- */
         .input-bar-container {
             background: var(--card-bg);
-            padding: 25px;
-            border-radius: 25px;
+            padding: 18px;
+            border-radius: 22px;
             box-shadow: 15px 15px 35px var(--shadow-dark), -10px -10px 30px var(--shadow-light);
             display: flex;
-            gap: 15px;
+            gap: 12px;
             margin-bottom: 40px;
             border: 1px solid rgba(255,255,255,0.02);
+            align-items: center;
         }
 
         .input-cyber {
             flex: 1;
             background: var(--bg-color);
             border: 1px solid rgba(255,255,255,0.05);
-            padding: 15px 20px;
-            border-radius: 15px;
+            padding: 14px 20px;
+            border-radius: 14px;
             color: white;
             outline: none;
             box-shadow: inset 6px 6px 12px var(--shadow-dark);
@@ -60,146 +57,135 @@
         .btn-cyber {
             background: var(--accent);
             border: none;
-            padding: 0 30px;
-            border-radius: 15px;
+            padding: 14px 28px;
+            border-radius: 14px;
             color: white;
             font-weight: 800;
             cursor: pointer;
             box-shadow: 0 5px 15px rgba(0, 85, 255, 0.3);
         }
 
-        /* --- TABLE AREA (FIXED LIMITS) --- */
-        .table-responsive {
-            width: 100%;
+        .btn-help {
+            background: var(--card-bg);
+            border: none;
+            width: 48px;
+            height: 48px;
+            border-radius: 14px;
+            color: var(--accent-solid);
+            font-weight: 800;
+            cursor: pointer;
+            box-shadow: 4px 4px 10px var(--shadow-dark), -2px -2px 8px var(--shadow-light);
+        }
+
+        /* --- EMPTY STATE --- */
+        #emptyBlock {
+            display: none;
+            text-align: center;
+            padding: 80px 20px;
             background: var(--card-bg);
             border-radius: 30px;
             box-shadow: 20px 20px 60px var(--shadow-dark);
-            overflow-x: auto; /* Mengaktifkan scroll horizontal jika data terlalu lebar */
-            border: 1px solid rgba(255,255,255,0.03);
-            padding: 10px; /* Jarak aman untuk bayangan dalam */
+            border: 1px dashed rgba(255,255,255,0.05);
         }
 
-        table {
+        .empty-icon { font-size: 50px; margin-bottom: 15px; opacity: 0.3; }
+
+        /* --- TABLE AREA (NO ACTIONS) --- */
+        #tableBlock {
             width: 100%;
-            border-collapse: separate;
-            border-spacing: 0 12px;
-            min-width: 900px; /* Menjamin tabel punya ruang cukup dan tidak berhimpitan */
-            table-layout: auto;
+            background: var(--card-bg);
+            border-radius: 25px;
+            box-shadow: 20px 20px 60px var(--shadow-dark);
+            overflow-x: auto;
+            padding: 8px;
         }
 
-        th {
-            padding: 15px 20px;
-            font-size: 11px;
-            font-weight: 800;
-            color: var(--text-muted);
-            text-transform: uppercase;
-            text-align: left;
-        }
+        table { width: 100%; border-collapse: separate; border-spacing: 0 10px; min-width: 700px; }
+        th { padding: 15px 20px; font-size: 11px; font-weight: 800; color: var(--text-muted); text-transform: uppercase; text-align: left; }
+        td { padding: 18px 20px; background: #1a1d21; font-size: 14px; }
 
-        td {
-            padding: 18px 20px;
-            background: #1a1d21;
-            border-top: 1px solid rgba(255,255,255,0.02);
-            border-bottom: 1px solid rgba(255,255,255,0.02);
-            font-size: 14px;
-            white-space: nowrap; /* Menjaga teks tetap satu baris */
-        }
-
-        /* Efek Border Kiri Glow */
+        /* Highlight Row Style */
         tr td:first-child { 
             border-radius: 15px 0 0 15px; 
-            border-left: 3px solid var(--accent-solid);
-            box-shadow: -5px 0 10px rgba(0, 212, 255, 0.1);
-        }
-        tr td:last-child { border-radius: 0 15px 15px 0; border-right: 1px solid rgba(255,255,255,0.02); }
-
-        /* Row Hover Glow */
-        tr:hover td {
-            background: #1d2126;
-            border-color: rgba(0, 212, 255, 0.2);
+            border-left: 4px solid var(--accent-solid);
+            font-weight: 800;
             color: var(--accent-solid);
-            cursor: default;
         }
+        tr td:last-child { border-radius: 0 15px 15px 0; font-weight: 600; color: #fff; }
 
-        .ufc-tag {
-            background: rgba(0, 212, 255, 0.1);
-            color: var(--accent-solid);
-            padding: 4px 10px;
-            border-radius: 6px;
-            font-weight: 700;
-            font-size: 12px;
-        }
+        tr:hover td { background: #1e2227; }
 
-        /* --- ACTION CONTROLS --- */
-        .action-flex {
-            display: flex;
-            gap: 10px;
-        }
-
-        .btn-icon {
-            width: 38px;
-            height: 38px;
-            border-radius: 10px;
-            border: none;
-            background: var(--card-bg);
-            color: var(--text-muted);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            box-shadow: 3px 3px 6px var(--shadow-dark), -2px -2px 6px var(--shadow-light);
-            transition: 0.3s;
-        }
-
-        .btn-edit:hover { color: var(--accent-solid); box-shadow: 0 0 10px rgba(0, 212, 255, 0.2); }
-        .btn-delete:hover { color: var(--danger); box-shadow: 0 0 10px rgba(255, 75, 43, 0.2); }
-
-        /* Custom Scrollbar for the table */
-        .table-responsive::-webkit-scrollbar { height: 6px; }
-        .table-responsive::-webkit-scrollbar-thumb { background: #333; border-radius: 10px; }
     </style>
 </head>
 <body>
 
     <div class="main-container">
         <div class="input-bar-container">
-            <input type="text" class="input-cyber" placeholder="Enter UFC or Scan Barcode...">
-            <button class="btn-cyber">PROCESS</button>
+            <input type="text" id="searchInput" class="input-cyber" placeholder="Scan UFC or Model Name...">
+            <button class="btn-cyber" onclick="executeSearch()">PROCESS</button>
+            <button class="btn-help" onclick="showInstruction()">?</button>
         </div>
 
-        <div class="table-responsive">
+        <div id="tableBlock">
             <table>
                 <thead>
                     <tr>
-                        <th>UFC Tag</th>
-                        <th>Brand & Model</th>
-                        <th>Specs</th>
-                        <th>Price</th>
-                        <th>Stock</th>
-                        <th>Actions</th>
+                        <th>UFC ID</th>
+                        <th>Brand & Frame Model</th>
+                        <th>Material/Color</th>
+                        <th>Price Unit</th>
+                        <th>Stock Qty</th>
                     </tr>
                 </thead>
-                <tbody>
+                <tbody id="tableBody">
                     <tr>
-                        <td><span class="ufc-tag">UFC-88921</span></td>
-                        <td>
-                            <div style="font-weight: 600;">Oakley Holbrook</div>
-                            <div style="font-size: 11px; color: var(--text-muted);">Sport Edition</div>
-                        </td>
+                        <td>UFC-10022</td>
+                        <td>Ray-Ban Aviator RB3025</td>
+                        <td>Metal / Gold Green</td>
+                        <td>IDR 2.450.000</td>
+                        <td>12 Unit</td>
+                    </tr>
+                    <tr>
+                        <td>UFC-10045</td>
+                        <td>Oakley Holbrook OO9102</td>
                         <td>O-Matter / Prizm Black</td>
                         <td>IDR 2.100.000</td>
-                        <td><strong>8</strong></td>
-                        <td>
-                            <div class="action-flex">
-                                <button class="btn-icon btn-edit" title="Edit">✎</button>
-                                <button class="btn-icon btn-delete" title="Delete">✕</button>
-                            </div>
-                        </td>
+                        <td>5 Unit</td>
                     </tr>
                 </tbody>
             </table>
         </div>
+
+        <div id="emptyBlock">
+            <div class="empty-icon">🔍</div>
+            <h3 style="color: var(--accent-solid);">Data Tidak Ditemukan</h3>
+            <p style="color: var(--text-muted); font-size: 14px;">Pastikan kode yang Anda masukkan atau hasil scan sudah benar.</p>
+        </div>
     </div>
 
+    <script>
+        function showInstruction() {
+            Swal.fire({
+                title: 'Bantuan Sistem',
+                html: '<div style="text-align:left; font-size:14px;">• Arahkan kursor ke input untuk scan barcode.<br>• Sistem otomatis menampilkan detail stok.<br>• Data akan disembunyikan jika tidak valid.</div>',
+                background: '#16181b', color: '#fff', confirmButtonColor: '#0055ff'
+            });
+        }
+
+        function executeSearch() {
+            const query = document.getElementById('searchInput').value;
+            const table = document.getElementById('tableBlock');
+            const empty = document.getElementById('emptyBlock');
+
+            // Logika simulasi: Jika input kosong atau "404", sembunyikan tabel
+            if(query === "" || query.toLowerCase() === "404") {
+                table.style.display = 'none';
+                empty.style.display = 'block';
+            } else {
+                table.style.display = 'block';
+                empty.style.display = 'none';
+            }
+        }
+    </script>
 </body>
 </html>
