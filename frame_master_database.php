@@ -157,7 +157,6 @@
         tr td:last-child { border-radius: 0 15px 15px 0; }
 
         .ufc-badge { font-family: 'Courier New', monospace; font-weight: 800; color: #fff; }
-        .color-name { font-weight: 700; color: var(--accent-solid); display: block; }
         .color-code { font-size: 11px; color: var(--text-muted); }
         
         /* AGE DOTS */
@@ -177,7 +176,7 @@
             gap: 10px;
         }
         .price-value {
-            display: none; /* Sembunyikan harga secara default */
+            display: none; /* Hidden by default */
         }
         .price-hidden {
             color: var(--text-muted);
@@ -220,7 +219,7 @@
                 <table>
                     <thead>
                         <tr>
-                            <th>No</th><th>UFC</th><th>Color Details</th><th>Material</th><th>Shape</th>
+                            <th>No</th><th>Brand</th><th>UFC</th><th>Color Details</th><th>Material</th><th>Shape</th>
                             <th>Size</th><?php if($role == 'admin'): ?><th>Buy</th><?php endif; ?>
                             <th>Sell</th><th>Secret</th><th>Stock</th><th>Age</th>
                         </tr>
@@ -232,6 +231,9 @@
                         ?>
                         <tr>
                             <td><?= $no++ ?></td>
+                            <td style="font-weight: 800; color: var(--accent-solid); letter-spacing: 1px;">
+                                <?= strtoupper($row['brand']) ?>
+                            </td>
                             <td class="ufc-badge">
                                 <div class="price-box">
                                     <span class="price-hidden" style="font-family: sans-serif;"></span>
@@ -240,7 +242,7 @@
                                 </div>
                             </td>
                             <td>
-                                <span class="color-name"><?= $name ?></span>
+                                <span><?= $name ?></span>
                             </td>
                             <td><?= $row['material'] ?></td>
                             <td><?= $row['lens_shape'] ?></td>
@@ -262,7 +264,7 @@
                                     <button type="button" class="btn-reveal" onclick="revealPrice(this)"><i class="fas fa-eye"></i></button>
                                 </div>
                             </td>
-                            <td style="color: var(--danger); font-family: monospace;"><?= $row['price_secret_code'] ?></td>
+                            <td style="color: var(--danger); font-size: 14px; font-weight: bold; font-family: monospace;"><?= $row['price_secret_code'] ?></td>
                             <td style="text-align: center;"><strong><?= $row['stock'] ?></strong></td>
                             <td style="text-align: center;">
                                 <span class="age-dot dot-<?= str_replace(' ', '', $row['stock_age']) ?>" title="<?= strtoupper($row['stock_age']) ?>"></span>
@@ -317,7 +319,7 @@
             valueText.style.display = 'inline';
             hiddenText.style.display = 'none';
             icon.classList.replace('fa-eye', 'fa-eye-slash');
-            btn.style.opacity = '0.5'; // Tandai bahwa sudah dibuka
+            btn.style.opacity = '0.5'; // Mark as revealed
         } else {
             valueText.style.display = 'none';
             hiddenText.style.display = 'inline';
