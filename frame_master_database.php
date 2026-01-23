@@ -129,6 +129,7 @@
             padding: 15px 20px; border-radius: 15px; color: var(--accent-solid);
             font-family: 'Courier New', monospace; outline: none;
             box-shadow: inset 6px 6px 12px var(--shadow-dark);
+            text-transform: uppercase;
         }
 
         .btn-display {
