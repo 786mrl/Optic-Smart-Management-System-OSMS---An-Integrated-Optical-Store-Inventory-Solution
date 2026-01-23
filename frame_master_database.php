@@ -58,33 +58,36 @@ if ($show_data) {
             $title_display = "Material: " . strtoupper($material_type);
         }
 
-    } elseif ($parts[0] === 'shape' && isset($parts[1])) {
-        // shape.square, shape.square.new
-        $shape_type = mysqli_real_escape_string($conn, trim($parts[1]));
-        if (isset($parts[2])) {
-            $age = trim($parts[2]);
-            $where_clause = " WHERE lens_shape LIKE '%$shape_type%' AND stock_age = '$age'";
-            $title_display = "Shape: " . strtoupper($shape_type) . " | Stok: " . strtoupper($age);
+    } elseif (in_array($parts[0], ['shape', 'structure']) && isset($parts[1])) {
+        $category = $parts[0]; // shape atau structure
+        $type_val = mysqli_real_escape_string($conn, trim($parts[1]));
+        $extra_filter = "";
+        $status_label = "";
+
+        // Loop untuk mengecek parameter tambahan (available, new, old, very old)
+        for ($i = 2; $i < count($parts); $i++) {
+            $val = strtolower(trim($parts[$i]));
+            
+            if ($val === 'available') {
+                $extra_filter .= " AND stock > 0";
+                $status_label .= " | TERSEDIA";
+            } elseif (in_array($val, ['new', 'old', 'very old'])) {
+                $extra_filter .= " AND stock_age = '$val'";
+                $status_label .= " | STOK: " . strtoupper($val);
+            }
+        }
+
+        // Tentukan kolom database berdasarkan kategori
+        $column = ($category === 'shape') ? 'lens_shape' : 'structure';
+        
+        // Gunakan LIKE untuk shape, namun tetap gunakan '=' untuk structure agar Rimless vs Semi-Rimless tidak tercampur
+        if ($category === 'structure') {
+            $where_clause = " WHERE $column = '$type_val'" . $extra_filter;
         } else {
-            $where_clause = " WHERE lens_shape LIKE '%$shape_type%'";
-            $title_display = "Shape: " . strtoupper($shape_type);
+            $where_clause = " WHERE $column LIKE '%$type_val%'" . $extra_filter;
         }
 
-    } elseif ($parts[0] === 'structure' && isset($parts[1])) {
-        // Gunakan trim untuk membersihkan spasi
-        $structure_type = mysqli_real_escape_string($conn, trim($parts[1]));
-        $age_filter = "";
-        
-        if (isset($parts[2])) {
-            $age = trim($parts[2]);
-            $age_filter = " AND stock_age = '$age'";
-        }
-
-        // MENGGUNAKAN '=' BUKAN 'LIKE' AGAR TERPISAH TEGAS
-        // Ini memastikan 'rimless' tidak akan menarik 'semi-rimless'
-        $where_clause = " WHERE structure = '$structure_type'" . $age_filter;
-        $title_display = "Structure: " . strtoupper($structure_type) . ($age_filter ? " | Stok: " . strtoupper($age) : "");
-        
+        $title_display = strtoupper($category) . ": " . strtoupper($type_val) . $status_label;
     } elseif ($cmd === 'all') {
         $where_clause = "";
         $title_display = "Menampilkan Semua Data Utama";
