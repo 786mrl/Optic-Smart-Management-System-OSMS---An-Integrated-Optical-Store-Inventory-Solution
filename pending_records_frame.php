@@ -404,10 +404,11 @@
                                         </div>
                                         
                                         <div class="btn-group">
-                                            <button type="submit" class="submit-main">
+                                            <button type="submit" id="btnPrint" class="submit-main">
                                                 🖨️ PRINT SELECTED QR
                                             </button>
-                                            <button type="button" 
+                                            <button type="button"
+                                                    id="btnSave"
                                                     name="submit_to_main" 
                                                     class="submit-main" 
                                                     style="background: var(--accent-green); color: #191c1e;"
@@ -439,26 +440,52 @@
         </div>        
 
         <script>
+            function updateButtonState() {
+                const btnPrint = document.getElementById('btnPrint');
+                const btnSave = document.getElementById('btnSave');
+                const checkedCount = document.querySelectorAll('.staging-checkbox:checked').length;
+
+                // If nothing is checked, set disabled = true
+                const isDisabled = checkedCount === 0;
+                
+                if(btnPrint) btnPrint.disabled = isDisabled;
+                if(btnSave) btnSave.disabled = isDisabled;
+            }
+
             function toggleSelectAll(source) {
                 const checkboxes = document.querySelectorAll('.staging-checkbox');
                 checkboxes.forEach(checkbox => {
                     checkbox.checked = source.checked;
                 });
+                updateButtonState(); // Update buttons after Select All
             }
 
             document.addEventListener('DOMContentLoaded', function() {
                 const masterCheckbox = document.getElementById('selectAllStaging');
                 const itemCheckboxes = document.querySelectorAll('.staging-checkbox');
 
+                // Run initial check when page loads
+                updateButtonState();
+
                 itemCheckboxes.forEach(checkbox => {
                     checkbox.addEventListener('change', function() {
                         const totalChecked = document.querySelectorAll('.staging-checkbox:checked').length;
-                        masterCheckbox.checked = (totalChecked === itemCheckboxes.length);
+                        if(masterCheckbox) {
+                            masterCheckbox.checked = (totalChecked === itemCheckboxes.length);
+                        }
+                        updateButtonState(); // Update buttons whenever a checkbox changes
                     });
                 });
             });
 
             async function confirmSaveToMain() {
+                // CHECK IF ANY CHECKBOXES ARE SELECTED
+                const checkedBoxes = document.querySelectorAll('.staging-checkbox:checked');
+                if (checkedBoxes.length === 0) {
+                    Swal.fire('Opps!', 'Please select at least one record to save.', 'info');
+                    return; // Stop execution here if nothing is selected
+                }
+
                 // 1. Show SweetAlert to request password
                 const { value: password } = await Swal.fire({
                     title: 'VERIFICATION REQUIRED',

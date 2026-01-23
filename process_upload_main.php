@@ -28,17 +28,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_to_main'])) {
         exit();
     }
 
-    // 3. Data Migration Process
+    // 3. Data Migration Process (Selected items only)
     $current_time = date('Y-m-d H:i:s');
-    $query_staging = "SELECT * FROM frame_staging";
-    $result_staging = $conn->query($query_staging);
+    $selected_ufcs = $_POST['selected_ufc'] ?? [];
 
-    if ($result_staging && $result_staging->num_rows > 0) {
+    if (!empty($selected_ufcs)) {
         $conn->begin_transaction();
 
         try {
+            // Prepare Query to fetch data from staging based on selected UFCs
+            $placeholders = implode(',', array_fill(0, count($selected_ufcs), '?'));
+            $stmt_select = $conn->prepare("SELECT * FROM frame_staging WHERE ufc IN ($placeholders)");
+            $stmt_select->bind_param(str_repeat('s', count($selected_ufcs)), ...$selected_ufcs);
+            $stmt_select->execute();
+            $result_staging = $stmt_select->get_result();
+
             // Prepare INSERT ... ON DUPLICATE KEY UPDATE Query
-            $sql = "INSERT INTO frames_main (
+            $sql_insert = "INSERT INTO frames_main (
                         ufc, brand, frame_code, frame_size, color_code, 
                         material, lens_shape, structure, size_range, 
                         buy_price, sell_price, price_secret_code, 
@@ -55,22 +61,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_to_main'])) {
                     stock = stock + VALUES(stock),
                     updated_at = VALUES(updated_at)";
 
-            $stmt = $conn->prepare($sql);
+            $stmt_insert = $conn->prepare($sql_insert);
 
             while ($row = $result_staging->fetch_assoc()) {
-                // Binding 16 Parameters: sssssssssddsisss
-                $stmt->bind_param("sssssssssddsisss", 
+                // Binding data to Main Database
+                $stmt_insert->bind_param("sssssssssddsisss", 
                     $row['ufc'], $row['brand'], $row['frame_code'], $row['frame_size'], 
                     $row['color_code'], $row['material'], $row['lens_shape'], $row['structure'], 
                     $row['size_range'], $row['buy_price'], $row['sell_price'], $row['price_secret_code'], 
                     $row['stock'], $row['stock_age'], $current_time, $current_time
                 );
 
-                if (!$stmt->execute()) {
-                    throw new Exception("Error during data migration: " . $stmt->error);
+                if (!$stmt_insert->execute()) {
+                    throw new Exception("Migration Error: " . $stmt_insert->error);
                 }
 
-                // QR Code File Management
+                // Manage QR Code Files (Move from staging to main_qrcodes)
                 $oldPath = "qrcodes/" . $row['ufc'] . ".png";
                 $newPath = "main_qrcodes/" . $row['ufc'] . ".png";
 
@@ -78,20 +84,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_to_main'])) {
                     if (!file_exists("main_qrcodes")) mkdir("main_qrcodes", 0777, true);
                     rename($oldPath, $newPath);
                 }
+
+                // Delete this item from Staging since it has moved to Main
+                $stmt_del = $conn->prepare("DELETE FROM frame_staging WHERE ufc = ?");
+                $stmt_del->bind_param("s", $row['ufc']);
+                $stmt_del->execute();
             }
 
-            // Clear Staging Table after success
-            $conn->query("DELETE FROM frame_staging");
-
             $conn->commit();
-            $_SESSION['success_msg'] = "Success! Data has been migrated to Main Database.";
+            $_SESSION['success_msg'] = count($selected_ufcs) . " items successfully migrated to Main Database.";
             
         } catch (Exception $e) {
             $conn->rollback();
             $_SESSION['error_msg'] = "System Error: " . $e->getMessage();
         }
     } else {
-        $_SESSION['error_msg'] = "No data found in staging to migrate.";
+        $_SESSION['error_msg'] = "Please select at least one item to migrate.";
     }
     
     header("Location: pending_records_frame.php");

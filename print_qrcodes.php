@@ -30,14 +30,23 @@
     $is_restricted = ($start_row > 12);
 
     if (!empty($selected_ufcs)) {
+        // Create placeholders (?) based on the number of selected items
         $placeholders = implode(',', array_fill(0, count($selected_ufcs), '?'));
-        $stmt = $conn->prepare("SELECT ufc, brand, price_secret_code, stock_age FROM frame_staging WHERE ufc IN ($placeholders)");
-        $stmt->bind_param(str_repeat('s', count($selected_ufcs)), ...$selected_ufcs);
+        
+        // Fetch data only for checked items (SELECT * fetches all columns including ufc, brand, etc.)
+        $stmt = $conn->prepare("SELECT * FROM frame_staging WHERE ufc IN ($placeholders)");
+        
+        // Bind all IDs from the array to the query
+        $types = str_repeat('s', count($selected_ufcs));
+        $stmt->bind_param($types, ...$selected_ufcs);
         $stmt->execute();
         $result = $stmt->get_result();
 
         $all_data = [];
-        while ($row = $result->fetch_assoc()) { $all_data[] = $row; }
+        while ($row = $result->fetch_assoc()) { 
+            $all_data[] = $row; 
+        }
+        // Reverse the data so the print order matches the input order (optional)
         $all_data = array_reverse($all_data);
 
         // Global Indicator Logic

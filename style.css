@@ -1342,6 +1342,13 @@ tr td {
     to { opacity: 1; transform: translateY(0); }
 }
 
+/* pending_records_frame */
+.submit-main:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    filter: grayscale(1);
+}
+
 /* --- MOBILE RESPONSIVENESS --- */
 @media (max-width: 480px) {
     .content-area {
