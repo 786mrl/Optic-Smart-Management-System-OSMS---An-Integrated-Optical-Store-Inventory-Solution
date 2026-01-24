@@ -339,7 +339,7 @@
                 <div class="main-card" style="margin-left: auto; margin-right: auto;">                    
                     <div class="glass-window">
                         <?php
-                            $queryStaging = "SELECT ufc, brand, stock, price_secret_code FROM frame_staging";
+                            $queryStaging = "SELECT ufc, brand, gender_category, stock, price_secret_code FROM frame_staging";
                             $resultStaging = $conn->query($queryStaging);
                             $hasStagingData = ($resultStaging && $resultStaging->num_rows > 0);
                         ?>
@@ -360,6 +360,7 @@
                                                         <th>NO</th>
                                                         <th>UFC</th>
                                                         <th>BRAND</th>
+                                                        <th>GENDER CATEGORY</th>
                                                         <th>STOCK</th>
                                                         <th>SECRET CODE</th>
                                                         <th>ACTIONS</th>
@@ -377,6 +378,7 @@
                                                                 <td data-label="NO"><?php echo $no++; ?></td>
                                                                 <td data-label="UFC"><strong style="color: var(--accent-green);"><?php echo $rowStaging['ufc'] ?: 'MISSING UFC'; ?></strong></td>
                                                                 <td data-label="BRAND"><?php echo $rowStaging['brand']; ?></td>
+                                                                <td data-label="GENDER CATEGORY"><?php echo $rowStaging['gender_category']; ?></td>
                                                                 <td data-label="STOCK"><?php echo $rowStaging['stock']; ?></td>
                                                                 <td data-label="SECRET CODE"><?php echo $rowStaging['price_secret_code']; ?></td>
                                                                 <td data-label="ACTIONS">

@@ -163,7 +163,8 @@
                     { label: 'SIZE', value: data.frame_size, highlight: false },
                     { label: 'COLOR', value: data.color_code, highlight: false },
                     { label: 'MATERIAL', value: data.material, highlight: false },
-                    { label: 'SHAPE', value: data.lens_shape, highlight: false }, // Added back
+                    { label: 'SHAPE', value: data.lens_shape, highlight: false },
+                    { label: 'GENDER CATEGORY', value: data.gender_category ? data.gender_category.toUpperCase() : '-', highlight: false },
                     { label: 'STOCK', value: data.stock, highlight: true },
                     { label: 'SELLING PRICE', value: 'IDR ' + (parseInt(data.sell_price) || 0).toLocaleString('id-ID'), highlight: true },
                     { label: 'SECRET CODE', value: data.price_secret_code, highlight: false }

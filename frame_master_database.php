@@ -59,7 +59,7 @@
                 header("Location: ?msg=deleted&count=$affected");
                 exit;
             }
-        } elseif (in_array($cmd_type, ['brand', 'material', 'shape', 'structure', 'size'])) {
+        } elseif (in_array($cmd_type, ['brand', 'material', 'shape', 'structure', 'size', 'gender'])) {
             $val_main = mysqli_real_escape_string($conn, trim($parts[1] ?? ''));
             $extra_sql = "";
             $labels = [];
@@ -80,7 +80,8 @@
                 'material'  => 'material',
                 'shape'     => 'lens_shape',
                 'structure' => 'structure',
-                'size'      => 'size_range'
+                'size'      => 'size_range',
+                'gender'    => 'gender_category'
             ];
             
             $col = $column_map[$cmd_type];
@@ -274,7 +275,7 @@
                                         <thead>
                                             <tr>
                                                 <th>No</th><th>Brand</th><th>UFC</th><th>Color Details</th><th>Material</th><th>Shape</th>
-                                                <th>Size</th><?php if($role == 'admin'): ?><th>Buy</th><?php endif; ?>
+                                                <th>Size</th><th>Gender Category</th><?php if($role == 'admin'): ?><th>Buy</th><?php endif; ?>
                                                 <th>Sell</th><th>Secret</th><th>Stock</th><th>Age</th>
                                             </tr>
                                         </thead>
@@ -301,6 +302,7 @@
                                                 <td><?= $row['material'] ?></td>
                                                 <td><?= $row['lens_shape'] ?></td>
                                                 <td><?= $row['size_range'] ?></td>
+                                                <td><?= $row['gender_category'] ?></td>
                                                 <?php if($role == 'admin'): ?>
                                                     <td style="color: var(--success);">
                                                         <div class="price-box">
@@ -348,9 +350,7 @@
         <footer class="footer-container">
             <p class="footer-text"><?php echo $COPYRIGHT_FOOTER; ?></p>
         </footer>
-    </div>
-
-    
+    </div>    
 
     <script>
         // Check if there is a success message in the URL
@@ -389,6 +389,11 @@
                         • <b>delete.1 year</b> : Delete 0 stock (updated > 1 yr ago)<br>
                         • <b>delete.5 month</b> : Delete 0 stock (updated > 5 mos ago)<br>
                         <small style="color: #888">*Only deletes data with 0 stock.</small>
+                        <p>Format: <b>category.value.extra</b></p>
+                        <hr style="border: 0; border-top: 1px solid #333; margin: 10px 0;">
+                        • <b>all</b> : Show all data<br>
+                        • <b>brand.takeyama</b> : Filter by brand<br>
+                        • <b>gender.men</b> : Filter by gender (men/female/unisex)<br> • <b>shape.square</b> : Filter by lens shape<br>
                     </div>
                 `,
                 background: '#16181b',

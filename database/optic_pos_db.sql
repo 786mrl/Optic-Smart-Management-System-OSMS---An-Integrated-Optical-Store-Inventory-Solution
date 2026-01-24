@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Jan 24, 2026 at 11:22 AM
+-- Generation Time: Jan 24, 2026 at 01:51 PM
 -- Server version: 10.1.38-MariaDB
 -- PHP Version: 7.3.2
 
@@ -38,6 +38,7 @@ CREATE TABLE `frames_main` (
   `lens_shape` varchar(50) DEFAULT NULL,
   `structure` enum('full-rim','semi-rimless','rimless') DEFAULT NULL,
   `size_range` enum('small','medium','large') DEFAULT NULL,
+  `gender_category` enum('men','female','unisex') NOT NULL DEFAULT 'unisex',
   `buy_price` decimal(15,2) DEFAULT NULL,
   `sell_price` decimal(15,2) DEFAULT NULL,
   `price_secret_code` varchar(20) DEFAULT NULL,
@@ -51,27 +52,32 @@ CREATE TABLE `frames_main` (
 -- Dumping data for table `frames_main`
 --
 
-INSERT INTO `frames_main` (`ufc`, `brand`, `frame_code`, `frame_size`, `color_code`, `material`, `lens_shape`, `structure`, `size_range`, `buy_price`, `sell_price`, `price_secret_code`, `stock`, `stock_age`, `created_at`, `updated_at`) VALUES
-('BVLGARI-1376-50-23-137-COL.7', 'BVLGARI', '1376', '50-23-137', 'COL.7', 'TR90', 'WAYFARER', 'rimless', 'large', '58000.00', '265000.00', 'JH15LZ', 3, 'very old', '2026-01-23 16:50:03', '2026-01-23 16:50:03'),
-('CEVIRO-lz-786-00-00-786-col.1', 'CEVIRO', 'lz-786', '00-00-786', 'col.1', 'METAL', 'Aviator', 'full-rim', 'medium', '30000.00', '135000.00', 'I35LZ', 2, 'new', '2026-01-21 21:50:31', '2026-01-21 21:50:31'),
-('CHANEL-58472-52-16-145-c5', 'CHANEL', '58472', '52-16-145', 'c5', 'PRC', 'AVIATOR', 'semi-rimless', 'medium', '45000.00', '205000.00', 'J05LZ', 10, 'new', '2026-01-21 21:50:31', '2026-01-22 14:16:40'),
-('DIOR-AT1021-50-20-150-C6', 'DIOR', 'AT1021', '50-20-150', 'C6', 'PLASTIC', 'RECTANGLE', 'full-rim', 'medium', '30000.00', '135000.00', 'I35LZ', 1, 'old', '2026-01-22 17:32:06', '2026-01-22 17:32:06'),
-('EYEWEAR-TAKE648-52-16-145-COL.MBLK', 'EYE WEAR', 'TAKE 648', '52-16-145', 'COL. MBLK', 'TR', 'CAT-EYE', 'semi-rimless', 'medium', '78000.00', '390000.00', 'KH40LZ', 1, 'old', '2026-01-23 17:01:48', '2026-01-23 17:01:48'),
-('GNA-G083543-52-20-143-COL.9', 'GNA', 'G08 3543', '52-20-143', 'COL.9', 'B TITANIUM', 'SQUARE', 'full-rim', 'medium', '105000.00', '665000.00', 'NH15LZ', 1, 'old', '2026-01-22 14:16:40', '2026-01-22 14:16:40'),
-('HANSHA-9384-50-22-143-C08', 'HAN SHA', '9384', '50-22-143', 'C08', 'PLASTIC', 'ROUND', 'full-rim', 'medium', '38000.00', '175000.00', 'IH25LZ', 1, 'very old', '2026-01-22 17:32:06', '2026-01-22 17:32:06'),
-('HUMANSKULL-H1520-45-23-140-C2', 'HUMAN SKULL', 'H1520', '45-23-140', 'C2', 'PLASTIC', 'Oval', 'full-rim', 'medium', '38000.00', '175000.00', 'IH25LZ', 6, 'new', '2026-01-21 21:50:31', '2026-01-21 22:21:15'),
-('MARTINJOY-23235-48-22-143-COL.02', 'MARTIN JOY', '23235', '48-22-143', 'COL. 02', 'PLASTIC', 'ROUND', 'full-rim', 'medium', '59000.00', '270000.00', 'JH20LZ', 1, 'old', '2026-01-22 17:32:06', '2026-01-22 17:32:06'),
-('MARXSTUDIO-Mstm-161-50-18-C5', 'MARX STUDIO', 'Mst m-161', '50-18', 'C5', 'PLASTIC', 'Square', 'full-rim', 'medium', '105000.00', '630000.00', 'MI30LZ', 1, 'new', '2026-01-21 21:50:31', '2026-01-21 21:50:31'),
-('MISSMAGDA-2518-52-20-142-COL.10', 'MISS MAGDA', '2518', '52-20-142', 'COL.10', 'METAL', 'SQUARE', 'full-rim', 'medium', '38000.00', '175000.00', 'IH25LZ', 1, 'new', '2026-01-22 17:32:06', '2026-01-22 17:32:06'),
-('MISSMAGDA-m99-19-51-18-145-C6', 'MISSMAGDA', 'M99-19', '51-18-145', 'c6', 'METAL', 'SQUARE', 'full-rim', 'medium', '35000.00', '160000.00', 'IH10LZ', 2, 'new', '2026-01-21 21:50:31', '2026-01-21 21:50:31'),
-('PLAYKIDS-T181250-47-17-125-M.BLK', 'PLAY KIDS', 'T18 1250', '47-17-125', 'M.BLK', 'PLASTIC', 'ROUND', 'full-rim', 'small', '38000.00', '175000.00', 'IH25LZ', 1, 'very old', '2026-01-22 17:32:06', '2026-01-22 17:32:06'),
-('PORSCHEDESIGN-Pd8517-57-16-140-col.8', 'PORSCHE DESIGN', 'Pd8517', '57-16-140', 'col.8', 'TITANIUM', 'SQUARE', 'semi-rimless', 'medium', '56000.00', '255000.00', 'JH05LZ', 1, 'old', '2026-01-22 14:16:40', '2026-01-22 14:16:40'),
-('RAIS-Umi-786-00-00-786-C1', 'RAIS', 'Umi-786', '00-00-786', 'C1', 'METAL', 'SQUARE', 'full-rim', 'medium', '120000.00', '760000.00', 'NIH10LZ', 1, 'new', '2026-01-21 21:50:31', '2026-01-21 21:50:31'),
-('REDSMART-RS16062-50-18-138-COL.12', 'RED SMART', 'RS16062', '50-18-138', 'COL.12', 'METAL', 'OVAL', 'full-rim', 'medium', '36000.00', '165000.00', 'IH15LZ', 1, 'new', '2026-01-22 17:32:06', '2026-01-22 17:32:06'),
-('SOOPER-5004-53-17-139-COL.11', 'SOOPER', '5004', '53-17-139', 'COL.11', 'PLASTIC', 'BUTTERFLY', 'full-rim', 'medium', '36000.00', '165000.00', 'IH15LZ', 1, 'new', '2026-01-22 17:32:06', '2026-01-22 17:32:06'),
-('SWAROVSKI-1515-50-17-138-COL.4', 'SWAROVSKI', '1515', '50-17-138', 'COL.4', 'PLASTIC', 'OVAL', 'full-rim', 'medium', '62000.00', '300000.00', 'K00LZ', 2, 'very old', '2026-01-22 17:32:06', '2026-01-22 17:32:06'),
-('TAKEYAMA-TAKE648-52-15-140-C5', 'TAKEYAMA', 'TAKE 648', '52-15-140', 'C5', 'OPTYL', 'OVAL', 'semi-rimless', 'medium', '38000.00', '175000.00', 'IH25LZ', 2, 'old', '2026-01-23 17:01:48', '2026-01-23 17:01:48'),
-('TAKEYAMA-TAKE700-52-15-140-col.4', 'TAKEYAMA', 'TAKE 700', '52-15-140', 'col.4', 'METAL', 'SQUARE', 'semi-rimless', 'medium', '45000.00', '205000.00', 'IH15LZ', 6, 'old', '2026-01-21 21:50:31', '2026-01-21 22:16:08');
+INSERT INTO `frames_main` (`ufc`, `brand`, `frame_code`, `frame_size`, `color_code`, `material`, `lens_shape`, `structure`, `size_range`, `gender_category`, `buy_price`, `sell_price`, `price_secret_code`, `stock`, `stock_age`, `created_at`, `updated_at`) VALUES
+('BRENDEN-BR-3543-52-20-143-C1', 'BRENDEN', 'BR-3543', '52-20-143', 'C1', 'METAL', 'SQUARE', 'full-rim', 'medium', 'men', '36000.00', '165000.00', 'IH15LZ', 1, 'old', '2026-01-24 17:52:01', '2026-01-24 17:52:01'),
+('BVLGARI-1303-49-17-138-COL.4', 'BVLGARI', '1303', '49-17-138', 'COL.4', 'PLASTIC', 'WAYFARER', 'full-rim', 'small', 'unisex', '68000.00', '330000.00', 'K30LZ', 1, 'very old', '2026-01-24 17:50:04', '2026-01-24 17:50:04'),
+('BVLGARI-1376-50-23-137-COL.7', 'BVLGARI', '1376', '50-23-137', 'COL.7', 'TR90', 'WAYFARER', 'rimless', 'large', 'female', '58000.00', '265000.00', 'JH15LZ', 0, 'very old', '2026-01-23 16:50:03', '2026-01-23 16:50:03'),
+('CEVIRO-lz-786-00-00-786-col.1', 'CEVIRO', 'lz-786', '00-00-786', 'col.1', 'METAL', 'Aviator', 'full-rim', 'medium', 'unisex', '30000.00', '135000.00', 'I35LZ', 2, 'new', '2026-01-21 21:50:31', '2026-01-21 21:50:31'),
+('CHANEL-58472-52-16-145-c5', 'CHANEL', '58472', '52-16-145', 'c5', 'PRC', 'AVIATOR', 'semi-rimless', 'medium', 'unisex', '45000.00', '205000.00', 'J05LZ', 10, 'new', '2026-01-21 21:50:31', '2026-01-22 14:16:40'),
+('DIOR-AT1021-50-20-150-C6', 'DIOR', 'AT1021', '50-20-150', 'C6', 'PLASTIC', 'RECTANGLE', 'full-rim', 'medium', 'unisex', '30000.00', '135000.00', 'I35LZ', 1, 'old', '2026-01-22 17:32:06', '2026-01-22 17:32:06'),
+('EYEWEAR-TAKE648-52-16-145-COL.MBLK', 'EYE WEAR', 'TAKE 648', '52-16-145', 'COL. MBLK', 'TR', 'CAT-EYE', 'semi-rimless', 'medium', 'men', '78000.00', '390000.00', 'KH40LZ', 1, 'old', '2026-01-23 17:01:48', '2026-01-23 17:01:48'),
+('GNA-G083543-52-20-143-COL.9', 'GNA', 'G08 3543', '52-20-143', 'COL.9', 'B TITANIUM', 'SQUARE', 'full-rim', 'medium', 'unisex', '105000.00', '665000.00', 'NH15LZ', 1, 'old', '2026-01-22 14:16:40', '2026-01-22 14:16:40'),
+('HANSHA-9384-50-22-143-C08', 'HAN SHA', '9384', '50-22-143', 'C08', 'PLASTIC', 'ROUND', 'full-rim', 'medium', 'unisex', '38000.00', '175000.00', 'IH25LZ', 1, 'very old', '2026-01-22 17:32:06', '2026-01-22 17:32:06'),
+('HUMANSKULL-H1520-45-23-140-C2', 'HUMAN SKULL', 'H1520', '45-23-140', 'C2', 'PLASTIC', 'Oval', 'full-rim', 'medium', 'female', '38000.00', '175000.00', 'IH25LZ', 6, 'new', '2026-01-21 21:50:31', '2026-01-21 22:21:15'),
+('MARTINJOY-23235-48-22-143-COL.02', 'MARTIN JOY', '23235', '48-22-143', 'COL. 02', 'PLASTIC', 'ROUND', 'full-rim', 'medium', 'men', '59000.00', '270000.00', 'JH20LZ', 1, 'old', '2026-01-22 17:32:06', '2026-01-22 17:32:06'),
+('MARXSTUDIO-Mstm-161-50-18-C5', 'MARX STUDIO', 'Mst m-161', '50-18', 'C5', 'PLASTIC', 'Square', 'full-rim', 'medium', 'unisex', '105000.00', '630000.00', 'MI30LZ', 1, 'new', '2026-01-21 21:50:31', '2026-01-21 21:50:31'),
+('MISSMAGDA-2518-52-20-142-COL.10', 'MISS MAGDA', '2518', '52-20-142', 'COL.10', 'METAL', 'SQUARE', 'full-rim', 'medium', 'men', '38000.00', '175000.00', 'IH25LZ', 1, 'new', '2026-01-22 17:32:06', '2026-01-22 17:32:06'),
+('MISSMAGDA-m99-19-51-18-145-C6', 'MISSMAGDA', 'M99-19', '51-18-145', 'c6', 'METAL', 'SQUARE', 'full-rim', 'medium', 'unisex', '35000.00', '160000.00', 'IH10LZ', 2, 'new', '2026-01-21 21:50:31', '2026-01-21 21:50:31'),
+('PLAYKIDS-T181250-47-17-125-M.BLK', 'PLAY KIDS', 'T18 1250', '47-17-125', 'M.BLK', 'PLASTIC', 'ROUND', 'full-rim', 'small', 'unisex', '38000.00', '175000.00', 'IH25LZ', 1, 'very old', '2026-01-22 17:32:06', '2026-01-22 17:32:06'),
+('PORSCHEDESIGN-OR7294-52-18-140-C5', 'PORSCHE DESIGN', 'OR 7294', '52-18-140', 'C5', 'METAL', 'SQUARE', 'semi-rimless', 'medium', 'men', '58000.00', '265000.00', 'JH15LZ', 1, 'old', '2026-01-24 19:51:00', '2026-01-24 19:51:00'),
+('PORSCHEDESIGN-Pd8517-57-16-140-col.8', 'PORSCHE DESIGN', 'Pd8517', '57-16-140', 'col.8', 'TITANIUM', 'SQUARE', 'semi-rimless', 'medium', 'female', '56000.00', '255000.00', 'JH05LZ', 1, 'old', '2026-01-22 14:16:40', '2026-01-22 14:16:40'),
+('RAIS-Umi-786-00-00-786-C1', 'RAIS', 'Umi-786', '00-00-786', 'C1', 'METAL', 'SQUARE', 'full-rim', 'medium', 'unisex', '120000.00', '760000.00', 'NIH10LZ', 1, 'new', '2026-01-21 21:50:31', '2026-01-21 21:50:31'),
+('REDSMART-RS16062-50-18-138-COL.12', 'RED SMART', 'RS16062', '50-18-138', 'COL.12', 'METAL', 'OVAL', 'full-rim', 'medium', 'unisex', '36000.00', '165000.00', 'IH15LZ', 1, 'new', '2026-01-22 17:32:06', '2026-01-22 17:32:06'),
+('SOOPER-5004-53-17-139-COL.11', 'SOOPER', '5004', '53-17-139', 'COL.11', 'PLASTIC', 'BUTTERFLY', 'full-rim', 'medium', 'female', '36000.00', '165000.00', 'IH15LZ', 1, 'new', '2026-01-22 17:32:06', '2026-01-22 17:32:06'),
+('SWAROVSKI-1515-50-17-138-COL.4', 'SWAROVSKI', '1515', '50-17-138', 'COL.4', 'PLASTIC', 'OVAL', 'full-rim', 'medium', 'unisex', '62000.00', '300000.00', 'K00LZ', 2, 'very old', '2026-01-22 17:32:06', '2026-01-22 17:32:06'),
+('TAKEYAMA-TAKE648-52-15-140-C4', 'TAKEYAMA', 'TAKE 648', '52-15-140', 'C4', 'METAL', 'BUTTERFLY', 'full-rim', 'medium', 'female', '36000.00', '165000.00', 'IH15LZ', 1, 'old', '2026-01-24 19:05:48', '2026-01-24 19:05:48'),
+('TAKEYAMA-TAKE648-52-15-140-C5', 'TAKEYAMA', 'TAKE 648', '52-15-140', 'C5', 'OPTYL', 'OVAL', 'semi-rimless', 'medium', 'unisex', '38000.00', '175000.00', 'IH25LZ', 2, 'old', '2026-01-23 17:01:48', '2026-01-23 17:01:48'),
+('TAKEYAMA-TAKE700-52-15-140-col.4', 'TAKEYAMA', 'TAKE 700', '52-15-140', 'col.4', 'METAL', 'SQUARE', 'semi-rimless', 'medium', 'female', '45000.00', '205000.00', 'IH15LZ', 6, 'old', '2026-01-21 21:50:31', '2026-01-21 22:16:08'),
+('Z-GENERATION-ZG-437235-53-17-148-C16', 'Z-GENERATION', 'ZG-437235', '53-17-148', 'C16', 'METAL', 'GEOMETRIC', 'full-rim', 'medium', 'female', '58000.00', '265000.00', 'JH15LZ', 3, 'very old', '2026-01-24 19:51:00', '2026-01-24 19:51:00');
 
 -- --------------------------------------------------------
 
@@ -102,6 +108,7 @@ CREATE TABLE `frame_staging` (
   `lens_shape` varchar(50) DEFAULT NULL,
   `structure` enum('full-rim','semi-rimless','rimless') DEFAULT NULL,
   `size_range` enum('small','medium','large') DEFAULT NULL,
+  `gender_category` enum('men','female','unisex') NOT NULL DEFAULT 'unisex',
   `buy_price` decimal(15,2) DEFAULT '0.00',
   `sell_price` decimal(15,2) DEFAULT '0.00',
   `price_secret_code` varchar(20) DEFAULT NULL,

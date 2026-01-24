@@ -50,6 +50,7 @@
         $lens_shape = $_POST['lens_shape'] ?? $current_data['lens_shape'];
         $structure = $_POST['structure'] ?? $current_data['structure'];
         $size_range = $_POST['size_range'] ?? $current_data['size_range'];
+        $gender_category = strtoupper($_POST['gender_category'] ?? $current_data['gender_category']);
         
         // Color Logic
         if ($_POST['has_color_code'] == 'no') {
@@ -112,16 +113,16 @@
 
             // Save or Update data to frame_staging
             $stmt = $conn->prepare("INSERT INTO frame_staging 
-                (ufc, brand, frame_code, frame_size, color_code, material, lens_shape, structure, size_range, buy_price, sell_price, price_secret_code, stock, stock_age) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (ufc, brand, frame_code, frame_size, color_code, material, lens_shape, structure, size_range, gender_category, buy_price, sell_price, price_secret_code, stock, stock_age) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON DUPLICATE KEY UPDATE 
                 brand=VALUES(brand), frame_code=VALUES(frame_code), frame_size=VALUES(frame_size), color_code=VALUES(color_code), 
                 material=VALUES(material), lens_shape=VALUES(lens_shape), structure=VALUES(structure), size_range=VALUES(size_range), 
-                buy_price=VALUES(buy_price), sell_price=VALUES(sell_price), price_secret_code=VALUES(price_secret_code), 
+                gender_category=VALUES(gender_category), buy_price=VALUES(buy_price), sell_price=VALUES(sell_price), price_secret_code=VALUES(price_secret_code), 
                 stock=VALUES(stock), stock_age=VALUES(stock_age)");
             
-            $stmt->bind_param("sssssssssddsis", $new_ufc, $brand, $f_code, $f_size, $color_code, $_POST['material'], 
-                            $_POST['lens_shape'], $_POST['structure'], $_POST['size_range'], $buy_price, $sell_price, 
+            $stmt->bind_param("ssssssssssddsis", $new_ufc, $brand, $f_code, $f_size, $color_code, $_POST['material'], 
+                            $_POST['lens_shape'], $_POST['structure'], $_POST['size_range'], $gender_category, $buy_price, $sell_price, 
                             $secret_code, $input_stock, $stock_age);
             $stmt->execute();
 
@@ -358,6 +359,24 @@
                                 foreach($sizes as $sz): ?>
                                     <button value="<?php echo $sz; ?>" type="button" class="neu-btn <?php echo ($current_data['size_range']==$sz)?'active':''; ?>" onclick="toggleNeu(this, 'frame_size_range_input')">
                                         <span><?php echo strtoupper($sz); ?></span><div class="led"></div>
+                                    </button>
+                                <?php endforeach; ?>
+                            </div>
+                        </div>
+
+                        <!-- GENDER CATEGORY -->
+                        <div class="input-group">
+                            <label style="width: 100%; text-align: center;">GENDER CATEGORY</label>
+                            <input type="hidden" name="gender_category" id="gender_category_input" value="<?php echo $current_data['gender_category']; ?>">
+                            <div class="selection-wrapper">
+                                <?php 
+                                $genders = ['men', 'female', 'unisex']; 
+                                foreach($genders as $g): 
+                                ?>
+                                    <button value="<?php echo $g; ?>" type="button" 
+                                            class="neu-btn <?php echo ($current_data['gender_category'] == $g) ? 'active' : ''; ?>" 
+                                            onclick="toggleNeu(this, 'gender_category_input')">
+                                        <span><?php echo strtoupper($g); ?></span><div class="led"></div>
                                     </button>
                                 <?php endforeach; ?>
                             </div>

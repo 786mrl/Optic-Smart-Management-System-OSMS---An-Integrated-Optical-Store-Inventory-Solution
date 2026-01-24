@@ -13,6 +13,7 @@
         if (!file_exists($path)) return []; 
         return json_decode(file_get_contents($path), true);
     }
+    
 
     if (isset($_POST['submit_frame'])) {
         $brand = strtoupper($_POST['brand']);
@@ -38,6 +39,9 @@
 
         // stock, default 1
         $input_stock = !empty($_POST['total_frame']) ? (int)$_POST['total_frame'] : 1;
+
+        // gender category
+        $gender_cat = strtoupper($_POST['gender_category'] ?? 'unisex');
 
         // price & secret selling price code
         $buy_price = ($role === 'admin') ? (float)$_POST['buy_price'] : 0;
@@ -74,8 +78,8 @@
 
         // query: insert or update stoce also overwrite
         $stmt = $conn->prepare("INSERT INTO frame_staging 
-            (ufc, brand, frame_code, frame_size, color_code, material, lens_shape, structure, size_range, buy_price, sell_price, price_secret_code, stock, stock_age) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (ufc, brand, frame_code, frame_size, color_code, material, lens_shape, structure, size_range, gender_category, buy_price, sell_price, price_secret_code, stock, stock_age) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON DUPLICATE KEY UPDATE 
             brand=VALUES(brand), 
             frame_code=VALUES(frame_code), 
@@ -84,14 +88,15 @@
             material=VALUES(material), 
             lens_shape=VALUES(lens_shape), 
             structure=VALUES(structure), 
-            size_range=VALUES(size_range), 
+            size_range=VALUES(size_range),
+            gender_category=VALUES(gender_category),
             buy_price=VALUES(buy_price), 
             sell_price=VALUES(sell_price), 
             price_secret_code=VALUES(price_secret_code), 
             stock=stock+VALUES(stock),
             stock_age=VALUES(stock_age)");
         
-        $stmt->bind_param("sssssssssddsis", 
+        $stmt->bind_param("ssssssssssddsis", 
         $ufc, 
         $brand, 
         $f_code, 
@@ -101,6 +106,7 @@
         $_POST['lens_shape'], 
         $_POST['structure'], 
         $_POST['size_range'], 
+        $gender_cat,
         $buy_price, 
         $sell_price, 
         $secret_code, 
@@ -283,6 +289,26 @@
                                 </button>
                                 <button style="min-width: 100px;" value="large" type="button" class="neu-btn"onclick="toggleNeu(this, 'frame_size_range_input')">
                                     <span>LARGE</span>
+                                    <div class="led"></div>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- GENDER CATEGORY -->
+                        <div class="input-group">
+                            <label style="width: 100%; text-align: center; margin-bottom: 0;">GENDER CATEGORY</label>
+                            <input type="hidden" name="gender_category" id="gender_category_input" value="unisex">
+                            <div class="selection-wrapper">
+                                <button style="min-width: 80px;" value="men" type="button" class="neu-btn" onclick="toggleNeu(this, 'gender_category_input')">
+                                    <span>MEN</span>
+                                    <div class="led"></div>
+                                </button>
+                                <button style="min-width: 80px;" value="female" type="button" class="neu-btn" onclick="toggleNeu(this, 'gender_category_input')">
+                                    <span>FEMALE</span>
+                                    <div class="led"></div>
+                                </button>
+                                <button style="min-width: 80px;" value="unisex" type="button" class="neu-btn active" onclick="toggleNeu(this, 'gender_category_input')">
+                                    <span>UNISEX</span>
                                     <div class="led"></div>
                                 </button>
                             </div>

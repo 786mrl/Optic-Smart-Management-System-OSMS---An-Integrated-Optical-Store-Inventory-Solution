@@ -47,14 +47,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_to_main'])) {
             $sql_insert = "INSERT INTO frames_main (
                         ufc, brand, frame_code, frame_size, color_code, 
                         material, lens_shape, structure, size_range, 
-                        buy_price, sell_price, price_secret_code, 
+                        gender_category, buy_price, sell_price, price_secret_code, 
                         stock, stock_age, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON DUPLICATE KEY UPDATE 
                     material = VALUES(material),
                     lens_shape = VALUES(lens_shape),
                     structure = VALUES(structure),
                     size_range = VALUES(size_range),
+                    gender_category = VALUES(gender_category),
                     buy_price = VALUES(buy_price),
                     sell_price = VALUES(sell_price),
                     price_secret_code = VALUES(price_secret_code),
@@ -65,10 +66,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_to_main'])) {
 
             while ($row = $result_staging->fetch_assoc()) {
                 // Binding data to Main Database
-                $stmt_insert->bind_param("sssssssssddsisss", 
+                $stmt_insert->bind_param("ssssssssssddsisss", 
                     $row['ufc'], $row['brand'], $row['frame_code'], $row['frame_size'], 
                     $row['color_code'], $row['material'], $row['lens_shape'], $row['structure'], 
-                    $row['size_range'], $row['buy_price'], $row['sell_price'], $row['price_secret_code'], 
+                    $row['size_range'], $row['gender_category'], $row['buy_price'], $row['sell_price'], $row['price_secret_code'], 
                     $row['stock'], $row['stock_age'], $current_time, $current_time
                 );
 
