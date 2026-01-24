@@ -64,14 +64,22 @@
             $extra_sql = "";
             $labels = [];
 
+            // List of size keywords the user might input
+            $size_keywords = ['small', 'medium', 'large', 'extra large', 'extra small'];
+
             for ($i = 2; $i < count($parts); $i++) {
-                $p = trim($parts[$i]);
+                $p = strtolower(trim($parts[$i]));
+                
                 if ($p === 'available') {
                     $extra_sql .= " AND stock > 0";
                     $labels[] = "AVAILABLE";
                 } elseif (in_array($p, ['new', 'old', 'very old'])) {
                     $extra_sql .= " AND stock_age = '$p'";
                     $labels[] = strtoupper($p);
+                } elseif (in_array($p, $size_keywords)) {
+                    // New Feature: Size filter within any command
+                    $extra_sql .= " AND size_range LIKE '%$p%'";
+                    $labels[] = "SIZE: " . strtoupper($p);
                 }
             }
 
@@ -379,7 +387,9 @@
                         • <b>all</b> : Show all data<br>
                         • <b>brand.takeyama</b> : Filter by brand<br>
                         • <b>shape.square</b> : Filter by lens shape<br>
+                        • <b>gender.men</b> : Filter by gender (men/female/unisex)<br>
                         • <b>size.50-18</b> : Filter by specific size<br>
+                        • <b>.small / .medium / .large</b> : Filter by size range
                         <hr style="border: 0; border-top: 1px solid #333; margin: 10px 0;">
                         <b>Extras:</b><br>
                         • <b>.available</b> : Stock > 0 only<br>
@@ -389,11 +399,6 @@
                         • <b>delete.1 year</b> : Delete 0 stock (updated > 1 yr ago)<br>
                         • <b>delete.5 month</b> : Delete 0 stock (updated > 5 mos ago)<br>
                         <small style="color: #888">*Only deletes data with 0 stock.</small>
-                        <p>Format: <b>category.value.extra</b></p>
-                        <hr style="border: 0; border-top: 1px solid #333; margin: 10px 0;">
-                        • <b>all</b> : Show all data<br>
-                        • <b>brand.takeyama</b> : Filter by brand<br>
-                        • <b>gender.men</b> : Filter by gender (men/female/unisex)<br> • <b>shape.square</b> : Filter by lens shape<br>
                     </div>
                 `,
                 background: '#16181b',
