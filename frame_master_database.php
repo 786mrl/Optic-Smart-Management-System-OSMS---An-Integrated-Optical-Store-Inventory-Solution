@@ -30,7 +30,36 @@
         $parts = explode('.', $cmd);
         $cmd_type = $parts[0];
 
-        if (in_array($cmd_type, ['brand', 'material', 'shape', 'structure', 'size'])) {
+        if ($cmd_type === 'delete' && isset($parts[1])) {
+            $time_input = mysqli_real_escape_string($conn, $parts[1]); 
+            
+            // 1. Fetch UFC data to delete physical files
+            $select_to_delete = "SELECT ufc FROM frames_main 
+                                 WHERE stock <= 0 
+                                 AND updated_at <= DATE_SUB(NOW(), INTERVAL $time_input)";
+            $res_to_delete = mysqli_query($conn, $select_to_delete);
+            
+            if ($res_to_delete && mysqli_num_rows($res_to_delete) > 0) {
+                while ($row_del = mysqli_fetch_assoc($res_to_delete)) {
+                    $ufc_name = $row_del['ufc'];
+                    $file_path = "main_qrcodes/" . $ufc_name . ".png";
+                    if (file_exists($file_path)) {
+                        unlink($file_path);
+                    }
+                }
+            }
+
+            // 2. Execute DELETE query
+            $delete_query = "DELETE FROM frames_main 
+                             WHERE stock <= 0 
+                             AND updated_at <= DATE_SUB(NOW(), INTERVAL $time_input)";
+            
+            if (mysqli_query($conn, $delete_query)) {
+                $affected = mysqli_affected_rows($conn);
+                header("Location: ?msg=deleted&count=$affected");
+                exit;
+            }
+        } elseif (in_array($cmd_type, ['brand', 'material', 'shape', 'structure', 'size'])) {
             $val_main = mysqli_real_escape_string($conn, trim($parts[1] ?? ''));
             $extra_sql = "";
             $labels = [];
@@ -324,6 +353,22 @@
     
 
     <script>
+        // Check if there is a success message in the URL
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('msg') === 'deleted') {
+            const count = urlParams.get('count') || 0;
+            Swal.fire({
+                title: 'CLEANUP SUCCESS',
+                text: count + ' data frames with 0 stock have been deleted.',
+                icon: 'success',
+                background: '#16181b',
+                color: '#fff',
+                confirmButtonColor: '#2ecc71'
+            }).then(() => {
+                window.history.replaceState({}, document.title, window.location.pathname);
+            });
+        }
+
         function showHelp() {
             Swal.fire({
                 title: '<span style="color: #00d4ff">SEARCH COMMAND GUIDE</span>',
@@ -339,6 +384,11 @@
                         <b>Extras:</b><br>
                         • <b>.available</b> : Stock > 0 only<br>
                         • <b>.new / .old / .very old</b> : Filter by stock age
+                        <hr style="border: 0; border-top: 1px solid #333; margin: 10px 0;">
+                        <b style="color: #e74c3c;">Maintenance Command:</b><br>
+                        • <b>delete.1 year</b> : Delete 0 stock (updated > 1 yr ago)<br>
+                        • <b>delete.5 month</b> : Delete 0 stock (updated > 5 mos ago)<br>
+                        <small style="color: #888">*Only deletes data with 0 stock.</small>
                     </div>
                 `,
                 background: '#16181b',
