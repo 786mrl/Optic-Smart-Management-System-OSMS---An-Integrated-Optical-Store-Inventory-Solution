@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Jan 23, 2026 at 04:52 PM
+-- Generation Time: Jan 24, 2026 at 11:22 AM
 -- Server version: 10.1.38-MariaDB
 -- PHP Version: 7.3.2
 
@@ -52,11 +52,6 @@ CREATE TABLE `frames_main` (
 --
 
 INSERT INTO `frames_main` (`ufc`, `brand`, `frame_code`, `frame_size`, `color_code`, `material`, `lens_shape`, `structure`, `size_range`, `buy_price`, `sell_price`, `price_secret_code`, `stock`, `stock_age`, `created_at`, `updated_at`) VALUES
-('BASIC-20682-55-16-145-C10', 'BASIC', '20682', '55-16-145', 'C10', 'PLASTIC', 'RECTANGLE', 'full-rim', 'medium', '23000.00', '105000.00', 'I05LZ', 1, 'new', '2026-01-22 17:32:06', '2026-01-22 17:32:06'),
-('BEIDUIBEI-TR9123-50-22-137-C2', 'BEIDUIBEI', 'TR9123', '50-22-137', 'C2', 'PLASTIC', 'AVIATOR', 'full-rim', 'medium', '34000.00', '155000.00', 'IH05LZ', 1, 'very old', '2026-01-22 14:16:40', '2026-01-22 14:16:40'),
-('BOSS-E0419-54-17-140-C2', 'BOSS', 'E0419', '54-17-140', 'C2', 'B TITANIUM', 'AVIATOR', 'rimless', 'large', '66000.00', '320000.00', 'K20LZ', 5, 'very old', '2026-01-21 21:50:31', '2026-01-21 22:35:26'),
-('BRENDEN-brn-8654-50-18-138-col.1', 'BRENDEN', 'brn-8654', '50-18-138', 'col.1', 'B TITANIUM', 'AVIATOR', 'rimless', 'large', '23000.00', '105000.00', 'I05LZ', 5, 'very old', '2026-01-21 22:03:11', '2026-01-22 09:24:58'),
-('BVLGARI-1303-49-17-138-col.4', 'BVLGARI', '1303', '49-17-138', 'col.4', 'PLASTIC', 'Oval', 'semi-rimless', 'small', '88000.00', '440000.00', 'KH00LZ', 4, 'new', '2026-01-21 21:50:31', '2026-01-21 22:16:08'),
 ('BVLGARI-1376-50-23-137-COL.7', 'BVLGARI', '1376', '50-23-137', 'COL.7', 'TR90', 'WAYFARER', 'rimless', 'large', '58000.00', '265000.00', 'JH15LZ', 3, 'very old', '2026-01-23 16:50:03', '2026-01-23 16:50:03'),
 ('CEVIRO-lz-786-00-00-786-col.1', 'CEVIRO', 'lz-786', '00-00-786', 'col.1', 'METAL', 'Aviator', 'full-rim', 'medium', '30000.00', '135000.00', 'I35LZ', 2, 'new', '2026-01-21 21:50:31', '2026-01-21 21:50:31'),
 ('CHANEL-58472-52-16-145-c5', 'CHANEL', '58472', '52-16-145', 'c5', 'PRC', 'AVIATOR', 'semi-rimless', 'medium', '45000.00', '205000.00', 'J05LZ', 10, 'new', '2026-01-21 21:50:31', '2026-01-22 14:16:40'),
