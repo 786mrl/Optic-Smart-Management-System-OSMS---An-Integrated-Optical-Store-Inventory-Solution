@@ -382,7 +382,15 @@
                                             <div class="table-wrapper">
                                                 <table style="table-layout: fixed; width: 100%;">
                                                     <colgroup>
-                                                        <col style="width: 50px;"> <col style="width: 50px;"> <col style="width: 180px;"> <col style="width: 120px;"> <col style="width: 80px;">  <col style="width: 150px;"> <col style="width: 200px;"> </colgroup>
+                                                        <col style="width: 50px;"> 
+                                                        <col style="width: 50px;"> 
+                                                        <col style="width: 200px;"> 
+                                                        <col style="width: 120px;">
+                                                         <col style="width: 100px;">  
+                                                         <col style="width: 80px;"> 
+                                                         <col style="width: 100px;">  
+                                                         <col style="width: 200px;">
+                                                    </colgroup>
                                                     <thead>
                                                         <tr>
                                                             <th><input type="checkbox" id="selectAllStaging" onclick="toggleSelectAll(this)" checked></th>
