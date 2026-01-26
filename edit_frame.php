@@ -337,7 +337,7 @@
                         </div>
 
                         <!-- FRAME STRUCTURE -->
-                        <div class="input-group">
+                        <div class="input-group" style="flex: 0 0 100%; max-width: 100%; grid-column: 1 / -1; width: 100% !important;">
                             <label style="width: 100%; text-align: center;">STRUCTURE</label>
                             <input type="hidden" name="structure" id="frame_structure_input" value="<?php echo $current_data['structure']; ?>">
                             <div class="selection-wrapper">
@@ -351,7 +351,7 @@
                         </div>
 
                         <!-- FRAME SIZE RANGE -->
-                        <div class="input-group">
+                        <div class="input-group" style="flex: 0 0 100%; max-width: 100%; grid-column: 1 / -1; width: 100% !important;">
                             <label style="width: 100%; text-align: center;">SIZE RANGE</label>
                             <input type="hidden" name="size_range" id="frame_size_range_input" value="<?php echo $current_data['size_range']; ?>">
                             <div class="selection-wrapper">
@@ -365,7 +365,7 @@
                         </div>
 
                         <!-- GENDER CATEGORY -->
-                        <div class="input-group">
+                        <div class="input-group" style="flex: 0 0 100%; max-width: 100%; grid-column: 1 / -1; width: 100% !important;">
                             <label style="width: 100%; text-align: center;">GENDER CATEGORY</label>
                             <input type="hidden" name="gender_category" id="gender_category_input" value="<?php echo $current_data['gender_category']; ?>">
                             <div class="selection-wrapper">
@@ -389,13 +389,15 @@
                         </div>
 
                         <!-- STOCK AGE -->
-                        <div class="input-group">
+                        <div class="input-group" style="flex: 0 0 100%; max-width: 100%; grid-column: 1 / -1; width: 100% !important;">
                             <label style="width: 100%; text-align: center;">STOCK AGE</label>
                             <input type="hidden" name="stock_age" id="stock_age_input" value="<?php echo htmlspecialchars($current_data['stock_age']); ?>">
                             <div class="selection-wrapper">
                                 <?php $ages = ['very old', 'old', 'new']; 
                                 foreach($ages as $ag): ?>
-                                    <button value="<?php echo $ag; ?>" type="button" class="neu-btn <?php echo ($current_data['stock_age']==$ag)?'active':''; ?>" onclick="toggleNeu(this, 'stock_age_input')">
+                                    <button value="<?php echo $ag; ?>" type="button" 
+                                    class="neu-btn <?php echo ($current_data['stock_age']==$ag)?'active':''; ?>" 
+                                    onclick="toggleNeu(this, 'stock_age_input')">
                                         <span><?php echo strtoupper($ag); ?></span><div class="led"></div>
                                     </button>
                                 <?php endforeach; ?>

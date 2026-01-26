@@ -255,7 +255,7 @@
                         </div>
         
                         <!-- FRAME STRUCTURE -->
-                        <div class="input-group">
+                        <div class="input-group" style="flex: 0 0 100%; max-width: 100%; grid-column: 1 / -1; width: 100% !important;">
                             <label style="width: 100%; text-align: center; margin-bottom: 0;">FRAME STRUCTURE</label>
                             <input type="hidden" name="structure" id="frame_structure_input" value="full-rim">
                             <div class="selection-wrapper">
@@ -275,7 +275,7 @@
                         </div>
         
                         <!-- FRAME SIZE RANGE -->
-                        <div class="input-group">
+                        <div class="input-group" style="flex: 0 0 100%; max-width: 100%; grid-column: 1 / -1; width: 100% !important;">
                             <label style="width: 100%; text-align: center; margin-bottom: 0;">SIZE RANGE</label>
                             <input type="hidden" name="size_range" id="frame_size_range_input" value="small">
                             <div class="selection-wrapper">
@@ -295,7 +295,7 @@
                         </div>
 
                         <!-- GENDER CATEGORY -->
-                        <div class="input-group">
+                        <div class="input-group" style="flex: 0 0 100%; max-width: 100%; grid-column: 1 / -1; width: 100% !important;">
                             <label style="width: 100%; text-align: center; margin-bottom: 0;">GENDER CATEGORY</label>
                             <input type="hidden" name="gender_category" id="gender_category_input" value="unisex">
                             <div class="selection-wrapper">
@@ -321,7 +321,7 @@
                         </div>
 
                         <!-- STOCK AGE -->
-                        <div class="input-group">
+                        <div class="input-group" style="flex: 0 0 100%; max-width: 100%; grid-column: 1 / -1; width: 100% !important;">
                             <label style="width: 100%; text-align: center; margin-bottom: 0;">STOCK AGE</label>
                             <input type="hidden" name="stock_age" id="stock_age_input" value="new">
                             <div class="selection-wrapper">
