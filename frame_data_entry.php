@@ -350,9 +350,13 @@
                         <?php endif; ?>
                         
                         <!-- Submit and Update Settings -->
-                        <div class="btn-group">
-                            <button type="submit" name="submit_frame" class="submit-main">SAVE DATA</button>
-                            <button type="button" class="submit-main" onclick="window.location.href='manage_settings.php'">UPDATE SETTINGS</button>
+                        <div class="btn-group" style="<?= ($role === 'staff') ? 'width: 100%' : 'width: 50%' ?>">
+                            <?php if ($role === 'admin' || $role === 'staff'): ?>
+                                <button type="submit" name="submit_frame" class="submit-main" >SAVE DATA</button>
+                            <?php endif; ?>
+                            <?php if ($role === 'admin'): ?>
+                                <button type="button" class="submit-main" onclick="window.location.href='manage_settings.php'">UPDATE SETTINGS</button>
+                            <?php endif; ?>
                             <!-- Alert if success -->
                             <?php if(isset($_SESSION['success_msg'])): ?>
                                 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
