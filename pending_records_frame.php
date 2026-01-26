@@ -240,7 +240,9 @@
                         <div class="empty-state" id="emptyMessage" style="<?php echo !$hasData ? 'display:block;' : 'display:none;'; ?>">
                             <div class="empty-icon">📂</div>
                             <p style="font-weight: 600;">No pending requests</p>
-                            <p class="subtitle">NO RECENT INPUT DATA FROM STAFF</p>
+                            <p class="subtitle">
+                                <?php echo ($role === 'admin') ? 'NO RECENT INPUT DATA FROM STAFF' : ''; ?>
+                            </p>
                         </div>
                     </div>                
                 </div>
