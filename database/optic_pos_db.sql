@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Jan 24, 2026 at 02:02 PM
+-- Generation Time: Jan 26, 2026 at 03:56 PM
 -- Server version: 10.1.38-MariaDB
 -- PHP Version: 7.3.2
 
@@ -118,6 +118,13 @@ CREATE TABLE `frame_staging` (
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
+--
+-- Dumping data for table `frame_staging`
+--
+
+INSERT INTO `frame_staging` (`ufc`, `brand`, `frame_code`, `frame_size`, `color_code`, `material`, `lens_shape`, `structure`, `size_range`, `gender_category`, `buy_price`, `sell_price`, `price_secret_code`, `stock`, `stock_age`, `created_at`, `updated_at`) VALUES
+('EYEWEAR-TAKE700-52-16-145-COL.6', 'EYE WEAR', 'TAKE 700', '52-16-145', 'COL.6', 'METAL-PLASTIC', 'WAYFARER', 'semi-rimless', 'medium', 'female', '36000.00', '165000.00', 'IH15LZ', 5, 'new', '2026-01-26 14:07:35', '2026-01-26 14:44:17');
+
 -- --------------------------------------------------------
 
 --
@@ -151,7 +158,7 @@ CREATE TABLE `settings` (
 
 INSERT INTO `settings` (`setting_key`, `setting_value`, `description`) VALUES
 ('backup_location', '/var/www/backup/optic_pos/', 'Server Path for Backup File Storage'),
-('brand_image_location', 'image/brand_logo_1768752417.png', 'File path or URL for the company brand logo image.'),
+('brand_image_location', 'image/brand_logo_1769435885.png', 'File path or URL for the company brand logo image.'),
 ('copyright_footer', '© 2026 LENZA OPTIC. All rights reserved.', 'The copyright message displayed in the footer of all application pages.'),
 ('currency_code', 'IDR', 'Currency Code (e.g., IDR, USD)'),
 ('invoice_format_prefix', '[data_sequence]/LO-C/[invoice_number]/[test_result_table_number]/[month]/[year]', 'Prefix for Invoice Numbering (e.g., INV-2026-...)'),
