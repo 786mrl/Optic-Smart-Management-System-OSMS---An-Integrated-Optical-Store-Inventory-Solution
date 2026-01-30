@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Jan 26, 2026 at 03:56 PM
+-- Generation Time: Jan 30, 2026 at 02:42 AM
 -- Server version: 10.1.38-MariaDB
 -- PHP Version: 7.3.2
 
@@ -21,6 +21,42 @@ SET time_zone = "+00:00";
 --
 -- Database: `optic_pos_db`
 --
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `customer_examinations`
+--
+
+CREATE TABLE `customer_examinations` (
+  `id` int(11) NOT NULL,
+  `examination_date` date NOT NULL,
+  `examination_code` varchar(20) NOT NULL,
+  `customer_name` varchar(100) NOT NULL,
+  `gender` enum('MALE','FEMALE') NOT NULL,
+  `age` int(11) DEFAULT NULL,
+  `symptoms` text,
+  `old_r_sph` varchar(5) DEFAULT NULL,
+  `old_r_cyl` varchar(5) DEFAULT NULL,
+  `old_r_ax` varchar(3) DEFAULT NULL,
+  `old_r_add` varchar(5) DEFAULT NULL,
+  `old_l_sph` varchar(5) DEFAULT NULL,
+  `old_l_cyl` varchar(5) DEFAULT NULL,
+  `old_l_ax` varchar(3) DEFAULT NULL,
+  `old_l_add` varchar(5) DEFAULT NULL,
+  `new_r_sph` varchar(5) DEFAULT NULL,
+  `new_r_cyl` varchar(5) DEFAULT NULL,
+  `new_r_ax` varchar(3) DEFAULT NULL,
+  `new_r_add` varchar(5) DEFAULT NULL,
+  `new_r_visus` varchar(6) DEFAULT NULL,
+  `new_l_sph` varchar(5) DEFAULT NULL,
+  `new_l_cyl` varchar(5) DEFAULT NULL,
+  `new_l_ax` varchar(3) DEFAULT NULL,
+  `new_l_add` varchar(5) DEFAULT NULL,
+  `new_l_visus` varchar(6) DEFAULT NULL,
+  `invoice_number` varchar(8) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 -- --------------------------------------------------------
 
@@ -128,21 +164,6 @@ INSERT INTO `frame_staging` (`ufc`, `brand`, `frame_code`, `frame_size`, `color_
 -- --------------------------------------------------------
 
 --
--- Table structure for table `inventory_logs`
---
-
-CREATE TABLE `inventory_logs` (
-  `id` int(11) NOT NULL,
-  `action_type` enum('new_entry','update_stock') DEFAULT NULL,
-  `ufc` varchar(100) DEFAULT NULL,
-  `qty_moved` int(11) DEFAULT NULL,
-  `admin_name` varchar(50) DEFAULT NULL,
-  `moved_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=latin1;
-
--- --------------------------------------------------------
-
---
 -- Table structure for table `settings`
 --
 
@@ -203,6 +224,13 @@ INSERT INTO `users` (`user_id`, `username`, `password_hash`, `role`, `is_approve
 --
 
 --
+-- Indexes for table `customer_examinations`
+--
+ALTER TABLE `customer_examinations`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `examination_code` (`examination_code`);
+
+--
 -- Indexes for table `frames_main`
 --
 ALTER TABLE `frames_main`
@@ -222,12 +250,6 @@ ALTER TABLE `frame_staging`
   ADD PRIMARY KEY (`ufc`);
 
 --
--- Indexes for table `inventory_logs`
---
-ALTER TABLE `inventory_logs`
-  ADD PRIMARY KEY (`id`);
-
---
 -- Indexes for table `settings`
 --
 ALTER TABLE `settings`
@@ -245,15 +267,15 @@ ALTER TABLE `users`
 --
 
 --
--- AUTO_INCREMENT for table `frame_sales`
+-- AUTO_INCREMENT for table `customer_examinations`
 --
-ALTER TABLE `frame_sales`
+ALTER TABLE `customer_examinations`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
--- AUTO_INCREMENT for table `inventory_logs`
+-- AUTO_INCREMENT for table `frame_sales`
 --
-ALTER TABLE `inventory_logs`
+ALTER TABLE `frame_sales`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
