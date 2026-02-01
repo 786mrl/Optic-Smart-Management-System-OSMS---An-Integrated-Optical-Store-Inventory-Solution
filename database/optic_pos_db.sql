@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Jan 30, 2026 at 02:42 AM
+-- Generation Time: Feb 01, 2026 at 01:25 PM
 -- Server version: 10.1.38-MariaDB
 -- PHP Version: 7.3.2
 
@@ -31,7 +31,7 @@ SET time_zone = "+00:00";
 CREATE TABLE `customer_examinations` (
   `id` int(11) NOT NULL,
   `examination_date` date NOT NULL,
-  `examination_code` varchar(20) NOT NULL,
+  `examination_code` varchar(25) NOT NULL,
   `customer_name` varchar(100) NOT NULL,
   `gender` enum('MALE','FEMALE') NOT NULL,
   `age` int(11) DEFAULT NULL,
@@ -54,6 +54,7 @@ CREATE TABLE `customer_examinations` (
   `new_l_ax` varchar(3) DEFAULT NULL,
   `new_l_add` varchar(5) DEFAULT NULL,
   `new_l_visus` varchar(6) DEFAULT NULL,
+  `pd_dist` varchar(10) DEFAULT '62/60',
   `invoice_number` varchar(8) DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
