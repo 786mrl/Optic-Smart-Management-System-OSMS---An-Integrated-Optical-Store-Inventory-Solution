@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Feb 01, 2026 at 01:25 PM
+-- Generation Time: Feb 02, 2026 at 02:35 PM
 -- Server version: 10.1.38-MariaDB
 -- PHP Version: 7.3.2
 
@@ -55,9 +55,15 @@ CREATE TABLE `customer_examinations` (
   `new_l_add` varchar(5) DEFAULT NULL,
   `new_l_visus` varchar(6) DEFAULT NULL,
   `pd_dist` varchar(10) DEFAULT '62/60',
-  `invoice_number` varchar(8) DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+--
+-- Dumping data for table `customer_examinations`
+--
+
+INSERT INTO `customer_examinations` (`id`, `examination_date`, `examination_code`, `customer_name`, `gender`, `age`, `symptoms`, `old_r_sph`, `old_r_cyl`, `old_r_ax`, `old_r_add`, `old_l_sph`, `old_l_cyl`, `old_l_ax`, `old_l_add`, `new_r_sph`, `new_r_cyl`, `new_r_ax`, `new_r_add`, `new_r_visus`, `new_l_sph`, `new_l_cyl`, `new_l_ax`, `new_l_add`, `new_l_visus`, `pd_dist`, `created_at`) VALUES
+(1, '2025-07-21', 'LZ/EC/001/VII/2025', 'UNKNOWN', '', 63, 'HYPEROPIA, PRESBYOPIA, CATARACT, HYPERTENSION (145, UNCONTROLLED), OTHERS: LEFT EYE CATARACT', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '0.00', '-25', '-50', '+70', '++300', '20/20', '++50', '0.00', '0', '++300', '20/20', '62/60', '2026-02-02 13:15:00');
 
 -- --------------------------------------------------------
 
@@ -271,7 +277,7 @@ ALTER TABLE `users`
 -- AUTO_INCREMENT for table `customer_examinations`
 --
 ALTER TABLE `customer_examinations`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `frame_sales`
