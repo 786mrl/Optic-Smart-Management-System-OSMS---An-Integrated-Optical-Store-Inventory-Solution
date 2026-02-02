@@ -35,8 +35,13 @@
                  ? $_POST['examination_date'] 
                  : date('Y-m-d');
         $customer_name = mysqli_real_escape_string($conn, strtoupper(trim($_POST['customer_name'])));
-        $gender        = mysqli_real_escape_string($conn, strtoupper($_POST['gender'])); // From hidden gender input
         $symptoms      = mysqli_real_escape_string($conn, $_POST['symptoms']);
+
+        $gender_raw = $_POST['gender'] ?? 'FEMALE'; 
+        $gender = mysqli_real_escape_string($conn, strtoupper(trim($gender_raw)));
+        if (empty($gender)) {
+            $gender = 'FEMALE';
+        }
 
         // 2. Generate Automatic Examination Code (Format: LZ/EC/[DATA_SEQUANCE]/[MONTH]/[YEAR])
         $exam_code = mysqli_real_escape_string($conn, $_POST['examination_code']);
@@ -45,7 +50,7 @@
         // Get raw input from the form
         $raw_age = trim($_POST['age'] ?? '');
         $calculated_age = 0;
-        $current_year = (int)date('Y');
+        $exam_year = (int)date('Y', strtotime($exam_date));
         if (!empty($raw_age)) {
             // Check if there is a single quote (') in the input
             if (strpos($raw_age, "'") !== false) {
@@ -62,7 +67,7 @@
                     // If input is 4 digits (e.g., 1996)
                     $full_year = $year_val;
                 }
-                $calculated_age = $current_year - $full_year;
+                $calculated_age = $exam_year - $full_year;
             } else {
                 // DIRECT AGE CASE: No single quote present
                 $calculated_age = (int)$raw_age;
@@ -149,7 +154,7 @@
         // Define data types: 
         // "sssis" = string, string, string, integer, string... and so on.
         // Since most of your optical data are strings (due to + or / signs), we use "s".
-        $types = "sssis" . str_repeat("s", 20); 
+        $types = "ssssi" . str_repeat("s", 20); 
 
         $stmt->bind_param($types, 
             $exam_date, $exam_code, $customer_name, $gender, $age_to_save, $symptoms_to_save,
@@ -396,13 +401,13 @@
                             <!-- GENDER -->
                             <div class="input-group" style="flex: 0 0 100%; max-width: 100%; grid-column: 1 / -1; width: 100% !important;">
                                 <label style="width: 100%; text-align: center; margin-bottom: 0;">GENDER</label>
-                                <input type="hidden" name="gender" id="gender" value="female">
+                                <input type="hidden" name="gender" id="gender" value="FEMALE">
                                 <div class="selection-wrapper">
-                                    <button style="min-width: 100px;" value="female" type="button" class="neu-btn active"onclick="toggleNeu(this, 'gender')">
+                                    <button style="min-width: 100px;" value="FEMALE" type="button" class="neu-btn active"onclick="toggleNeu(this, 'gender')">
                                         <span>FEMALE</span>
                                         <div class="led"></div>
                                     </button>
-                                    <button style="min-width: 100px;" value="male" type="button" class="neu-btn"onclick="toggleNeu(this, 'gender')">
+                                    <button style="min-width: 100px;" value="MALE" type="button" class="neu-btn"onclick="toggleNeu(this, 'gender')">
                                         <span>MALE</span>
                                         <div class="led"></div>
                                     </button>
@@ -613,8 +618,13 @@
                 btn.classList.add('active');
                 
                 // Update value to the hidden input
-                const val = btn.value;
-                document.getElementById(hiddenInputId).value = val;
+                const val = btn.getAttribute('value');
+
+                const hiddenInput = document.getElementById(hiddenInputId);
+                if (hiddenInput) {
+                    hiddenInput.value = val;
+                    console.log("Input " + hiddenInputId + " updated to: " + val); // Cek di console (F12)
+                }
 
                 // Specific logic to display the old prescription form
                 if (isOldPrescription) {
