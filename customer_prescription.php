@@ -19,10 +19,14 @@
         $cleaned = mysqli_real_escape_string($conn, trim($val));
         if ($cleaned === "") return $default;
     
-        // If this is an ADD or SPH column and lacks a + or - sign, add +
-        // This logic can be applied generally to both SPH and ADD values
+        // If the input is a pure number without a sign (e.g., "1.00")
+        // And the number is greater than 0
         if (is_numeric($cleaned) && $cleaned > 0) {
-            $cleaned = "+" . $cleaned;
+            // Check if the original string already has a + sign at the first character
+            // strpos($val, '+') === false ensures we don't add a double plus
+            if (strpos($val, '+') === false) {
+                $cleaned = "+" . $cleaned;
+            }
         }
         
         return $cleaned;
@@ -392,6 +396,15 @@
                                     value="<?php echo date('Y-m-d'); ?>" 
                                     style="color-scheme: dark;"> 
                             </div>
+
+                            <!-- SEQUENCE NO. -->
+                            <div class="input-group">
+                                <label>SEQUENCE NO.</label>
+                                <input type="text" value="<?php echo $seq_padded; ?>" readonly 
+                                    style="background: #1a1c1d; color: #00ff88; font-weight: bold; text-align: center;" 
+                                    tabindex="-1">
+                            </div>
+
                             <!-- NAME -->
                             <div class="input-group">
                                 <label for="customer_name">NAME</label>
@@ -742,7 +755,7 @@
                 const r_sph = document.querySelector('input[name="new_r_sph"]').value || "0.00";
                 const r_cyl = document.querySelector('input[name="new_r_cyl"]').value || "0.00";
                 const r_ax  = document.querySelector('input[name="new_r_ax"]').value || "0";
-                const r_va  = document.querySelector('input[name="new_r_va"]').value || "6/6";
+                const r_va  = document.querySelector('input[name="new_r_va"]').value || "20/20";
                 
                 // Ensure ADD uses the applyPlus function to display with the + sign
                 let r_add = applyPlus(document.querySelector('input[name="new_r_add"]').value || "0.00");
@@ -751,7 +764,7 @@
                 const l_sph = document.querySelector('input[name="new_l_sph"]').value || "0.00";
                 const l_cyl = document.querySelector('input[name="new_l_cyl"]').value || "0.00";
                 const l_ax  = document.querySelector('input[name="new_l_ax"]').value || "0";
-                const l_va  = document.querySelector('input[name="new_l_va"]').value || "6/6";
+                const l_va  = document.querySelector('input[name="new_l_va"]').value || "20/20";
 
                 const pd = document.querySelector('input[name="pd_dist"]').value || "62/60";
 
