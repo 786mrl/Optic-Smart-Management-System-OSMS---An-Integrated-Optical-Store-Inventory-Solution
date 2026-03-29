@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Feb 02, 2026 at 04:44 PM
+-- Generation Time: Mar 29, 2026 at 02:29 PM
 -- Server version: 10.1.38-MariaDB
 -- PHP Version: 7.3.2
 
@@ -57,13 +57,6 @@ CREATE TABLE `customer_examinations` (
   `pd_dist` varchar(10) DEFAULT '62/60',
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
-
---
--- Dumping data for table `customer_examinations`
---
-
-INSERT INTO `customer_examinations` (`id`, `examination_date`, `examination_code`, `customer_name`, `gender`, `age`, `symptoms`, `old_r_sph`, `old_r_cyl`, `old_r_ax`, `old_r_add`, `old_l_sph`, `old_l_cyl`, `old_l_ax`, `old_l_add`, `new_r_sph`, `new_r_cyl`, `new_r_ax`, `new_r_add`, `new_r_visus`, `new_l_sph`, `new_l_cyl`, `new_l_ax`, `new_l_add`, `new_l_visus`, `pd_dist`, `created_at`) VALUES
-(1, '2025-07-21', 'LZ/EC/001/VII/2025', 'UNKNOWN', 'MALE', 61, 'HYPEROPIA, PRESBYOPIA, CATARACT, HYPERTENSION (145, UNCONTROLLED), OTHERS: LEFT EYE CATARACT', '-25', '0.00', '0', '+250', '++50', '0.00', '0', '+250', '-25', '-50', '+70', '++300', '20/20', '++50', '0.00', '0', '++300', '20/20', '62/60', '2026-02-02 15:42:33');
 
 -- --------------------------------------------------------
 
@@ -166,7 +159,15 @@ CREATE TABLE `frame_staging` (
 --
 
 INSERT INTO `frame_staging` (`ufc`, `brand`, `frame_code`, `frame_size`, `color_code`, `material`, `lens_shape`, `structure`, `size_range`, `gender_category`, `buy_price`, `sell_price`, `price_secret_code`, `stock`, `stock_age`, `created_at`, `updated_at`) VALUES
-('EYEWEAR-TAKE700-52-16-145-COL.6', 'EYE WEAR', 'TAKE 700', '52-16-145', 'COL.6', 'METAL-PLASTIC', 'WAYFARER', 'semi-rimless', 'medium', 'female', '36000.00', '165000.00', 'IH15LZ', 5, 'new', '2026-01-26 14:07:35', '2026-01-26 14:44:17');
+('ELEGANT-EG-9069-52-19-140-C6', 'ELEGANT', 'EG-9069', '52-19-140', 'C6', 'METAL-PLASTIC', 'CAT-EYE', 'full-rim', 'medium', 'female', '50000.00', '225000.00', 'J25LZ', 1, 'very old', '2026-03-29 12:26:10', '2026-03-29 12:26:10'),
+('EYEWEAR-TAKE700-52-16-145-COL.6', 'EYE WEAR', 'TAKE 700', '52-16-145', 'COL.6', 'METAL-PLASTIC', 'SQUARE', 'semi-rimless', 'medium', 'female', '36000.00', '165000.00', 'IH15LZ', 5, 'old', '2026-01-26 14:07:35', '2026-02-25 12:12:36'),
+('KELLYS-03-52-17-142-COL.16', 'KELLYS', '03', '52-17-142', 'COL.16', 'METAL', 'WAYFARER', 'full-rim', 'medium', 'female', '45000.00', '205000.00', 'J05LZ', 1, 'very old', '2026-03-29 12:27:21', '2026-03-29 12:27:21'),
+('KERASTATE-W156000-52-19-142-COL.13', 'KERASTATE', 'W15 6000', '52-19-142', 'COL.13', 'TR90', 'GEOMETRIC', 'full-rim', 'large', 'female', '80000.00', '400000.00', 'L00LZ', 1, 'new', '2026-03-29 12:20:16', '2026-03-29 12:20:16'),
+('KERASTATE-W156002-51-17-142-COL.15', 'KERASTATE', 'W15 6002', '51-17-142', 'COL.15', 'TR90', 'ROUND', 'full-rim', 'large', 'female', '80000.00', '400000.00', 'L00LZ', 1, 'new', '2026-03-29 12:23:02', '2026-03-29 12:23:02'),
+('MAXUYA-MAT8875-51-19-145-C4', 'MAXUYA', 'MAT8875', '51-19-145', 'C4', 'METAL', 'GEOMETRIC', 'full-rim', 'medium', 'female', '60000.00', '290000.00', 'JH40LZ', 1, 'very old', '2026-03-29 12:28:17', '2026-03-29 12:28:17'),
+('MIABELLOS-MB-2809-52-19-144-C3', 'MIA BELLOS', 'MB-2809', '52-19-144', 'C3', 'METAL-PLASTIC', 'BUTTERFLY', 'full-rim', 'large', 'female', '86000.00', '430000.00', 'L30LZ', 1, 'old', '2026-03-29 12:24:24', '2026-03-29 12:24:24'),
+('ROSALITE-JL2251-52-16-145-COL.14', 'ROSALITE', 'JL 2251', '52-16-145', 'COL.14', 'METAL', 'BUTTERFLY', 'full-rim', 'medium', 'female', '65000.00', '315000.00', 'K15LZ', 1, 'new', '2026-03-29 12:21:56', '2026-03-29 12:21:56'),
+('SAMEIR-18060-50-20-148-C5', 'SAMEIR', '18060', '50-20-148', 'C5', 'PLASTIC', 'ROUND', 'full-rim', 'large', 'female', '55000.00', '250000.00', 'JH00LZ', 1, 'old', '2026-03-29 12:25:10', '2026-03-29 12:25:10');
 
 -- --------------------------------------------------------
 
@@ -277,7 +278,7 @@ ALTER TABLE `users`
 -- AUTO_INCREMENT for table `customer_examinations`
 --
 ALTER TABLE `customer_examinations`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT for table `frame_sales`

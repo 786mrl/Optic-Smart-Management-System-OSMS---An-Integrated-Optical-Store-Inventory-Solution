@@ -8,6 +8,47 @@
         $_SESSION['print_ufc_list'] = $_POST['selected_ufc'];
     }
 
+    // Read color_shape.json, compare to lens_shape, if not exist update
+    function getLensColor($lens_shape) {
+        $json_file = 'data_json/color_shape.json';
+        $lens_shape = strtoupper(trim($lens_shape));
+        
+        if (empty($lens_shape)) return "#bdc3c7"; 
+    
+        $colors = [];
+        if (file_exists($json_file)) {
+            $colors = json_decode(file_get_contents($json_file), true);
+        }
+    
+        if (!isset($colors[$lens_shape])) {
+            // List of contrast color palettes (Vivid Colors) as primary backup
+            $palette = [
+                "#e74c3c", "#2ecc71", "#3498db", "#f1c40f", "#9b59b6", 
+                "#e67e22", "#1abc9c", "#34495e", "#d35400", "#c0392b",
+                "#8e44ad", "#27ae60", "#2980b9", "#f39c12", "#16a085"
+            ];
+    
+            // Get colors that have never been used
+            $used_colors = array_values($colors);
+            $available_colors = array_diff($palette, $used_colors);
+    
+            if (!empty($available_colors)) {
+                // Get the first available color from the palette
+                $new_color = reset($available_colors);
+            } else {
+                // If palette is exhausted, generate a random color ensuring it's not in used_colors
+                do {
+                    $new_color = sprintf('#%06X', mt_rand(0, 0xFFFFFF));
+                } while (in_array($new_color, $used_colors));
+            }
+    
+            $colors[$lens_shape] = $new_color;
+            file_put_contents($json_file, json_encode($colors, JSON_PRETTY_PRINT));
+        }
+    
+        return $colors[$lens_shape];
+    }
+
     // Helper to determine QR Code location
     function getQRCodePath($ufc) {
         $staging_path = "qrcodes/" . $ufc . ".png";
@@ -83,282 +124,521 @@
         die("No data selected.");
     }
 ?>
+
 <!DOCTYPE html>
 <html>
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Label Print - Dark Neumorphism</title>
-    <link rel="stylesheet" href="style.css">
-    <style>
-        /* CSS REMAINS THE SAME AS YOUR ORIGINAL CODE */
-        :root {
-            --bg-color: #1e2124;
-            --neu-shadow-dark: #141618;
-            --neu-shadow-light: #282c30;
-            --accent-color: #0984e3;
-            --text-main: #e0e0e0;
-            --text-dim: #a0a0a0;
-        }
-
-        /* Additional styles for disabled buttons */
-        .btn-disabled {
-            opacity: 0.4;
-            cursor: not-allowed !important;
-            filter: grayscale(1);
-            box-shadow: inset 2px 2px 5px var(--neu-shadow-dark) !important;
-        }
-        
-        .warning-text {
-            color: #ff4757;
-            font-size: 0.8rem;
-            margin-top: 10px;
-            display: <?php echo $is_restricted ? 'block' : 'none'; ?>;
-        }
-
-        @page { size: A4 portrait; margin: 0; }
-        body { font-family: 'Segoe UI', sans-serif; margin: 0; padding: 0; background-color: var(--bg-color); color: var(--text-main); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-        .no-print { 
-            padding: 20px; 
-            background: var(--bg-color); 
-            box-shadow: 10px 10px 20px var(--neu-shadow-dark), -10px -10px 20px var(--neu-shadow-light); 
-            margin-bottom: 30px; 
-            text-align: center;
-            border-radius: 30px;
-        }
-        .header-container { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; padding: 0 50px; }
-        .brand-section { text-align: center; flex-grow: 1; }
-        .company-name { margin: 5px 0 0 0; font-size: 1.5rem; letter-spacing: 1px; }
-        .company-address { margin: 0; font-size: 0.8rem; color: var(--text-dim); }
-        .logout-btn { background: var(--bg-color); border: none; padding: 10px 20px; border-radius: 10px; color: var(--text-main); box-shadow: 5px 5px 10px var(--neu-shadow-dark), -5px -5px 10px var(--neu-shadow-light); cursor: pointer; transition: 0.3s; display: flex; align-items: center; font-weight: bold; }
-        .control-panel { display: flex; justify-content: center; align-items: center; gap: 20px; margin-top: 20px; flex-direction: column; }
-        .neu-input { background: var(--bg-color); border: none; padding: 8px 15px; border-radius: 8px; color: var(--accent-color); box-shadow: inset 3px 3px 6px var(--neu-shadow-dark), inset -3px -3px 6px var(--neu-shadow-light); width: 50px; text-align: center; font-weight: bold; }
-        .neu-btn { background: var(--bg-color); border: none; padding: 10px 25px; border-radius: 10px; color: var(--text-main); box-shadow: 5px 5px 10px var(--neu-shadow-dark), -5px -5px 10px var(--neu-shadow-light); cursor: pointer; font-weight: bold; }
-        .neu-btn-print { color: #2ecc71; }
-        .checklist-container { display: flex; justify-content: center; gap: 8px; margin-top: 20px; padding: 10px; }
-        .check-item { width: 25px; height: 25px; display: flex; align-items: center; justify-content: center; border-radius: 6px; font-size: 0.7rem; box-shadow: 3px 3px 6px var(--neu-shadow-dark), -3px -3px 6px var(--neu-shadow-light); color: var(--text-dim); }
-        .check-item.active { color: var(--accent-color); box-shadow: inset 2px 2px 5px var(--neu-shadow-dark), inset -2px -2px 5px var(--neu-shadow-light); font-weight: bold; }
-        .page-break { height: 297mm; display: flex; flex-direction: column; justify-content: flex-end; page-break-after: always; background: #fff; }
-        .wrapper { position: relative; width: fit-content; margin: 0 auto; display: flex; align-items: flex-end; padding-bottom: 7mm; background: #fff; }
-        .row-numbers { display: grid; grid-template-rows: repeat(<?php echo $max_rows; ?>, 16.5mm); margin-right: 4mm; }
-        .row-num { display: flex; align-items: center; justify-content: center; font-size: 10pt; font-weight: bold; width: 8mm; border-right: 0.2mm solid #000; padding-right: 2mm; color: #000; }
-        .print-container { display: grid; grid-template-columns: repeat(7, 25mm); grid-auto-rows: 15mm; row-gap: 1.5mm; column-gap: 1.5mm; }
-        .label-box { 
-            width: 25mm; 
-            height: 15mm; 
-            border: 1pt solid #000 !important; 
-            position: relative; 
-            display: flex; 
-            flex-direction: row; 
-            align-items: center; 
-            justify-content: center; 
-            padding: 1mm 0.5mm; 
-            box-sizing: border-box; 
-            background: #fff; 
-            overflow: hidden; 
-        }
-        .empty-slot { border: none !important; }
-        .brand-header { 
-            font-size: 4pt; 
-            font-weight: bold; 
-            text-transform: uppercase; 
-            color: #000; 
-            /* margin-bottom: 0.2mm;  */
-            text-align: left; 
-            width: 100%; 
-            white-space: nowrap;
-            overflow: hidden;
-        }
-        .age-indicator {
-            /* position: absolute; 
-            top: 0.8mm; 
-            right: 0.8mm;  */
-            width: 3.5mm; 
-            height: 3.5mm; 
-            border-radius: 50%; 
-            border: 0.15mm solid #000;
-            margin-bottom: 0.5mm;
-        }
-        .bg-red { background-color: #ff4757 !important; }
-        .bg-yellow { background-color: #ffa502 !important; }
-        .bg-green { background-color: #2ed573 !important; }
-        .qr-img { 
-            height: 12mm; 
-            width: 12mm;
-            flex-shrink: 0;
-        }
-        .box-shifted { transform: translateY(-7.3mm); }
-        .secret-code { 
-            font-size: 8pt; 
-            font-weight: bold; 
-            color: #ff0000 !important; 
-            /* margin-top: 0.3mm;  */
-            line-height: 1;
-            margin-bottom: 0.3mm;
-        }
-        .label-details {
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: flex-start;
-            padding-left: 1.5mm;
-            flex-grow: 1;
-            overflow: hidden;
-        }
-        .main-wrapper {
-            background-color: var(--bg-color);
-            padding: 30px;
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            align-items: center; /* Ensures content is centered */
-        }
-        .neumorphic-card {
-            background: var(--bg-color);
-            border-radius: 30px;
-            padding: 40px;
-            box-shadow: 20px 20px 60px var(--neu-shadow-dark), 
-                    -20px -20px 60px var(--neu-shadow-light);
-            width: fit-content; /* Follows the width of the label content */
-            margin: 20px auto;
-        }
-        @media print {
-            .main-wrapper { padding: 0; background: #fff; }
-            .neumorphic-card { 
-                box-shadow: none; 
-                padding: 0; 
-                margin: 0; 
-                border-radius: 0;
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Label Print - Dark Neumorphism</title>
+        <link rel="stylesheet" href="style.css">
+        <style>
+            /* CSS REMAINS THE SAME AS YOUR ORIGINAL CODE */
+            :root {
+                --bg-color: #1e2124;
+                --neu-shadow-dark: #141618;
+                --neu-shadow-light: #282c30;
+                --accent-color: #0984e3;
+                --text-main: #e0e0e0;
+                --text-dim: #a0a0a0;
             }
-            .no-print { display: none; }
-            body { background: #fff; }
-        }
-    </style>
-</head>
-<body>
-    <div class="main-wrapper">
-        <div class="no-print">
-                <div class="header-container" style="
-                margin-left: auto; 
-                margin-right: auto; 
-                width: 100%;">        
-                    <div class="brand-section">
-                        <div class="logo-box">
-                            <img src="<?php echo htmlspecialchars($BRAND_IMAGE_PATH); ?>" alt="Brand Logo" style="height: 40px;">
+
+            /* Additional styles for disabled buttons */
+            .btn-disabled {
+                opacity: 0.4;
+                cursor: not-allowed !important;
+                filter: grayscale(1);
+                box-shadow: inset 2px 2px 5px var(--neu-shadow-dark) !important;
+            }
+            
+            .warning-text {
+                color: #ff4757;
+                font-size: 0.8rem;
+                margin-top: 10px;
+                display: <?php echo $is_restricted ? 'block' : 'none'; ?>;
+            }
+
+            @page {
+                size: A4 portrait; 
+                margin: 0;
+            }
+
+            body {
+                font-family: 'Segoe UI', sans-serif; 
+                margin: 0; 
+                padding: 0; 
+                background-color: var(--bg-color); 
+                color: var(--text-main); 
+                -webkit-print-color-adjust: exact; 
+                print-color-adjust: exact;
+            }
+
+            .no-print { 
+                padding: 20px; 
+                background: var(--bg-color); 
+                box-shadow: 10px 10px 20px var(--neu-shadow-dark), -10px -10px 20px var(--neu-shadow-light); 
+                margin-bottom: 30px; 
+                text-align: center;
+                border-radius: 30px;
+            }
+
+            .header-container {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                margin-bottom: 20px;
+                padding: 0 50px;
+            }
+
+            .brand-section {
+                text-align: center; 
+                flex-grow: 1;
+
+            }
+
+            .company-name {
+                margin: 5px 0 0 0; 
+                font-size: 1.5rem; 
+                letter-spacing: 1px;
+
+            }
+
+            .company-address {
+                margin: 0; 
+                font-size: 0.8rem; 
+                color: var(--text-dim);
+
+            }
+
+            .logout-btn {
+                background: var(--bg-color); 
+                border: none; 
+                padding: 10px 20px; 
+                border-radius: 10px; 
+                color: var(--text-main); 
+                box-shadow: 5px 5px 10px var(--neu-shadow-dark), -5px -5px 10px var(--neu-shadow-light); 
+                cursor: pointer; 
+                transition: 0.3s; 
+                display: flex; 
+                align-items: center; 
+                font-weight: bold;
+
+            }
+
+            .control-panel {
+                display: flex; 
+                justify-content: center; 
+                align-items: center; 
+                gap: 20px; 
+                margin-top: 20px; 
+                flex-direction: column;
+
+            }
+
+            .neu-input {
+                background: var(--bg-color); 
+                border: none; 
+                padding: 8px 15px; 
+                border-radius: 8px; 
+                color: var(--accent-color); 
+                box-shadow: inset 3px 3px 6px var(--neu-shadow-dark), inset -3px -3px 6px var(--neu-shadow-light); 
+                width: 50px; 
+                text-align: center; 
+                font-weight: bold;
+
+            }
+
+            .neu-btn {
+                background: var(--bg-color); 
+                border: none; 
+                padding: 10px 25px; 
+                border-radius: 10px; 
+                color: var(--text-main); 
+                box-shadow: 5px 5px 10px var(--neu-shadow-dark), -5px -5px 10px var(--neu-shadow-light); 
+                cursor: pointer; 
+                font-weight: bold;
+
+            }
+
+            .neu-btn-print {
+                color: #2ecc71;
+
+            }
+
+            .checklist-container {
+                display: flex; 
+                justify-content: center; 
+                gap: 8px; 
+                margin-top: 20px; 
+                padding: 10px;
+
+            }
+
+            .check-item {
+                width: 25px; 
+                height: 25px; 
+                display: flex; 
+                align-items: center; 
+                justify-content: center; 
+                border-radius: 6px; 
+                font-size: 0.7rem; 
+                box-shadow: 3px 3px 6px var(--neu-shadow-dark), -3px -3px 6px var(--neu-shadow-light); 
+                color: var(--text-dim);
+
+            }
+
+            .check-item.active {
+                color: var(--accent-color); 
+                box-shadow: inset 2px 2px 5px var(--neu-shadow-dark), inset -2px -2px 5px var(--neu-shadow-light); 
+                font-weight: bold;
+
+            }
+
+            .page-break {
+                height: 297mm; 
+                display: flex; 
+                flex-direction: column; 
+                justify-content: flex-end; 
+                page-break-after: always; 
+                background: #fff;
+
+            }
+
+            .wrapper {
+                position: relative; 
+                width: fit-content; 
+                margin: 0 auto; 
+                display: flex; 
+                align-items: flex-end; 
+                padding-bottom: 7mm; 
+                background: #fff;
+
+            }
+
+            .row-numbers {
+                display: grid; 
+                grid-template-rows: repeat(<?php echo $max_rows; 
+                ?>, 16.5mm); 
+                margin-right: 4mm;
+
+            }
+
+            .row-num {
+                display: flex; 
+                align-items: center; 
+                justify-content: center; 
+                font-size: 10pt; 
+                font-weight: bold; 
+                width: 8mm; 
+                border-right: 0.2mm solid #000; 
+                padding-right: 2mm; 
+                color: #000;
+
+            }
+
+            .print-container {
+                display: grid; 
+                grid-template-columns: repeat(7, 25mm); 
+                grid-auto-rows: 15mm; 
+                row-gap: 1.5mm; 
+                column-gap: 1.5mm;
+
+            }
+
+            .label-box { 
+                width: 25mm; 
+                height: 15mm; 
+                border: 1pt solid #000 !important; 
+                position: relative; 
+                display: flex; 
+                flex-direction: row; 
+                align-items: center; 
+                justify-content: center; 
+                padding: 1mm 0.5mm; 
+                box-sizing: border-box; 
+                background: #fff; 
+                overflow: hidden; 
+            }
+
+            .empty-slot { 
+                border: none !important; 
+            }
+
+            .brand-header { 
+                font-size: 4pt; 
+                font-weight: bold; 
+                text-transform: uppercase; 
+                color: #000; 
+                /* margin-bottom: 0.2mm;  */
+                text-align: left; 
+                width: 100%; 
+                white-space: nowrap;
+                overflow: hidden;
+            }
+
+            /* Indicator Container */
+            .age-indicator {
+                width: 4.2mm; 
+                height: 4.2mm; 
+                margin-bottom: 0.8mm;
+                display: block;
+            }
+
+            /* NEW: Circle */
+            .shape-new {
+                border-radius: 50%;
+                border: 0.2mm solid #000;
+            }
+
+            /* OLD: Square */
+            .shape-old {
+                border-radius: 0;
+                border: 0.2mm solid #000;
+            }
+
+            /* VERY OLD: Triangle */
+            .shape-very-old {
+                width: 0;
+                height: 0;
+                border-left: 2.1mm solid transparent;
+                border-right: 2.1mm solid transparent;
+                background: transparent !important;
+                border-top: none;
+                /* Color is handled via border-bottom in PHP */
+            }
+
+            .bg-red {
+                background-color: #ff4757 !important;
+            }
+
+            .bg-yellow {
+                background-color: #ffa502 !important;
+            }
+
+            .bg-green {
+                background-color: #2ed573 !important;
+            }
+
+            .qr-img { 
+                height: 12mm; 
+                width: 12mm;
+                flex-shrink: 0;
+            }
+
+            .box-shifted {
+                transform: translateY(-7.3mm);
+            }
+
+            .secret-code { 
+                font-size: 8pt; 
+                font-weight: bold; 
+                color: #ff0000 !important; 
+                /* margin-top: 0.3mm;  */
+                line-height: 1;
+                margin-bottom: 0.3mm;
+            }
+
+            .label-details {
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: flex-start;
+                padding-left: 1.5mm;
+                flex-grow: 1;
+                overflow: hidden;
+            }
+
+            .main-wrapper {
+                background-color: var(--bg-color);
+                padding: 30px;
+                min-height: 100vh;
+                display: flex;
+                flex-direction: column;
+                align-items: center; /* Ensures content is centered */
+            }
+
+            .neumorphic-card {
+                background: var(--bg-color);
+                border-radius: 30px;
+                padding: 40px;
+                box-shadow: 20px 20px 60px var(--neu-shadow-dark), 
+                        -20px -20px 60px var(--neu-shadow-light);
+                width: fit-content; /* Follows the width of the label content */
+                margin: 20px auto;
+            }
+
+            @media print {
+                .main-wrapper { padding: 0; background: #fff; }
+                .neumorphic-card { 
+                    box-shadow: none; 
+                    padding: 0; 
+                    margin: 0; 
+                    border-radius: 0;
+                }
+                .no-print { display: none; }
+                body { background: #fff; }
+            }
+        </style>
+    </head>
+
+    <body>
+        <div class="main-wrapper">
+            <div class="no-print">
+                    <div class="header-container" style="
+                    margin-left: auto; 
+                    margin-right: auto; 
+                    width: 100%;">        
+                        <div class="brand-section">
+                            <div class="logo-box">
+                                <img src="<?php echo htmlspecialchars($BRAND_IMAGE_PATH); ?>" alt="Brand Logo" style="height: 40px;">
+                            </div>
+                            <h1 class="company-name"><?php echo htmlspecialchars($STORE_NAME); ?></h1>
+                            <p class="company-address"><?php echo htmlspecialchars($STORE_ADDRESS); ?></p>
                         </div>
-                        <h1 class="company-name"><?php echo htmlspecialchars($STORE_NAME); ?></h1>
-                        <p class="company-address"><?php echo htmlspecialchars($STORE_ADDRESS); ?></p>
                     </div>
+        
+                <div class="control-panel">
+                    <div style="display: flex; gap: 20px; align-items: center;">
+                        <form method="GET" style="display: flex; gap: 10px; align-items: center;">
+                            <span>Start Row:</span>
+                            <input type="number" name="start_row" style="width: auto" class="neu-input" value="<?php echo $start_row; ?>" min="1" max="17">
+                            <button type="submit" class="neu-btn">Set Position</button>
+                        </form>
+        
+                        <button onclick="confirmPrint()" 
+                                class="neu-btn neu-btn-print <?php echo ($is_restricted) ? 'btn-disabled' : ''; ?>" 
+                                <?php echo ($is_restricted) ? 'disabled' : ''; ?>>
+                            Print Labels
+                        </button>
+                    </div>
+                    
+                    <?php if ($is_restricted): ?>
+                        <div class="warning-text">⚠️ Maximum start row is 12. Please change the position.</div>
+                    <?php endif; ?>
                 </div>
-    
-            <div class="control-panel">
-                <div style="display: flex; gap: 20px; align-items: center;">
-                    <form method="GET" style="display: flex; gap: 10px; align-items: center;">
-                        <span>Start Row:</span>
-                        <input type="number" name="start_row" style="width: auto" class="neu-input" value="<?php echo $start_row; ?>" min="1" max="17">
-                        <button type="submit" class="neu-btn">Set Position</button>
-                    </form>
-    
-                    <button onclick="confirmPrint()" 
-                            class="neu-btn neu-btn-print <?php echo ($is_restricted) ? 'btn-disabled' : ''; ?>" 
-                            <?php echo ($is_restricted) ? 'disabled' : ''; ?>>
-                        Print Labels
-                    </button>
+        
+                <div class="checklist-container">
+                    <?php 
+                    for ($r = 1; $r <= $max_rows; $r++) {
+                        $isActive = in_array($r, $rows_used_global);
+                        echo "<div class='check-item ".($isActive ? 'active' : '')."'>".($isActive ? "✓" : $r)."</div>";
+                    }
+                    ?>
                 </div>
                 
-                <?php if ($is_restricted): ?>
-                    <div class="warning-text">⚠️ Maximum start row is 12. Please change the position.</div>
-                <?php endif; ?>
-            </div>
-    
-            <div class="checklist-container">
-                <?php 
-                for ($r = 1; $r <= $max_rows; $r++) {
-                    $isActive = in_array($r, $rows_used_global);
-                    echo "<div class='check-item ".($isActive ? 'active' : '')."'>".($isActive ? "✓" : $r)."</div>";
-                }
-                ?>
-            </div>
-            
-    
-            <div class="btn-group">
-                <button type="button" class="back-main" onclick="window.location.href='pending_records_frame.php'">BACK TO PREVIOUS PAGE</button>
-            </div>
-        </div>
-
-        <div class="neumorphic-card">
-            <div class="page-break">
-                <div class="wrapper">
-                    <div class="row-numbers" style="visibility: <?php echo ($start_row === 1) ? 'visible' : 'hidden'; ?>;">
-                        <?php for ($i = $max_rows; $i >= 1; $i--): ?><div class="row-num"><?php echo $i; ?></div><?php endfor; ?>
-                    </div>
-                    <div class="print-container">
-                    <?php foreach ($render_pg1 as $item): ?>
-                        <div class="label-box <?php 
-                            echo $item === null ? 'empty-slot' : ''; 
-                            echo ($start_row > 1 && $item !== null) ? ' box-shifted' : ''; 
-                        ?>">
-                            <?php if ($item): ?>
-                                <img src="<?php echo getQRCodePath($item['ufc']); ?>" class="qr-img">
-
-                                <div class="label-details">
-                                    <div class="age-indicator <?php echo ($item['stock_age'] === 'very old' ? 'bg-red' : ($item['stock_age'] === 'old' ? 'bg-yellow' : 'bg-green')); ?>"></div>
-                                    <span class="secret-code"><?php echo htmlspecialchars($item['price_secret_code']); ?></span>
-                                    <span class="brand-header"><?php echo htmlspecialchars($item['brand']); ?></span>
-                                </div>
-                            <?php endif; ?>
-                        </div>
-                    <?php endforeach; ?>
-                    </div>
+        
+                <div class="btn-group">
+                    <button type="button" class="back-main" onclick="window.location.href='pending_records_frame.php'">BACK TO PREVIOUS PAGE</button>
                 </div>
             </div>
-        
-            <?php if (!empty($page2_data)): ?>
+
+            <div class="neumorphic-card">
                 <div class="page-break">
                     <div class="wrapper">
-                        <div class="row-numbers" style="visibility: visible;">
+                        <div class="row-numbers" style="visibility: <?php echo ($start_row === 1) ? 'visible' : 'hidden'; ?>;">
                             <?php for ($i = $max_rows; $i >= 1; $i--): ?><div class="row-num"><?php echo $i; ?></div><?php endfor; ?>
                         </div>
                         <div class="print-container">
-                            <?php 
-                            $pg2_empty_slots = ($max_rows * $cols) - count($page2_data);
-                            for ($i = 0; $i < $pg2_empty_slots; $i++) echo '<div class="label-box" style="border:none !important;"></div>';
-                            foreach ($render_pg2 as $item): ?>
-                                <div class="label-box">
+                        <?php foreach ($render_pg1 as $item): ?>
+                            <div class="label-box <?php 
+                                echo $item === null ? 'empty-slot' : ''; 
+                                echo ($start_row > 1 && $item !== null) ? ' box-shifted' : ''; 
+                            ?>">
+                                <?php 
+                                if ($item): 
+                                    $color = getLensColor($item['lens_shape']);
+                                    $age = strtolower($item['stock_age']);
+                                    
+                                    // Default Shape
+                                    $shape_class = 'shape-new'; 
+                                    $inline_style = "background-color: $color;";
+
+                                    if ($age === 'old') {
+                                        $shape_class = 'shape-old';
+                                    } elseif ($age === 'very old') {
+                                        $shape_class = 'shape-very-old';
+                                        // Triangle uses border-bottom for color
+                                        $inline_style = "border-bottom: 4.2mm solid $color;";
+                                    }
+                                ?>
                                     <img src="<?php echo getQRCodePath($item['ufc']); ?>" class="qr-img">
 
                                     <div class="label-details">
-                                        <div class="age-indicator <?php echo ($item['stock_age'] === 'very old' ? 'bg-red' : ($item['stock_age'] === 'old' ? 'bg-yellow' : 'bg-green')); ?>"></div>
+                                        <div class="age-indicator <?php echo $shape_class; ?>" style="<?php echo $inline_style; ?>"></div>
                                         <span class="secret-code"><?php echo htmlspecialchars($item['price_secret_code']); ?></span>
                                         <span class="brand-header"><?php echo htmlspecialchars($item['brand']); ?></span>
                                     </div>
-                                </div>
-                            <?php endforeach; ?>
+                                <?php endif; ?>
+                            </div>
+                        <?php endforeach; ?>
                         </div>
                     </div>
                 </div>
-            <?php endif; ?>
-        </div>    
-    </div>
-
-    <script>
-        function confirmPrint() {
-            // Additional protection on the client side
-            const startRow = parseInt(document.getElementsByName('start_row')[0].value);
-            if (startRow > 12) {
-                alert("Sorry, printing is not allowed if the start row is greater than 12.");
-                return;
-            }
             
-            const isMultiPage = <?php echo !empty($page2_data) ? 'true' : 'false'; ?>;
-            if (isMultiPage) {
-                if (confirm("⚠️ Data overflows to the second page! Prepare 2 label sheets. Continue?")) {
+                <?php if (!empty($page2_data)): ?>
+                    <div class="page-break">
+                        <div class="wrapper">
+                            <div class="row-numbers" style="visibility: visible;">
+                                <?php for ($i = $max_rows; $i >= 1; $i--): ?><div class="row-num"><?php echo $i; ?></div><?php endfor; ?>
+                            </div>
+                            <div class="print-container">
+                                <?php 
+                                $pg2_empty_slots = ($max_rows * $cols) - count($page2_data);
+                                for ($i = 0; $i < $pg2_empty_slots; $i++) echo '<div class="label-box" style="border:none !important;"></div>';
+                                foreach ($render_pg2 as $item): ?>
+                                    <div class="label-box">
+                                        <?php 
+                                        if ($item): 
+                                            $color = getLensColor($item['lens_shape']);
+                                            $age = strtolower($item['stock_age']);
+                                            
+                                            // Default Shape
+                                            $shape_class = 'shape-new'; 
+                                            $inline_style = "background-color: $color;";
+
+                                            if ($age === 'old') {
+                                                $shape_class = 'shape-old';
+                                            } elseif ($age === 'very old') {
+                                                $shape_class = 'shape-very-old';
+                                                // Triangle uses border-bottom for color
+                                                $inline_style = "border-bottom: 4.2mm solid $color;";
+                                            }
+                                        ?>
+                                            <img src="<?php echo getQRCodePath($item['ufc']); ?>" class="qr-img">
+
+                                            <div class="label-details">
+                                                <div class="age-indicator <?php echo $shape_class; ?>" style="<?php echo $inline_style; ?>"></div>
+                                                <span class="secret-code"><?php echo htmlspecialchars($item['price_secret_code']); ?></span>
+                                                <span class="brand-header"><?php echo htmlspecialchars($item['brand']); ?></span>
+                                            </div>
+                                        <?php endif; ?>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        </div>
+                    </div>
+                <?php endif; ?>
+            </div>    
+        </div>
+
+        <script>
+            function confirmPrint() {
+                // Additional protection on the client side
+                const startRow = parseInt(document.getElementsByName('start_row')[0].value);
+                if (startRow > 12) {
+                    alert("Sorry, printing is not allowed if the start row is greater than 12.");
+                    return;
+                }
+                
+                const isMultiPage = <?php echo !empty($page2_data) ? 'true' : 'false'; ?>;
+                if (isMultiPage) {
+                    if (confirm("⚠️ Data overflows to the second page! Prepare 2 label sheets. Continue?")) {
+                        window.print();
+                    }
+                } else {
                     window.print();
                 }
-            } else {
-                window.print();
             }
-        }
-    </script>
-</body>
+        </script>
+    </body>
 </html>

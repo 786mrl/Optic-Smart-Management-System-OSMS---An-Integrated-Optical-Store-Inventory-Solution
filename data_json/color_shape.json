@@ -1,7 +1,8 @@
 {
-    "SQUARE": "#3498db",
-    "ROUND": "#2ecc71",
-    "AVIATOR": "#e67e22",
-    "CAT-EYE": "#9b59b6",
-    "RECTANGLE": "#34495e"
+    "ROUND": "#e74c3c",
+    "BUTTERFLY": "#2ecc71",
+    "GEOMETRIC": "#3498db",
+    "WAYFARER": "#f1c40f",
+    "SQUARE": "#9b59b6",
+    "CAT-EYE": "#e67e22"
 }
