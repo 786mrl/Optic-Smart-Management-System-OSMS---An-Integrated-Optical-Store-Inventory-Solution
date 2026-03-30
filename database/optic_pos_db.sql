@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Mar 29, 2026 at 02:29 PM
+-- Generation Time: Mar 30, 2026 at 06:12 AM
 -- Server version: 10.1.38-MariaDB
 -- PHP Version: 7.3.2
 
@@ -55,7 +55,8 @@ CREATE TABLE `customer_examinations` (
   `new_l_add` varchar(5) DEFAULT NULL,
   `new_l_visus` varchar(6) DEFAULT NULL,
   `pd_dist` varchar(10) DEFAULT '62/60',
-  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `invoice_number` varchar(20) DEFAULT '00'
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 -- --------------------------------------------------------

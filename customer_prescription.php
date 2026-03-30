@@ -40,6 +40,7 @@
                  : date('Y-m-d');
         $customer_name = mysqli_real_escape_string($conn, strtoupper(trim($_POST['customer_name'])));
         $symptoms      = mysqli_real_escape_string($conn, $_POST['symptoms']);
+        $invoice_val = $_POST['invoice_number'] ?? '00';
 
         $gender_raw = $_POST['gender'] ?? 'FEMALE'; 
         $gender = mysqli_real_escape_string($conn, strtoupper(trim($gender_raw)));
@@ -152,13 +153,13 @@
             old_l_sph, old_l_cyl, old_l_ax, old_l_add,
             new_r_sph, new_r_cyl, new_r_ax, new_r_add, new_r_visus,
             new_l_sph, new_l_cyl, new_l_ax, new_l_add, new_l_visus,
-            pd_dist
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            pd_dist, invoice_number
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
 
         // Define data types: 
         // "sssis" = string, string, string, integer, string... and so on.
         // Since most of your optical data are strings (due to + or / signs), we use "s".
-        $types = "ssssi" . str_repeat("s", 20); 
+        $types = "ssssi" . str_repeat("s", 21); 
 
         $stmt->bind_param($types, 
             $exam_date, $exam_code, $customer_name, $gender, $age_to_save, $symptoms_to_save,
@@ -166,12 +167,17 @@
             $old_l_sph, $old_l_cyl, $old_l_ax, $old_l_add,
             $new_r_sph, $new_r_cyl, $new_r_ax, $new_r_add, $new_r_va,
             $new_l_sph, $new_l_cyl, $new_l_ax, $new_l_add, $new_l_va,
-            $pd_dist_val
+            $pd_dist_val, $invoice_val
         );
 
         if ($stmt->execute()) {
-            $_SESSION['success_msg'] = "CUSTOMER DATA FOR $customer_name HAS BEEN SAVED SUCCESSFULLY! CODE: $exam_code";
-            header("Location: " . $_SERVER['PHP_SELF']);
+            if ($invoice_val !== '00') {
+                // If there's a purchase, redirect to invoice.php with the examination code
+                header("Location: invoice.php?code=" . $exam_code);
+            } else {
+                $_SESSION['success_msg'] = "DATA SAVED SUCCESSFULLY!";
+                header("Location: " . $_SERVER['PHP_SELF']);
+            }
             exit();
         } else {
             die("DATABASE ERROR: " . $stmt->error);
@@ -388,13 +394,18 @@
                             <!-- EXAMINATION CODE AND SEQUANCE-->
                             <input type="hidden" id="base_sequence" value="<?php echo $seq_padded; ?>">
                             <input type="hidden" id="hidden_exam_code" name="examination_code" value="<?php echo $exam_code; ?>">
+                            <input type="hidden" name="invoice_number" id="invoice_decision" value="00">
 
                             <!-- DATE -->
                             <div class="input-group">
-                                <label for="examination_date">EXAMINATION DATE</label>
-                                <input type="date" id="examination_date" name="examination_date" 
-                                    value="<?php echo date('Y-m-d'); ?>" 
-                                    style="color-scheme: dark;"> 
+                                <label for="examination_date_display">EXAMINATION DATE (D/M or M/D)</label>
+                                <input type="text" id="examination_date_display" 
+                                    value="<?php echo date('d/m/Y'); ?>" 
+                                    placeholder="Example: 2/21 or 21/2/25" 
+                                    style="color: #00ff88; font-weight: bold; text-align: center;"
+                                    autocomplete="off">
+                                
+                                <input type="hidden" id="examination_date" name="examination_date" value="<?php echo date('Y-m-d'); ?>">
                             </div>
 
                             <!-- SEQUENCE NO. -->
@@ -561,7 +572,7 @@
                                             <input type="text" name="new_r_cyl" placeholder="0.00">
                                             <input type="text" name="new_r_ax" placeholder="0">
                                             <input type="text" name="new_r_add" placeholder="0.00">
-                                            <input type="text" name="new_r_va" placeholder="20/20">
+                                            <input type="text" name="new_r_va" class="va-input" placeholder="20/20" onclick="this.select()">
                                         </div>
 
                                         <div class="pres-grid row" style="grid-template-columns: 1fr repeat(5, 1fr); gap: 8px;">
@@ -570,7 +581,7 @@
                                             <input type="text" name="new_l_cyl" placeholder="0.00">
                                             <input type="text" name="new_l_ax" placeholder="0">
                                             <input type="text" name="new_l_add" placeholder="0.00">
-                                            <input type="text" name="new_l_va" placeholder="20/20">
+                                            <input type="text" name="new_l_va" class="va-input" placeholder="20/20" onclick="this.select()">
                                         </div>
 
                                         <div style="margin-top: 20px; display: flex; justify-content: center;">
@@ -603,7 +614,7 @@
 
         <script>
             function generateExamCode() {
-                const dateInput = document.querySelector('input[name="examination_date"]').value || new Date().toISOString().split('T')[0];
+                const dateInput = document.getElementById('examination_date').value;
                 const dateObj = new Date(dateInput);
                 
                 // 1. Extract Month & Year
@@ -620,6 +631,7 @@
                 
                 return `LZ/EC/${baseSequence}/${monthRom}/${year}`;
             }
+
             // Function to Toggle Neumorphism Buttons (Gender & Has Old Prescription)
             function toggleNeu(btn, hiddenInputId, isOldPrescription = false) {
                 // Get the button container
@@ -647,9 +659,13 @@
                 }
             }
 
-            // 1. Logic to Sync Right ADD to Left ADD
+            // 1. Logic to Sync Right ADD to Left ADD For New Prescription
             const rAddInput = document.querySelector('input[name="new_r_add"]');
             const lAddInput = document.querySelector('input[name="new_l_add"]');
+
+            // 2. Logic to Sync Right ADD to Left ADD For Old Prescription
+            const oldRAddInput = document.querySelector('input[name="old_prescript_R_add"]');
+            const oldLAddInput = document.querySelector('input[name="old_prescript_L_add"]');
 
             // 1. Helper function to apply the "+" sign
             function applyPlus(value) {
@@ -681,6 +697,23 @@
                 const newCode = generateExamCode();
                 document.getElementById('hidden_exam_code').value = newCode;
                 console.log("Code updated to: " + newCode);
+            });
+
+            // --- OLD PRESCRIPTION ADD SYNC LOGIC ---
+            // 1. When Right eye is input, Left eye follows (Raw value)
+            oldRAddInput.addEventListener('input', function() {
+                oldLAddInput.value = this.value;
+            });
+
+            // 2. When Right eye loses focus (blur), apply the "+" sign
+            oldRAddInput.addEventListener('blur', function() {
+                this.value = applyPlus(this.value);
+                oldLAddInput.value = applyPlus(this.value);
+            });
+
+            // 3. Still allow the Left eye to be manually changed if different
+            oldLAddInput.addEventListener('blur', function() {
+                this.value = applyPlus(this.value);
             });
 
             // --- SYMPTOMS PANEL LOGIC ---
@@ -723,8 +756,8 @@
                 document.getElementById('symptom_list_json').value = JSON.stringify(selectedSymptoms);
             }
 
-            function showSummary(event) {
-                event.preventDefault(); 
+            async function showSummary(event) {
+                event.preventDefault(); // Prevents the form from being submitted immediately
 
                 // 1. Get Basic Data & Examination Code
                 const dynamicExamCode = generateExamCode();
@@ -768,7 +801,7 @@
 
                 const pd = document.querySelector('input[name="pd_dist"]').value || "62/60";
 
-                // 3. Build Summary HTML
+                // Create HTML template for the first popup
                 const summaryHtml = `
                     <div style="text-align: left; font-family: 'Courier New', monospace; font-size: 0.85em; background: #1a1c1d; padding: 15px; border-radius: 10px; border: 1px solid #444; color: #eee;">
                             <div style="text-align: center; border-bottom: 2px solid #00ff88; margin-bottom: 12px;">
@@ -818,8 +851,8 @@
                     </div>
                 `;
 
-                // 4. Display SweetAlert
-                Swal.fire({
+                // --- 2. First Popup: Data Verification ---
+                const result = await Swal.fire({
                     title: 'VERIFY DATA',
                     html: summaryHtml,
                     icon: 'info',
@@ -831,15 +864,122 @@
                     background: '#25282a',
                     color: '#fff',
                     width: '550px'
-                }).then((result) => {
-                    if (result.isConfirmed) {
-                        document.getElementById('hidden_exam_code').value = dynamicExamCode;
-                        document.getElementById('examForm').submit();
-                    }
                 });
 
-                return false;
+                if (result.isConfirmed) {
+                    // --- 3. Second Popup: Purchase Inquiry ---
+                    const shoppingResult = await Swal.fire({
+                        title: 'CUSTOMER PURCHASE?',
+                        text: "Does the customer want to buy glasses/frames now?",
+                        icon: 'question',
+                        showCancelButton: true,
+                        confirmButtonColor: '#00ff88',
+                        cancelButtonColor: '#888',
+                        confirmButtonText: 'YES, SHOPPING',
+                        cancelButtonText: 'NO, JUST EXAM',
+                        background: '#25282a',
+                        color: '#fff'
+                    });
+
+                    if (shoppingResult.isConfirmed) {
+                        // Retrieve invoice sequence number from the server
+                        try {
+                            const response = await fetch('get_next_invoice.php');
+                            const nextInvoice = await response.text();
+                            document.getElementById('invoice_decision').value = nextInvoice.trim();
+                        } catch (err) {
+                            document.getElementById('invoice_decision').value = '001'; // Fallback in case of error
+                        }
+                    } else {
+                        // If not purchasing, set to '00'
+                        document.getElementById('invoice_decision').value = '00';
+                    }
+
+                    // --- 4. Final Submit ---
+                    // Update the final examination code one last time before sending
+                    document.getElementById('hidden_exam_code').value = generateExamCode();
+                    document.getElementById('examForm').submit();
+                }
             }
+
+            // Logic for smart date
+            document.getElementById('examination_date_display').addEventListener('blur', function() {
+                let val = this.value.trim();
+                if (val === "") return;
+
+                let day, month, year;
+                const now = new Date();
+                let currentYear = 2026; // Your system's default year
+
+                // Split input based on "/"
+                let parts = val.split('/');
+
+                if (parts.length >= 2) {
+                    let p1 = parseInt(parts[0]);
+                    let p2 = parseInt(parts[1]);
+                    let p3 = parts[2] ? parseInt(parts[2]) : null;
+
+                    // DATE & MONTH DETERMINATION LOGIC
+                    if (p1 > 12) { 
+                        // If the first number > 12, it must be the Day (Format: 21/2)
+                        day = p1;
+                        month = p2;
+                    } else if (p2 > 12) {
+                        // If the second number > 12, it must be the Day (Format: 2/21)
+                        day = p2;
+                        month = p1;
+                    } else {
+                        // If both are <= 12 (ambiguous), assume your standard format: Month/Day
+                        // You can swap this if Day/Month is preferred
+                        month = p1;
+                        day = p2;
+                    }
+
+                    // YEAR DETERMINATION LOGIC
+                    if (p3) {
+                        // If a third number exists (e.g., 2/21/25 or 2/21/2025)
+                        year = (p3 < 100) ? 2000 + p3 : p3;
+                    } else {
+                        year = currentYear;
+                    }
+
+                    // Validate numbers to prevent errors (e.g., month > 12 after swapping)
+                    if (month > 12) month = 12;
+                    if (day > 31) day = 31;
+
+                    // Format to YYYY-MM-DD for Database
+                    let formattedMonth = String(month).padStart(2, '0');
+                    let formattedDay = String(day).padStart(2, '0');
+                    let finalISO = `${year}-${formattedMonth}-${formattedDay}`;
+
+                    // Update Hidden Input for PHP
+                    document.getElementById('examination_date').value = finalISO;
+
+                    // Update Display so the user knows what is being saved
+                    this.value = `${formattedDay}/${formattedMonth}/${year}`;
+
+                    // Auto-update Examination Code (LZ/EC/...)
+                    if (typeof generateExamCode === "function") {
+                        document.getElementById('hidden_exam_code').value = generateExamCode();
+                    }
+                }
+            });
+            // Add feature: Click to highlight all text for easy editing without manual deletion
+            document.getElementById('examination_date_display').addEventListener('click', function() {
+                this.select();
+            });
+
+            // --- SMART VISUAL ACUITY (VA) LOGIC ---
+            // If the user types "40", it automatically becomes "20/40"
+            document.querySelectorAll('.va-input').forEach(input => {
+                input.addEventListener('blur', function() {
+                    let val = this.value.trim();
+                    // If it's a number and doesn't contain "/", prepend "20/"
+                    if (val !== "" && !val.includes('/') && !isNaN(val)) {
+                        this.value = "20/" + val;
+                    }
+                });
+            });
         </script>
 
     </body>
