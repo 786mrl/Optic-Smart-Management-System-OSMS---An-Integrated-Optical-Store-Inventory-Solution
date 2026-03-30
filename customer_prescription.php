@@ -318,6 +318,17 @@
                 border: 1px solid #00ff88 !important;
                 box-shadow: 0 0 20px rgba(0, 255, 136, 0.2) !important;
             }
+
+            .prescription-table::-webkit-scrollbar {
+                height: 6px;
+            }
+            .prescription-table::-webkit-scrollbar-thumb {
+                background: #00ff88;
+                border-radius: 10px;
+            }
+            .prescription-table::-webkit-scrollbar-track {
+                background: #1a1c1d;
+            }
             /* --- RESPONSIVE FIX --- */
             @media (max-width: 600px) {
                 /* Change grid from 3 columns to 2 columns to prevent buttons from being squashed */
@@ -357,58 +368,52 @@
                 .prescription-card {
                     padding: 15px 5px !important;
                     width: 100% !important;
-                    overflow: hidden !important; /* Prevents the card from breaking the main layout */
+                    overflow: hidden !important;
                 }
 
+                /* KEY: Table wrapper must be block and overflow-x auto */
                 .prescription-table {
                     display: block !important;
                     width: 100% !important;
-                    overflow-x: auto !important; /* KEY: Enable horizontal scrolling */
+                    overflow-x: auto !important; 
                     -webkit-overflow-scrolling: touch;
-                    padding-bottom: 15px;
+                    padding-bottom: 20px; /* Extra space for the scrollbar */
+                    cursor: grab;
                 }
 
+                /* KEY: Force minimum table width to prevent shrinking */
                 .pres-grid {
                     display: grid !important;
-                    /* FORCE minimum width to prevent stacking. 750px is usually safe for 7 columns */
-                    min-width: 750px !important; 
-                    gap: 5px !important;
+                    min-width: 750px !important; /* Force 750px width so values like +2.00 stay on one line */
+                    gap: 8px !important;
                 }
 
-                /* Force inputs to have a fixed width so values like +2.00 stay on one line */
+                /* Prevent numbers from wrapping (line-break) */
                 .pres-grid input {
                     width: 100% !important;
                     min-width: 75px !important; 
                     font-size: 0.9em !important;
                     padding: 12px 2px !important;
-                    white-space: nowrap !important; /* Prevent text from wrapping */
-                }
-
-                .eye-label {
-                    min-width: 60px !important;
-                    font-size: 0.7em !important;
                     white-space: nowrap !important;
                 }
 
-                .pres-grid.header {
-                    font-size: 0.65em !important;
+                .eye-label {
+                    font-size: 0.7em !important;
+                    min-width: 60px;
+                    white-space: nowrap;
                 }
 
-                /* Ensure grid columns do not use flexible 'fr' units on mobile */
+                /* Fixed column settings (no '1fr' to prevent flexible shrinking) */
                 .pres-grid.header, .pres-grid.row {
                     grid-template-columns: 80px repeat(6, 100px) !important; 
                 }
 
+                /* Additional styling for fly window (SweetAlert) to prevent stacking */
                 .swal2-html-container table {
                     display: block !important;
                     width: 100% !important;
                     overflow-x: auto !important;
                     white-space: nowrap !important;
-                }
-
-                .swal2-html-container th, .swal2-html-container td {
-                    padding: 8px 12px !important;
-                    min-width: 60px;
                 }
             }
         </style>
