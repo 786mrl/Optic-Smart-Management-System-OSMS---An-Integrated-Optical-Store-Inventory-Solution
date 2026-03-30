@@ -172,11 +172,20 @@
 
         if ($stmt->execute()) {
             if ($invoice_val !== '00') {
-                // If there's a purchase, redirect to invoice.php with the examination code
+                // Jika belanja, tetap ke invoice
                 header("Location: invoice.php?code=" . $exam_code);
             } else {
-                $_SESSION['success_msg'] = "DATA SAVED SUCCESSFULLY!";
-                header("Location: " . $_SERVER['PHP_SELF']);
+                // CEK INSTRUKSI REDIRECT DARI JAVASCRIPT
+                $redirect_to = $_POST['after_save_redirect'] ?? 'self';
+                
+                if ($redirect_to === 'customer_list') {
+                    // Jika pilih "NO, JUST EXAM", kembali ke daftar customer
+                    header("Location: customer.php");
+                } else {
+                    // Jika default, tetap di halaman ini dengan pesan sukses
+                    $_SESSION['success_msg'] = "DATA SAVED SUCCESSFULLY!";
+                    header("Location: " . $_SERVER['PHP_SELF']);
+                }
             }
             exit();
         } else {
@@ -392,6 +401,7 @@
                         <div class="form-grid">
 
                             <!-- EXAMINATION CODE AND SEQUANCE-->
+                            <input type="hidden" name="after_save_redirect" id="after_save_redirect" value="self">
                             <input type="hidden" id="base_sequence" value="<?php echo $seq_padded; ?>">
                             <input type="hidden" id="hidden_exam_code" name="examination_code" value="<?php echo $exam_code; ?>">
                             <input type="hidden" name="invoice_number" id="invoice_decision" value="00">
@@ -882,17 +892,19 @@
                     });
 
                     if (shoppingResult.isConfirmed) {
-                        // Retrieve invoice sequence number from the server
+                        // CASE: YES, SHOPPING
                         try {
                             const response = await fetch('get_next_invoice.php');
                             const nextInvoice = await response.text();
                             document.getElementById('invoice_decision').value = nextInvoice.trim();
                         } catch (err) {
-                            document.getElementById('invoice_decision').value = '001'; // Fallback in case of error
+                            document.getElementById('invoice_decision').value = '001';
                         }
                     } else {
-                        // If not purchasing, set to '00'
+                        // CASE: NO, JUST EXAM
                         document.getElementById('invoice_decision').value = '00';
+                        // TELL PHP TO REDIRECT TO CUSTOMER.PHP
+                        document.getElementById('after_save_redirect').value = 'customer_list'; 
                     }
 
                     // --- 4. Final Submit ---
@@ -980,7 +992,68 @@
                     }
                 });
             });
-        </script>
 
+            // --- SMART ARROW KEYS NAVIGATION ---
+            document.addEventListener('keydown', function(e) {
+                const keys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
+                if (!keys.includes(e.key)) return;
+
+                const active = document.activeElement;
+                
+                // Ensure it only operates on prescription inputs
+                if (active.tagName === 'INPUT' && (active.name.includes('old_prescript') || active.name.includes('new_'))) {
+                    
+                    const card = active.closest('.prescription-card');
+                    const inputs = Array.from(card.querySelectorAll('input[type="text"]'));
+                    const index = inputs.indexOf(active);
+                    
+                    // Calculate the number of columns in the active row
+                    const currentRow = active.closest('.pres-grid.row');
+                    const columnsCount = Array.from(currentRow.querySelectorAll('input[type="text"]')).length;
+
+                    // Check cursor position within the input
+                    const cursorPosition = active.selectionStart;
+                    const textLength = active.value.length;
+
+                    let nextIndex = -1;
+
+                    if (e.key === 'ArrowLeft') {
+                        // Move input only if the cursor is at the very beginning (position 0)
+                        if (cursorPosition === 0) nextIndex = index - 1;
+                    } 
+                    else if (e.key === 'ArrowRight') {
+                        // Move input only if the cursor is at the very end
+                        if (cursorPosition === textLength) nextIndex = index + 1;
+                    } 
+                    else if (e.key === 'ArrowUp') {
+                        // Up/Down arrows usually move across rows immediately
+                        nextIndex = index - columnsCount;
+                    } 
+                    else if (e.key === 'ArrowDown') {
+                        // Up/Down arrows usually move across rows immediately
+                        nextIndex = index + columnsCount;
+                    }
+
+                    // Execute focus transition
+                    if (nextIndex >= 0 && nextIndex < inputs.length) {
+                        e.preventDefault(); 
+                        inputs[nextIndex].focus();
+                        
+                        // Set cursor position when entering the new input
+                        if (e.key === 'ArrowLeft') {
+                            // If coming from the right (pressed left), place cursor at the end of the new input text
+                            const len = inputs[nextIndex].value.length;
+                            inputs[nextIndex].setSelectionRange(len, len);
+                        } else if (e.key === 'ArrowRight') {
+                            // If coming from the left (pressed right), place cursor at the start of the new input text
+                            inputs[nextIndex].setSelectionRange(0, 0);
+                        } else {
+                            // For Up/Down, select all text (optional, can be replaced with setSelectionRange)
+                            inputs[nextIndex].select();
+                        }
+                    }
+                }
+            });
+        </script>
     </body>
 </html>
