@@ -15,15 +15,13 @@
     }
 
     // Simple helper function to provide a default value (e.g., 0.00) if empty
-    function cleanPres($conn, $val, $default = "0.00") {
+    // New Version: Adding $forcePlus parameter
+    function cleanPres($conn, $val, $default = "0.00", $forcePlus = false) {
         $cleaned = mysqli_real_escape_string($conn, trim($val));
         if ($cleaned === "") return $default;
-    
-        // If the input is a pure number without a sign (e.g., "1.00")
-        // And the number is greater than 0
-        if (is_numeric($cleaned) && $cleaned > 0) {
-            // Check if the original string already has a + sign at the first character
-            // strpos($val, '+') === false ensures we don't add a double plus
+
+        // Logic for adding the + sign only runs if $forcePlus is set to TRUE
+        if ($forcePlus && is_numeric($cleaned) && $cleaned > 0) {
             if (strpos($val, '+') === false) {
                 $cleaned = "+" . $cleaned;
             }
@@ -114,15 +112,15 @@
         $has_old = $_POST['has_old_prescription'];
 
         if ($has_old == 'yes') {
-            $old_r_sph = cleanPres($conn, $_POST['old_prescript_R_sph']);
-            $old_r_cyl = cleanPres($conn, $_POST['old_prescript_R_cyl']);
-            $old_r_ax  = cleanPres($conn, $_POST['old_prescript_R_ax'], "0"); // Axis defaults to 0
-            $old_r_add = cleanPres($conn, $_POST['old_prescript_R_add']);
+            $old_r_sph = cleanPres($conn, $_POST['old_prescript_R_sph'], "0.00", true);
+            $old_r_cyl = cleanPres($conn, $_POST['old_prescript_R_cyl'], "0.00", true);
+            $old_r_ax  = cleanPres($conn, $_POST['old_prescript_R_ax'], "0");
+            $old_r_add = cleanPres($conn, $_POST['old_prescript_R_add'], "0.00", true);
 
-            $old_l_sph = cleanPres($conn, $_POST['old_prescript_L_sph']);
-            $old_l_cyl = cleanPres($conn, $_POST['old_prescript_L_cyl']);
+            $old_l_sph = cleanPres($conn, $_POST['old_prescript_L_sph'], "0.00", true);
+            $old_l_cyl = cleanPres($conn, $_POST['old_prescript_L_cyl'], "0.00", true);
             $old_l_ax  = cleanPres($conn, $_POST['old_prescript_L_ax'], "0");
-            $old_l_add = cleanPres($conn, $_POST['old_prescript_L_add']);
+            $old_l_add = cleanPres($conn, $_POST['old_prescript_L_add'], "0.00", true);
         } else {
             // If No, set all values to 0.00 / 0
             $old_r_sph = $old_r_cyl = $old_r_add = "0.00";
@@ -131,21 +129,30 @@
         }
 
         // 6. New Prescription Data
-        $new_r_sph = cleanPres($conn, $_POST['new_r_sph']);
-        $new_r_cyl = cleanPres($conn, $_POST['new_r_cyl']);
+        $new_r_sph = cleanPres($conn, $_POST['new_r_sph'], "0.00", true);
+        $new_r_cyl = cleanPres($conn, $_POST['new_r_cyl'], "0.00", true);
         $new_r_ax  = cleanPres($conn, $_POST['new_r_ax'], "0");
-        $new_r_add = cleanPres($conn, $_POST['new_r_add']);
-        $new_r_va  = cleanPres($conn, $_POST['new_r_va'], "20/20"); // Default Normal Visual Acuity (VA)
+        $new_r_add = cleanPres($conn, $_POST['new_r_add'], "0.00", true);
+        $new_r_va  = cleanPres($conn, $_POST['new_r_va'], "20/20");
 
-        $new_l_sph = cleanPres($conn, $_POST['new_l_sph']);
-        $new_l_cyl = cleanPres($conn, $_POST['new_l_cyl']);
+        $new_l_sph = cleanPres($conn, $_POST['new_l_sph'], "0.00", true);
+        $new_l_cyl = cleanPres($conn, $_POST['new_l_cyl'], "0.00", true);
         $new_l_ax  = cleanPres($conn, $_POST['new_l_ax'], "0");
-        $new_l_add = cleanPres($conn, $_POST['new_l_add']);
+        $new_l_add = cleanPres($conn, $_POST['new_l_add'], "0.00", true);
         $new_l_va  = cleanPres($conn, $_POST['new_l_va'], "20/20");
 
         // PD defaults to 62/60 if empty
         $pd_dist_val = cleanPres($conn, $_POST['pd_dist'], "62/60");
 
+        // Get Visual Habits & Digital Usage
+        $visual_habit = (int)($_POST['visual_habit'] ?? 1);
+        $digital_usage = (int)($_POST['digital_usage'] ?? 1);
+        $exam_notes = mysqli_real_escape_string($conn, $_POST['exam_notes']);
+
+        // UCVA Data
+        $ucva_r = cleanPres($conn, $_POST['ucva_r'], "20/20");
+        $ucva_l = cleanPres($conn, $_POST['ucva_l'], "20/20");
+        
         // 6. Insert Query using Prepared Statement
         $stmt = $conn->prepare("INSERT INTO customer_examinations (
             examination_date, examination_code, customer_name, gender, age, symptoms,
@@ -153,13 +160,12 @@
             old_l_sph, old_l_cyl, old_l_ax, old_l_add,
             new_r_sph, new_r_cyl, new_r_ax, new_r_add, new_r_visus,
             new_l_sph, new_l_cyl, new_l_ax, new_l_add, new_l_visus,
-            pd_dist, invoice_number
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            pd_dist, invoice_number,
+            visual_habit, digital_usage, ucva_r, ucva_l, exam_notes
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
 
         // Define data types: 
-        // "sssis" = string, string, string, integer, string... and so on.
-        // Since most of your optical data are strings (due to + or / signs), we use "s".
-        $types = "ssssi" . str_repeat("s", 21); 
+        $types = "ssssi" . str_repeat("s", 21) . "iisss"; 
 
         $stmt->bind_param($types, 
             $exam_date, $exam_code, $customer_name, $gender, $age_to_save, $symptoms_to_save,
@@ -167,7 +173,8 @@
             $old_l_sph, $old_l_cyl, $old_l_ax, $old_l_add,
             $new_r_sph, $new_r_cyl, $new_r_ax, $new_r_add, $new_r_va,
             $new_l_sph, $new_l_cyl, $new_l_ax, $new_l_add, $new_l_va,
-            $pd_dist_val, $invoice_val
+            $pd_dist_val, $invoice_val,
+            $visual_habit, $digital_usage, $ucva_r, $ucva_l, $exam_notes
         );
 
         if ($stmt->execute()) {
@@ -352,6 +359,7 @@
                 }
                 .pres-grid {
                     gap: 5px;
+                    min-width: 500px;
                 }
                 .pres-grid input {
                     font-size: 0.7em;
@@ -365,6 +373,10 @@
                 }
                 #new_prescript_section div[style*="grid-template-columns: 1fr 1fr"] {
                     grid-template-columns: 1fr !important; /* Tumpuk saja di HP agar tidak sempit */
+                }
+                .prescription-table {
+                    overflow-x: auto;
+                    display: block;
                 }
             }
         </style>
@@ -452,8 +464,33 @@
                             <div class="input-group">
                                 <label for="age">AGE / BIRTH YEAR</label>
                                 <input type="text" id="age" name="age" 
+                                    inputmode="tel"
                                     placeholder="Example: 25 (Age) or '96 (Year)" 
                                     autocomplete="off">
+                            </div>
+
+                            <!-- VISUAL HABITS -->
+                            <div class="input-group">
+                                <label>VISUAL HABITS</label>
+                                <select name="visual_habit" 
+                                style="color: #00ff88; font-weight: bold; text-align: center;"
+                                value="1">
+                                    <option value="1">INDOOR</option>
+                                    <option value="2">OUTDOOR</option>
+                                    <option value="3">BOTH</option>
+                                </select>
+                            </div>
+                            
+                            <!-- DIGITAL DEVICE USAGE -->
+                            <div class="input-group">
+                                <label>DIGITAL DEVICE USAGE</label>
+                                <select name="digital_usage" 
+                                style="color: #00ff88; font-weight: bold; text-align: center;"
+                                value="1">
+                                    <option value="1">LOW (< 2h)</option>
+                                    <option value="2">MODERATE (2h - 5h)</option>
+                                    <option value="3">HIGH (> 5h)</option>
+                                </select>
                             </div>
             
                             <!-- SYMPTOMS -->
@@ -543,19 +580,19 @@
                                         </div>
 
                                         <div class="pres-grid row">
-                                            <div class="eye-label">RIGHT (R)</div>
-                                            <input type="text" name="old_prescript_R_sph" placeholder="0.00">
-                                            <input type="text" name="old_prescript_R_cyl" placeholder="0.00">
-                                            <input type="text" name="old_prescript_R_ax" placeholder="0">
-                                            <input type="text" name="old_prescript_R_add" placeholder="0.00">
+                                            <div class="eye-label">RIGHT</div>
+                                            <input type="text" inputmode="tel" name="old_prescript_R_sph" placeholder="0.00">
+                                            <input type="text" inputmode="tel" name="old_prescript_R_cyl" placeholder="0.00">
+                                            <input type="text" inputmode="tel" name="old_prescript_R_ax" placeholder="0">
+                                            <input type="text" inputmode="tel" name="old_prescript_R_add" placeholder="0.00">
                                         </div>
 
                                         <div class="pres-grid row">
-                                            <div class="eye-label">LEFT (L)</div>
-                                            <input type="text" name="old_prescript_L_sph" placeholder="0.00">
-                                            <input type="text" name="old_prescript_L_cyl" placeholder="0.00">
-                                            <input type="text" name="old_prescript_L_ax" placeholder="0">
-                                            <input type="text" name="old_prescript_L_add" placeholder="0.00">
+                                            <div class="eye-label">LEFT</div>
+                                            <input type="text" inputmode="tel" name="old_prescript_L_sph" placeholder="0.00">
+                                            <input type="text" inputmode="tel" name="old_prescript_L_cyl" placeholder="0.00">
+                                            <input type="text" inputmode="tel" name="old_prescript_L_ax" placeholder="0">
+                                            <input type="text" inputmode="tel" name="old_prescript_L_add" placeholder="0.00">
                                         </div>
                                     </div>
                                 </div>
@@ -567,8 +604,9 @@
                                     <h3 style="color: #00ff88; font-size: 1em; text-align: center; margin-bottom: 15px; letter-spacing: 2px;">NEW PRESCRIPTION</h3>
                                     
                                     <div class="prescription-table">
-                                        <div class="pres-grid header" style="grid-template-columns: 1fr repeat(5, 1fr);">
+                                        <div class="pres-grid header" style="grid-template-columns: 1fr repeat(6, 1fr);">
                                             <div>EYE</div>
+                                            <div style="color: #ffcc00;">UCVA</div>
                                             <div>SPH</div>
                                             <div>CYL</div>
                                             <div>AXIS</div>
@@ -576,38 +614,62 @@
                                             <div>VA</div>
                                         </div>
 
-                                        <div class="pres-grid row" style="grid-template-columns: 1fr repeat(5, 1fr); gap: 8px;">
-                                            <div class="eye-label">RIGHT (R)</div>
-                                            <input type="text" name="new_r_sph" placeholder="0.00">
-                                            <input type="text" name="new_r_cyl" placeholder="0.00">
-                                            <input type="text" name="new_r_ax" placeholder="0">
-                                            <input type="text" name="new_r_add" placeholder="0.00">
-                                            <input type="text" name="new_r_va" class="va-input" placeholder="20/20" onclick="this.select()">
+                                        <div class="pres-grid row" style="grid-template-columns: 1fr repeat(6, 1fr); gap: 8px;">
+                                            <div class="eye-label">RIGHT</div>
+                                            <input type="text" inputmode="tel" name="ucva_r" class="va-input" placeholder="20/20" style="border-color: #ffcc0044 !important;">
+                                            <input type="text" inputmode="tel" name="new_r_sph" placeholder="0.00">
+                                            <input type="text" inputmode="tel" name="new_r_cyl" placeholder="0.00">
+                                            <input type="text" inputmode="tel" name="new_r_ax" placeholder="0">
+                                            <input type="text" inputmode="tel" name="new_r_add" placeholder="0.00">
+                                            <input type="text" inputmode="tel" name="new_r_va" class="va-input" placeholder="20/20" onclick="this.select()">
                                         </div>
 
-                                        <div class="pres-grid row" style="grid-template-columns: 1fr repeat(5, 1fr); gap: 8px;">
-                                            <div class="eye-label">LEFT (L)</div>
-                                            <input type="text" name="new_l_sph" placeholder="0.00">
-                                            <input type="text" name="new_l_cyl" placeholder="0.00">
-                                            <input type="text" name="new_l_ax" placeholder="0">
-                                            <input type="text" name="new_l_add" placeholder="0.00">
-                                            <input type="text" name="new_l_va" class="va-input" placeholder="20/20" onclick="this.select()">
+                                        <div class="pres-grid row" style="grid-template-columns: 1fr repeat(6, 1fr); gap: 8px;">
+                                            <div class="eye-label">LEFT</div>
+                                            <input type="text" inputmode="tel" name="ucva_l" class="va-input" placeholder="20/20" style="border-color: #ffcc0044 !important;">
+                                            <input type="text" inputmode="tel" name="new_l_sph" placeholder="0.00">
+                                            <input type="text" inputmode="tel" name="new_l_cyl" placeholder="0.00">
+                                            <input type="text" inputmode="tel" name="new_l_ax" placeholder="0">
+                                            <input type="text" inputmode="tel" name="new_l_add" placeholder="0.00">
+                                            <input type="text" inputmode="tel" name="new_l_va" class="va-input" placeholder="20/20" onclick="this.select()">
                                         </div>
 
                                         <div style="margin-top: 20px; display: flex; justify-content: center;">
                                             <div class="input-group" style="width: 200px;">
                                                 <label style="font-size: 0.75em; color: #888; text-align: center; display: block;">PD (PUPILLARY DISTANCE)</label>
-                                                <input type="text" name="pd_dist" placeholder="62/60" style="background: #1a1c1d; border: 1px solid #333; color: #00ff88; border-radius: 8px; padding: 12px; width: 100%; text-align: center; font-family: monospace;">
+                                                <input type="text" inputmode="tel" name="pd_dist" placeholder="62/60" style="background: #1a1c1d; border: 1px solid #333; color: #00ff88; border-radius: 8px; padding: 12px; width: 100%; text-align: center; font-family: monospace;">
                                             </div>
                                         </div>
                                     </div>
                                 </div>
                             </div>
+                        </div>
 
-                            <!-- Submit -->
-                            <div class="btn-group">
-                                <button type="submit" name="submit_customer_prescription" class="submit-main" >SAVE DATA</button>
-                            </div>
+                        <!-- NOTES -->
+                        <div class="input-group" style="grid-column: 1 / -1; width: 100% !important; display: flex; flex-direction: column; margin-top: 20px;">
+                            <label for="exam_notes" style="align-self: flex-start; margin-bottom: 8px;">ADDITIONAL NOTES</label>
+                            <textarea name="exam_notes" id="exam_notes" 
+                                placeholder="Write additional notes here..." 
+                                style="
+                                    width: 100% !important; 
+                                    min-width: 100% !important; 
+                                    max-width: 100% !important; 
+                                    background: #1a1c1d; 
+                                    color: #00ff88; 
+                                    border: 1px solid #444; 
+                                    padding: 15px; 
+                                    border-radius: 12px; 
+                                    min-height: 120px; 
+                                    box-sizing: border-box; 
+                                    display: block;
+                                    font-family: monospace;
+                                    resize: vertical;
+                                "></textarea>
+                        </div>
+                        
+                        <!-- SUBMIT -->
+                        <div class="btn-group" style="grid-column: 1 / -1; margin-top: 30px; display: flex; justify-content: center;">
+                            <button type="submit" name="submit_customer_prescription" class="submit-main" style="width: 100%; max-width: 400px;">SAVE DATA</button>
                         </div>
                     </form>
                 </div>
@@ -1001,7 +1063,11 @@
                 const active = document.activeElement;
                 
                 // Ensure it only operates on prescription inputs
-                if (active.tagName === 'INPUT' && (active.name.includes('old_prescript') || active.name.includes('new_'))) {
+                if (active.tagName === 'INPUT' && 
+                (active.name.includes('old_prescript') || 
+                active.name.includes('new_') || 
+                active.name.includes('ucva')
+                )) {
                     
                     const card = active.closest('.prescription-card');
                     const inputs = Array.from(card.querySelectorAll('input[type="text"]'));
