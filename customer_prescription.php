@@ -55,13 +55,13 @@
         $calculated_age = 0;
         $exam_year = (int)date('Y', strtotime($exam_date));
         if (!empty($raw_age)) {
-            // Check if there is a single quote (') in the input
-            if (strpos($raw_age, "'") !== false) {
+            // Check if there is a single quote (.) in the input
+            if (strpos($raw_age, ".") !== false) {
                 // YEAR CASE: Remove the quote and extract the numbers
-                $year_input = str_replace("'", "", $raw_age);
+                $year_input = str_replace(".", "", $raw_age);
                 $year_val = (int)$year_input;
 
-                // If input is 2 digits (e.g., 96 or 05)
+                // If input is 1-2 digits (e.g., .96 or .05)
                 if (strlen($year_input) <= 2) {
                     // If number > current year (e.g., 96), assume 1900s. 
                     // If number <= current year (e.g., 05), assume 2000s.
@@ -355,28 +355,60 @@
                 }
 
                 .prescription-card {
-                    padding: 15px 10px;
+                    padding: 15px 5px !important;
+                    width: 100% !important;
+                    overflow: hidden !important; /* Prevents the card from breaking the main layout */
                 }
-                .pres-grid {
-                    gap: 5px;
-                    min-width: 500px;
-                }
-                .pres-grid input {
-                    font-size: 0.7em;
-                    padding: 8px 2px !important;
-                }
-                .pres-grid.header {
-                    font-size: 0.55em;
-                }
-                .eye-label {
-                    font-size: 0.65em;
-                }
-                #new_prescript_section div[style*="grid-template-columns: 1fr 1fr"] {
-                    grid-template-columns: 1fr !important; /* Tumpuk saja di HP agar tidak sempit */
-                }
+
                 .prescription-table {
-                    overflow-x: auto;
-                    display: block;
+                    display: block !important;
+                    width: 100% !important;
+                    overflow-x: auto !important; /* KEY: Enable horizontal scrolling */
+                    -webkit-overflow-scrolling: touch;
+                    padding-bottom: 15px;
+                }
+
+                .pres-grid {
+                    display: grid !important;
+                    /* FORCE minimum width to prevent stacking. 750px is usually safe for 7 columns */
+                    min-width: 750px !important; 
+                    gap: 5px !important;
+                }
+
+                /* Force inputs to have a fixed width so values like +2.00 stay on one line */
+                .pres-grid input {
+                    width: 100% !important;
+                    min-width: 75px !important; 
+                    font-size: 0.9em !important;
+                    padding: 12px 2px !important;
+                    white-space: nowrap !important; /* Prevent text from wrapping */
+                }
+
+                .eye-label {
+                    min-width: 60px !important;
+                    font-size: 0.7em !important;
+                    white-space: nowrap !important;
+                }
+
+                .pres-grid.header {
+                    font-size: 0.65em !important;
+                }
+
+                /* Ensure grid columns do not use flexible 'fr' units on mobile */
+                .pres-grid.header, .pres-grid.row {
+                    grid-template-columns: 80px repeat(6, 100px) !important; 
+                }
+
+                .swal2-html-container table {
+                    display: block !important;
+                    width: 100% !important;
+                    overflow-x: auto !important;
+                    white-space: nowrap !important;
+                }
+
+                .swal2-html-container th, .swal2-html-container td {
+                    padding: 8px 12px !important;
+                    min-width: 60px;
                 }
             }
         </style>
@@ -420,10 +452,10 @@
 
                             <!-- DATE -->
                             <div class="input-group">
-                                <label for="examination_date_display">EXAMINATION DATE (D/M or M/D)</label>
-                                <input type="text" id="examination_date_display" 
+                                <label for="examination_date_display">EXAMINATION DATE</label>
+                                <input type="text" inputmode="tel" id="examination_date_display" 
                                     value="<?php echo date('d/m/Y'); ?>" 
-                                    placeholder="Example: 2/21 or 21/2/25" 
+                                    placeholder="Example: 2/21 or 21/2/25, also can use . (dot)" 
                                     style="color: #00ff88; font-weight: bold; text-align: center;"
                                     autocomplete="off">
                                 
@@ -465,7 +497,7 @@
                                 <label for="age">AGE / BIRTH YEAR</label>
                                 <input type="text" id="age" name="age" 
                                     inputmode="tel"
-                                    placeholder="Example: 25 (Age) or '96 (Year)" 
+                                    placeholder="Example: 25 (Age) or .96 (Year)" 
                                     autocomplete="off">
                             </div>
 
@@ -977,65 +1009,70 @@
             }
 
             // Logic for smart date
+            // Logic for smart date (Supports: 20.2, 2.20, 20/2/25, 2.20.2025, etc.)
             document.getElementById('examination_date_display').addEventListener('blur', function() {
                 let val = this.value.trim();
                 if (val === "") return;
 
                 let day, month, year;
-                const now = new Date();
-                let currentYear = 2026; // Your system's default year
+                const currentYear = 2026; 
 
-                // Split input based on "/"
-                let parts = val.split('/');
+                // Split based on "/" OR "." using Regular Expression
+                let parts = val.split(/[/.]/);
 
                 if (parts.length >= 2) {
                     let p1 = parseInt(parts[0]);
                     let p2 = parseInt(parts[1]);
-                    let p3 = parts[2] ? parseInt(parts[2]) : null;
+                    let p3 = parts[2] ? parts[2].trim() : null;
 
-                    // DATE & MONTH DETERMINATION LOGIC
+                    // 1. DATE & MONTH DETERMINATION
                     if (p1 > 12) { 
-                        // If the first number > 12, it must be the Day (Format: 21/2)
+                        // If the first number > 12, it must be the Day (Format: 21.2)
                         day = p1;
                         month = p2;
                     } else if (p2 > 12) {
-                        // If the second number > 12, it must be the Day (Format: 2/21)
+                        // If the second number > 12, it must be the Day (Format: 2.21)
                         day = p2;
                         month = p1;
                     } else {
-                        // If both are <= 12 (ambiguous), assume your standard format: Month/Day
-                        // You can swap this if Day/Month is preferred
-                        month = p1;
-                        day = p2;
+                        // If both are <= 12, assume format: Month.Day (Matches your initial code)
+                        month = p2;
+                        day = p1;
                     }
 
-                    // YEAR DETERMINATION LOGIC
+                    // 2. YEAR DETERMINATION (SMART YEAR)
                     if (p3) {
-                        // If a third number exists (e.g., 2/21/25 or 2/21/2025)
-                        year = (p3 < 100) ? 2000 + p3 : p3;
+                        let yearNum = parseInt(p3);
+                        if (p3.length <= 2) {
+                            // If input is 2 digits (e.g., .25), assume 2000s
+                            year = 2000 + yearNum;
+                        } else {
+                            // If input is 4 digits (e.g., .2025)
+                            year = yearNum;
+                        }
                     } else {
+                        // If no year is provided, use the current year (2026)
                         year = currentYear;
                     }
 
-                    // Validate numbers to prevent errors (e.g., month > 12 after swapping)
+                    // 3. SIMPLE VALIDATION
                     if (month > 12) month = 12;
                     if (day > 31) day = 31;
 
-                    // Format to YYYY-MM-DD for Database
+                    // 4. REFORMATTING
                     let formattedMonth = String(month).padStart(2, '0');
                     let formattedDay = String(day).padStart(2, '0');
-                    let finalISO = `${year}-${formattedMonth}-${formattedDay}`;
+                    
+                    // Update Hidden Input for Database (YYYY-MM-DD)
+                    document.getElementById('examination_date').value = `${year}-${formattedMonth}-${formattedDay}`;
 
-                    // Update Hidden Input for PHP
-                    document.getElementById('examination_date').value = finalISO;
-
-                    // Update Display so the user knows what is being saved
+                    // Update Display (DD/MM/YYYY) for consistency
                     this.value = `${formattedDay}/${formattedMonth}/${year}`;
 
-                    // Auto-update Examination Code (LZ/EC/...)
-                    if (typeof generateExamCode === "function") {
-                        document.getElementById('hidden_exam_code').value = generateExamCode();
-                    }
+                    // 5. AUTO-UPDATE EXAMINATION CODE (IMPORTANT!)
+                    // Call the generate function so the LZ/EC/... code updates its month/year
+                    const newCode = generateExamCode();
+                    document.getElementById('hidden_exam_code').value = newCode;
                 }
             });
             // Add feature: Click to highlight all text for easy editing without manual deletion
