@@ -1,0 +1,18 @@
+{
+    "stock": {
+        "Single Vision": {
+            "SV-CRMC": 0,
+            "Blueray": 0,
+            "Photochromic": 0,
+            "Bluechromic": 0,
+            "Bluegard": 0,
+            "One-Drive": 0
+        }
+    },
+    "lab": {
+        "Progressive": {
+            "Standard": 0,
+            "Premium": 0
+        }
+    }
+}

@@ -69,6 +69,12 @@
                             Smart Analysis
                             <div class="led"></div>
                         </button>
+
+                        <button class="neu-button" data-url="lense_price.php" onclick="handleButtonClick(this)">
+                            <span class="icon">🏷️</span>
+                            LENSE PRICE
+                            <div class="led"></div>
+                        </button>
                     <?php endif; ?>
                 
                     <?php if ($role === 'staff'): ?>
