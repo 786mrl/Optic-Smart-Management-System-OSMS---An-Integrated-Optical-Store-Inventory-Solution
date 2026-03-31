@@ -476,9 +476,13 @@
                             </div>
 
                             <!-- NAME -->
-                            <div class="input-group">
+                            <div class="input-group" style="flex: 0 0 100%; max-width: 100%; grid-column: 1 / -1; width: 100% !important;">
                                 <label for="customer_name">NAME</label>
-                                <input type="text" id="customer_name" name="customer_name" required placeholder="LENZA CUSTOMER" style="text-transform: uppercase;">
+                                <input type="text" 
+                                id="customer_name" 
+                                name="customer_name" required 
+                                placeholder="LENZA CUSTOMER" 
+                                style="text-transform: uppercase; padding: 20px;">
                             </div>
 
                             <!-- GENDER -->
@@ -498,7 +502,7 @@
                             </div>
             
                             <!-- AGE -->
-                            <div class="input-group">
+                            <div class="input-group" style="flex: 0 0 100%; max-width: 100%; grid-column: 1 / -1; width: 100% !important;">
                                 <label for="age">AGE / BIRTH YEAR</label>
                                 <input type="text" id="age" name="age" 
                                     inputmode="tel"
@@ -507,33 +511,60 @@
                             </div>
 
                             <!-- VISUAL HABITS -->
-                            <div class="input-group">
-                                <label>VISUAL HABITS</label>
-                                <select name="visual_habit" 
-                                style="color: #00ff88; font-weight: bold; text-align: center;"
-                                value="1">
-                                    <option value="1">INDOOR</option>
-                                    <option value="2">OUTDOOR</option>
-                                    <option value="3">BOTH</option>
-                                </select>
+                            <div class="input-group" style="flex: 0 0 100%; max-width: 100%; grid-column: 1 / -1; width: 100% !important;">
+                                <label style="width: 100%; text-align: center; margin-bottom: 0;">VISUAL HABITS</label>
+                                <input type="hidden" name="visual_habit" id="visual_habit" value="1">
+                                <div class="selection-wrapper">
+                                    <button style="min-width: 100px;" value="1" type="button" class="neu-btn active"onclick="toggleNeu(this, 'visual_habit')">
+                                        <span>INDOOR</span>
+                                        <div class="led"></div>
+                                    </button>
+                                    <button style="min-width: 100px;" value="2" type="button" class="neu-btn"onclick="toggleNeu(this, 'visual_habit')">
+                                        <span>OUTDOOR</span>
+                                        <div class="led"></div>
+                                    </button>
+                                    <button style="min-width: 100px;" value="3" type="button" class="neu-btn"onclick="toggleNeu(this, 'visual_habit')">
+                                        <span>BOTH</span>
+                                        <div class="led"></div>
+                                    </button>
+                                </div>
                             </div>
                             
                             <!-- DIGITAL DEVICE USAGE -->
-                            <div class="input-group">
-                                <label>DIGITAL DEVICE USAGE</label>
-                                <select name="digital_usage" 
-                                style="color: #00ff88; font-weight: bold; text-align: center;"
-                                value="1">
-                                    <option value="1">LOW (< 2h)</option>
-                                    <option value="2">MODERATE (2h - 5h)</option>
-                                    <option value="3">HIGH (> 5h)</option>
-                                </select>
+                            <div class="input-group" style="flex: 0 0 100%; max-width: 100%; grid-column: 1 / -1; width: 100% !important;">
+                                <label style="width: 100%; text-align: center; margin-bottom: 0;">DIGITAL DEVICE USAGE</label>
+                                <input type="hidden" name="digital_usage" id="digital_usage" value="1">
+                                <div class="selection-wrapper">
+                                    <button style="min-width: 100px;" value="1" type="button" class="neu-btn active"onclick="toggleNeu(this, 'digital_usage')">
+                                        <span>LOW<br>(< 2H)</span>
+                                        <div class="led"></div>
+                                    </button>
+                                    <button style="min-width: 100px;" value="2" type="button" class="neu-btn"onclick="toggleNeu(this, 'digital_usage')">
+                                        <span>MODERATE<br>(2H - 5H)</span>
+                                        <div class="led"></div>
+                                    </button>
+                                    <button style="min-width: 100px;" value="3" type="button" class="neu-btn"onclick="toggleNeu(this, 'digital_usage')">
+                                        <span>HIGH<br>(> 5H)</span>
+                                        <div class="led"></div>
+                                    </button>
+                                </div>
                             </div>
             
                             <!-- SYMPTOMS -->
-                            <div class="input-group" style="grid-column: 1 / -1;">
+                            <div class="input-group" style="flex: 0 0 100%; max-width: 100%; grid-column: 1 / -1; width: 100% !important;">
                                 <label>SYMPTOMS / COMPLAINTS</label>
-                                <div id="btn_open_symptoms" style="background: #25282a; padding: 15px; border-radius: 12px; border: 1px solid #444; cursor: pointer; display: flex; justify-content: space-between; align-items: center; box-shadow: inset 2px 2px 5px #1a1c1d;">
+                                <div id="btn_open_symptoms" 
+                                style="background: #25282a;
+                                width: 100%; 
+                                text-align: center;
+                                padding: 15px; 
+                                border-radius: 12px;
+                                border: 1px solid #444;
+                                cursor: pointer;
+                                display: flex;
+                                justify-content: space-between;
+                                align-items: center;
+                                box-shadow: inset 2px 2px 5px #1a1c1d;">
                                     <span id="symptom_summary" style="color: #888; font-size: 0.9em;">NO SYMPTOMS SELECTED</span>
                                     <span id="arrow_icon" style="color: #00ff88;">▼</span>
                                 </div>
