@@ -49,6 +49,13 @@
         
         file_put_contents($json_file, json_encode($data, JSON_PRETTY_PRINT));
     }
+
+    $selected_group = $_POST['last_group'] ?? 'stock';
+    $selected_cat = $_POST['last_category'] ?? '';
+
+    if (empty($selected_cat) && isset($data[$selected_group])) {
+        $selected_cat = array_key_first($data[$selected_group]);
+    }
 ?>
 
 <!DOCTYPE html>
@@ -300,6 +307,9 @@
                     <form id="form-price-list" action="lense_price.php" method="POST" enctype="multipart/form-data">
                         <input type="hidden" name="update_settings" value="1">
                         
+                        <input type="hidden" name="last_group" id="last_group" value="<?php echo $selected_group; ?>">
+                        <input type="hidden" name="last_category" id="last_category" value="<?php echo $selected_cat; ?>">
+
                         <div class="config-section">
                             <div class="input-container-box" style="margin-bottom: 20px; display: flex; gap: 15px; align-items: center;">
                                 <div style="flex: 1;">
@@ -450,33 +460,39 @@
                 const catSelect = document.getElementById('filter-category');
                 const selectedGroup = groupSelect.value;
                 
-                // Bersihkan dropdown kategori
+                // Update hidden input for Group
+                document.getElementById('last_group').value = selectedGroup;
+                
                 catSelect.innerHTML = "";
                 
-                // Ambil kategori yang tersedia untuk group tersebut
                 if (lenseData[selectedGroup]) {
+                    // Retrieve the last category value from PHP (only during initial load)
+                    const lastCat = "<?php echo $selected_cat; ?>";
+                    
                     Object.keys(lenseData[selectedGroup]).forEach(cat => {
                         let option = document.createElement('option');
                         option.value = cat;
                         option.textContent = cat;
+                        // If category matches the recently saved one, mark as selected
+                        if (cat === lastCat) option.selected = true;
                         catSelect.appendChild(option);
                     });
                 }
-                
-                // Jalankan filter setelah update kategori
                 filterLenses();
             }
 
             function filterLenses() {
                 const selectedGroup = document.getElementById('filter-group').value;
                 const selectedCat = document.getElementById('filter-category').value;
-                const wrappers = document.querySelectorAll('.lense-group-wrapper');
                 
+                // Update hidden input for Category
+                document.getElementById('last_category').value = selectedCat;
+                
+                const wrappers = document.querySelectorAll('.lense-group-wrapper');
                 wrappers.forEach(wrapper => {
                     const group = wrapper.getAttribute('data-group');
                     const cat = wrapper.getAttribute('data-category');
                     
-                    // Sembunyikan jika tidak cocok, tampilkan jika cocok
                     if (group === selectedGroup && cat === selectedCat) {
                         wrapper.style.display = 'block';
                     } else {
