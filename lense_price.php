@@ -82,12 +82,11 @@
                 letter-spacing: 1px;
             }
 
-            /* Additional styles for a cleaner price input layout */
-            .price-grid {
-                display: grid;
-                grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-                gap: 20px;
-                margin-bottom: 30px;
+            .window-card {
+                display: flex;
+                flex-direction: column;
+                align-items: center; /* Ensures all internal elements are centered */
+                width: 100%;
             }
 
             /* Navigation buttons container */
@@ -97,7 +96,6 @@
                 gap: 20px;
                 margin-bottom: 30px;
             }
-
 
             /* Dark Neumorphism button style */
             .btn-neumorph {
@@ -126,6 +124,96 @@
             .hidden-form {
                 display: none !important;
             }
+
+            /* Ensure the main add lens form container centers its content */
+            #form-add-lense {
+                display: none; /* Will be managed via JS (showTab) */
+                width: 100%;
+                flex-direction: column;
+                align-items: center; /* This centers the form horizontally */
+                justify-content: center;
+                padding: 20px 0;
+            }
+
+            /* When form is displayed (via JS class), use flex */
+            #form-add-lense:not(.hidden-form) {
+                display: flex !important;
+            }
+
+            /* Limit input box width to prevent excessive stretching when zooming out */
+            #form-add-lense .config-section, 
+            #form-price-list .config-section {
+                width: 100%;
+                max-width: 100%; /* Ideal size for single input forms */
+                margin: 0 auto;
+            }
+
+            /* Fix for Price List to keep it tidy */
+            #form-price-list {
+                width: 100%;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+            }
+
+            .price-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); /* auto-fit is more responsive */
+                gap: 20px;
+                width: 100%;
+                justify-content: center;
+            }
+            .config-window {
+                margin-left: auto; 
+                margin-right: auto; 
+                width: 100%; 
+                max-width: 100%; /* Set this value (e.g., 600px) for consistent width and visual comfort */
+            }
+
+            .lense-group-wrapper {
+                width: 100%;
+            }
+
+            /* --- Adjustments for Mobile View --- */
+            @media screen and (max-width: 600px) {
+                /* 1. Remove side margins and set width to 100% */
+                .config-window {
+                    width: 100% !important;
+                    max-width: 100% !important;
+                    padding-left: 10px;  /* Add slight padding to prevent touching the edges */
+                    padding-right: 10px;
+                    box-sizing: border-box;
+                }
+
+                /* 2. Ensure the main content area does not restrict width */
+                .content-area {
+                    padding: 5px !important;
+                    width: 100% !important;
+                }
+
+                /* 3. Enlarge navigation buttons for better touch targets */
+                .tab-navigation {
+                    gap: 10px;
+                    width: 100%;
+                }
+
+                .btn-neumorph {
+                    flex: 1; /* Buttons will evenly distribute across the screen width */
+                    padding: 15px 5px;
+                    font-size: 14px;
+                }
+
+                /* 4. Adjust input boxes to fill the mobile screen */
+                .input-container-box {
+                    padding: 15px; /* Reduce inner padding to allow wider content */
+                    border-radius: 10px;
+                }
+
+                /* 5. Slightly reduce header title size to save space */
+                .header-title h2 {
+                    font-size: 1.2rem;
+                }
+            }
         </style>
     </head>
 
@@ -149,107 +237,119 @@
                     </div>
                 </div>
                 
-                <div class="config-window" style="
-                margin-left: auto; 
-                margin-right: auto; 
-                width: 100%; max-width: none;">
-                    <div class="window-card" style="max-width: none">
-                        <div class="header-title">
-                            <h2 style="text-align: center;">Lense Price Settings</h2>
-                            <p style="text-align: center; color: var(--text-muted); font-size: 13px;">Manage pricing for Stock and Lab lenses</p>
-                        </div>
+                <div class="config-window">
+                    <div class="header-title">
+                        <h2 style="text-align: center;">Lense Price Settings</h2>
+                        <p style="text-align: center; color: var(--text-muted); font-size: 13px;">Manage pricing for Stock and Lab lenses</p>
+                    </div>
 
-                        <div class="tab-navigation">
-                            <button type="button" id="btn-price" class="btn-neumorph active" onclick="showTab('price')">Lens Price List</button>
-                            <button type="button" id="btn-add" class="btn-neumorph" onclick="showTab('add')">Add New Lense</button>
-                        </div>
-                
-                        <form id="form-add-lense" action="lense_price.php" method="POST" class="price-grid hidden-form" enctype="multipart/form-data">
-                            <input type="hidden" name="update_settings" value="1">
+                    <div class="tab-navigation">
+                        <button type="button" id="btn-price" class="btn-neumorph active" onclick="showTab('price')">Lense Price List</button>
+                        <button type="button" id="btn-add" class="btn-neumorph" onclick="showTab('add')">Add New Lense</button>
+                    </div>
+            
+                    <form id="form-add-lense" action="lense_price.php" method="POST" class="hidden-form" enctype="multipart/form-data">
+                        <input type="hidden" name="update_settings" value="1">
+                        
+                        <div class="config-section">
+                            <div class="section-header">Add New Lense Type</div>
                             
-                            <div class="config-section">
-                                <div class="section-header">Add New Lense Type</div>
-                                
-                                <div class="input-container-box">
-                                    <div class="input-grid">
-                                        <div class="input-group full-width">
-                                            <label>Group</label>
-                                            <select name="new_group" class="input-field">
-                                                <option value="stock">Stock Lense</option>
-                                                <option value="lab">Lab Lense (Custom Order)</option>
-                                            </select>
-                                        </div>
-                                        
-                                        <div class="input-group full-width">
-                                            <label>Category (e.g. Single Vision)</label>
-                                            <input type="text" class="input-field" name="new_category" placeholder="Single Vision">
-                                        </div>
-                                        
-                                        <div class="input-group full-width">
-                                            <label>Lense Name</label>
-                                            <input type="text" name="new_lense_name" class="input-field" placeholder="SV-CRMC" required>
-                                        </div>
-                                        
-                                        <div class="input-group full-width">
-                                            <label>Lense Price</label>
-                                            <input type="text" 
-                                                id="display_price" 
-                                                class="input-field" 
-                                                placeholder="IDR 0" 
-                                                oninput="formatCurrency(this)" 
-                                                autocomplete="off" 
-                                                required>
-                                            
-                                            <input type="hidden" name="new_lense_price" id="real_price">
-                                        </div>      
+                            <div class="input-container-box">
+                                <div class="input-grid">
+                                    <div class="input-group full-width">
+                                        <label>Group</label>
+                                        <select name="new_group" class="input-field">
+                                            <option value="stock">Stock Lense</option>
+                                            <option value="lab">Lab Lense (Custom Order)</option>
+                                        </select>
                                     </div>
-    
-                                    <div class="action-bar">
-                                        <button type="submit" name="add_new_lense" class="btn-save" style="width: 100%;">Add Lense</button>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                        </form>
-                
-                        <form id="form-price-list" action="lense_price.php" method="POST" enctype="multipart/form-data">
-                            <input type="hidden" name="update_settings" value="1">
-                            
-                            <div class="config-section">
-                                <?php foreach ($data as $group_key => $categories): ?>
-                                    <div class="section-header"><?php echo ucfirst($group_key) . " Lenses"; ?></div>
                                     
-                                    <div class="input-container-box">
-                                        <?php foreach ($categories as $cat_name => $lenses): ?>
-                                            <h4 style="color: var(--text-muted); margin-bottom: 15px;"><?php echo $cat_name; ?></h4>
-    
-                                            <div class="input-grid">
-                                                <div class="input-group full-width">
-                                                <?php foreach ($lenses as $name => $price): ?>
-                                                    <label><?php echo $name; ?></label>
-                                                    <input type="text" 
-                                                        class="input-field currency-display" 
-                                                        value="IDR <?php echo number_format($price, 0, ',', '.'); ?>" 
-                                                        oninput="formatMultipleCurrency(this)"
-                                                        autocomplete="off">
-                                                    
-                                                    <input type="hidden" 
-                                                        name="price[<?php echo $group_key; ?>][<?php echo $cat_name; ?>][<?php echo $name; ?>]" 
-                                                        value="<?php echo $price ?: 0; ?>">
-                                                <?php endforeach; ?>
-                                                </div>                                
-                                            </div>
-                                        <?php endforeach; ?>
+                                    <div class="input-group full-width">
+                                        <label>Category (e.g. Single Vision)</label>
+                                        <input type="text" class="input-field" name="new_category" placeholder="Single Vision">
                                     </div>
-                                <?php endforeach; ?>
+                                    
+                                    <div class="input-group full-width">
+                                        <label>Lense Name</label>
+                                        <input type="text" name="new_lense_name" class="input-field" placeholder="SV-CRMC" required>
+                                    </div>
+                                    
+                                    <div class="input-group full-width">
+                                        <label>Lense Price</label>
+                                        <input type="text" 
+                                            id="display_price" 
+                                            class="input-field" 
+                                            placeholder="IDR 0" 
+                                            oninput="formatCurrency(this)" 
+                                            autocomplete="off" 
+                                            required>
+                                        
+                                        <input type="hidden" name="new_lense_price" id="real_price">
+                                    </div>      
+                                </div>
 
                                 <div class="action-bar">
-                                    <button type="submit" name="save_prices" class="btn-save" style="width: 100%;">Save All Prices</button>
+                                    <button type="submit" name="add_new_lense" class="btn-save" style="width: 100%;">Add Lense</button>
                                 </div>
                             </div>
-                            
-                        </form>
-                    </div>
+                        </div>
+                        
+                    </form>
+            
+                    <form id="form-price-list" action="lense_price.php" method="POST" enctype="multipart/form-data">
+                        <input type="hidden" name="update_settings" value="1">
+                        
+                        <div class="config-section">
+                            <div class="input-container-box" style="margin-bottom: 20px; display: flex; gap: 15px; align-items: center;">
+                                <div style="flex: 1;">
+                                    <label style="font-size: 12px; color: var(--text-muted);">Pilih Group:</label>
+                                    <select id="filter-group" class="input-field" onchange="updateCategoryFilter()">
+                                        <?php foreach (array_keys($data) as $group): ?>
+                                            <option value="<?php echo $group; ?>"><?php echo ucfirst($group); ?> Lenses</option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                                <div style="flex: 1;">
+                                    <label style="font-size: 12px; color: var(--text-muted);">Pilih Kategori:</label>
+                                    <select id="filter-category" class="input-field" onchange="filterLenses()">
+                                        </select>
+                                </div>
+                            </div>
+
+                            <div id="lense-display-container">
+                                <?php foreach ($data as $group_key => $categories): ?>
+                                    <?php foreach ($categories as $cat_name => $lenses): ?>
+                                        <div class="lense-group-wrapper" data-group="<?php echo $group_key; ?>" data-category="<?php echo $cat_name; ?>">
+                                            <div class="section-header"><?php echo ucfirst($group_key) . " - " . $cat_name; ?></div>
+                                            
+                                            <div class="input-container-box">
+                                                <div class="input-grid">
+                                                    <?php foreach ($lenses as $name => $price): ?>
+                                                    <div class="input-group full-width">
+                                                        <label><?php echo $name; ?></label>
+                                                        <input type="text" 
+                                                            class="input-field currency-display" 
+                                                            value="IDR <?php echo number_format($price, 0, ',', '.'); ?>" 
+                                                            oninput="formatMultipleCurrency(this)"
+                                                            autocomplete="off">
+                                                        
+                                                        <input type="hidden" 
+                                                            name="price[<?php echo $group_key; ?>][<?php echo $cat_name; ?>][<?php echo $name; ?>]" 
+                                                            value="<?php echo $price ?: 0; ?>">
+                                                    </div>
+                                                    <?php endforeach; ?>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    <?php endforeach; ?>
+                                <?php endforeach; ?>
+                            </div>
+
+                            <div class="action-bar">
+                                <button type="submit" name="save_prices" class="btn-save" style="width: 100%;">Save All Prices</button>
+                            </div>
+                        </div>
+                    </form>
 
                     <div class="btn-group">
                         <button type="button" class="back-main" onclick="window.location.href='customer.php'">BACK TO PREVIOUS PAGE</button>
@@ -332,6 +432,62 @@
 
             // Additional function to ensure correct formatting when the page is first loaded
             document.addEventListener("DOMContentLoaded", function() {
+                const displays = document.querySelectorAll('.currency-display');
+                displays.forEach(display => {
+                    if(display.value && !display.value.includes('IDR')) {
+                        formatMultipleCurrency(display);
+                    }
+                });
+            });
+
+            // Data kategori dari PHP ke JS
+            const lenseData = <?php echo json_encode($data); ?>;
+
+            function updateCategoryFilter() {
+                const groupSelect = document.getElementById('filter-group');
+                const catSelect = document.getElementById('filter-category');
+                const selectedGroup = groupSelect.value;
+                
+                // Bersihkan dropdown kategori
+                catSelect.innerHTML = "";
+                
+                // Ambil kategori yang tersedia untuk group tersebut
+                if (lenseData[selectedGroup]) {
+                    Object.keys(lenseData[selectedGroup]).forEach(cat => {
+                        let option = document.createElement('option');
+                        option.value = cat;
+                        option.textContent = cat;
+                        catSelect.appendChild(option);
+                    });
+                }
+                
+                // Jalankan filter setelah update kategori
+                filterLenses();
+            }
+
+            function filterLenses() {
+                const selectedGroup = document.getElementById('filter-group').value;
+                const selectedCat = document.getElementById('filter-category').value;
+                const wrappers = document.querySelectorAll('.lense-group-wrapper');
+                
+                wrappers.forEach(wrapper => {
+                    const group = wrapper.getAttribute('data-group');
+                    const cat = wrapper.getAttribute('data-category');
+                    
+                    // Sembunyikan jika tidak cocok, tampilkan jika cocok
+                    if (group === selectedGroup && cat === selectedCat) {
+                        wrapper.style.display = 'block';
+                    } else {
+                        wrapper.style.display = 'none';
+                    }
+                });
+            }
+
+            // Inisialisasi filter saat halaman dimuat
+            document.addEventListener("DOMContentLoaded", function() {
+                updateCategoryFilter();
+                
+                // Kode format currency yang sudah ada tetap di sini...
                 const displays = document.querySelectorAll('.currency-display');
                 displays.forEach(display => {
                     if(display.value && !display.value.includes('IDR')) {

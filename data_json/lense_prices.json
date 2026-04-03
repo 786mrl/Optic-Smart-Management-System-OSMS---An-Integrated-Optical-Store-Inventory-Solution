@@ -1,7 +1,7 @@
 {
     "stock": {
         "Single Vision": {
-            "SV-CRMC": 0,
+            "SV-CRMC": 21000,
             "Blueray": 0,
             "Photochromic": 0,
             "Bluechromic": 0,
@@ -10,6 +10,9 @@
         },
         "BIFOCAL": {
             "KRYPTOK CRMC": 0
+        },
+        "PROGRESSIVE": {
+            "CRMC": 40000
         }
     },
     "lab": {
