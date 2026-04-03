@@ -280,7 +280,8 @@
                                             id="display_price" 
                                             class="input-field" 
                                             placeholder="IDR 0" 
-                                            oninput="formatCurrency(this)" 
+                                            oninput="formatCurrency(this)"
+                                            onfocus="this.select()" 
                                             autocomplete="off" 
                                             required>
                                         
@@ -321,7 +322,7 @@
                                     <?php foreach ($categories as $cat_name => $lenses): ?>
                                         <div class="lense-group-wrapper" data-group="<?php echo $group_key; ?>" data-category="<?php echo $cat_name; ?>">
                                             <div class="section-header"><?php echo ucfirst($group_key) . " - " . $cat_name; ?></div>
-                                            
+               
                                             <div class="input-container-box">
                                                 <div class="input-grid">
                                                     <?php foreach ($lenses as $name => $price): ?>
@@ -331,6 +332,7 @@
                                                             class="input-field currency-display" 
                                                             value="IDR <?php echo number_format($price, 0, ',', '.'); ?>" 
                                                             oninput="formatMultipleCurrency(this)"
+                                                            onfocus="this.select()"
                                                             autocomplete="off">
                                                         
                                                         <input type="hidden" 
