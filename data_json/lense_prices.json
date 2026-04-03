@@ -8,17 +8,29 @@
             "Bluegard": 70000,
             "One-Drive": 130000
         },
-        "BIFOCAL": {
-            "KRYPTOK CRMC": 18000
+        "KRYPTOK": {
+            "HMC": 18000,
+            "PHOTOCHROMIC": 60000
         },
         "PROGRESSIVE": {
-            "CRMC": 38000
+            "HMC": 38000,
+            "PHOTOCHROMIC": 60000,
+            "ANTI-BLUE RAY": 60000,
+            "BLUECHROMIC": 120000,
+            "BLUECHROMIC ONE-DRIVE": 180000
         }
     },
     "lab": {
         "Progressive": {
             "Standard": 0,
             "Premium": 0
+        },
+        "SINGLE VISION": {
+            "HMC": 96000,
+            "SHMC": 114000
+        },
+        "BIFOCAL": {
+            "KRYPTOK HMC": 124000
         }
     }
 }

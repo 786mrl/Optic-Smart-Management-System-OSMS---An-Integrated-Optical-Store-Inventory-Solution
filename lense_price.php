@@ -44,6 +44,7 @@
             if (!empty($new_name)) {
                 $data[$new_group][$new_cat][$new_name] = $new_price;
                 $message = "Lense $new_name added successfully!";
+                $active_tab = 'add';
             }
         }
         
@@ -102,6 +103,20 @@
                 justify-content: center;
                 gap: 20px;
                 margin-bottom: 30px;
+            }
+
+            /* Update on the CSS section */
+            .btn-group {
+                margin-top: 30px; /* Provides spacing to prevent overlapping */
+                width: 100%;
+                display: flex;
+                justify-content: center;
+            }
+
+            .back-main {
+                /* Ensure your back button styling remains consistent */
+                width: 100%;
+                max-width: 400px;
             }
 
             /* Dark Neumorphism button style */
@@ -181,6 +196,34 @@
                 width: 100%;
             }
 
+            /* Remove the browser's default arrow on summary */
+            .lense-details summary::-webkit-details-marker {
+                display: none;
+            }
+
+            .lense-details summary {
+                outline: none;
+                transition: color 0.3s ease;
+                padding: 10px;
+                background: #1d1f23;
+                border-radius: 8px;
+            }
+
+            .lense-details[open] summary {
+                color: #00adb5;
+                margin-bottom: 10px;
+            }
+
+            /* Simple animation when opened */
+            .lense-details[open] .input-container-box {
+                animation: slideDown 0.3s ease-out;
+            }
+
+            @keyframes slideDown {
+                from { opacity: 0; transform: translateY(-10px); }
+                to { opacity: 1; transform: translateY(0); }
+            }
+
             /* --- Adjustments for Mobile View --- */
             @media screen and (max-width: 600px) {
                 /* 1. Remove side margins and set width to 100% */
@@ -250,6 +293,12 @@
                         <p style="text-align: center; color: var(--text-muted); font-size: 13px;">Manage pricing for Stock and Lab lenses</p>
                     </div>
 
+                    <?php if ($message): ?>
+                        <div style="background: #00adb5; color: white; padding: 10px; border-radius: 8px; margin-bottom: 15px; text-align: center;">
+                            <?php echo $message; ?>
+                        </div>
+                    <?php endif; ?>
+
                     <div class="tab-navigation">
                         <button type="button" id="btn-price" class="btn-neumorph active" onclick="showTab('price')">Lense Price List</button>
                         <button type="button" id="btn-add" class="btn-neumorph" onclick="showTab('add')">Add New Lense</button>
@@ -306,14 +355,13 @@
             
                     <form id="form-price-list" action="lense_price.php" method="POST" enctype="multipart/form-data">
                         <input type="hidden" name="update_settings" value="1">
-                        
                         <input type="hidden" name="last_group" id="last_group" value="<?php echo $selected_group; ?>">
                         <input type="hidden" name="last_category" id="last_category" value="<?php echo $selected_cat; ?>">
 
                         <div class="config-section">
                             <div class="input-container-box" style="margin-bottom: 20px; display: flex; gap: 15px; align-items: center;">
                                 <div style="flex: 1;">
-                                    <label style="font-size: 12px; color: var(--text-muted);">Pilih Group:</label>
+                                    <label style="font-size: 12px; color: var(--text-muted);">Select Group:</label>
                                     <select id="filter-group" class="input-field" onchange="updateCategoryFilter()">
                                         <?php foreach (array_keys($data) as $group): ?>
                                             <option value="<?php echo $group; ?>"><?php echo ucfirst($group); ?> Lenses</option>
@@ -321,9 +369,8 @@
                                     </select>
                                 </div>
                                 <div style="flex: 1;">
-                                    <label style="font-size: 12px; color: var(--text-muted);">Pilih Kategori:</label>
-                                    <select id="filter-category" class="input-field" onchange="filterLenses()">
-                                        </select>
+                                    <label style="font-size: 12px; color: var(--text-muted);">Select Category:</label>
+                                    <select id="filter-category" class="input-field" onchange="filterLenses()"></select>
                                 </div>
                             </div>
 
@@ -331,33 +378,37 @@
                                 <?php foreach ($data as $group_key => $categories): ?>
                                     <?php foreach ($categories as $cat_name => $lenses): ?>
                                         <div class="lense-group-wrapper" data-group="<?php echo $group_key; ?>" data-category="<?php echo $cat_name; ?>">
-                                            <div class="section-header"><?php echo ucfirst($group_key) . " - " . $cat_name; ?></div>
-               
-                                            <div class="input-container-box">
-                                                <div class="input-grid">
-                                                    <?php foreach ($lenses as $name => $price): ?>
-                                                    <div class="input-group full-width">
-                                                        <label><?php echo $name; ?></label>
-                                                        <input type="text" 
-                                                            class="input-field currency-display" 
-                                                            value="IDR <?php echo number_format($price, 0, ',', '.'); ?>" 
-                                                            oninput="formatMultipleCurrency(this)"
-                                                            onfocus="this.select()"
-                                                            autocomplete="off">
-                                                        
-                                                        <input type="hidden" 
-                                                            name="price[<?php echo $group_key; ?>][<?php echo $cat_name; ?>][<?php echo $name; ?>]" 
-                                                            value="<?php echo $price ?: 0; ?>">
+                                            
+                                            <details class="lense-details">
+                                                <summary class="section-header" style="cursor: pointer; list-style: none;">
+                                                    <?php echo ucfirst($group_key) . " - " . $cat_name; ?> 
+                                                    <span style="font-size: 12px; color: #00adb5;"> (Click to view prices)</span>
+                                                </summary>
+                                                
+                                                <div class="input-container-box">
+                                                    <div class="input-grid">
+                                                        <?php foreach ($lenses as $name => $price): ?>
+                                                        <div class="input-group full-width">
+                                                            <label><?php echo $name; ?></label>
+                                                            <input type="text" 
+                                                                class="input-field currency-display" 
+                                                                value="IDR <?php echo number_format($price, 0, ',', '.'); ?>" 
+                                                                oninput="formatMultipleCurrency(this)"
+                                                                onfocus="this.select()"
+                                                                autocomplete="off">
+                                                            <input type="hidden" name="price[<?php echo $group_key; ?>][<?php echo $cat_name; ?>][<?php echo $name; ?>]" value="<?php echo $price ?: 0; ?>">
+                                                        </div>
+                                                        <?php endforeach; ?>
                                                     </div>
-                                                    <?php endforeach; ?>
                                                 </div>
-                                            </div>
+                                            </details>
+                                            
                                         </div>
                                     <?php endforeach; ?>
                                 <?php endforeach; ?>
                             </div>
 
-                            <div class="action-bar">
+                            <div class="action-bar" style="margin-top: 20px;">
                                 <button type="submit" name="save_prices" class="btn-save" style="width: 100%;">Save All Prices</button>
                             </div>
                         </div>
@@ -444,6 +495,14 @@
 
             // Additional function to ensure correct formatting when the page is first loaded
             document.addEventListener("DOMContentLoaded", function() {
+                // Check if PHP is sending a command to open the 'add' tab
+                <?php if (isset($active_tab) && $active_tab === 'add'): ?>
+                    showTab('add');
+                <?php else: ?>
+                    updateCategoryFilter();
+                <?php endif; ?>
+                
+                // Existing currency formatting code
                 const displays = document.querySelectorAll('.currency-display');
                 displays.forEach(display => {
                     if(display.value && !display.value.includes('IDR')) {
