@@ -180,7 +180,7 @@
         if ($stmt->execute()) {
             if ($invoice_val !== '00') {
                 // Jika belanja, tetap ke invoice
-                header("Location: invoice.php?code=" . $exam_code);
+                header("Location: invoice.php?inv=" . $invoice_val);
             } else {
                 // CEK INSTRUKSI REDIRECT DARI JAVASCRIPT
                 $redirect_to = $_POST['after_save_redirect'] ?? 'self';
