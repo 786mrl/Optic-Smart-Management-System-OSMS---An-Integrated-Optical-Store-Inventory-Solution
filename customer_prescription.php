@@ -816,6 +816,21 @@
                 return val;
             }
 
+            // Standard function for ADD estimation based on age
+            function calculateAddByAge(age) {
+                if (age < 40) return "0.00"; // ADD not yet required
+                if (age >= 40 && age <= 42) return "+1.00";
+                if (age >= 43 && age <= 44) return "+1.25";
+                if (age >= 45 && age <= 47) return "+1.50";
+                if (age >= 48 && age <= 49) return "+1.75";
+                if (age >= 50 && age <= 52) return "+2.00";
+                if (age >= 53 && age <= 54) return "+2.25";
+                if (age >= 55 && age <= 57) return "+2.50";
+                if (age >= 58 && age <= 59) return "+2.75";
+                if (age > 60) return "+3.00";
+                return "0.00";
+            }
+
             // 2. When Right eye is input, Left eye follows immediately (Raw value)
             rAddInput.addEventListener('input', function() {
                 lAddInput.value = this.value;
@@ -1190,6 +1205,43 @@
                             // For Up/Down, select all text (optional, can be replaced with setSelectionRange)
                             inputs[nextIndex].select();
                         }
+                    }
+                }
+            });
+
+            document.getElementById('age').addEventListener('blur', function() {
+                let ageVal = this.value.trim();
+                let calculatedAge = 0;
+
+                // Age detection logic (mimics your PHP logic)
+                if (ageVal.includes(".")) {
+                    let yearInput = ageVal.replace(".", "");
+                    let yearVal = parseInt(yearInput);
+                    let currentYear = 2026; // Based on your system year
+                    
+                    let fullYear;
+                    if (yearInput.length <= 2) {
+                        fullYear = (yearVal > 26) ? 1900 + yearVal : 2000 + yearVal;
+                    } else {
+                        fullYear = yearVal;
+                    }
+                    calculatedAge = currentYear - fullYear;
+                } else {
+                    calculatedAge = parseInt(ageVal);
+                }
+
+                // Auto-fill ADD if age is valid
+                if (!isNaN(calculatedAge) && calculatedAge > 0) {
+                    let suggestedAdd = calculateAddByAge(calculatedAge);
+                    
+                    // Only fill if ADD field is empty or contains 0.00
+                    // To avoid overwriting data if the user is revising the entry
+                    const rAdd = document.querySelector('input[name="new_r_add"]');
+                    const lAdd = document.querySelector('input[name="new_l_add"]');
+                    
+                    if (suggestedAdd !== "") {
+                        rAdd.value = suggestedAdd;
+                        lAdd.value = suggestedAdd;
                     }
                 }
             });
