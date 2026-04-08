@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Apr 08, 2026 at 10:30 AM
+-- Generation Time: Apr 08, 2026 at 01:04 PM
 -- Server version: 10.1.38-MariaDB
 -- PHP Version: 7.3.2
 
@@ -61,7 +61,8 @@ CREATE TABLE `customer_examinations` (
   `visual_habit` tinyint(1) DEFAULT '1' COMMENT '1:Indoor, 2:Outdoor, 3:Both',
   `digital_usage` tinyint(1) DEFAULT '1' COMMENT '1:Low, 2:Moderate, 3:High',
   `ucva_r` varchar(10) DEFAULT '20/20',
-  `ucva_l` varchar(10) DEFAULT '20/20'
+  `ucva_l` varchar(10) DEFAULT '20/20',
+  `lens_modification` tinyint(1) DEFAULT '0'
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 -- --------------------------------------------------------
@@ -178,6 +179,26 @@ INSERT INTO `frame_staging` (`ufc`, `brand`, `frame_code`, `frame_size`, `color_
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `prescription_modifications`
+--
+
+CREATE TABLE `prescription_modifications` (
+  `modification_id` int(11) NOT NULL,
+  `invoice_number` varchar(20) NOT NULL,
+  `od_sph` varchar(10) DEFAULT NULL,
+  `od_cyl` varchar(10) DEFAULT NULL,
+  `od_axis` varchar(10) DEFAULT NULL,
+  `od_add` varchar(10) DEFAULT NULL,
+  `os_sph` varchar(10) DEFAULT NULL,
+  `os_cyl` varchar(10) DEFAULT NULL,
+  `os_axis` varchar(10) DEFAULT NULL,
+  `os_add` varchar(10) DEFAULT NULL,
+  `modified_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `settings`
 --
 
@@ -242,7 +263,8 @@ INSERT INTO `users` (`user_id`, `username`, `password_hash`, `role`, `is_approve
 --
 ALTER TABLE `customer_examinations`
   ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `examination_code` (`examination_code`);
+  ADD UNIQUE KEY `examination_code` (`examination_code`),
+  ADD KEY `invoice_number` (`invoice_number`);
 
 --
 -- Indexes for table `frames_main`
@@ -262,6 +284,13 @@ ALTER TABLE `frame_sales`
 --
 ALTER TABLE `frame_staging`
   ADD PRIMARY KEY (`ufc`);
+
+--
+-- Indexes for table `prescription_modifications`
+--
+ALTER TABLE `prescription_modifications`
+  ADD PRIMARY KEY (`modification_id`),
+  ADD KEY `fk_invoice_mod` (`invoice_number`);
 
 --
 -- Indexes for table `settings`
@@ -284,13 +313,19 @@ ALTER TABLE `users`
 -- AUTO_INCREMENT for table `customer_examinations`
 --
 ALTER TABLE `customer_examinations`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
 
 --
 -- AUTO_INCREMENT for table `frame_sales`
 --
 ALTER TABLE `frame_sales`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `prescription_modifications`
+--
+ALTER TABLE `prescription_modifications`
+  MODIFY `modification_id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT for table `users`
@@ -307,6 +342,12 @@ ALTER TABLE `users`
 --
 ALTER TABLE `frame_sales`
   ADD CONSTRAINT `frame_sales_ibfk_1` FOREIGN KEY (`ufc`) REFERENCES `frames_main` (`ufc`);
+
+--
+-- Constraints for table `prescription_modifications`
+--
+ALTER TABLE `prescription_modifications`
+  ADD CONSTRAINT `fk_invoice_mod` FOREIGN KEY (`invoice_number`) REFERENCES `customer_examinations` (`invoice_number`) ON DELETE CASCADE ON UPDATE CASCADE;
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
