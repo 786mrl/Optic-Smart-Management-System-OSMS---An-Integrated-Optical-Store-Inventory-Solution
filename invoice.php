@@ -378,6 +378,7 @@
             const modNo = document.getElementById('mod-no');
             const fields = document.querySelectorAll('.mod-field');
             const saveContainer = document.getElementById('save-btn-container');
+            const api = window.faceapi || faceapi;
 
             const formatZeroValue = (e) => {
                 let val = e.target.value.trim();
@@ -453,24 +454,27 @@
             async function startFaceAnalysis() {
                 try {
                     resultBox.innerText = "INITIALIZING...";
-                    
-                    // Check if faceapi is available on the window object
-                    const api = window.faceapi || faceapi;
-                    if (!api) {
-                        throw new Error("face-api library failed to load. Check your internet connection.");
+        
+                    // 1. Ensure the library is properly loaded
+                    if (typeof faceapi === 'undefined') {
+                        throw new Error("face-api.min.js library not found in /js/ folder");
+                    }
+
+                    // 2. Wait briefly for internal library initialization (especially for mobile)
+                    await new Promise(resolve => setTimeout(resolve, 500));
+
+                    // 3. Access nets with safety checks
+                    if (!faceapi.nets || typeof faceapi.nets.tinyFaceDetector === 'undefined') {
+                        console.log("Current faceapi object:", faceapi);
+                        throw new Error("Library loaded but 'nets' is undefined. Use Chrome HTTPS Flags.");
                     }
 
                     const MODEL_URL = './models/model'; 
                     resultBox.innerText = "LOADING MODELS...";
                     
-                    // Ensure nets are available
-                    if (!api.nets || !api.nets.tinyFaceDetector) {
-                        throw new Error("Library detected but not ready (Nets undefined).");
-                    }
-
-                    // Load models one by one to avoid overloading mobile devices
-                    await api.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
-                    await api.nets.faceLandmarks68Net.loadFromUri(MODEL_URL);
+                    // Use direct calls to the global object
+                    await faceapi.loadTinyFaceDetectorModel(MODEL_URL);
+                    await faceapi.loadFaceLandmarkModel(MODEL_URL);
                     
                     resultBox.innerText = "MODELS READY. ACCESSING CAMERA...";
 
