@@ -73,6 +73,7 @@
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Invoice - <?php echo $data['examination_code']; ?></title>
         <link rel="stylesheet" href="style.css">
+        <script src="js/face-api.min.js"></script>
         <style>
             .invoice-body { padding: 20px; max-width: 800px; margin: auto; }
             .neumorph-card {
@@ -104,10 +105,17 @@
             /* Table Neumorphic Style */
             .prescription-container {
                 background: var(--bg-color);
-                padding: 25px;
-                border-radius: 20px;
+                padding: 30px;
+                border-radius: 25px;
                 box-shadow: 8px 8px 16px var(--shadow-dark), -8px -8px 16px var(--shadow-light);
-                margin-top: 15px;
+                margin-top: 20px;
+                border: 1px solid rgba(255,255,255,0.05);
+            }
+
+            .selection-wrapper {
+                display: flex;
+                gap: 15px;
+                justify-content: center; /* Tombol berada di tengah container */
             }
 
             .prescription-table {
@@ -241,88 +249,113 @@
                         </div>
 
                         <div class="full">
-                            <label>PRESCRIPTION MODIFICATION</label>
-                            <div class="selection-wrapper">
-                                <button type="button" class="neu-btn active" id="mod-no">
-                                    <div class="led"></div> NO
-                                </button>
-                                <button type="button" class="neu-btn" id="mod-yes">
-                                    <div class="led"></div> YES (MODIFY)
-                                </button>
+                            <div class="prescription-container">
+                                <label>PRESCRIPTION MODIFICATION</label>
+
+                                <div class="selection-wrapper">
+                                    <button type="button" class="neu-btn active" id="mod-no">
+                                        <div class="led"></div> NO
+                                    </button>
+                                    <button type="button" class="neu-btn" id="mod-yes">
+                                        <div class="led"></div> YES (MODIFY)
+                                    </button>
+                                </div>
+
+                                <form method="POST" class="full">
+                                    <input type="hidden" name="invoice_number" value="<?php echo $data['invoice_number']; ?>">
+                                    
+                                    <div class="prescription-container">
+                                        <h3 style="color: var(--accent-color); font-size: 0.85rem; margin-bottom: 20px; text-align: center; opacity: 0.8;">
+                                            — MEASUREMENT —
+                                        </h3>
+                                        
+                                        <table class="prescription-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>SIDE</th>
+                                                    <th>SPH</th>
+                                                    <th>CYL</th>
+                                                    <th>AXIS</th>
+                                                    <th>ADD</th>
+                                                </tr>
+                                            </thead>
+        
+                                            <tbody>
+                                                <tr>
+                                                    <td class="eye-label"><div class="eye-indicator">R</div></td>
+                                                    <td><input type="text" name="od_sph" class="input-table-neu mod-field" 
+                                                        data-original="<?php echo $data['new_r_sph']; ?>" 
+                                                        data-modified="<?php echo $data['mod_r_sph'] ?? $data['new_r_sph']; ?>"
+                                                        value="<?php echo ($data['lens_modification'] == 1) ? $data['mod_r_sph'] : $data['new_r_sph']; ?>" readonly></td>
+                                                    
+                                                    <td><input type="text" name="od_cyl" class="input-table-neu mod-field" 
+                                                        data-original="<?php echo $data['new_r_cyl']; ?>" 
+                                                        data-modified="<?php echo $data['mod_r_cyl'] ?? $data['new_r_cyl']; ?>"
+                                                        value="<?php echo ($data['lens_modification'] == 1) ? $data['mod_r_cyl'] : $data['new_r_cyl']; ?>" readonly></td>
+                                                    
+                                                    <td><input type="text" name="od_axis" class="input-table-neu mod-field" 
+                                                        data-original="<?php echo $data['new_r_ax']; ?>" 
+                                                        data-modified="<?php echo $data['mod_r_ax'] ?? $data['new_r_ax']; ?>"
+                                                        value="<?php echo ($data['lens_modification'] == 1) ? $data['mod_r_ax'] : $data['new_r_ax']; ?>" readonly></td>
+                                                    
+                                                    <td><input type="text" name="od_add" class="input-table-neu mod-field" 
+                                                        data-original="<?php echo $data['new_r_add']; ?>" 
+                                                        data-modified="<?php echo $data['mod_r_add'] ?? $data['new_r_add']; ?>"
+                                                        value="<?php echo ($data['lens_modification'] == 1) ? $data['mod_r_add'] : $data['new_r_add']; ?>" readonly></td>
+                                                </tr>
+                                                <tr>
+                                                    <td class="eye-label"><div class="eye-indicator">L</div></td>
+                                                    <td><input type="text" name="os_sph" class="input-table-neu mod-field" 
+                                                        data-original="<?php echo $data['new_l_sph']; ?>" 
+                                                        data-modified="<?php echo $data['mod_l_sph'] ?? $data['new_l_sph']; ?>"
+                                                        value="<?php echo ($data['lens_modification'] == 1) ? $data['mod_l_sph'] : $data['new_l_sph']; ?>" readonly></td>
+                                                    <td><input type="text" name="os_cyl" class="input-table-neu mod-field" 
+                                                        data-original="<?php echo $data['new_l_cyl']; ?>" 
+                                                        data-modified="<?php echo $data['mod_l_cyl'] ?? $data['new_l_cyl']; ?>"
+                                                        value="<?php echo ($data['lens_modification'] == 1) ? $data['mod_l_cyl'] : $data['new_l_cyl']; ?>" readonly></td>
+                                                    <td><input type="text" name="os_axis" class="input-table-neu mod-field" 
+                                                        data-original="<?php echo $data['new_l_ax']; ?>" 
+                                                        data-modified="<?php echo $data['mod_l_ax'] ?? $data['new_l_ax']; ?>"
+                                                        value="<?php echo ($data['lens_modification'] == 1) ? $data['mod_l_ax'] : $data['new_l_ax']; ?>" readonly></td>
+                                                    <td><input type="text" name="os_add" class="input-table-neu mod-field" 
+                                                        data-original="<?php echo $data['new_l_add']; ?>" 
+                                                        data-modified="<?php echo $data['mod_l_add'] ?? $data['new_l_add']; ?>"
+                                                        value="<?php echo ($data['lens_modification'] == 1) ? $data['mod_l_add'] : $data['new_l_add']; ?>" readonly></td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+        
+                                    <div id="save-btn-container" style="display: none; margin-top: 30px; text-align: center;">
+                                        <button type="submit" name="save_modification" class="btn-action" style="width: 100%; max-width: 400px; border-radius: 50px;">
+                                            CONFIRM & SAVE MODIFICATION
+                                        </button>
+                                    </div>
+                                </form>
                             </div>
                         </div>
 
-                        <form method="POST" class="full">
-                            <input type="hidden" name="invoice_number" value="<?php echo $data['invoice_number']; ?>">
-                            
-                            <div class="prescription-container">
-                                <h3 style="color: var(--accent-color); font-size: 0.85rem; margin-bottom: 20px; text-align: center; opacity: 0.8;">
-                                    — ADJUSTED MEASUREMENT —
-                                </h3>
+                        <div class="full">
+                            <div class="prescription-container" style="text-align: center;">
+                                <label>FACE SHAPE ANALYSIS</label>
                                 
-                                <table class="prescription-table">
-                                    <thead>
-                                        <tr>
-                                            <th>SIDE</th>
-                                            <th>SPH</th>
-                                            <th>CYL</th>
-                                            <th>AXIS</th>
-                                            <th>ADD</th>
-                                        </tr>
-                                    </thead>
+                                <div id="video-container" style="position: relative; display: inline-block; border-radius: 20px; overflow: hidden; box-shadow: 10px 10px 20px var(--shadow-dark);">
+                                    <video id="video" width="320" height="240" autoplay muted style="transform: scaleX(-1);"></video>
+                                    <canvas id="overlay" style="position: absolute; top: 0; left: 0; transform: scaleX(-1);"></canvas>
+                                </div>
 
-                                    <tbody>
-                                        <tr>
-                                            <td class="eye-label"><div class="eye-indicator">R</div></td>
-                                            <td><input type="text" name="od_sph" class="input-table-neu mod-field" 
-                                                data-original="<?php echo $data['new_r_sph']; ?>" 
-                                                data-modified="<?php echo $data['mod_r_sph'] ?? $data['new_r_sph']; ?>"
-                                                value="<?php echo ($data['lens_modification'] == 1) ? $data['mod_r_sph'] : $data['new_r_sph']; ?>" readonly></td>
-                                            
-                                            <td><input type="text" name="od_cyl" class="input-table-neu mod-field" 
-                                                data-original="<?php echo $data['new_r_cyl']; ?>" 
-                                                data-modified="<?php echo $data['mod_r_cyl'] ?? $data['new_r_cyl']; ?>"
-                                                value="<?php echo ($data['lens_modification'] == 1) ? $data['mod_r_cyl'] : $data['new_r_cyl']; ?>" readonly></td>
-                                            
-                                            <td><input type="text" name="od_axis" class="input-table-neu mod-field" 
-                                                data-original="<?php echo $data['new_r_ax']; ?>" 
-                                                data-modified="<?php echo $data['mod_r_ax'] ?? $data['new_r_ax']; ?>"
-                                                value="<?php echo ($data['lens_modification'] == 1) ? $data['mod_r_ax'] : $data['new_r_ax']; ?>" readonly></td>
-                                            
-                                            <td><input type="text" name="od_add" class="input-table-neu mod-field" 
-                                                data-original="<?php echo $data['new_r_add']; ?>" 
-                                                data-modified="<?php echo $data['mod_r_add'] ?? $data['new_r_add']; ?>"
-                                                value="<?php echo ($data['lens_modification'] == 1) ? $data['mod_r_add'] : $data['new_r_add']; ?>" readonly></td>
-                                        </tr>
-                                        <tr>
-                                            <td class="eye-label"><div class="eye-indicator">L</div></td>
-                                            <td><input type="text" name="os_sph" class="input-table-neu mod-field" 
-                                                data-original="<?php echo $data['new_l_sph']; ?>" 
-                                                data-modified="<?php echo $data['mod_l_sph'] ?? $data['new_l_sph']; ?>"
-                                                value="<?php echo ($data['lens_modification'] == 1) ? $data['mod_l_sph'] : $data['new_l_sph']; ?>" readonly></td>
-                                            <td><input type="text" name="os_cyl" class="input-table-neu mod-field" 
-                                                data-original="<?php echo $data['new_l_cyl']; ?>" 
-                                                data-modified="<?php echo $data['mod_l_cyl'] ?? $data['new_l_cyl']; ?>"
-                                                value="<?php echo ($data['lens_modification'] == 1) ? $data['mod_l_cyl'] : $data['new_l_cyl']; ?>" readonly></td>
-                                            <td><input type="text" name="os_axis" class="input-table-neu mod-field" 
-                                                data-original="<?php echo $data['new_l_ax']; ?>" 
-                                                data-modified="<?php echo $data['mod_l_ax'] ?? $data['new_l_ax']; ?>"
-                                                value="<?php echo ($data['lens_modification'] == 1) ? $data['mod_l_ax'] : $data['new_l_ax']; ?>" readonly></td>
-                                            <td><input type="text" name="os_add" class="input-table-neu mod-field" 
-                                                data-original="<?php echo $data['new_l_add']; ?>" 
-                                                data-modified="<?php echo $data['mod_l_add'] ?? $data['new_l_add']; ?>"
-                                                value="<?php echo ($data['lens_modification'] == 1) ? $data['mod_l_add'] : $data['new_l_add']; ?>" readonly></td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                            </div>
+                                <div id="face-result" class="read-only-box" style="margin-top: 15px; justify-content: center; color: #00ff88;">
+                                    READY TO SCAN...
+                                </div>
 
-                            <div id="save-btn-container" style="display: none; margin-top: 30px; text-align: center;">
-                                <button type="submit" name="save_modification" class="btn-action" style="width: 100%; max-width: 400px; border-radius: 50px;">
-                                    CONFIRM & SAVE MODIFICATION
-                                </button>
+                                <div class="selection-wrapper" style="margin-top: 15px;">
+                                    <button type="button" class="neu-btn" id="start-scan">
+                                        <div class="led"></div> START CAMERA
+                                    </button>
+                                </div>
                             </div>
-                        </form>
+                        </div>
+
                     </div>
 
                     <div style="margin-top: 40px; text-align: center;">
@@ -346,6 +379,13 @@
             const fields = document.querySelectorAll('.mod-field');
             const saveContainer = document.getElementById('save-btn-container');
 
+            const formatZeroValue = (e) => {
+                let val = e.target.value.trim();
+                if (val === "0" || val === "00") {
+                    e.target.value = "0.00";
+                }
+            };
+
             modYes.onclick = () => {
                 modYes.classList.add('active');
                 modNo.classList.remove('active');
@@ -357,6 +397,8 @@
                     f.readOnly = false;
                     f.style.color = "#00ff88"; // Neon Green
                     f.style.boxShadow = "inset 2px 2px 5px var(--shadow-dark), inset -2px -2px 5px var(--shadow-light)";
+                    f.addEventListener('focus', () => f.select());
+                    f.addEventListener('blur', formatZeroValue);
                 });
             };
 
@@ -371,19 +413,126 @@
                     f.readOnly = true;
                     f.style.color = "var(--text-main)";
                     f.style.boxShadow = "inset 5px 5px 10px var(--shadow-dark), inset -5px -5px 10px var(--shadow-light)";
+                    f.removeEventListener('blur', formatZeroValue);
                 });
             };
 
             window.onload = () => {
                 const isModified = <?php echo $data['lens_modification'] == 1 ? 'true' : 'false'; ?>;
                 if (isModified) {
-                    // Memicu tampilan seolah-olah tombol 'Yes' diklik
+                    // Trigger UI as if 'Yes' was clicked
                     modYes.classList.add('active');
                     modNo.classList.remove('active');
-                    // Namun tetap biarkan readonly kecuali user ingin mengedit lagi
+                    
                     fields.forEach(f => {
-                        f.style.color = "#00ff88"; // Warna hijau menandakan data modifikasi
+                        f.style.color = "#00ff88"; // Highlights modified data
+                        if(f.value === "0") f.value = "0.00";
+                        f.readOnly = false; 
+                        f.addEventListener('focus', () => f.select());
                     });
+                }
+            };
+
+            const video = document.getElementById('video');
+            const scanBtn = document.getElementById('start-scan');
+            const resultBox = document.getElementById('face-result');
+            const canvas = document.getElementById('overlay');
+
+            // Helper function to ensure faceapi is ready
+            function checkFaceApiReady() {
+                return new Promise((resolve) => {
+                    const check = setInterval(() => {
+                        if (typeof faceapi !== 'undefined' && faceapi.nets) {
+                            clearInterval(check);
+                            resolve();
+                        }
+                    }, 100); // Check every 100ms
+                });
+            }
+
+            async function startFaceAnalysis() {
+                try {
+                    resultBox.innerText = "INITIALIZING...";
+                    
+                    // Check if faceapi is available on the window object
+                    const api = window.faceapi || faceapi;
+                    if (!api) {
+                        throw new Error("face-api library failed to load. Check your internet connection.");
+                    }
+
+                    const MODEL_URL = './models/model'; 
+                    resultBox.innerText = "LOADING MODELS...";
+                    
+                    // Ensure nets are available
+                    if (!api.nets || !api.nets.tinyFaceDetector) {
+                        throw new Error("Library detected but not ready (Nets undefined).");
+                    }
+
+                    // Load models one by one to avoid overloading mobile devices
+                    await api.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+                    await api.nets.faceLandmarks68Net.loadFromUri(MODEL_URL);
+                    
+                    resultBox.innerText = "MODELS READY. ACCESSING CAMERA...";
+
+                    // Better camera handling for mobile (Portrait/Landscape)
+                    const constraints = { 
+                        video: { 
+                            facingMode: "user",
+                            width: { ideal: 640 },
+                            height: { ideal: 480 }
+                        } 
+                    };
+
+                    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                    video.srcObject = stream;
+                    
+                    video.onloadedmetadata = () => {
+                        video.play();
+                        const displaySize = { width: video.videoWidth, height: video.videoHeight };
+                        api.matchDimensions(canvas, displaySize);
+
+                        setInterval(async () => {
+                            const detections = await api.detectSingleFace(
+                                video, 
+                                new api.TinyFaceDetectorOptions({ inputSize: 128, scoreThreshold: 0.4 })
+                            ).withFaceLandmarks();
+
+                            if (detections) {
+                                const resizedDetections = api.resizeResults(detections, displaySize);
+                                const landmarks = resizedDetections.landmarks;
+                                const jawline = landmarks.getJawline();
+                                
+                                const faceWidth = Math.abs(jawline[16].x - jawline[0].x);
+                                const faceHeight = Math.abs(jawline[8].y - landmarks.getLeftEye()[0].y) * 1.5; 
+                                const ratio = faceHeight / faceWidth;
+
+                                let shape = "Detecting...";
+                                if (ratio > 1.4) shape = "OVAL / LONG";
+                                else if (ratio < 1.1) shape = "ROUND / SQUARE";
+                                else shape = "HEART / DIAMOND";
+
+                                resultBox.innerHTML = `<span style="color: #888;">SHAPE:</span> ${shape}`;
+                            } else {
+                                resultBox.innerText = "FACE NOT DETECTED...";
+                            }
+                        }, 600);
+                    };
+
+                    scanBtn.style.display = 'none';
+
+                } catch (err) {
+                    resultBox.style.color = "#ff4d4d";
+                    resultBox.innerText = "ERROR: " + err.message;
+                    console.error("FaceAPI Error:", err);
+                }
+            }
+
+            scanBtn.onclick = startFaceAnalysis;
+
+            window.onload = () => {
+                console.log("Check FaceAPI:", window.faceapi);
+                if (typeof faceapi === 'undefined') {
+                    alert("FaceAPI Library failed to load! Please check the file path or connection.");
                 }
             };
         </script>
