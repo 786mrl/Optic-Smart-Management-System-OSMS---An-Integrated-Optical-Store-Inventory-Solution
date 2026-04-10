@@ -199,10 +199,52 @@
                 100% { top: 100%; }
             }
 
+            /* Container for video and guide */
+            .video-wrapper {
+                position: relative;
+                width: 320px;
+                height: 240px;
+                margin: 0 auto;
+            }
+
+            /* Oval face guide (Face Guide) */
+            .face-guide {
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                width: 160px; /* Oval width */
+                height: 200px; /* Oval height */
+                border: 2px dashed rgba(0, 255, 136, 0.5);
+                border-radius: 50%;
+                z-index: 5;
+                pointer-events: none; /* Prevents blocking clicks */
+            }
+
+            /* Small instruction message above the video */
+            .scan-instruction {
+                font-size: 11px;
+                color: var(--text-muted);
+                margin-bottom: 8px;
+                text-transform: uppercase;
+            }
+
+            #face-result {
+                min-height: 80px;
+                transition: all 0.3s ease;
+                border: 1px solid rgba(0, 255, 136, 0.2);
+                margin-top: 20px !important;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+            }
+
             #overlay {
-                display: none; /* Hide initial canvas */
                 max-width: 100%;
+                height: auto;
                 border-radius: 20px;
+                box-shadow: 10px 10px 20px var(--shadow-dark);
             }
         </style>
     </head>
@@ -363,13 +405,18 @@
                         <div class="full">
                             <div class="prescription-container" style="text-align: center;">
                                 <label>FACE SHAPE ANALYSIS</label>
+                                <p class="scan-instruction">Position your face directly inside the green line</p>
                                 
-                                <div id="video-container" style="position: relative; display: inline-block; border-radius: 20px; overflow: hidden; box-shadow: 10px 10px 20px var(--shadow-dark);">
-                                    <div class="scan-line" id="scanner"></div> <video id="video" width="320" height="240" autoplay muted style="transform: scaleX(-1);"></video>
-                                    <canvas id="overlay"></canvas> 
+                                <div class="video-wrapper">
+                                    <div class="face-guide" id="guide-line"></div>
+                                    <div id="video-container" style="position: relative; border-radius: 20px; overflow: hidden; box-shadow: 10px 10px 20px var(--shadow-dark);">
+                                        <div class="scan-line" id="scanner"></div>
+                                        <video id="video" width="320" height="240" autoplay muted style="transform: scaleX(-1); display: block;"></video>
+                                        <canvas id="overlay" style="display: none;"></canvas> 
+                                    </div>
                                 </div>
 
-                                <div id="face-result" class="read-only-box" style="margin-top: 15px; justify-content: center; color: #00ff88;">
+                                <div id="face-result" class="read-only-box" style="margin-top: 15px; flex-direction: column; height: auto; padding: 15px; color: #00ff88;">
                                     READY TO SCAN...
                                 </div>
 
@@ -383,7 +430,6 @@
                                 </div>
                             </div>
                         </div>
-
                     </div>
 
                     <div style="margin-top: 40px; text-align: center;">
@@ -484,6 +530,7 @@
 
             let currentFacingMode = "user"; // 'user' for front, 'environment' for back
             const switchBtn = document.getElementById('switch-camera');
+            const guide = document.getElementById('guide-line');
 
             async function startFaceAnalysis() {
                 try {
@@ -491,9 +538,9 @@
                     const MODEL_URL = './models/model'; 
                     
                     // Load models only if they haven't been loaded yet
-                    if (!faceapi.nets.tinyFaceDetector.params) {
-                        resultBox.innerText = "LOADING MODELS...";
-                        await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+                    if (!faceapi.nets.ssdMobilenetv1.params) {
+                        resultBox.innerText = "LOADING ACCURATE MODELS...";
+                        await faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL);
                         await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
                     }
                     
@@ -553,7 +600,7 @@
 
                 // Hide the switch button during analysis
                 switchBtn.style.display = 'none';
-                
+                guide.style.display = 'none';
                 video.style.display = 'none';
                 canvas.style.display = 'block';
                 scanner.style.display = 'block';
@@ -569,46 +616,73 @@
                     // DETECTION: Ensure withFaceLandmarks() is used
                     const detections = await faceapi.detectSingleFace(
                         canvas, 
-                        new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.4 }) 
+                        new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }) // Menggunakan SSD
                     ).withFaceLandmarks();
 
                     scanner.style.display = 'none';
 
                     if (detections) {
+                        // ... (after the detections variable is obtained)
                         const points = detections.landmarks.positions;
-const jawLeft = points[0];
-const jawRight = points[16];
-const chin = points[8];
-const eyebrowLeft = points[17];
-const eyebrowRight = points[26];
 
-// 1. Calculate Face Width (Horizontal distance between jawline ends/ears)
-const faceWidth = Math.sqrt(Math.pow(jawRight.x - jawLeft.x, 2) + Math.pow(jawRight.y - jawLeft.y, 2));
+                        // Key Landmarks
+                        const jawLeft = points[0];
+                        const jawRight = points[16];
+                        const chin = points[8];
+                        const eyebrowLeft = points[17];
+                        const eyebrowRight = points[26];
+                        const leftCheek = points[2];
+                        const rightCheek = points[14];
 
-// 2. Calculate Face Height (Distance between the midpoint of eyebrows and the chin)
-// We take the average height of the left and right eyebrows
-const eyeBrowY = (eyebrowLeft.y + eyebrowRight.y) / 2;
-const faceHeight = Math.abs(chin.y - eyeBrowY) * 1.45; // 1.45 factor for forehead estimation
+                        // 1. Dimension Measurement
+                        const faceWidth = Math.sqrt(Math.pow(jawRight.x - jawLeft.x, 2) + Math.pow(jawRight.y - jawLeft.y, 2));
+                        const foreheadWidth = Math.sqrt(Math.pow(eyebrowRight.x - eyebrowLeft.x, 2) + Math.pow(eyebrowRight.y - eyebrowLeft.y, 2));
+                        const cheekWidth = Math.sqrt(Math.pow(rightCheek.x - leftCheek.x, 2) + Math.pow(rightCheek.y - leftCheek.y, 2));
 
-const ratio = faceHeight / faceWidth;
+                        // Estimated Face Height (Eyebrows to Chin with forehead factor)
+                        const eyeBrowY = (eyebrowLeft.y + eyebrowRight.y) / 2;
+                        const faceHeight = Math.abs(chin.y - eyeBrowY) * 1.5; 
 
-// DEBUG: Log the ratio to the console for calibration purposes
-console.log("Detected Ratio:", ratio);
+                        const ratio = faceHeight / faceWidth;
 
-let shape = "";
+                        // 2. Multi-Factor Classification Logic
+                        let shape = "";
 
-// Threshold Adjustment (These values are typically more accurate for mobile/laptop cameras)
-if (ratio > 1.65) {
-    shape = "OVAL / LONG";
-} else if (ratio < 1.35) {
-    shape = "ROUND / SQUARE";
-} else {
-    shape = "HEART / DIAMOND";
-}
+                        if (ratio > 1.6) {
+                            shape = "OVAL / LONG"; // Long face; rectangular or Wayfarer-style glasses are a good fit
+                        } else if (ratio <= 1.35) {
+                            // Distinguishing between Square and Round shapes
+                            // Compare jaw width with cheekbone width
+                            if (faceWidth > cheekWidth * 0.95) {
+                                shape = "SQUARE"; // Broad and defined jawline
+                            } else {
+                                shape = "ROUND"; // Jawline narrower than cheeks and curved
+                            }
+                        } else if (foreheadWidth > faceWidth * 0.85) {
+                            shape = "HEART"; // Wide forehead, pointed chin
+                        } else {
+                            shape = "DIAMOND"; // Cheekbones are the most dominant feature
+                        }
 
-// Display the ratio value as well so you can see the difference during testing
-resultBox.innerHTML = `RESULT: <b style="color: #00ff88;">${shape}</b> <small style="font-size:10px; color:#666;">(${ratio.toFixed(2)})</small>`;
+                        // ENSURE VIDEO IS HIDDEN AND CANVAS IS VISIBLE
+                        video.style.display = 'none';
+                        canvas.style.display = 'block';
+                        canvas.style.margin = '0 auto';
+
+                        // FORCE RESULT BOX TO APPEAR AND STAY IN FRONT
+                        resultBox.style.display = 'block'; 
+                        resultBox.style.zIndex = '100'; 
+                        resultBox.style.position = 'relative';
                         
+                        // Update result text
+                        resultBox.innerHTML = `
+                            <div style="color: var(--text-muted); font-size: 0.7rem; margin-bottom: 5px;">ANALYSIS RESULT:</div>
+                            <b style="color: #00ff88; font-size: 1.5rem; text-shadow: 0 0 10px rgba(0,255,136,0.5);">${shape}</b>
+                            <div style="font-size: 10px; color: #888; margin-top: 5px;">
+                                Ratio: ${ratio.toFixed(2)} | Width: ${Math.round(faceWidth)}px
+                            </div>
+                        `;
+
                         scanBtn.innerHTML = '<div class="led"></div> RETAKE PHOTO';
                         scanBtn.onclick = () => {
                             video.style.display = 'block';
