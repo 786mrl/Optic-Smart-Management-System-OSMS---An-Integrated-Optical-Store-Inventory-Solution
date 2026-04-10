@@ -179,6 +179,31 @@
             .eye-label {
                 vertical-align: middle;
             }
+
+            /* Scan Line Animation */
+            .scan-line {
+                position: absolute;
+                width: 100%;
+                height: 4px;
+                background: rgba(0, 255, 136, 0.5);
+                box-shadow: 0 0 15px #00ff88;
+                top: 0;
+                left: 0;
+                z-index: 10;
+                display: none;
+                animation: scanMove 2s linear infinite;
+            }
+
+            @keyframes scanMove {
+                0% { top: 0; }
+                100% { top: 100%; }
+            }
+
+            #overlay {
+                display: none; /* Hide initial canvas */
+                max-width: 100%;
+                border-radius: 20px;
+            }
         </style>
     </head>
 
@@ -340,8 +365,8 @@
                                 <label>FACE SHAPE ANALYSIS</label>
                                 
                                 <div id="video-container" style="position: relative; display: inline-block; border-radius: 20px; overflow: hidden; box-shadow: 10px 10px 20px var(--shadow-dark);">
-                                    <video id="video" width="320" height="240" autoplay muted style="transform: scaleX(-1);"></video>
-                                    <canvas id="overlay" style="position: absolute; top: 0; left: 0; transform: scaleX(-1);"></canvas>
+                                    <div class="scan-line" id="scanner"></div> <video id="video" width="320" height="240" autoplay muted style="transform: scaleX(-1);"></video>
+                                    <canvas id="overlay"></canvas> 
                                 </div>
 
                                 <div id="face-result" class="read-only-box" style="margin-top: 15px; justify-content: center; color: #00ff88;">
@@ -351,6 +376,9 @@
                                 <div class="selection-wrapper" style="margin-top: 15px;">
                                     <button type="button" class="neu-btn" id="start-scan">
                                         <div class="led"></div> START CAMERA
+                                    </button>
+                                    <button type="button" class="neu-btn" id="switch-camera" style="display: none;">
+                                        <div class="led"></div> SWITCH CAMERA
                                     </button>
                                 </div>
                             </div>
@@ -451,83 +479,155 @@
                 });
             }
 
+            // Global variable to store the snapped image
+            let snappedImage = null;
+
+            let currentFacingMode = "user"; // 'user' for front, 'environment' for back
+            const switchBtn = document.getElementById('switch-camera');
+
             async function startFaceAnalysis() {
                 try {
                     resultBox.innerText = "INITIALIZING...";
-        
-                    // 1. Ensure the library is properly loaded
-                    if (typeof faceapi === 'undefined') {
-                        throw new Error("face-api.min.js library not found in /js/ folder");
-                    }
-
-                    // 2. Wait briefly for internal library initialization (especially for mobile)
-                    await new Promise(resolve => setTimeout(resolve, 500));
-
-                    // 3. Access nets with safety checks
-                    if (!faceapi.nets || typeof faceapi.nets.tinyFaceDetector === 'undefined') {
-                        console.log("Current faceapi object:", faceapi);
-                        throw new Error("Library loaded but 'nets' is undefined. Use Chrome HTTPS Flags.");
-                    }
-
                     const MODEL_URL = './models/model'; 
-                    resultBox.innerText = "LOADING MODELS...";
                     
-                    // Use direct calls to the global object
-                    await faceapi.loadTinyFaceDetectorModel(MODEL_URL);
-                    await faceapi.loadFaceLandmarkModel(MODEL_URL);
+                    // Load models only if they haven't been loaded yet
+                    if (!faceapi.nets.tinyFaceDetector.params) {
+                        resultBox.innerText = "LOADING MODELS...";
+                        await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+                        await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+                    }
                     
-                    resultBox.innerText = "MODELS READY. ACCESSING CAMERA...";
+                    // Stop any currently running stream
+                    if (video.srcObject) {
+                        video.srcObject.getTracks().forEach(track => track.stop());
+                    }
 
-                    // Better camera handling for mobile (Portrait/Landscape)
-                    const constraints = { 
-                        video: { 
-                            facingMode: "user",
-                            width: { ideal: 640 },
-                            height: { ideal: 480 }
-                        } 
-                    };
-
-                    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                    const stream = await navigator.mediaDevices.getUserMedia({ 
+                        video: { facingMode: currentFacingMode } 
+                    });
+                    
                     video.srcObject = stream;
                     
                     video.onloadedmetadata = () => {
                         video.play();
-                        const displaySize = { width: video.videoWidth, height: video.videoHeight };
-                        api.matchDimensions(canvas, displaySize);
-
-                        setInterval(async () => {
-                            const detections = await api.detectSingleFace(
-                                video, 
-                                new api.TinyFaceDetectorOptions({ inputSize: 128, scoreThreshold: 0.4 })
-                            ).withFaceLandmarks();
-
-                            if (detections) {
-                                const resizedDetections = api.resizeResults(detections, displaySize);
-                                const landmarks = resizedDetections.landmarks;
-                                const jawline = landmarks.getJawline();
-                                
-                                const faceWidth = Math.abs(jawline[16].x - jawline[0].x);
-                                const faceHeight = Math.abs(jawline[8].y - landmarks.getLeftEye()[0].y) * 1.5; 
-                                const ratio = faceHeight / faceWidth;
-
-                                let shape = "Detecting...";
-                                if (ratio > 1.4) shape = "OVAL / LONG";
-                                else if (ratio < 1.1) shape = "ROUND / SQUARE";
-                                else shape = "HEART / DIAMOND";
-
-                                resultBox.innerHTML = `<span style="color: #888;">SHAPE:</span> ${shape}`;
-                            } else {
-                                resultBox.innerText = "FACE NOT DETECTED...";
-                            }
-                        }, 600);
+                        resultBox.innerText = "CAMERA READY (" + (currentFacingMode === 'user' ? 'FRONT' : 'BACK') + ")";
+                        
+                        // Set mirroring: Only mirror if using the front camera
+                        video.style.transform = currentFacingMode === 'user' ? 'scaleX(-1)' : 'scaleX(1)';
+                        
+                        scanBtn.innerHTML = '<div class="led"></div> CAPTURE PHOTO';
+                        scanBtn.onclick = captureAndAnalyze;
+                        
+                        // Show the switch button
+                        switchBtn.style.display = 'inline-block';
                     };
-
-                    scanBtn.style.display = 'none';
 
                 } catch (err) {
                     resultBox.style.color = "#ff4d4d";
                     resultBox.innerText = "ERROR: " + err.message;
-                    console.error("FaceAPI Error:", err);
+                }
+            }
+
+            // Logic to switch camera
+            switchBtn.onclick = () => {
+                currentFacingMode = (currentFacingMode === "user") ? "environment" : "user";
+                startFaceAnalysis();
+            };
+
+            async function captureAndAnalyze() {
+                const scanner = document.getElementById('scanner');
+                resultBox.innerText = "CAPTURING...";
+                
+                // 1. Setup Canvas
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                const context = canvas.getContext('2d');
+                
+                if (currentFacingMode === 'user') {
+                    // Apply mirroring only for the front camera
+                    context.translate(canvas.width, 0);
+                    context.scale(-1, 1);
+                }
+
+                context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+                // Hide the switch button during analysis
+                switchBtn.style.display = 'none';
+                
+                video.style.display = 'none';
+                canvas.style.display = 'block';
+                scanner.style.display = 'block';
+                
+                const stream = video.srcObject;
+                if (stream) stream.getTracks().forEach(track => track.stop());
+
+                resultBox.innerHTML = "ANALYZING SHAPE <span class='loading-dots'>...</span>";
+                
+                try {
+                    await new Promise(r => setTimeout(r, 2000));
+
+                    // DETECTION: Ensure withFaceLandmarks() is used
+                    const detections = await faceapi.detectSingleFace(
+                        canvas, 
+                        new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.4 }) 
+                    ).withFaceLandmarks();
+
+                    scanner.style.display = 'none';
+
+                    if (detections) {
+                        const points = detections.landmarks.positions;
+const jawLeft = points[0];
+const jawRight = points[16];
+const chin = points[8];
+const eyebrowLeft = points[17];
+const eyebrowRight = points[26];
+
+// 1. Calculate Face Width (Horizontal distance between jawline ends/ears)
+const faceWidth = Math.sqrt(Math.pow(jawRight.x - jawLeft.x, 2) + Math.pow(jawRight.y - jawLeft.y, 2));
+
+// 2. Calculate Face Height (Distance between the midpoint of eyebrows and the chin)
+// We take the average height of the left and right eyebrows
+const eyeBrowY = (eyebrowLeft.y + eyebrowRight.y) / 2;
+const faceHeight = Math.abs(chin.y - eyeBrowY) * 1.45; // 1.45 factor for forehead estimation
+
+const ratio = faceHeight / faceWidth;
+
+// DEBUG: Log the ratio to the console for calibration purposes
+console.log("Detected Ratio:", ratio);
+
+let shape = "";
+
+// Threshold Adjustment (These values are typically more accurate for mobile/laptop cameras)
+if (ratio > 1.65) {
+    shape = "OVAL / LONG";
+} else if (ratio < 1.35) {
+    shape = "ROUND / SQUARE";
+} else {
+    shape = "HEART / DIAMOND";
+}
+
+// Display the ratio value as well so you can see the difference during testing
+resultBox.innerHTML = `RESULT: <b style="color: #00ff88;">${shape}</b> <small style="font-size:10px; color:#666;">(${ratio.toFixed(2)})</small>`;
+                        
+                        scanBtn.innerHTML = '<div class="led"></div> RETAKE PHOTO';
+                        scanBtn.onclick = () => {
+                            video.style.display = 'block';
+                            canvas.style.display = 'none';
+                            startFaceAnalysis();
+                        };
+                    } else {
+                        throw new Error("FACE NOT DETECTED");
+                    }
+                } catch (err) {
+                    scanner.style.display = 'none';
+                    console.error(err); // Log original error for debugging
+                    resultBox.innerHTML = `<b style='color:#ff4d4d;'>${err.message}. TRY AGAIN.</b>`;
+                    scanBtn.innerHTML = '<div class="led"></div> RETAKE';
+                    scanBtn.onclick = () => {
+                        video.style.display = 'block';
+                        canvas.style.display = 'none';
+                        startFaceAnalysis();
+                    };
                 }
             }
 
