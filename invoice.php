@@ -70,7 +70,7 @@
 <html lang="en">
     <head>
         <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
         <title>Invoice - <?php echo $data['examination_code']; ?></title>
         <link rel="stylesheet" href="style.css">
         <script src="js/face-api.min.js"></script>
@@ -199,28 +199,59 @@
                 100% { top: 100%; }
             }
 
-            /* Container for video and guide */
             .video-wrapper {
                 position: relative;
-                width: 320px;
-                height: 240px;
+                width: 300px; /* Standard mobile size to prevent overload */
+                height: 400px; /* Portrait ratio is better for face tracking on mobile */
                 margin: 0 auto;
+                overflow: hidden;
+                border-radius: 20px;
+                background: #000;
+                -webkit-mask-image: -webkit-radial-gradient(white, black); /* Fix for rounded corner bugs in Safari/iOS */
             }
 
-            /* Oval face guide (Face Guide) */
+            /* Video container must fill the wrapper */
+            #video-container {
+                width: 100%;
+                height: 100%;
+                position: absolute;
+                top: 0;
+                left: 0;
+            }
+
+            /* Face Guide mobile fix: Centered and smaller oval adjustment */
             .face-guide {
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                z-index: 20;
+                pointer-events: none;
+                background: rgba(0, 0, 0, 0.4);
+                backdrop-filter: blur(8px);
+                -webkit-backdrop-filter: blur(8px);
+                
+                /* Center cutout reduced to 50% width and 65% height */
+                -webkit-mask-image: radial-gradient(ellipse 50% 65% at 50% 50%, transparent 95%, black 100%);
+                mask-image: radial-gradient(ellipse 50% 65% at 50% 50%, transparent 95%, black 100%);
+            }
+
+            /* Green Outline: Matching the mask size above */
+            .face-guide::after {
+                content: "";
                 position: absolute;
                 top: 50%;
                 left: 50%;
                 transform: translate(-50%, -50%);
-                width: 160px; /* Oval width */
-                height: 200px; /* Oval height */
-                border: 2px dashed rgba(0, 255, 136, 0.5);
-                border-radius: 50%;
-                z-index: 5;
-                pointer-events: none; /* Prevents blocking clicks */
+                /* Size matched to mask dimensions (50% x 65%) */
+                width: 50%; 
+                height: 65%;
+                border: 2px solid #00ff88;
+                border-radius: 50% 50% 50% 50% / 45% 45% 55% 55%;
+                box-shadow: 0 0 15px rgba(0, 255, 136, 0.5), inset 0 0 10px rgba(0, 255, 136, 0.2);
             }
-
+            
             /* Small instruction message above the video */
             .scan-instruction {
                 font-size: 11px;
@@ -245,6 +276,101 @@
                 height: auto;
                 border-radius: 20px;
                 box-shadow: 10px 10px 20px var(--shadow-dark);
+            }
+
+            /* --- Global Adjustments for Mobile --- */
+            @media (max-width: 600px) {
+                .invoice-body {
+                    padding: 10px;
+                }
+
+                /* Change grid to single column on mobile */
+                .info-grid {
+                    grid-template-columns: 1fr; 
+                    gap: 15px;
+                }
+
+                .info-grid div.full {
+                    grid-column: span 1;
+                }
+
+                /* Reduce card padding for more screen space */
+                .neumorph-card, .main-card, .prescription-container {
+                    padding: 15px;
+                    border-radius: 15px;
+                }
+
+                /* Prescription Table Adjustments (Critical) */
+                .prescription-table {
+                    border-spacing: 5px 8px;
+                }
+
+                .prescription-table th {
+                    font-size: 0.6rem;
+                }
+
+                .input-table-neu {
+                    padding: 10px 2px;
+                    font-size: 0.85rem;
+                    border-radius: 10px;
+                }
+
+                .eye-indicator {
+                    width: 35px;
+                    height: 35px;
+                    font-size: 0.9rem;
+                }
+
+                /* Video Scanner Adjustments */
+                .video-wrapper {
+                    width: 100%;      /* Follows the mobile screen width */
+                    height: 380px;    /* Sufficient height for face positioning */
+                    aspect-ratio: auto;
+                }
+
+                #video, #overlay {
+                    width: 100% !important;
+                    height: auto !important;
+                }
+
+                .face-guide {
+                    -webkit-mask-image: radial-gradient(ellipse 65% 70% at 50% 50%, transparent 95%, black 100%);
+                    mask-image: radial-gradient(ellipse 65% 70% at 50% 50%, transparent 95%, black 100%);
+                }
+
+                .face-guide::after {
+                    width: 65%;
+                    height: 70%;
+                }
+
+                /* Optimize buttons for touch targets */
+                .neu-btn {
+                    padding: 12px 10px;
+                    font-size: 0.8rem;
+                    flex: 1; /* Buttons share space equally */
+                }
+
+                .selection-wrapper {
+                    flex-wrap: nowrap; /* Keep aligned horizontally */
+                }
+
+                .btn-action {
+                    width: 100%;
+                    padding: 15px;
+                }
+            }
+
+            /* Enable horizontal scroll for very small screens (e.g., iPhone SE) */
+            .table-responsive {
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+                margin-top: 10px;
+            }
+
+            @keyframes pulse {
+                0% { opacity: 0.6; }
+                50% { opacity: 1; }
+                100% { opacity: 0.6; }
             }
         </style>
     </head>
@@ -335,62 +461,63 @@
                                         <h3 style="color: var(--accent-color); font-size: 0.85rem; margin-bottom: 20px; text-align: center; opacity: 0.8;">
                                             — MEASUREMENT —
                                         </h3>
-                                        
-                                        <table class="prescription-table">
-                                            <thead>
-                                                <tr>
-                                                    <th>SIDE</th>
-                                                    <th>SPH</th>
-                                                    <th>CYL</th>
-                                                    <th>AXIS</th>
-                                                    <th>ADD</th>
-                                                </tr>
-                                            </thead>
-        
-                                            <tbody>
-                                                <tr>
-                                                    <td class="eye-label"><div class="eye-indicator">R</div></td>
-                                                    <td><input type="text" name="od_sph" class="input-table-neu mod-field" 
-                                                        data-original="<?php echo $data['new_r_sph']; ?>" 
-                                                        data-modified="<?php echo $data['mod_r_sph'] ?? $data['new_r_sph']; ?>"
-                                                        value="<?php echo ($data['lens_modification'] == 1) ? $data['mod_r_sph'] : $data['new_r_sph']; ?>" readonly></td>
-                                                    
-                                                    <td><input type="text" name="od_cyl" class="input-table-neu mod-field" 
-                                                        data-original="<?php echo $data['new_r_cyl']; ?>" 
-                                                        data-modified="<?php echo $data['mod_r_cyl'] ?? $data['new_r_cyl']; ?>"
-                                                        value="<?php echo ($data['lens_modification'] == 1) ? $data['mod_r_cyl'] : $data['new_r_cyl']; ?>" readonly></td>
-                                                    
-                                                    <td><input type="text" name="od_axis" class="input-table-neu mod-field" 
-                                                        data-original="<?php echo $data['new_r_ax']; ?>" 
-                                                        data-modified="<?php echo $data['mod_r_ax'] ?? $data['new_r_ax']; ?>"
-                                                        value="<?php echo ($data['lens_modification'] == 1) ? $data['mod_r_ax'] : $data['new_r_ax']; ?>" readonly></td>
-                                                    
-                                                    <td><input type="text" name="od_add" class="input-table-neu mod-field" 
-                                                        data-original="<?php echo $data['new_r_add']; ?>" 
-                                                        data-modified="<?php echo $data['mod_r_add'] ?? $data['new_r_add']; ?>"
-                                                        value="<?php echo ($data['lens_modification'] == 1) ? $data['mod_r_add'] : $data['new_r_add']; ?>" readonly></td>
-                                                </tr>
-                                                <tr>
-                                                    <td class="eye-label"><div class="eye-indicator">L</div></td>
-                                                    <td><input type="text" name="os_sph" class="input-table-neu mod-field" 
-                                                        data-original="<?php echo $data['new_l_sph']; ?>" 
-                                                        data-modified="<?php echo $data['mod_l_sph'] ?? $data['new_l_sph']; ?>"
-                                                        value="<?php echo ($data['lens_modification'] == 1) ? $data['mod_l_sph'] : $data['new_l_sph']; ?>" readonly></td>
-                                                    <td><input type="text" name="os_cyl" class="input-table-neu mod-field" 
-                                                        data-original="<?php echo $data['new_l_cyl']; ?>" 
-                                                        data-modified="<?php echo $data['mod_l_cyl'] ?? $data['new_l_cyl']; ?>"
-                                                        value="<?php echo ($data['lens_modification'] == 1) ? $data['mod_l_cyl'] : $data['new_l_cyl']; ?>" readonly></td>
-                                                    <td><input type="text" name="os_axis" class="input-table-neu mod-field" 
-                                                        data-original="<?php echo $data['new_l_ax']; ?>" 
-                                                        data-modified="<?php echo $data['mod_l_ax'] ?? $data['new_l_ax']; ?>"
-                                                        value="<?php echo ($data['lens_modification'] == 1) ? $data['mod_l_ax'] : $data['new_l_ax']; ?>" readonly></td>
-                                                    <td><input type="text" name="os_add" class="input-table-neu mod-field" 
-                                                        data-original="<?php echo $data['new_l_add']; ?>" 
-                                                        data-modified="<?php echo $data['mod_l_add'] ?? $data['new_l_add']; ?>"
-                                                        value="<?php echo ($data['lens_modification'] == 1) ? $data['mod_l_add'] : $data['new_l_add']; ?>" readonly></td>
-                                                </tr>
-                                            </tbody>
-                                        </table>
+                                        <div class="table-responsive">
+                                            <table class="prescription-table">
+                                                <thead>
+                                                    <tr>
+                                                        <th>SIDE</th>
+                                                        <th>SPH</th>
+                                                        <th>CYL</th>
+                                                        <th>AXIS</th>
+                                                        <th>ADD</th>
+                                                    </tr>
+                                                </thead>
+            
+                                                <tbody>
+                                                    <tr>
+                                                        <td class="eye-label"><div class="eye-indicator">R</div></td>
+                                                        <td><input type="text" name="od_sph" class="input-table-neu mod-field" 
+                                                            data-original="<?php echo $data['new_r_sph']; ?>" 
+                                                            data-modified="<?php echo $data['mod_r_sph'] ?? $data['new_r_sph']; ?>"
+                                                            value="<?php echo ($data['lens_modification'] == 1) ? $data['mod_r_sph'] : $data['new_r_sph']; ?>" readonly></td>
+                                                        
+                                                        <td><input type="text" name="od_cyl" class="input-table-neu mod-field" 
+                                                            data-original="<?php echo $data['new_r_cyl']; ?>" 
+                                                            data-modified="<?php echo $data['mod_r_cyl'] ?? $data['new_r_cyl']; ?>"
+                                                            value="<?php echo ($data['lens_modification'] == 1) ? $data['mod_r_cyl'] : $data['new_r_cyl']; ?>" readonly></td>
+                                                        
+                                                        <td><input type="text" name="od_axis" class="input-table-neu mod-field" 
+                                                            data-original="<?php echo $data['new_r_ax']; ?>" 
+                                                            data-modified="<?php echo $data['mod_r_ax'] ?? $data['new_r_ax']; ?>"
+                                                            value="<?php echo ($data['lens_modification'] == 1) ? $data['mod_r_ax'] : $data['new_r_ax']; ?>" readonly></td>
+                                                        
+                                                        <td><input type="text" name="od_add" class="input-table-neu mod-field" 
+                                                            data-original="<?php echo $data['new_r_add']; ?>" 
+                                                            data-modified="<?php echo $data['mod_r_add'] ?? $data['new_r_add']; ?>"
+                                                            value="<?php echo ($data['lens_modification'] == 1) ? $data['mod_r_add'] : $data['new_r_add']; ?>" readonly></td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td class="eye-label"><div class="eye-indicator">L</div></td>
+                                                        <td><input type="text" name="os_sph" class="input-table-neu mod-field" 
+                                                            data-original="<?php echo $data['new_l_sph']; ?>" 
+                                                            data-modified="<?php echo $data['mod_l_sph'] ?? $data['new_l_sph']; ?>"
+                                                            value="<?php echo ($data['lens_modification'] == 1) ? $data['mod_l_sph'] : $data['new_l_sph']; ?>" readonly></td>
+                                                        <td><input type="text" name="os_cyl" class="input-table-neu mod-field" 
+                                                            data-original="<?php echo $data['new_l_cyl']; ?>" 
+                                                            data-modified="<?php echo $data['mod_l_cyl'] ?? $data['new_l_cyl']; ?>"
+                                                            value="<?php echo ($data['lens_modification'] == 1) ? $data['mod_l_cyl'] : $data['new_l_cyl']; ?>" readonly></td>
+                                                        <td><input type="text" name="os_axis" class="input-table-neu mod-field" 
+                                                            data-original="<?php echo $data['new_l_ax']; ?>" 
+                                                            data-modified="<?php echo $data['mod_l_ax'] ?? $data['new_l_ax']; ?>"
+                                                            value="<?php echo ($data['lens_modification'] == 1) ? $data['mod_l_ax'] : $data['new_l_ax']; ?>" readonly></td>
+                                                        <td><input type="text" name="os_add" class="input-table-neu mod-field" 
+                                                            data-original="<?php echo $data['new_l_add']; ?>" 
+                                                            data-modified="<?php echo $data['mod_l_add'] ?? $data['new_l_add']; ?>"
+                                                            value="<?php echo ($data['lens_modification'] == 1) ? $data['mod_l_add'] : $data['new_l_add']; ?>" readonly></td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
                                     </div>
         
                                     <div id="save-btn-container" style="display: none; margin-top: 30px; text-align: center;">
@@ -407,11 +534,10 @@
                                 <label>FACE SHAPE ANALYSIS</label>
                                 <p class="scan-instruction">Position your face directly inside the green line</p>
                                 
-                                <div class="video-wrapper">
-                                    <div class="face-guide" id="guide-line"></div>
-                                    <div id="video-container" style="position: relative; border-radius: 20px; overflow: hidden; box-shadow: 10px 10px 20px var(--shadow-dark);">
+                                <div class="video-wrapper" style="height: 320px;"> <div class="face-guide" id="guide-line"></div>
+                                    <div id="video-container" style="position: relative; border-radius: 20px; overflow: hidden; background: #000;">
                                         <div class="scan-line" id="scanner"></div>
-                                        <video id="video" width="320" height="240" autoplay muted style="transform: scaleX(-1); display: block;"></video>
+                                        <video id="video" autoplay muted playsinline style="width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1);"></video>
                                         <canvas id="overlay" style="display: none;"></canvas> 
                                     </div>
                                 </div>
@@ -533,7 +659,9 @@
             const guide = document.getElementById('guide-line');
 
             async function startFaceAnalysis() {
+                document.getElementById('guide-line').style.animation = "pulse 1.5s infinite";
                 try {
+                    guide.style.display = 'block';
                     resultBox.innerText = "INITIALIZING...";
                     const MODEL_URL = './models/model'; 
                     
@@ -557,15 +685,15 @@
                     
                     video.onloadedmetadata = () => {
                         video.play();
-                        resultBox.innerText = "CAMERA READY (" + (currentFacingMode === 'user' ? 'FRONT' : 'BACK') + ")";
+                        resultBox.innerText = "CAMERA READY";
                         
-                        // Set mirroring: Only mirror if using the front camera
-                        video.style.transform = currentFacingMode === 'user' ? 'scaleX(-1)' : 'scaleX(1)';
+                        // Ensure canvas size matches the cropped video display
+                        video.style.width = "100%";
+                        video.style.height = "100%";
+                        video.style.objectFit = "cover";
                         
                         scanBtn.innerHTML = '<div class="led"></div> CAPTURE PHOTO';
                         scanBtn.onclick = captureAndAnalyze;
-                        
-                        // Show the switch button
                         switchBtn.style.display = 'inline-block';
                     };
 
@@ -687,6 +815,7 @@
                         scanBtn.onclick = () => {
                             video.style.display = 'block';
                             canvas.style.display = 'none';
+                            guide.style.display = 'block';
                             startFaceAnalysis();
                         };
                     } else {
@@ -700,6 +829,7 @@
                     scanBtn.onclick = () => {
                         video.style.display = 'block';
                         canvas.style.display = 'none';
+                        guide.style.display = 'block';
                         startFaceAnalysis();
                     };
                 }
