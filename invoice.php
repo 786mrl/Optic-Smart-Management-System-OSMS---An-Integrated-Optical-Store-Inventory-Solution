@@ -739,11 +739,11 @@
 
                 // --- FIX: SINGLE VARIABLE DECLARATION ---
                 const centerX = canvas.width / 2;
-                const centerY = canvas.height / 2;
+                const centerY = canvas.height / 2.62;
                 
                 // Use the same ratios as CSS (60% width, 90% height)
-                const radiusX = (canvas.width * 0.60) / 2; 
-                const radiusY = (canvas.height * 0.90) / 2;
+                const radiusX = (canvas.width * 0.62) / 2; 
+                const radiusY = (canvas.height * 0.672) / 2;
 
                 // A. Draw blurred background (Blur)
                 context.filter = 'blur(20px) brightness(0.5)'; 
