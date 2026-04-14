@@ -233,8 +233,8 @@
                 -webkit-backdrop-filter: blur(8px);
                 
                 /* Center cutout reduced to 50% width and 65% height */
-                -webkit-mask-image: radial-gradient(ellipse 50% 65% at 50% 50%, transparent 95%, black 100%);
-                mask-image: radial-gradient(ellipse 50% 65% at 50% 50%, transparent 95%, black 100%);
+                -webkit-mask-image: radial-gradient(ellipse 35% 50% at 50% 50%, transparent 95%, black 100%);
+                mask-image: radial-gradient(ellipse 35% 50% at 50% 50%, transparent 95%, black 100%);
             }
 
             /* Green Outline: Matching the mask size above */
@@ -245,8 +245,8 @@
                 left: 50%;
                 transform: translate(-50%, -50%);
                 /* Size matched to mask dimensions (50% x 65%) */
-                width: 50%; 
-                height: 65%;
+                width: 35%; 
+                height: 50%;
                 border: 2px solid #00ff88;
                 border-radius: 50% 50% 50% 50% / 45% 45% 55% 55%;
                 box-shadow: 0 0 15px rgba(0, 255, 136, 0.5), inset 0 0 10px rgba(0, 255, 136, 0.2);
@@ -276,6 +276,13 @@
                 height: auto;
                 border-radius: 20px;
                 box-shadow: 10px 10px 20px var(--shadow-dark);
+            }
+
+            #video {
+                width: 100%;
+                height: 100%;
+                object-fit: cover; /* Ensures video fills the container without distortion */
+                transform: scaleX(-1); /* Mirroring */
             }
 
             /* --- Global Adjustments for Mobile --- */
@@ -325,7 +332,7 @@
                 .video-wrapper {
                     width: 100%;      /* Follows the mobile screen width */
                     height: 380px;    /* Sufficient height for face positioning */
-                    aspect-ratio: auto;
+                    position: relative;
                 }
 
                 #video, #overlay {
@@ -334,13 +341,15 @@
                 }
 
                 .face-guide {
-                    -webkit-mask-image: radial-gradient(ellipse 65% 70% at 50% 50%, transparent 95%, black 100%);
-                    mask-image: radial-gradient(ellipse 65% 70% at 50% 50%, transparent 95%, black 100%);
+                    -webkit-mask-image: radial-gradient(ellipse 40% 55% at 50% 50%, transparent 95%, black 100%);
+                    mask-image: radial-gradient(ellipse 40% 55% at 50% 50%, transparent 95%, black 100%);
                 }
 
                 .face-guide::after {
-                    width: 65%;
-                    height: 70%;
+                    width: 40%;
+                    height: 55%;
+                    border: 2px solid #00ff88;
+                    border-radius: 50%;
                 }
 
                 /* Optimize buttons for touch targets */
@@ -659,7 +668,11 @@
             const guide = document.getElementById('guide-line');
 
             async function startFaceAnalysis() {
-                document.getElementById('guide-line').style.animation = "pulse 1.5s infinite";
+                const guide = document.getElementById('guide-line');
+                guide.style.display = 'block'; // Ensure it is visible
+                video.style.display = 'block'; // Ensure video is not hidden
+                canvas.style.display = 'none'; // Hide previous photo results
+                guide.style.animation = "pulse 1.5s infinite";
                 try {
                     guide.style.display = 'block';
                     resultBox.innerText = "INITIALIZING...";
