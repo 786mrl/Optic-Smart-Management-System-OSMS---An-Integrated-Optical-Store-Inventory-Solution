@@ -725,108 +725,131 @@
             async function captureAndAnalyze() {
                 const scanner = document.getElementById('scanner');
                 resultBox.innerText = "CAPTURING...";
-                
-                // 1. Setup Canvas
+
+                // === SETUP CANVAS (SAMA SEPERTI SEBELUMNYA) ===
                 canvas.width = video.videoWidth;
                 canvas.height = video.videoHeight;
                 const context = canvas.getContext('2d');
-                
-                // Disable mirroring if using front camera (user)
+
                 if (currentFacingMode === 'user') {
                     context.translate(canvas.width, 0);
                     context.scale(-1, 1);
                 }
 
-                // --- FIX: SINGLE VARIABLE DECLARATION ---
                 const centerX = canvas.width / 2;
                 const centerY = canvas.height / 2.62;
-                
-                // Use the same ratios as CSS (60% width, 90% height)
-                const radiusX = (canvas.width * 0.62) / 2; 
+                const radiusX = (canvas.width * 0.62) / 2;
                 const radiusY = (canvas.height * 0.672) / 2;
 
-                // A. Draw blurred background (Blur)
-                context.filter = 'blur(20px) brightness(0.5)'; 
+                context.filter = 'blur(20px) brightness(0.5)';
                 context.drawImage(video, 0, 0, canvas.width, canvas.height);
-                context.filter = 'none'; // Reset filter
+                context.filter = 'none';
 
-                // B. Create a sharp "cutout" area
                 context.save();
                 context.beginPath();
                 context.ellipse(centerX, centerY, radiusX, radiusY, 0, 0, 2 * Math.PI);
-                context.clip(); 
-
-                // C. Draw sharp original video inside the oval cutout
+                context.clip();
                 context.drawImage(video, 0, 0, canvas.width, canvas.height);
-                context.restore(); 
+                context.restore();
 
-                // D. Draw green border (Stroke) to match guide style
                 context.beginPath();
                 context.ellipse(centerX, centerY, radiusX, radiusY, 0, 0, 2 * Math.PI);
                 context.strokeStyle = '#00ff88';
-                context.lineWidth = Math.max(4, canvas.width * 0.005); 
+                context.lineWidth = Math.max(4, canvas.width * 0.005);
                 context.stroke();
-                // -------------------------------------------------
 
-                // Hide other UI elements
                 switchBtn.style.display = 'none';
                 guide.style.display = 'none';
                 video.style.display = 'none';
                 canvas.style.display = 'block';
                 scanner.style.display = 'block';
-                
+
                 const stream = video.srcObject;
                 if (stream) stream.getTracks().forEach(track => track.stop());
 
                 resultBox.innerHTML = "ANALYZING SHAPE <span class='loading-dots'>...</span>";
-                
+
                 try {
                     await new Promise(r => setTimeout(r, 2000));
 
-                    // Run face detection on the modified canvas
                     const detections = await faceapi.detectSingleFace(
-                        canvas, 
+                        canvas,
                         new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 })
                     ).withFaceLandmarks();
 
                     scanner.style.display = 'none';
 
-                    if (detections) {
-                        const points = detections.landmarks.positions;
-                        const jawLeft = points[0];
-                        const jawRight = points[16];
-                        const chin = points[8];
-                        const eyebrowLeft = points[17];
-                        const eyebrowRight = points[26];
-                        const eyeBrowY = (eyebrowLeft.y + eyebrowRight.y) / 2;
-                        
-                        const faceWidth = Math.sqrt(Math.pow(jawRight.x - jawLeft.x, 2) + Math.pow(jawRight.y - jawLeft.y, 2));
-                        const faceHeight = Math.abs(chin.y - eyeBrowY) * 1.5; 
-                        const ratio = faceHeight / faceWidth;
+                    if (!detections) throw new Error("FACE NOT DETECTED");
 
-                        let shape = "";
-                        if (ratio > 1.6) shape = "OVAL / LONG";
-                        else if (ratio <= 1.35) shape = "SQUARE / ROUND";
-                        else shape = "DIAMOND / HEART";
+                    const pts = detections.landmarks.positions;
 
-                        resultBox.innerHTML = `
-                            <div style="color: var(--text-muted); font-size: 0.7rem; margin-bottom: 5px;">ANALYSIS RESULT:</div>
-                            <b style="color: #00ff88; font-size: 1.5rem; text-shadow: 0 0 10px rgba(0,255,136,0.5);">${shape}</b>
-                            <div style="font-size: 10px; color: #888; margin-top: 5px;">
-                                Focus Area Captured | Ratio: ${ratio.toFixed(2)}
-                            </div>
-                        `;
+                    // === 6 PENGUKURAN AKURAT ===
 
-                        scanBtn.innerHTML = '<div class="led"></div> RETAKE PHOTO';
-                        scanBtn.onclick = () => {
-                            video.style.display = 'block';
-                            canvas.style.display = 'none';
-                            guide.style.display = 'block';
-                            startFaceAnalysis();
-                        };
-                    } else {
-                        throw new Error("FACE NOT DETECTED");
-                    }
+                    // 1. Lebar wajah (jaw-to-jaw): titik 0 & 16
+                    const faceWidth = Math.hypot(pts[16].x - pts[0].x, pts[16].y - pts[0].y);
+
+                    // 2. Tinggi wajah: dari dagu (8) ke tengah alis
+                    const browMidY = (pts[19].y + pts[24].y) / 2;
+                    const faceHeight = Math.abs(pts[8].y - browMidY);
+
+                    // 3. Lebar dahi: titik alis paling luar (17 & 26), diestimasi naik sedikit
+                    const foreheadWidth = Math.hypot(pts[26].x - pts[17].x, pts[26].y - pts[17].y) * 1.1;
+
+                    // 4. Lebar tulang pipi: titik 1 & 15 (area pipi)
+                    const cheekWidth = Math.hypot(pts[15].x - pts[1].x, pts[15].y - pts[1].y);
+
+                    // 5. Lebar rahang: titik 4 & 12
+                    const jawWidth = Math.hypot(pts[12].x - pts[4].x, pts[12].y - pts[4].y);
+
+                    // 6. Ketajaman dagu: sudut antara titik 6 → 8 → 10
+                    const v1 = { x: pts[6].x - pts[8].x, y: pts[6].y - pts[8].y };
+                    const v2 = { x: pts[10].x - pts[8].x, y: pts[10].y - pts[8].y };
+                    const cosAngle = (v1.x * v2.x + v1.y * v2.y) / (Math.hypot(v1.x, v1.y) * Math.hypot(v2.x, v2.y));
+                    const chinAngle = Math.acos(Math.max(-1, Math.min(1, cosAngle))) * (180 / Math.PI);
+
+                    // === RASIO ===
+                    const faceRatio     = faceHeight / faceWidth;
+                    const foreheadRatio = foreheadWidth / faceWidth;
+                    const cheekRatio    = cheekWidth / faceWidth;
+                    const jawRatio      = jawWidth / faceWidth;
+                    const chinSharp     = chinAngle; // makin kecil = makin lancip
+
+                    // === SCORING SETIAP BENTUK ===
+                    // Menggunakan sistem skor tertimbang — bentuk dengan skor tertinggi menang
+                    const scores = {
+                        "OVAL":     scoreOval(faceRatio, foreheadRatio, cheekRatio, jawRatio, chinSharp),
+                        "ROUND":    scoreRound(faceRatio, cheekRatio, jawRatio, chinSharp),
+                        "SQUARE":   scoreSquare(faceRatio, jawRatio, chinSharp),
+                        "OBLONG":   scoreOblong(faceRatio, foreheadRatio, jawRatio),
+                        "HEART":    scoreHeart(foreheadRatio, jawRatio, chinSharp),
+                        "DIAMOND":  scoreDiamond(foreheadRatio, cheekRatio, jawRatio, chinSharp),
+                        "TRIANGLE": scoreTriangle(foreheadRatio, jawRatio)
+                    };
+
+                    // Ambil bentuk dengan skor tertinggi
+                    const shape = Object.entries(scores).reduce((a, b) => b[1] > a[1] ? b : a)[0];
+                    const topScore = scores[shape];
+                    const confidence = Math.min(100, Math.round((topScore / 10) * 100));
+
+                    resultBox.innerHTML = `
+                        <div style="color: var(--text-muted); font-size: 0.7rem; margin-bottom: 5px;">ANALYSIS RESULT:</div>
+                        <b style="color: #00ff88; font-size: 1.5rem; text-shadow: 0 0 10px rgba(0,255,136,0.5);">${shape}</b>
+                        <div style="font-size: 11px; color: #888; margin-top: 8px; line-height: 1.6;">
+                            Confidence: ${confidence}% &nbsp;|&nbsp; 
+                            Ratio: ${faceRatio.toFixed(2)} &nbsp;|&nbsp; 
+                            Jaw: ${jawRatio.toFixed(2)} &nbsp;|&nbsp; 
+                            Chin: ${chinSharp.toFixed(0)}°
+                        </div>
+                    `;
+
+                    scanBtn.innerHTML = '<div class="led"></div> RETAKE PHOTO';
+                    scanBtn.onclick = () => {
+                        video.style.display = 'block';
+                        canvas.style.display = 'none';
+                        guide.style.display = 'block';
+                        startFaceAnalysis();
+                    };
+
                 } catch (err) {
                     scanner.style.display = 'none';
                     resultBox.innerHTML = `<b style='color:#ff4d4d;'>${err.message}. TRY AGAIN.</b>`;
@@ -838,6 +861,70 @@
                         startFaceAnalysis();
                     };
                 }
+            }
+
+            // =============================================
+            // FUNGSI SCORING UNTUK SETIAP BENTUK WAJAH
+            // Nilai 0-10, makin tinggi makin cocok
+            // =============================================
+
+            function scoreOval(fr, fore, cheek, jaw, chin) {
+                let s = 0;
+                if (fr > 1.3 && fr < 1.7)    s += 3;   // tinggi sedang
+                if (cheek > jaw)              s += 2;   // pipi lebih lebar dari rahang
+                if (cheek > fore)             s += 2;   // pipi lebih lebar dari dahi
+                if (jaw < 0.75)               s += 2;   // rahang tidak terlalu lebar
+                if (chin > 80 && chin < 130)  s += 1;   // dagu tidak terlalu lancip
+                return s;
+            }
+
+            function scoreRound(fr, cheek, jaw, chin) {
+                let s = 0;
+                if (fr < 1.3)        s += 3;   // wajah pendek / bulat
+                if (cheek > 0.85)    s += 2;   // pipi sangat lebar
+                if (jaw > 0.70)      s += 2;   // rahang cukup lebar
+                if (chin > 120)      s += 3;   // dagu tumpul / bulat
+                return s;
+            }
+
+            function scoreSquare(fr, jaw, chin) {
+                let s = 0;
+                if (fr > 0.9 && fr < 1.3)  s += 3;   // proporsi hampir sama
+                if (jaw > 0.80)             s += 4;   // rahang sangat lebar & tegas
+                if (chin > 110)             s += 3;   // dagu kotak / tumpul
+                return s;
+            }
+
+            function scoreOblong(fr, fore, jaw) {
+                let s = 0;
+                if (fr > 1.65)      s += 5;   // wajah sangat panjang
+                if (fore < 0.85)    s += 2;   // dahi tidak terlalu lebar
+                if (jaw < 0.72)     s += 3;   // rahang sempit
+                return s;
+            }
+
+            function scoreHeart(fore, jaw, chin) {
+                let s = 0;
+                if (fore > 0.95)    s += 4;   // dahi lebar
+                if (jaw < 0.65)     s += 3;   // rahang sempit
+                if (chin < 80)      s += 3;   // dagu lancip
+                return s;
+            }
+
+            function scoreDiamond(fore, cheek, jaw, chin) {
+                let s = 0;
+                if (cheek > fore && cheek > jaw)  s += 5;  // pipi paling lebar
+                if (fore < 0.85)                  s += 2;  // dahi tidak terlalu lebar
+                if (jaw < 0.70)                   s += 2;  // rahang sempit
+                if (chin < 90)                    s += 1;  // dagu agak lancip
+                return s;
+            }
+
+            function scoreTriangle(fore, jaw) {
+                let s = 0;
+                if (jaw > fore * 1.15)  s += 6;   // rahang jauh lebih lebar dari dahi
+                if (fore < 0.80)        s += 4;   // dahi sempit
+                return s;
             }
 
             scanBtn.onclick = startFaceAnalysis;
