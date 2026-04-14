@@ -232,9 +232,9 @@
                 backdrop-filter: blur(8px);
                 -webkit-backdrop-filter: blur(8px);
                 
-                /* Center cutout reduced to 50% width and 65% height */
-                -webkit-mask-image: radial-gradient(ellipse 35% 50% at 50% 50%, transparent 95%, black 100%);
-                mask-image: radial-gradient(ellipse 35% 50% at 50% 50%, transparent 95%, black 100%);
+                /* Center cutout reduced to 30% width and 45% height */
+                -webkit-mask-image: radial-gradient(ellipse 30% 45% at 50% 50%, transparent 95%, black 100%);
+                mask-image: radial-gradient(ellipse 30% 45% at 50% 50%, transparent 95%, black 100%);
             }
 
             /* Green Outline: Matching the mask size above */
@@ -245,8 +245,8 @@
                 left: 50%;
                 transform: translate(-50%, -50%);
                 /* Size matched to mask dimensions (50% x 65%) */
-                width: 35%; 
-                height: 50%;
+                width: 60%; 
+                height: 90%;
                 border: 2px solid #00ff88;
                 border-radius: 50% 50% 50% 50% / 45% 45% 55% 55%;
                 box-shadow: 0 0 15px rgba(0, 255, 136, 0.5), inset 0 0 10px rgba(0, 255, 136, 0.2);
@@ -341,13 +341,13 @@
                 }
 
                 .face-guide {
-                    -webkit-mask-image: radial-gradient(ellipse 40% 55% at 50% 50%, transparent 95%, black 100%);
-                    mask-image: radial-gradient(ellipse 40% 55% at 50% 50%, transparent 95%, black 100%);
+                    -webkit-mask-image: radial-gradient(ellipse 30% 45% at 50% 50%, transparent 95%, black 100%);
+                    mask-image: radial-gradient(ellipse 30% 45% at 50% 50%, transparent 95%, black 100%);
                 }
 
                 .face-guide::after {
-                    width: 40%;
-                    height: 55%;
+                    width: 60%;
+                    height: 90%;
                     border: 2px solid #00ff88;
                     border-radius: 50%;
                 }
@@ -731,15 +731,44 @@
                 canvas.height = video.videoHeight;
                 const context = canvas.getContext('2d');
                 
+                // Disable mirroring if using front camera (user)
                 if (currentFacingMode === 'user') {
-                    // Apply mirroring only for the front camera
                     context.translate(canvas.width, 0);
                     context.scale(-1, 1);
                 }
 
-                context.drawImage(video, 0, 0, canvas.width, canvas.height);
+                // --- FIX: SINGLE VARIABLE DECLARATION ---
+                const centerX = canvas.width / 2;
+                const centerY = canvas.height / 2;
+                
+                // Use the same ratios as CSS (60% width, 90% height)
+                const radiusX = (canvas.width * 0.60) / 2; 
+                const radiusY = (canvas.height * 0.90) / 2;
 
-                // Hide the switch button during analysis
+                // A. Draw blurred background (Blur)
+                context.filter = 'blur(20px) brightness(0.5)'; 
+                context.drawImage(video, 0, 0, canvas.width, canvas.height);
+                context.filter = 'none'; // Reset filter
+
+                // B. Create a sharp "cutout" area
+                context.save();
+                context.beginPath();
+                context.ellipse(centerX, centerY, radiusX, radiusY, 0, 0, 2 * Math.PI);
+                context.clip(); 
+
+                // C. Draw sharp original video inside the oval cutout
+                context.drawImage(video, 0, 0, canvas.width, canvas.height);
+                context.restore(); 
+
+                // D. Draw green border (Stroke) to match guide style
+                context.beginPath();
+                context.ellipse(centerX, centerY, radiusX, radiusY, 0, 0, 2 * Math.PI);
+                context.strokeStyle = '#00ff88';
+                context.lineWidth = Math.max(4, canvas.width * 0.005); 
+                context.stroke();
+                // -------------------------------------------------
+
+                // Hide other UI elements
                 switchBtn.style.display = 'none';
                 guide.style.display = 'none';
                 video.style.display = 'none';
@@ -754,73 +783,37 @@
                 try {
                     await new Promise(r => setTimeout(r, 2000));
 
-                    // DETECTION: Ensure withFaceLandmarks() is used
+                    // Run face detection on the modified canvas
                     const detections = await faceapi.detectSingleFace(
                         canvas, 
-                        new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }) // Menggunakan SSD
+                        new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 })
                     ).withFaceLandmarks();
 
                     scanner.style.display = 'none';
 
                     if (detections) {
-                        // ... (after the detections variable is obtained)
                         const points = detections.landmarks.positions;
-
-                        // Key Landmarks
                         const jawLeft = points[0];
                         const jawRight = points[16];
                         const chin = points[8];
                         const eyebrowLeft = points[17];
                         const eyebrowRight = points[26];
-                        const leftCheek = points[2];
-                        const rightCheek = points[14];
-
-                        // 1. Dimension Measurement
-                        const faceWidth = Math.sqrt(Math.pow(jawRight.x - jawLeft.x, 2) + Math.pow(jawRight.y - jawLeft.y, 2));
-                        const foreheadWidth = Math.sqrt(Math.pow(eyebrowRight.x - eyebrowLeft.x, 2) + Math.pow(eyebrowRight.y - eyebrowLeft.y, 2));
-                        const cheekWidth = Math.sqrt(Math.pow(rightCheek.x - leftCheek.x, 2) + Math.pow(rightCheek.y - leftCheek.y, 2));
-
-                        // Estimated Face Height (Eyebrows to Chin with forehead factor)
                         const eyeBrowY = (eyebrowLeft.y + eyebrowRight.y) / 2;
+                        
+                        const faceWidth = Math.sqrt(Math.pow(jawRight.x - jawLeft.x, 2) + Math.pow(jawRight.y - jawLeft.y, 2));
                         const faceHeight = Math.abs(chin.y - eyeBrowY) * 1.5; 
-
                         const ratio = faceHeight / faceWidth;
 
-                        // 2. Multi-Factor Classification Logic
                         let shape = "";
+                        if (ratio > 1.6) shape = "OVAL / LONG";
+                        else if (ratio <= 1.35) shape = "SQUARE / ROUND";
+                        else shape = "DIAMOND / HEART";
 
-                        if (ratio > 1.6) {
-                            shape = "OVAL / LONG"; // Long face; rectangular or Wayfarer-style glasses are a good fit
-                        } else if (ratio <= 1.35) {
-                            // Distinguishing between Square and Round shapes
-                            // Compare jaw width with cheekbone width
-                            if (faceWidth > cheekWidth * 0.95) {
-                                shape = "SQUARE"; // Broad and defined jawline
-                            } else {
-                                shape = "ROUND"; // Jawline narrower than cheeks and curved
-                            }
-                        } else if (foreheadWidth > faceWidth * 0.85) {
-                            shape = "HEART"; // Wide forehead, pointed chin
-                        } else {
-                            shape = "DIAMOND"; // Cheekbones are the most dominant feature
-                        }
-
-                        // ENSURE VIDEO IS HIDDEN AND CANVAS IS VISIBLE
-                        video.style.display = 'none';
-                        canvas.style.display = 'block';
-                        canvas.style.margin = '0 auto';
-
-                        // FORCE RESULT BOX TO APPEAR AND STAY IN FRONT
-                        resultBox.style.display = 'block'; 
-                        resultBox.style.zIndex = '100'; 
-                        resultBox.style.position = 'relative';
-                        
-                        // Update result text
                         resultBox.innerHTML = `
                             <div style="color: var(--text-muted); font-size: 0.7rem; margin-bottom: 5px;">ANALYSIS RESULT:</div>
                             <b style="color: #00ff88; font-size: 1.5rem; text-shadow: 0 0 10px rgba(0,255,136,0.5);">${shape}</b>
                             <div style="font-size: 10px; color: #888; margin-top: 5px;">
-                                Ratio: ${ratio.toFixed(2)} | Width: ${Math.round(faceWidth)}px
+                                Focus Area Captured | Ratio: ${ratio.toFixed(2)}
                             </div>
                         `;
 
@@ -836,7 +829,6 @@
                     }
                 } catch (err) {
                     scanner.style.display = 'none';
-                    console.error(err); // Log original error for debugging
                     resultBox.innerHTML = `<b style='color:#ff4d4d;'>${err.message}. TRY AGAIN.</b>`;
                     scanBtn.innerHTML = '<div class="led"></div> RETAKE';
                     scanBtn.onclick = () => {
