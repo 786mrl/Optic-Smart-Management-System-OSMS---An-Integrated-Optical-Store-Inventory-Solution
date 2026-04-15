@@ -186,6 +186,36 @@
                 padding: 3px 8px;
             }
 
+            .pd-row {
+                display: flex;
+                gap: 8px;
+                margin-top: 10px;
+                flex-wrap: wrap;
+                justify-content: center;
+            }
+            .pd-chip {
+                font-size: 11px;
+                font-weight: 700;
+                color: #00cfff;
+                background: rgba(0, 207, 255, 0.08);
+                border: 1px solid rgba(0, 207, 255, 0.25);
+                border-radius: 20px;
+                padding: 4px 10px;
+                letter-spacing: 0.5px;
+            }
+            .pd-chip.total {
+                color: #fff;
+                background: rgba(0, 207, 255, 0.18);
+                border-color: rgba(0, 207, 255, 0.5);
+                font-size: 12px;
+            }
+            .pd-note {
+                font-size: 9px;
+                color: #444;
+                margin-top: 4px;
+                text-align: center;
+            }
+
             /* Loading state */
             .mp-loading {
                 display: flex;
@@ -843,6 +873,7 @@
                 let frameBuffer  = [];         // buffer beberapa frame untuk smoothing
                 const STABLE_THRESHOLD = 8;    // frame stabil sebelum auto-lock
                 const BUFFER_SIZE = 5;
+                let lastPD       = null;        // menyimpan hasil PD terakhir
 
                 // ----------------------------------------------------------------
                 // LOAD MediaPipe — Sequential (wajib berurutan untuk mobile)
@@ -995,6 +1026,9 @@
                     // Analisis bentuk wajah
                     const analysis = analyzeFaceShape(landmarks);
 
+                    // Hitung PD setiap frame
+                    lastPD = measurePD(landmarks);
+
                     // Smoothing: masukkan ke buffer
                     frameBuffer.push(analysis.shape);
                     if (frameBuffer.length > BUFFER_SIZE) frameBuffer.shift();
@@ -1065,7 +1099,68 @@
                     ctx.lineWidth   = 1.5;
                     ctx.stroke();
 
+                    // Gambar titik pupil jika iris landmark tersedia (refineLandmarks: true)
+                    const rp = lm[468]; // pupil kanan (dari perspektif kamera)
+                    const lp = lm[473]; // pupil kiri
+                    if (rp && lp) {
+                        [rp, lp].forEach(p => {
+                            ctx.beginPath();
+                            ctx.arc(p.x * W, p.y * H, 5, 0, 2 * Math.PI);
+                            ctx.fillStyle   = 'rgba(0, 207, 255, 0.9)';
+                            ctx.fill();
+                            ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+                            ctx.lineWidth   = 1.5;
+                            ctx.stroke();
+                        });
+                        // Garis penghubung antar pupil
+                        ctx.beginPath();
+                        ctx.moveTo(rp.x * W, rp.y * H);
+                        ctx.lineTo(lp.x * W, lp.y * H);
+                        ctx.strokeStyle = 'rgba(0, 207, 255, 0.4)';
+                        ctx.lineWidth   = 1;
+                        ctx.setLineDash([4, 4]);
+                        ctx.stroke();
+                        ctx.setLineDash([]);
+                    }
+
                     ctx.restore();
+                }
+
+                // ----------------------------------------------------------------
+                // PENGUKURAN PD (Pupillary Distance)
+                // Menggunakan iris landmarks (468 = kanan, 473 = kiri)
+                // refineLandmarks: true wajib aktif agar landmark iris tersedia
+                // Kalibrasi: lebar wajah antara tragus (landmark 234–454) ≈ 142 mm rata-rata
+                // ----------------------------------------------------------------
+                function measurePD(lm) {
+                    const W = canvas.width;
+                    const H = canvas.height;
+
+                    const rPupil = lm[468]; // iris kanan (dari perspektif kamera = mata kiri pasien = OS)
+                    const lPupil = lm[473]; // iris kiri  (dari perspektif kamera = mata kanan pasien = OD)
+                    if (!rPupil || !lPupil) return null;
+
+                    // Jarak pixel antara kedua pupil
+                    const dx   = (lPupil.x - rPupil.x) * W;
+                    const dy   = (lPupil.y - rPupil.y) * H;
+                    const pdPx = Math.sqrt(dx * dx + dy * dy);
+
+                    // Kalibrasi: gunakan lebar wajah (tragus-to-tragus) sebagai referensi
+                    const fL = lm[LM.JAW_LEFT];
+                    const fR = lm[LM.JAW_RIGHT];
+                    const faceWidthPx = Math.abs((fR.x - fL.x) * W);
+                    if (faceWidthPx < 10) return null; // wajah terlalu kecil / tidak terdeteksi
+
+                    const FACE_REF_MM  = 142;   // rata-rata lebar wajah dewasa tragus-to-tragus
+                    const mmPerPx      = FACE_REF_MM / faceWidthPx;
+                    const pdTotal      = +(pdPx * mmPerPx).toFixed(1);
+
+                    // PD Monocular — dari pusat hidung (landmark 168) ke masing-masing pupil
+                    const nose  = lm[LM.FACE_CENTER];
+                    const pdOD  = +(Math.abs((lPupil.x - nose.x) * W) * mmPerPx).toFixed(1); // OD = kanan pasien = lPupil di kamera
+                    const pdOS  = +(Math.abs((rPupil.x - nose.x) * W) * mmPerPx).toFixed(1); // OS = kiri pasien  = rPupil di kamera
+
+                    return { total: pdTotal, od: pdOD, os: pdOS };
                 }
 
                 // ----------------------------------------------------------------
@@ -1261,6 +1356,15 @@
                         OBLONG: '▬', HEART: '♥', DIAMOND: '◆', TRIANGLE: '▼'
                     };
 
+                    const pdHtml = lastPD
+                        ? `<div class="pd-row">
+                            <span class="pd-chip total">PD ${lastPD.total} mm</span>
+                            <span class="pd-chip">OD ${lastPD.od} mm</span>
+                            <span class="pd-chip">OS ${lastPD.os} mm</span>
+                           </div>
+                           <div class="pd-note">*estimasi — kalibrasi lebar wajah 142mm</div>`
+                        : `<div class="pd-note" style="margin-top:8px;color:#555;">Menunggu deteksi iris...</div>`;
+
                     resultBox.innerHTML = `
                         <div style="font-size: 0.65rem; color: var(--text-muted); margin-bottom: 4px; letter-spacing: 1px;">
                             LIVE DETECTION ${isStable ? '— <span style="color:#00ff88">LOCKED ✓</span>' : ''}
@@ -1277,6 +1381,7 @@
                             <span class="metric-chip">Rahang ${m.jawRatio}</span>
                             <span class="metric-chip">Dagu ${m.chinAngle}°</span>
                         </div>
+                        ${pdHtml}
                         ${!isStable ? `
                         <div style="font-size: 10px; color: #555; margin-top: 8px;">
                             Stabilizing... ${stable}/${STABLE_THRESHOLD}
@@ -1295,6 +1400,7 @@
 
                     const conf = analysis.confidence;
                     const m    = analysis.metrics;
+                    const pd   = lastPD; // simpan snapshot PD saat di-freeze
 
                     // Tampilkan top 3 bentuk
                     const top3 = Object.entries(analysis.percentages)
@@ -1310,6 +1416,20 @@
                         DIAMOND:  'Tulang pipi menonjol, dahi & rahang lebih sempit.',
                         TRIANGLE: 'Rahang lebih lebar dari dahi, wajah membesar ke bawah.'
                     };
+
+                    const pdHtml = pd
+                        ? `<div style="margin-top:12px; padding:10px 15px; background:rgba(0,207,255,0.07); border:1px solid rgba(0,207,255,0.2); border-radius:12px; width:90%;">
+                            <div style="font-size:0.6rem;color:var(--text-muted);letter-spacing:1px;margin-bottom:6px;">PUPILLARY DISTANCE</div>
+                            <div class="pd-row" style="margin-top:0;">
+                                <span class="pd-chip total">PD Total ${pd.total} mm</span>
+                            </div>
+                            <div class="pd-row" style="margin-top:6px;">
+                                <span class="pd-chip">OD (Kanan) ${pd.od} mm</span>
+                                <span class="pd-chip">OS (Kiri) ${pd.os} mm</span>
+                            </div>
+                            <div class="pd-note" style="margin-top:5px;">*estimasi kalibrasi lebar wajah 142mm</div>
+                           </div>`
+                        : `<div style="font-size:10px;color:#555;margin-top:8px;">Data iris tidak tersedia</div>`;
 
                     resultBox.innerHTML = `
                         <div style="font-size: 0.65rem; color: var(--text-muted); letter-spacing: 1px; margin-bottom: 6px;">
@@ -1332,6 +1452,7 @@
                             <span class="metric-chip">Rahang ${m.jawRatio}</span>
                             <span class="metric-chip">Dagu ${m.chinAngle}°</span>
                         </div>
+                        ${pdHtml}
                     `;
 
                     freezeBtn.innerHTML = '<div class="led"></div> ULANGI SCAN';
@@ -1348,6 +1469,7 @@
                     lastShape   = null;
                     frameBuffer = [];
                     lastAnalysis = null;
+                    lastPD       = null;
                     guide.classList.remove('locked');
                     freezeBtn.innerHTML = '<div class="led"></div> FREEZE &amp; LOCK';
                     freezeBtn.onclick   = () => { if (lastShape && lastAnalysis) freezeResult(lastShape, lastAnalysis); };
