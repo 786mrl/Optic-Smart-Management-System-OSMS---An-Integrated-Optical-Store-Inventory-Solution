@@ -216,6 +216,43 @@
                 text-align: center;
             }
 
+            /* Step indicator */
+            .mp-step {
+                display: flex;
+                align-items: center;
+                gap: 5px;
+                font-size: 9px;
+                letter-spacing: 1px;
+                color: #444;
+                padding: 4px 8px;
+                border-radius: 20px;
+                border: 1px solid rgba(255,255,255,0.05);
+                background: rgba(255,255,255,0.03);
+                transition: all 0.3s;
+            }
+            .mp-step.active {
+                color: #00ff88;
+                border-color: rgba(0,255,136,0.3);
+                background: rgba(0,255,136,0.06);
+            }
+            .mp-step.done {
+                color: #00cfff;
+                border-color: rgba(0,207,255,0.2);
+            }
+            .mp-step .step-num {
+                width: 16px;
+                height: 16px;
+                border-radius: 50%;
+                background: rgba(255,255,255,0.06);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-weight: 700;
+                font-size: 9px;
+            }
+            .mp-step.active .step-num { background: rgba(0,255,136,0.2); }
+            .step-arrow { color: #333; font-size: 14px; line-height: 1; }
+
             /* Loading state */
             .mp-loading {
                 display: flex;
@@ -702,27 +739,82 @@
                         <div class="full">
                             <div class="prescription-container" style="text-align: center;">
                                 <label>FACE SHAPE ANALYSIS</label>
-                                <p class="scan-instruction">Posisikan wajah di dalam garis hijau — deteksi otomatis</p>
 
-                                <div class="mp-wrapper">
-                                    <video id="mp-video" autoplay muted playsinline></video>
-                                    <canvas id="mp-canvas"></canvas>
-                                    <div class="mp-guide" id="mp-guide"></div>
+                                <!-- STEP INDICATOR -->
+                                <div id="mp-steps" style="display:flex;justify-content:center;gap:6px;margin-bottom:14px;">
+                                    <div class="mp-step active" id="step1-ind">
+                                        <span class="step-num">1</span> KAMERA
+                                    </div>
+                                    <div class="step-arrow">›</div>
+                                    <div class="mp-step" id="step2-ind">
+                                        <span class="step-num">2</span> CAPTURE
+                                    </div>
+                                    <div class="step-arrow">›</div>
+                                    <div class="mp-step" id="step3-ind">
+                                        <span class="step-num">3</span> ANALISA
+                                    </div>
                                 </div>
 
-                                <div id="mp-result" class="read-only-box" style="color: #00ff88;">
-                                    READY TO SCAN...
+                                <!-- LIVE CAMERA VIEW -->
+                                <div id="mp-live-view">
+                                    <p class="scan-instruction" id="mp-instruction">Posisikan wajah di dalam garis hijau</p>
+                                    <div class="mp-wrapper">
+                                        <video id="mp-video" autoplay muted playsinline></video>
+                                        <canvas id="mp-canvas"></canvas>
+                                        <div class="mp-guide" id="mp-guide"></div>
+                                        <!-- Pose quality indicators -->
+                                        <div id="mp-pose-indicator" style="position:absolute;bottom:10px;left:50%;transform:translateX(-50%);z-index:30;display:none;">
+                                            <div id="pose-warn" style="background:rgba(255,100,0,0.85);color:#fff;font-size:10px;padding:4px 10px;border-radius:20px;letter-spacing:1px;"></div>
+                                        </div>
+                                    </div>
+                                    <!-- BRIGHTNESS / POSE QUALITY BAR -->
+                                    <div id="quality-bar-wrap" style="display:none;margin-top:8px;">
+                                        <div style="font-size:9px;color:#555;letter-spacing:1px;margin-bottom:3px;">KUALITAS POSISI</div>
+                                        <div style="width:100%;height:5px;background:rgba(255,255,255,0.08);border-radius:3px;overflow:hidden;">
+                                            <div id="quality-bar-fill" style="height:100%;border-radius:3px;background:linear-gradient(90deg,#ff4d4d,#ffaa00,#00ff88);width:0%;transition:width 0.3s;"></div>
+                                        </div>
+                                    </div>
                                 </div>
 
-                                <div class="selection-wrapper" style="margin-top: 15px;">
+                                <!-- CAPTURED PHOTO VIEW (hidden initially) -->
+                                <div id="mp-captured-view" style="display:none;">
+                                    <p class="scan-instruction" style="color:#00cfff;">📸 Foto diambil — siap dianalisa</p>
+                                    <div class="mp-wrapper" style="position:relative;">
+                                        <canvas id="mp-photo-canvas" style="width:100%;height:100%;object-fit:cover;border-radius:20px;"></canvas>
+                                        <!-- Retake overlay button -->
+                                        <button type="button" id="mp-retake-overlay" style="position:absolute;top:10px;right:10px;background:rgba(0,0,0,0.6);border:1px solid #555;color:#fff;border-radius:20px;padding:5px 12px;font-size:10px;z-index:30;cursor:pointer;">
+                                            ↩ ULANG
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <!-- RESULT BOX -->
+                                <div id="mp-result" class="read-only-box" style="color: #00ff88; flex-direction:column; min-height:90px; padding:15px; margin-top:15px;">
+                                    <span style="color:var(--text-muted);font-size:0.75rem">Tekan START CAMERA untuk mulai</span>
+                                </div>
+
+                                <!-- FRAME RECOMMENDATION BOX (hidden until result) -->
+                                <div id="mp-frame-rec" style="display:none; margin-top:12px; padding:14px 16px; background:rgba(255,170,0,0.06); border:1px solid rgba(255,170,0,0.2); border-radius:14px; text-align:left;">
+                                    <div style="font-size:0.6rem;color:#ffaa00;letter-spacing:1px;margin-bottom:8px;text-align:center;">✦ REKOMENDASI FRAME KACAMATA</div>
+                                    <div id="frame-rec-content"></div>
+                                </div>
+
+                                <!-- BUTTON ROW -->
+                                <div class="selection-wrapper" style="margin-top: 15px; flex-wrap:wrap; gap:8px;">
                                     <button type="button" class="neu-btn" id="mp-start-btn">
                                         <div class="led"></div> START CAMERA
                                     </button>
                                     <button type="button" class="neu-btn" id="mp-switch-btn" style="display:none;">
-                                        <div class="led"></div> SWITCH CAMERA
+                                        <div class="led"></div> SWITCH CAM
                                     </button>
-                                    <button type="button" class="neu-btn" id="mp-freeze-btn" style="display:none;">
-                                        <div class="led"></div> FREEZE &amp; LOCK
+                                    <button type="button" class="neu-btn" id="mp-capture-btn" style="display:none; border-color:rgba(0,255,136,0.4);">
+                                        <div class="led" style="background:#00ff88;box-shadow:0 0 6px #00ff88;"></div> 📸 CAPTURE
+                                    </button>
+                                    <button type="button" class="neu-btn" id="mp-analyze-btn" style="display:none; border-color:rgba(0,207,255,0.4);">
+                                        <div class="led" style="background:#00cfff;box-shadow:0 0 6px #00cfff;"></div> ANALISA
+                                    </button>
+                                    <button type="button" class="neu-btn" id="mp-reset-btn" style="display:none;">
+                                        <div class="led"></div> ULANGI SCAN
                                     </button>
                                 </div>
                             </div>
@@ -808,85 +900,122 @@
             
             (function() {
 
-                // === Indeks landmark penting di MediaPipe Face Mesh ===
-                // Referensi: https://github.com/google/mediapipe/blob/master/mediapipe/modules/face_geometry/data/canonical_face_model_uv_visualization.png
+                // ============================================================
+                // LANDMARK INDEX MAP (MediaPipe Face Mesh 468+10 iris points)
+                // ============================================================
                 const LM = {
-                    // Kontur rahang (oval luar wajah)
-                    JAW_LEFT:      234,   // ujung kiri rahang
-                    JAW_RIGHT:     454,   // ujung kanan rahang
-                    JAW_L1:        172,   // rahang kiri dalam
-                    JAW_R1:        397,   // rahang kanan dalam
-                    JAW_L2:        136,   // sudut rahang kiri
-                    JAW_R2:        365,   // sudut rahang kanan
-                    CHIN:          152,   // ujung dagu terbawah
-                    CHIN_L:        176,   // dagu kiri
-                    CHIN_R:        400,   // dagu kanan
-
-                    // Dahi & pelipis
-                    TEMPLE_L:      162,   // pelipis kiri
-                    TEMPLE_R:      389,   // pelipis kanan
-                    FOREHEAD_TOP:  10,    // ubun-ubun (estimasi dahi atas)
-
-                    // Tulang pipi
-                    CHEEK_L:       123,   // tulang pipi kiri
-                    CHEEK_R:       352,   // tulang pipi kanan
+                    JAW_LEFT:      234,
+                    JAW_RIGHT:     454,
+                    JAW_L1:        172,
+                    JAW_R1:        397,
+                    JAW_L2:        136,
+                    JAW_R2:        365,
+                    CHIN:          152,
+                    CHIN_L:        176,
+                    CHIN_R:        400,
+                    TEMPLE_L:      162,
+                    TEMPLE_R:      389,
+                    FOREHEAD_TOP:  10,
+                    // Additional forehead landmarks for improved estimation
+                    FOREHEAD_L:    103,
+                    FOREHEAD_R:    332,
+                    FOREHEAD_MID:  9,
+                    CHEEK_L:       123,
+                    CHEEK_R:       352,
                     CHEEK_L2:      116,
                     CHEEK_R2:      345,
-
-                    // Alis (untuk estimasi tinggi dahi)
                     BROW_L:        70,
                     BROW_R:        300,
                     BROW_L_INNER:  55,
                     BROW_R_INNER:  285,
-
-                    // Mata
+                    BROW_L_TOP:    52,   // top of left eyebrow
+                    BROW_R_TOP:    282,  // top of right eyebrow
                     EYE_L_OUTER:   33,
                     EYE_R_OUTER:   263,
-
-                    // Hidung
+                    EYE_L_INNER:   133,
+                    EYE_R_INNER:   362,
+                    EYE_L_TOP:     159,
+                    EYE_R_TOP:     386,
+                    EYE_L_BOT:     145,
+                    EYE_R_BOT:     374,
                     NOSE_TIP:      4,
-
-                    // Mulut (untuk proporsi bawah wajah)
+                    NOSE_ROOT:     6,    // bridge of nose
                     MOUTH_L:       61,
                     MOUTH_R:       291,
-
-                    // Titik tengah wajah
+                    MOUTH_TOP:     13,
+                    MOUTH_BOT:     14,
                     FACE_CENTER:   168,
                 };
 
-                const video     = document.getElementById('mp-video');
-                const canvas    = document.getElementById('mp-canvas');
-                const guide     = document.getElementById('mp-guide');
-                const resultBox = document.getElementById('mp-result');
-                const startBtn  = document.getElementById('mp-start-btn');
-                const switchBtn = document.getElementById('mp-switch-btn');
-                const freezeBtn = document.getElementById('mp-freeze-btn');
-                const ctx       = canvas.getContext('2d');
+                // ============================================================
+                // DOM ELEMENTS
+                // ============================================================
+                const video         = document.getElementById('mp-video');
+                const canvas        = document.getElementById('mp-canvas');
+                const photoCanvas   = document.getElementById('mp-photo-canvas');
+                const guide         = document.getElementById('mp-guide');
+                const resultBox     = document.getElementById('mp-result');
+                const frameRecBox   = document.getElementById('mp-frame-rec');
+                const frameRecContent = document.getElementById('frame-rec-content');
+                const startBtn      = document.getElementById('mp-start-btn');
+                const switchBtn     = document.getElementById('mp-switch-btn');
+                const captureBtn    = document.getElementById('mp-capture-btn');
+                const analyzeBtn    = document.getElementById('mp-analyze-btn');
+                const resetBtn      = document.getElementById('mp-reset-btn');
+                const liveView      = document.getElementById('mp-live-view');
+                const capturedView  = document.getElementById('mp-captured-view');
+                const retakeOverlay = document.getElementById('mp-retake-overlay');
+                const poseIndicator = document.getElementById('mp-pose-indicator');
+                const poseWarn      = document.getElementById('pose-warn');
+                const qualityWrap   = document.getElementById('quality-bar-wrap');
+                const qualityFill   = document.getElementById('quality-bar-fill');
+                const glassesCal    = { style: { display: '' } }; // dummy — elemen dihapus
+                const step1Ind      = document.getElementById('step1-ind');
+                const step2Ind      = document.getElementById('step2-ind');
+                const step3Ind      = document.getElementById('step3-ind');
+                const ctx           = canvas.getContext('2d');
+                const pCtx          = photoCanvas.getContext('2d');
 
-                let faceMesh     = null;
-                let camera       = null;
-                let facingMode   = 'user';
-                let isRunning    = false;
-                let isFrozen     = false;
-                let lastShape    = null;
-                let stableCount  = 0;          // jumlah frame stabil berturut-turut
-                let frameBuffer  = [];         // buffer beberapa frame untuk smoothing
-                const STABLE_THRESHOLD = 8;    // frame stabil sebelum auto-lock
-                const BUFFER_SIZE = 5;
-                let lastPD       = null;        // menyimpan hasil PD terakhir
+                // ============================================================
+                // STATE
+                // ============================================================
+                let faceMesh         = null;
+                let facingMode       = 'user';
+                let isRunning        = false;
+                let isCaptured       = false;
+                let rafId            = null;
+                let lastPD           = null;
+                let capturedLM       = null;
+                let pdBuffer         = [];
+                let shapeBuffer      = [];
+                let metricsBuffer    = [];
+                let qualityScore     = 0;
+                const PD_BUFFER_SIZE    = 30;
+                const SHAPE_BUFFER_SIZE = 15;
 
-                // ----------------------------------------------------------------
-                // LOAD MediaPipe — Sequential (wajib berurutan untuk mobile)
-                // ----------------------------------------------------------------
+                // Kalibrasi: rata-rata lebar wajah dewasa tragus-to-tragus
+                const faceRefMM = 142;
+
+                // ============================================================
+                // STEP UI HELPER
+                // ============================================================
+                function setStep(n) {
+                    [step1Ind, step2Ind, step3Ind].forEach((el, i) => {
+                        el.classList.toggle('active', i < n);
+                        el.classList.toggle('done', i < n - 1);
+                    });
+                }
+
+                // ============================================================
+                // LOAD MediaPipe — Sequential
+                // ============================================================
                 function loadMediaPipe() {
                     resultBox.innerHTML = `<div class="mp-loading"><div class="spinner"></div> MEMUAT MEDIAPIPE...</div>`;
-
                     const scripts = [
                         'https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js',
                         'https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js',
                         'https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js'
                     ];
-
                     function loadNext(index) {
                         if (index >= scripts.length) { initFaceMesh(); return; }
                         const s = document.createElement('script');
@@ -902,96 +1031,72 @@
                     loadNext(0);
                 }
 
-                // ----------------------------------------------------------------
+                // ============================================================
                 // INIT FACE MESH
-                // ----------------------------------------------------------------
+                // ============================================================
                 function initFaceMesh() {
                     resultBox.innerHTML = `<div class="mp-loading"><div class="spinner"></div> INISIALISASI MODEL 3D...</div>`;
-
                     faceMesh = new FaceMesh({
                         locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
                     });
-
                     faceMesh.setOptions({
                         maxNumFaces: 1,
-                        refineLandmarks: true,       // aktifkan iris + mesh detail
-                        minDetectionConfidence: 0.6,
-                        minTrackingConfidence: 0.6
+                        refineLandmarks: true,
+                        minDetectionConfidence: 0.65,
+                        minTrackingConfidence: 0.65
                     });
-
                     faceMesh.onResults(onResults);
-
                     startCamera();
                 }
 
-                // ----------------------------------------------------------------
-                // START KAMERA — Pakai RAF manual, bukan new Camera() (iOS fix)
-                // ----------------------------------------------------------------
-                let rafId = null;
-
+                // ============================================================
+                // START CAMERA — RAF loop (iOS-compatible)
+                // ============================================================
                 function startCamera() {
-                    // Stop RAF loop lama jika ada
                     if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
-
-                    // Stop stream lama
                     if (video.srcObject) {
                         video.srcObject.getTracks().forEach(t => t.stop());
                         video.srcObject = null;
                     }
-
-                    // Constraints ramah mobile
                     const constraints = {
-                        video: {
-                            facingMode: { ideal: facingMode },
-                            width:  { ideal: 640, max: 1280 },
-                            height: { ideal: 480, max: 720 }
-                        },
+                        video: { facingMode: { ideal: facingMode }, width: { ideal: 640, max: 1280 }, height: { ideal: 480, max: 720 } },
                         audio: false
                     };
-
                     navigator.mediaDevices.getUserMedia(constraints)
                     .then(stream => {
                         video.srcObject = stream;
-
-                        // Untuk iOS Safari: harus ada interaksi user sebelum play
                         video.setAttribute('playsinline', true);
                         video.setAttribute('muted', true);
                         video.muted = true;
-
-                        const playPromise = video.play();
-                        if (playPromise !== undefined) {
-                            playPromise.catch(() => { video.play(); });
-                        }
-
+                        const pp = video.play();
+                        if (pp !== undefined) pp.catch(() => video.play());
                         video.onloadedmetadata = () => {
                             canvas.width  = video.videoWidth  || 640;
                             canvas.height = video.videoHeight || 480;
-
                             isRunning = true;
-                            startBtn.innerHTML      = '<div class="led"></div> CAMERA AKTIF';
-                            switchBtn.style.display = 'inline-block';
-                            freezeBtn.style.display = 'inline-block';
-                            resultBox.innerHTML     = `<span style="color:var(--text-muted);font-size:0.75rem">Posisikan wajah Anda...</span>`;
-
-                            // Mulai loop RAF — lebih kompatibel dengan iOS vs new Camera()
+                            isCaptured = false;
+                            startBtn.innerHTML       = '<div class="led"></div> CAMERA AKTIF';
+                            switchBtn.style.display  = 'inline-block';
+                            captureBtn.style.display = 'inline-block';
+                            qualityWrap.style.display   = 'block';
+                            poseIndicator.style.display = 'block';
+                            resultBox.innerHTML = `<span style="color:var(--text-muted);font-size:0.75rem">Posisikan wajah Anda...</span>`;
+                            setStep(2);
                             let processing = false;
                             async function rafLoop() {
-                                if (!isFrozen && !processing && video.readyState >= 2) {
+                                if (!isCaptured && !processing && video.readyState >= 2) {
                                     processing = true;
-                                    try {
-                                        await faceMesh.send({ image: video });
-                                    } catch(e) { /* abaikan error frame individual */ }
+                                    try { await faceMesh.send({ image: video }); } catch(e) {}
                                     processing = false;
                                 }
                                 rafId = requestAnimationFrame(rafLoop);
                             }
                             rafLoop();
                         };
-
                     }).catch(err => {
                         let msg = err.message;
-                        if (err.name === 'NotAllowedError')  msg = 'Izin kamera ditolak. Buka Pengaturan → izinkan kamera untuk browser ini.';
-                        if (err.name === 'NotFoundError')    msg = 'Kamera tidak ditemukan di perangkat ini.';
+                        if (err.name === 'NotAllowedError')  msg = 'Izin kamera ditolak. Buka Pengaturan → izinkan kamera.';
+                        if (err.name === 'NotFoundError')    msg = 'Kamera tidak ditemukan.';
                         if (err.name === 'NotReadableError') msg = 'Kamera sedang digunakan aplikasi lain.';
                         resultBox.innerHTML = `<b style="color:#ff4d4d">ERROR: ${msg}</b>`;
                         startBtn.disabled  = false;
@@ -999,534 +1104,531 @@
                     });
                 }
 
-                // ----------------------------------------------------------------
-                // CALLBACK HASIL DETEKSI
-                // ----------------------------------------------------------------
+                // ============================================================
+                // POSE QUALITY DETECTION (yaw / pitch / size) → returns 0–100
+                // ============================================================
+                function detectPoseQuality(lm) {
+                    const nose = lm[LM.NOSE_TIP], eyeL = lm[LM.EYE_L_OUTER], eyeR = lm[LM.EYE_R_OUTER];
+                    const distL = Math.abs(nose.x - eyeL.x), distR = Math.abs(nose.x - eyeR.x);
+                    const yawRatio = Math.min(distL, distR) / (Math.max(distL, distR) + 0.001);
+                    const brow = lm[LM.BROW_L], chin = lm[LM.CHIN];
+                    const noseRelY = (nose.y - brow.y) / ((chin.y - brow.y) + 0.001);
+                    const pitchScore = 1 - Math.min(1, Math.abs(noseRelY - 0.45) * 4);
+                    const W = canvas.width;
+                    const faceW = Math.abs(lm[LM.JAW_LEFT].x - lm[LM.JAW_RIGHT].x) * W;
+                    const sizeScore = (faceW > 80 && faceW < W * 0.85) ? 1 : 0.3;
+                    return Math.round(Math.min(100, (yawRatio * 0.5 + pitchScore * 0.3 + sizeScore * 0.2) * 100));
+                }
+
+                function getPoseWarning(lm) {
+                    const nose = lm[LM.NOSE_TIP], eyeL = lm[LM.EYE_L_OUTER], eyeR = lm[LM.EYE_R_OUTER];
+                    const distL = Math.abs(nose.x - eyeL.x), distR = Math.abs(nose.x - eyeR.x);
+                    const yaw = Math.min(distL, distR) / (Math.max(distL, distR) + 0.001);
+                    if (yaw < 0.65) return distL < distR ? '← Hadap kanan sedikit' : 'Hadap kiri sedikit →';
+                    const W = canvas.width;
+                    const faceW = Math.abs(lm[LM.JAW_LEFT].x - lm[LM.JAW_RIGHT].x) * W;
+                    if (faceW < 80)    return '↔ Lebih dekat ke kamera';
+                    if (faceW > W * 0.85) return '↔ Lebih jauh dari kamera';
+                    return null;
+                }
+
+                // ============================================================
+                // LIVE DETECTION CALLBACK
+                // ============================================================
                 function onResults(results) {
                     if (canvas.width !== video.videoWidth) {
                         canvas.width  = video.videoWidth;
                         canvas.height = video.videoHeight;
                     }
-
                     ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-                    if (!results.multiFaceLandmarks || results.multiFaceLandmarks.length === 0) {
-                        stableCount = 0;
-                        lastShape   = null;
-                        guide.classList.remove('locked');
+                    if (!results.multiFaceLandmarks || !results.multiFaceLandmarks.length) {
+                        shapeBuffer = []; pdBuffer = [];
+                        poseWarn.textContent = '⚠ Wajah tidak terdeteksi';
+                        qualityFill.style.width = '0%';
                         resultBox.innerHTML = `<span style="color:var(--text-muted);font-size:0.75rem">Wajah tidak terdeteksi...</span>`;
                         return;
                     }
-
-                    const landmarks = results.multiFaceLandmarks[0];
-
-                    // Gambar mesh tipis sebagai panduan
-                    drawMesh(landmarks);
-
-                    // Analisis bentuk wajah
-                    const analysis = analyzeFaceShape(landmarks);
-
-                    // Hitung PD setiap frame
-                    lastPD = measurePD(landmarks);
-
-                    // Smoothing: masukkan ke buffer
-                    frameBuffer.push(analysis.shape);
-                    if (frameBuffer.length > BUFFER_SIZE) frameBuffer.shift();
-
-                    // Ambil bentuk yang paling sering muncul di buffer
-                    const smoothedShape = mostFrequent(frameBuffer);
-
-                    // Hitung stabilitas
-                    if (smoothedShape === lastShape) {
-                        stableCount++;
-                    } else {
-                        stableCount = 0;
-                        lastShape   = smoothedShape;
-                    }
-
-                    // Tampilkan hasil
-                    displayResult(smoothedShape, analysis, stableCount);
-
-                    // Auto-lock setelah cukup stabil
-                    if (stableCount >= STABLE_THRESHOLD && !isFrozen) {
-                        freezeResult(smoothedShape, analysis);
-                    }
+                    const lm = results.multiFaceLandmarks[0];
+                    drawMesh(lm, ctx, canvas.width, canvas.height, false);
+                    qualityScore = detectPoseQuality(lm);
+                    qualityFill.style.width = qualityScore + '%';
+                    const warn = getPoseWarning(lm);
+                    poseWarn.textContent = warn || '';
+                    poseWarn.style.display = warn ? 'block' : 'none';
+                    // PD multi-frame averaging
+                    const pdNow = measurePD(lm, canvas.width, canvas.height);
+                    if (pdNow) { pdBuffer.push(pdNow); if (pdBuffer.length > PD_BUFFER_SIZE) pdBuffer.shift(); lastPD = averagePD(pdBuffer); }
+                    // Shape preview
+                    const an = analyzeFaceShape(lm, canvas.width, canvas.height);
+                    shapeBuffer.push(an.shape);
+                    if (shapeBuffer.length > SHAPE_BUFFER_SIZE) shapeBuffer.shift();
+                    const liveShape = mostFrequent(shapeBuffer);
+                    const pdHtml = lastPD
+                        ? `<div class="pd-row"><span class="pd-chip total">PD ${lastPD.total}mm</span><span class="pd-chip">OD ${lastPD.od}mm</span><span class="pd-chip">OS ${lastPD.os}mm</span></div><div class="pd-note">*live preview — tekan 📸 CAPTURE untuk akurat</div>`
+                        : `<div class="pd-note" style="margin-top:8px;color:#555;">Menunggu deteksi iris...</div>`;
+                    const qColor = qualityScore > 70 ? '#00ff88' : qualityScore > 40 ? '#ffaa00' : '#ff4d4d';
+                    resultBox.innerHTML = `
+                        <div style="font-size:0.6rem;color:var(--text-muted);letter-spacing:1px;margin-bottom:4px;">LIVE PREVIEW</div>
+                        <div class="shape-badge">${liveShape}</div>
+                        <div style="font-size:10px;color:${qColor};margin:4px 0;">Kualitas posisi: ${qualityScore}%</div>
+                        ${pdHtml}
+                        <div style="font-size:10px;color:#444;margin-top:6px;">${qualityScore >= 70 ? '✓ Posisi bagus — tekan 📸 CAPTURE' : '⚠ Perbaiki posisi dulu'}</div>
+                    `;
+                    guide.classList.toggle('locked', qualityScore >= 70);
                 }
 
-                // ----------------------------------------------------------------
-                // GAMBAR MESH WAJAH
-                // ----------------------------------------------------------------
-                function drawMesh(lm) {
-                    const W = canvas.width;
-                    const H = canvas.height;
+                // ============================================================
+                // CAPTURE PHOTO — step 2
+                // ============================================================
+                async function capturePhoto() {
+                    if (!isRunning || !video.srcObject) return;
+                    photoCanvas.width  = video.videoWidth  || 640;
+                    photoCanvas.height = video.videoHeight || 480;
+                    pCtx.save();
+                    pCtx.translate(photoCanvas.width, 0);
+                    pCtx.scale(-1, 1);
+                    pCtx.drawImage(video, 0, 0);
+                    pCtx.restore();
+                    isCaptured = true;
+                    if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+                    resultBox.innerHTML = `<div class="mp-loading"><div class="spinner"></div> MENDETEKSI LANDMARK...</div>`;
+                    const tmpCanvas = document.createElement('canvas');
+                    tmpCanvas.width  = video.videoWidth;
+                    tmpCanvas.height = video.videoHeight;
+                    tmpCanvas.getContext('2d').drawImage(video, 0, 0);
+                    faceMesh.onResults((results) => {
+                        capturedLM = (results.multiFaceLandmarks && results.multiFaceLandmarks.length)
+                            ? results.multiFaceLandmarks[0] : null;
+                        if (capturedLM) drawMesh(capturedLM, photoCanvas.getContext('2d'), photoCanvas.width, photoCanvas.height, true);
+                        liveView.style.display      = 'none';
+                        capturedView.style.display  = 'block';
+                        captureBtn.style.display    = 'none';
+                        switchBtn.style.display     = 'none';
+                        analyzeBtn.style.display    = capturedLM ? 'inline-block' : 'none';
+                        resetBtn.style.display      = 'inline-block';
+                        qualityWrap.style.display   = 'none';
+                        poseIndicator.style.display = 'none';
+                        setStep(3);
+                        if (capturedLM) {
+                            const q = detectPoseQuality(capturedLM);
+                            const qc = q > 70 ? '#00ff88' : q > 40 ? '#ffaa00' : '#ff4d4d';
+                            resultBox.innerHTML = `
+                                <div style="font-size:0.6rem;color:var(--text-muted);letter-spacing:1px;margin-bottom:4px;">FOTO DIAMBIL</div>
+                                <div style="font-size:11px;color:${qc};">Kualitas posisi: ${q}%</div>
+                                <div style="font-size:10px;color:#555;margin-top:4px;">Tekan ANALISA untuk hasil lengkap</div>
+                            `;
+                        } else {
+                            resultBox.innerHTML = `<span style="color:#ff4d4d;font-size:0.75rem">Wajah tidak terdeteksi. Coba lagi.</span>`;
+                        }
+                        faceMesh.onResults(onResults);
+                    });
+                    await faceMesh.send({ image: tmpCanvas });
+                }
 
-                    ctx.save();
-                    // Mirror canvas
-                    ctx.translate(W, 0);
-                    ctx.scale(-1, 1);
+                // ============================================================
+                // RUN ANALYSIS — step 3 (on captured landmarks)
+                // ============================================================
+                function runAnalysis() {
+                    if (!capturedLM) { resultBox.innerHTML = `<span style="color:#ff4d4d">Tidak ada landmark. Ulangi scan.</span>`; return; }
+                    analyzeBtn.innerHTML = '<div class="led" style="background:#00cfff;box-shadow:0 0 6px #00cfff;"></div> MEMPROSES...';
+                    analyzeBtn.disabled = true;
+                    setTimeout(() => {
+                        const analysis = analyzeFaceShape(capturedLM, photoCanvas.width, photoCanvas.height);
+                        const finalPD  = measurePD(capturedLM, photoCanvas.width, photoCanvas.height);
+                        const avgPD    = (finalPD && pdBuffer.length > 5) ? blendPD(finalPD, averagePD(pdBuffer)) : (finalPD || lastPD);
+                        displayFinalResult(analysis, avgPD);
+                        showFrameRecommendation(analysis.shape);
+                        analyzeBtn.style.display = 'none';
+                    }, 200);
+                }
 
-                    // Gambar titik-titik penting saja (tidak semua 468 — terlalu ramai)
-                    const keyPoints = [
-                        LM.JAW_LEFT, LM.JAW_RIGHT, LM.JAW_L1, LM.JAW_R1,
-                        LM.JAW_L2, LM.JAW_R2, LM.CHIN,
-                        LM.TEMPLE_L, LM.TEMPLE_R,
-                        LM.CHEEK_L, LM.CHEEK_R,
-                        LM.BROW_L, LM.BROW_R,
-                        LM.CHIN_L, LM.CHIN_R
-                    ];
-
+                // ============================================================
+                // DRAW MESH — reusable for live canvas & photo canvas
+                // ============================================================
+                function drawMesh(lm, targetCtx, W, H, mirrored) {
+                    targetCtx.save();
+                    if (!mirrored) { targetCtx.translate(W, 0); targetCtx.scale(-1, 1); }
+                    const keyPoints = [LM.JAW_LEFT,LM.JAW_RIGHT,LM.JAW_L1,LM.JAW_R1,LM.JAW_L2,LM.JAW_R2,
+                        LM.CHIN,LM.CHIN_L,LM.CHIN_R,LM.TEMPLE_L,LM.TEMPLE_R,LM.CHEEK_L,LM.CHEEK_R,
+                        LM.BROW_L,LM.BROW_R,LM.FOREHEAD_L,LM.FOREHEAD_R,LM.FOREHEAD_MID];
                     keyPoints.forEach(idx => {
-                        const p = lm[idx];
-                        ctx.beginPath();
-                        ctx.arc(p.x * W, p.y * H, 3, 0, 2 * Math.PI);
-                        ctx.fillStyle = 'rgba(0, 255, 136, 0.7)';
-                        ctx.fill();
+                        const p = lm[idx]; if (!p) return;
+                        targetCtx.beginPath(); targetCtx.arc(p.x*W, p.y*H, 3, 0, 2*Math.PI);
+                        targetCtx.fillStyle = 'rgba(0,255,136,0.7)'; targetCtx.fill();
                     });
-
-                    // Gambar garis kontur rahang
-                    const jawContour = [162, 21, 54, 103, 67, 109, 10, 338, 297, 332, 284,
-                                        251, 389, 454, 323, 361, 288, 397, 365, 379, 378,
-                                        400, 377, 152, 148, 176, 149, 150, 136, 172, 58,
-                                        132, 93, 234, 127, 162];
-
-                    ctx.beginPath();
-                    jawContour.forEach((idx, i) => {
-                        const p = lm[idx];
-                        if (i === 0) ctx.moveTo(p.x * W, p.y * H);
-                        else         ctx.lineTo(p.x * W, p.y * H);
-                    });
-                    ctx.strokeStyle = 'rgba(0, 255, 136, 0.35)';
-                    ctx.lineWidth   = 1.5;
-                    ctx.stroke();
-
-                    // Gambar titik pupil jika iris landmark tersedia (refineLandmarks: true)
-                    const rp = lm[468]; // pupil kanan (dari perspektif kamera)
-                    const lp = lm[473]; // pupil kiri
-                    if (rp && lp) {
-                        [rp, lp].forEach(p => {
-                            ctx.beginPath();
-                            ctx.arc(p.x * W, p.y * H, 5, 0, 2 * Math.PI);
-                            ctx.fillStyle   = 'rgba(0, 207, 255, 0.9)';
-                            ctx.fill();
-                            ctx.strokeStyle = 'rgba(255,255,255,0.6)';
-                            ctx.lineWidth   = 1.5;
-                            ctx.stroke();
-                        });
-                        // Garis penghubung antar pupil
-                        ctx.beginPath();
-                        ctx.moveTo(rp.x * W, rp.y * H);
-                        ctx.lineTo(lp.x * W, lp.y * H);
-                        ctx.strokeStyle = 'rgba(0, 207, 255, 0.4)';
-                        ctx.lineWidth   = 1;
-                        ctx.setLineDash([4, 4]);
-                        ctx.stroke();
-                        ctx.setLineDash([]);
+                    const jawC = [162,21,54,103,67,109,10,338,297,332,284,251,389,454,323,361,288,397,365,379,378,400,377,152,148,176,149,150,136,172,58,132,93,234,127,162];
+                    targetCtx.beginPath();
+                    jawC.forEach((idx,i) => { const p=lm[idx]; if(!p) return; i===0?targetCtx.moveTo(p.x*W,p.y*H):targetCtx.lineTo(p.x*W,p.y*H); });
+                    targetCtx.strokeStyle='rgba(0,255,136,0.4)'; targetCtx.lineWidth=1.5; targetCtx.stroke();
+                    // Improved forehead estimated line
+                    const fhEst = estimateForehead(lm, W, H);
+                    if (fhEst) {
+                        targetCtx.beginPath();
+                        targetCtx.moveTo(lm[LM.TEMPLE_L].x*W, fhEst*H);
+                        targetCtx.lineTo(lm[LM.TEMPLE_R].x*W, fhEst*H);
+                        targetCtx.strokeStyle='rgba(255,170,0,0.5)'; targetCtx.lineWidth=1.5;
+                        targetCtx.setLineDash([5,4]); targetCtx.stroke(); targetCtx.setLineDash([]);
+                        targetCtx.font='9px monospace'; targetCtx.fillStyle='rgba(255,170,0,0.7)';
+                        targetCtx.fillText('DAHI EST.', lm[LM.TEMPLE_L].x*W, fhEst*H-3);
                     }
-
-                    ctx.restore();
+                    // Iris & PD line
+                    const rp=lm[468], lp=lm[473];
+                    if (rp && lp) {
+                        [rp,lp].forEach(p => {
+                            targetCtx.beginPath(); targetCtx.arc(p.x*W,p.y*H,5,0,2*Math.PI);
+                            targetCtx.fillStyle='rgba(0,207,255,0.9)'; targetCtx.fill();
+                            targetCtx.strokeStyle='rgba(255,255,255,0.6)'; targetCtx.lineWidth=1.5; targetCtx.stroke();
+                        });
+                        targetCtx.beginPath(); targetCtx.moveTo(rp.x*W,rp.y*H); targetCtx.lineTo(lp.x*W,lp.y*H);
+                        targetCtx.strokeStyle='rgba(0,207,255,0.5)'; targetCtx.lineWidth=1;
+                        targetCtx.setLineDash([4,4]); targetCtx.stroke(); targetCtx.setLineDash([]);
+                    }
+                    targetCtx.restore();
                 }
 
-                // ----------------------------------------------------------------
-                // PENGUKURAN PD (Pupillary Distance)
-                // Menggunakan iris landmarks (468 = kanan, 473 = kiri)
-                // refineLandmarks: true wajib aktif agar landmark iris tersedia
-                // Kalibrasi: lebar wajah antara tragus (landmark 234–454) ≈ 142 mm rata-rata
-                // ----------------------------------------------------------------
-                function measurePD(lm) {
-                    const W = canvas.width;
-                    const H = canvas.height;
+                // ============================================================
+                // IMPROVED FOREHEAD ESTIMATION
+                // Returns the estimated Y-coordinate (normalized 0-1) of forehead top
+                // Uses brow-to-eye gap + landmark 9 blend — better than fixed 15% offset
+                // ============================================================
+                function estimateForehead(lm, W, H) {
+                    const browL  = lm[LM.BROW_L_TOP] || lm[LM.BROW_L];
+                    const eyeL   = lm[LM.EYE_L_TOP]  || lm[LM.EYE_L_OUTER];
+                    const fhMid  = lm[LM.FOREHEAD_MID]; // lm[9] — mid forehead point
+                    if (!browL || !eyeL) return null;
+                    // Eye-to-brow vertical gap drives forehead height estimate
+                    const eyeBrowGap    = Math.abs(browL.y - eyeL.y);
+                    const foreheadOffset = eyeBrowGap * 1.65;
+                    const browY = Math.min(lm[LM.BROW_L].y, lm[LM.BROW_R] ? lm[LM.BROW_R].y : lm[LM.BROW_L].y);
+                    const estY  = browY - foreheadOffset;
+                    // Blend with lm[9] if available (lm[9] is a real mesh point on mid forehead)
+                    return fhMid ? estY * 0.6 + fhMid.y * 0.4 : estY;
+                }
 
-                    const rPupil = lm[468]; // iris kanan (dari perspektif kamera = mata kiri pasien = OS)
-                    const lPupil = lm[473]; // iris kiri  (dari perspektif kamera = mata kanan pasien = OD)
-                    if (!rPupil || !lPupil) return null;
+                // ============================================================
+                // MEASURE PD — multi-point iris centroid + face-width calibration
+                //
+                // MediaPipe refineLandmarks=true menghasilkan 10 iris landmarks:
+                //   468–472 = iris kanan (dari perspektif kamera = OS pasien)
+                //   473–477 = iris kiri  (dari perspektif kamera = OD pasien)
+                // Centroid dari 5 titik per iris jauh lebih stabil dari 1 titik saja.
+                //
+                // Kalibrasi: lebar wajah tragus-to-tragus (LM 234–454) ≈ 142mm
+                // adalah referensi terbaik yang tersedia tanpa objek fisik.
+                // Tidak ada cara meningkatkan akurasi lebih jauh tanpa referensi
+                // fisik yang pasti terdeteksi oleh MediaPipe (bukan kacamata).
+                // ============================================================
+                function irisCenter(lm, startIdx, W, H) {
+                    // Ambil 5 titik iris (startIdx s/d startIdx+4), hitung centroid
+                    let sumX = 0, sumY = 0, count = 0;
+                    for (let i = startIdx; i < startIdx + 5; i++) {
+                        const p = lm[i];
+                        if (!p) continue;
+                        sumX += p.x * W;
+                        sumY += p.y * H;
+                        count++;
+                    }
+                    if (count === 0) return null;
+                    return { x: sumX / count, y: sumY / count };
+                }
 
-                    // Jarak pixel antara kedua pupil
-                    const dx   = (lPupil.x - rPupil.x) * W;
-                    const dy   = (lPupil.y - rPupil.y) * H;
-                    const pdPx = Math.sqrt(dx * dx + dy * dy);
+                function measurePD(lm, W, H) {
+                    // Iris centroids — lebih akurat dari 1 titik pupil saja
+                    const rIris = irisCenter(lm, 468, W, H); // OS (kiri pasien)
+                    const lIris = irisCenter(lm, 473, W, H); // OD (kanan pasien)
+                    if (!rIris || !lIris) return null;
 
-                    // Kalibrasi: gunakan lebar wajah (tragus-to-tragus) sebagai referensi
-                    const fL = lm[LM.JAW_LEFT];
-                    const fR = lm[LM.JAW_RIGHT];
-                    const faceWidthPx = Math.abs((fR.x - fL.x) * W);
-                    if (faceWidthPx < 10) return null; // wajah terlalu kecil / tidak terdeteksi
+                    const dx   = lIris.x - rIris.x;
+                    const dy   = lIris.y - rIris.y;
+                    const pdPx = Math.sqrt(dx*dx + dy*dy);
 
-                    const FACE_REF_MM  = 142;   // rata-rata lebar wajah dewasa tragus-to-tragus
-                    const mmPerPx      = FACE_REF_MM / faceWidthPx;
-                    const pdTotal      = +(pdPx * mmPerPx).toFixed(1);
+                    // Kalibrasi: tragus-to-tragus (landmark 234–454) ≈ 142mm rata-rata dewasa
+                    const faceWidthPx = Math.abs((lm[LM.JAW_RIGHT].x - lm[LM.JAW_LEFT].x) * W);
+                    if (faceWidthPx < 10) return null;
+                    const mmPerPx = faceRefMM / faceWidthPx;
 
-                    // PD Monocular — dari pusat hidung (landmark 168) ke masing-masing pupil
-                    const nose  = lm[LM.FACE_CENTER];
-                    const pdOD  = +(Math.abs((lPupil.x - nose.x) * W) * mmPerPx).toFixed(1); // OD = kanan pasien = lPupil di kamera
-                    const pdOS  = +(Math.abs((rPupil.x - nose.x) * W) * mmPerPx).toFixed(1); // OS = kiri pasien  = rPupil di kamera
+                    const pdTotal = +(pdPx * mmPerPx).toFixed(1);
+
+                    // PD monocular: dari pusat hidung (lm 168) ke centroid masing-masing iris
+                    const nose    = lm[LM.FACE_CENTER];
+                    const noseX   = nose.x * W;
+                    const pdOD    = +(Math.abs(lIris.x - noseX) * mmPerPx).toFixed(1); // OD = kanan pasien
+                    const pdOS    = +(Math.abs(rIris.x - noseX) * mmPerPx).toFixed(1); // OS = kiri pasien
 
                     return { total: pdTotal, od: pdOD, os: pdOS };
                 }
 
-                // ----------------------------------------------------------------
-                // ANALISIS BENTUK WAJAH (Inti algoritma)
-                // ----------------------------------------------------------------
-                function analyzeFaceShape(lm) {
-                    const W = canvas.width;
-                    const H = canvas.height;
-
-                    // Helper: jarak 3D (memanfaatkan koordinat Z dari MediaPipe)
-                    function dist3D(a, b) {
-                        const dx = (a.x - b.x) * W;
-                        const dy = (a.y - b.y) * H;
-                        const dz = (a.z - b.z) * W;   // Z dinormalisasi relatif terhadap lebar wajah
-                        return Math.sqrt(dx*dx + dy*dy + dz*dz);
+                function averagePD(buf) {
+                    if (!buf.length) return null;
+                    // Outlier rejection: buang nilai yang > 1 SD dari mean sebelum average
+                    function filteredAvg(arr) {
+                        const mean = arr.reduce((s,v) => s+v, 0) / arr.length;
+                        const sd   = Math.sqrt(arr.reduce((s,v) => s+(v-mean)**2, 0) / arr.length);
+                        const clean = arr.filter(v => Math.abs(v - mean) <= sd * 1.5);
+                        const src   = clean.length >= 3 ? clean : arr; // fallback jika terlalu banyak dibuang
+                        return +(src.reduce((s,v) => s+v, 0) / src.length).toFixed(1);
                     }
-
-                    function dist2D(a, b) {
-                        return Math.hypot((a.x - b.x) * W, (a.y - b.y) * H);
-                    }
-
-                    const p = lm;
-
-                    // === PENGUKURAN UTAMA ===
-
-                    // Lebar wajah maksimum (cheekbone area — titik terlebar di wajah)
-                    const faceWidth = dist3D(p[LM.JAW_LEFT], p[LM.JAW_RIGHT]);
-
-                    // Tinggi wajah: dari puncak dahi (estimasi) ke dagu
-                    // Titik 10 = puncak kepala di mesh, tapi kita estimasi dari alis atas
-                    const browTop    = Math.min(p[LM.BROW_L].y, p[LM.BROW_R].y);
-                    const foreheadEst = browTop - (p[LM.CHIN].y - browTop) * 0.15;
-                    const faceHeight = Math.abs(p[LM.CHIN].y - foreheadEst) * H;
-
-                    // Lebar dahi: jarak antara kedua pelipis
-                    const foreheadWidth = dist3D(p[LM.TEMPLE_L], p[LM.TEMPLE_R]);
-
-                    // Lebar tulang pipi: titik terlebar di area pipi
-                    const cheekWidth = dist3D(p[LM.CHEEK_L], p[LM.CHEEK_R]);
-
-                    // Lebar rahang: titik sudut rahang
-                    const jawWidth = dist3D(p[LM.JAW_L2], p[LM.JAW_R2]);
-
-                    // Lebar dagu: titik bawah rahang kiri-kanan
-                    const chinWidth = dist3D(p[LM.CHIN_L], p[LM.CHIN_R]);
-
-                    // Ketajaman dagu (sudut 3D)
-                    function angle3D(center, a, b) {
-                        const v1 = { x: (a.x-center.x)*W, y: (a.y-center.y)*H, z: (a.z-center.z)*W };
-                        const v2 = { x: (b.x-center.x)*W, y: (b.y-center.y)*H, z: (b.z-center.z)*W };
-                        const dot = v1.x*v2.x + v1.y*v2.y + v1.z*v2.z;
-                        const mag1 = Math.sqrt(v1.x**2 + v1.y**2 + v1.z**2);
-                        const mag2 = Math.sqrt(v2.x**2 + v2.y**2 + v2.z**2);
-                        if (mag1 === 0 || mag2 === 0) return 90;
-                        return Math.acos(Math.max(-1, Math.min(1, dot/(mag1*mag2)))) * 180/Math.PI;
-                    }
-
-                    const chinAngle = angle3D(p[LM.CHIN], p[LM.CHIN_L], p[LM.CHIN_R]);
-
-                    // === RASIO ===
-                    const faceRatio     = faceHeight / faceWidth;           // tinggi/lebar keseluruhan
-                    const foreheadRatio = foreheadWidth / faceWidth;        // dahi vs wajah
-                    const cheekRatio    = cheekWidth / faceWidth;           // pipi vs wajah
-                    const jawRatio      = jawWidth / faceWidth;             // rahang vs wajah
-                    const chinRatio     = chinWidth / jawWidth;             // dagu vs rahang (lancip/kotak)
-                    const jawForeRatio  = jawWidth / foreheadWidth;         // rahang vs dahi
-
-                    // === SCORING SISTEM ===
-                    // Setiap fungsi mengembalikan nilai 0-10
-                    const scores = {
-                        "OVAL":     calcOval(faceRatio, foreheadRatio, cheekRatio, jawRatio, chinAngle),
-                        "ROUND":    calcRound(faceRatio, cheekRatio, jawRatio, chinAngle),
-                        "SQUARE":   calcSquare(faceRatio, jawRatio, chinAngle),
-                        "OBLONG":   calcOblong(faceRatio, foreheadRatio, jawRatio, chinRatio),
-                        "HEART":    calcHeart(foreheadRatio, jawRatio, chinAngle, jawForeRatio),
-                        "DIAMOND":  calcDiamond(foreheadRatio, cheekRatio, jawRatio, chinAngle),
-                        "TRIANGLE": calcTriangle(foreheadRatio, jawRatio, jawForeRatio)
-                    };
-
-                    // Normalisasi scores menjadi persentase
-                    const totalScore = Object.values(scores).reduce((a, b) => a + b, 0);
-                    const percentages = {};
-                    for (const [k, v] of Object.entries(scores)) {
-                        percentages[k] = totalScore > 0 ? Math.round((v / totalScore) * 100) : 0;
-                    }
-
-                    // Pilih yang tertinggi
-                    const shape = Object.entries(scores).reduce((a, b) => b[1] > a[1] ? b : a)[0];
-                    const confidence = percentages[shape];
-
                     return {
-                        shape,
-                        confidence,
-                        scores,
-                        percentages,
-                        metrics: {
-                            faceRatio:     +faceRatio.toFixed(3),
-                            foreheadRatio: +foreheadRatio.toFixed(3),
-                            cheekRatio:    +cheekRatio.toFixed(3),
-                            jawRatio:      +jawRatio.toFixed(3),
-                            chinRatio:     +chinRatio.toFixed(3),
-                            chinAngle:     +chinAngle.toFixed(1)
-                        }
+                        total: filteredAvg(buf.map(v => v.total)),
+                        od:    filteredAvg(buf.map(v => v.od)),
+                        os:    filteredAvg(buf.map(v => v.os)),
                     };
                 }
 
-                // ----------------------------------------------------------------
-                // FUNGSI SCORING TIAP BENTUK
-                // Bobot didesain berdasarkan referensi ciri khas tiap bentuk wajah
-                // ----------------------------------------------------------------
-
-                function calcOval(fr, fore, cheek, jaw, chinA) {
-                    let s = 0;
-                    // Oval: wajah lebih panjang dari lebar, pipi sedikit lebih lebar dari dahi & rahang
-                    if (fr >= 1.3 && fr <= 1.7)         s += 3.0;
-                    if (cheek > jaw)                     s += 2.0;
-                    if (cheek > fore)                    s += 1.5;
-                    if (fore > jaw)                      s += 1.0;    // dahi sedikit lebih lebar dari rahang
-                    if (jaw >= 0.60 && jaw <= 0.80)      s += 1.5;
-                    if (chinA >= 70 && chinA <= 120)     s += 1.0;
-                    return s;
-                }
-
-                function calcRound(fr, cheek, jaw, chinA) {
-                    let s = 0;
-                    // Round: wajah hampir sama lebar & tinggi, semua bagian membulat
-                    if (fr < 1.25)                       s += 4.0;
-                    if (cheek >= 0.85)                   s += 2.0;
-                    if (jaw >= 0.70)                     s += 1.5;
-                    if (chinA >= 120)                    s += 2.5;    // dagu sangat tumpul = bulat
-                    return s;
-                }
-
-                function calcSquare(fr, jaw, chinA) {
-                    let s = 0;
-                    // Square: wajah proporsional, rahang tegas & lebar, dagu kotak
-                    if (fr >= 0.95 && fr <= 1.3)         s += 2.5;
-                    if (jaw >= 0.82)                     s += 4.5;   // rahang lebar = ciri utama
-                    if (chinA >= 105)                    s += 3.0;   // dagu kotak
-                    return s;
-                }
-
-                function calcOblong(fr, fore, jaw, chinR) {
-                    let s = 0;
-                    // Oblong/Long: wajah sangat panjang, proporsional tapi memanjang ke bawah
-                    if (fr >= 1.65)                      s += 5.0;
-                    if (fore < 0.82)                     s += 1.5;
-                    if (jaw < 0.72)                      s += 2.0;
-                    if (chinR < 0.55)                    s += 1.5;   // dagu relatif kecil vs rahang
-                    return s;
-                }
-
-                function calcHeart(fore, jaw, chinA, jawFore) {
-                    let s = 0;
-                    // Heart: dahi lebar, rahang sempit, dagu lancip
-                    if (fore >= 0.95)                    s += 3.0;
-                    if (jaw < 0.65)                      s += 3.0;
-                    if (chinA < 80)                      s += 3.0;   // dagu sangat lancip = ciri utama
-                    if (jawFore < 0.75)                  s += 1.0;   // rahang jauh lebih sempit dari dahi
-                    return s;
-                }
-
-                function calcDiamond(fore, cheek, jaw, chinA) {
-                    let s = 0;
-                    // Diamond: pipi paling lebar, dahi & rahang sempit, dagu agak lancip
-                    if (cheek > fore && cheek > jaw)     s += 5.0;   // pipi terlebar = ciri UTAMA
-                    if (fore < 0.82)                     s += 1.5;
-                    if (jaw < 0.68)                      s += 1.5;
-                    if (chinA < 95)                      s += 2.0;
-                    return s;
-                }
-
-                function calcTriangle(fore, jaw, jawFore) {
-                    let s = 0;
-                    // Triangle/Pear: rahang jauh lebih lebar dari dahi
-                    if (jawFore >= 1.15)                 s += 5.0;   // rahang dominan = ciri UTAMA
-                    if (jaw >= 0.85)                     s += 3.0;
-                    if (fore < 0.78)                     s += 2.0;
-                    return s;
-                }
-
-                // ----------------------------------------------------------------
-                // TAMPILKAN HASIL
-                // ----------------------------------------------------------------
-                function displayResult(shape, analysis, stable) {
-                    const conf    = analysis.confidence;
-                    const m       = analysis.metrics;
-                    const progress = Math.min(100, Math.round((stable / STABLE_THRESHOLD) * 100));
-                    const isStable = stable >= STABLE_THRESHOLD;
-
-                    const shapeEmoji = {
-                        OVAL: '◉', ROUND: '●', SQUARE: '■',
-                        OBLONG: '▬', HEART: '♥', DIAMOND: '◆', TRIANGLE: '▼'
+                function blendPD(a, b) {
+                    // Captured frame diberi bobot lebih tinggi (70%) vs live buffer (30%)
+                    return {
+                        total: +((a.total*0.7 + b.total*0.3)).toFixed(1),
+                        od:    +((a.od   *0.7 + b.od   *0.3)).toFixed(1),
+                        os:    +((a.os   *0.7 + b.os   *0.3)).toFixed(1),
                     };
-
-                    const pdHtml = lastPD
-                        ? `<div class="pd-row">
-                            <span class="pd-chip total">PD ${lastPD.total} mm</span>
-                            <span class="pd-chip">OD ${lastPD.od} mm</span>
-                            <span class="pd-chip">OS ${lastPD.os} mm</span>
-                           </div>
-                           <div class="pd-note">*estimasi — kalibrasi lebar wajah 142mm</div>`
-                        : `<div class="pd-note" style="margin-top:8px;color:#555;">Menunggu deteksi iris...</div>`;
-
-                    resultBox.innerHTML = `
-                        <div style="font-size: 0.65rem; color: var(--text-muted); margin-bottom: 4px; letter-spacing: 1px;">
-                            LIVE DETECTION ${isStable ? '— <span style="color:#00ff88">LOCKED ✓</span>' : ''}
-                        </div>
-                        <div class="shape-badge">${shapeEmoji[shape] || ''} ${shape}</div>
-                        <div style="font-size: 11px; color: #00cfff; margin-top: 4px;">Confidence: ${conf}%</div>
-                        <div class="conf-bar-wrap" style="width: 80%;">
-                            <div class="conf-bar-fill" style="width: ${conf}%"></div>
-                        </div>
-                        <div class="metrics-row">
-                            <span class="metric-chip">H/W ${m.faceRatio}</span>
-                            <span class="metric-chip">Dahi ${m.foreheadRatio}</span>
-                            <span class="metric-chip">Pipi ${m.cheekRatio}</span>
-                            <span class="metric-chip">Rahang ${m.jawRatio}</span>
-                            <span class="metric-chip">Dagu ${m.chinAngle}°</span>
-                        </div>
-                        ${pdHtml}
-                        ${!isStable ? `
-                        <div style="font-size: 10px; color: #555; margin-top: 8px;">
-                            Stabilizing... ${stable}/${STABLE_THRESHOLD}
-                        </div>` : ''}
-                    `;
-
-                    guide.classList.toggle('locked', isStable);
                 }
 
-                // ----------------------------------------------------------------
-                // FREEZE & LOCK HASIL
-                // ----------------------------------------------------------------
-                function freezeResult(shape, analysis) {
-                    isFrozen = true;
-                    if (camera) camera.stop();
-
-                    const conf = analysis.confidence;
-                    const m    = analysis.metrics;
-                    const pd   = lastPD; // simpan snapshot PD saat di-freeze
-
-                    // Tampilkan top 3 bentuk
-                    const top3 = Object.entries(analysis.percentages)
-                        .sort((a, b) => b[1] - a[1])
-                        .slice(0, 3);
-
-                    const shapeDescriptions = {
-                        OVAL:     'Wajah simetris, lebih panjang dari lebar, garis halus.',
-                        ROUND:    'Wajah membulat, lebar & tinggi hampir sama, dagu tumpul.',
-                        SQUARE:   'Rahang tegas & lebar, dagu kotak, proporsi seimbang.',
-                        OBLONG:   'Wajah panjang & sempit, dahi & rahang sejajar.',
-                        HEART:    'Dahi lebar menyempit ke dagu yang lancip.',
-                        DIAMOND:  'Tulang pipi menonjol, dahi & rahang lebih sempit.',
-                        TRIANGLE: 'Rahang lebih lebar dari dahi, wajah membesar ke bawah.'
+                // ============================================================
+                // FACE SHAPE ANALYSIS — improved with forehead estimation + secondary metrics
+                // ============================================================
+                function analyzeFaceShape(lm, W, H) {
+                    function dist3D(a, b) {
+                        const dx=(a.x-b.x)*W, dy=(a.y-b.y)*H, dz=(a.z-b.z)*W;
+                        return Math.sqrt(dx*dx+dy*dy+dz*dz);
+                    }
+                    const p = lm;
+                    const faceWidth = dist3D(p[LM.JAW_LEFT], p[LM.JAW_RIGHT]);
+                    // Improved face height using forehead estimation
+                    const fhY = estimateForehead(lm, W, H);
+                    const faceHeight = fhY !== null
+                        ? Math.abs(p[LM.CHIN].y - fhY) * H
+                        : Math.abs(p[LM.CHIN].y - (Math.min(p[LM.BROW_L].y, p[LM.BROW_R].y) - (p[LM.CHIN].y - Math.min(p[LM.BROW_L].y, p[LM.BROW_R].y)) * 0.18)) * H;
+                    const foreheadWidth = dist3D(p[LM.TEMPLE_L], p[LM.TEMPLE_R]);
+                    const cheekWidth    = dist3D(p[LM.CHEEK_L],  p[LM.CHEEK_R]);
+                    const jawWidth      = dist3D(p[LM.JAW_L2],   p[LM.JAW_R2]);
+                    const chinWidth     = dist3D(p[LM.CHIN_L],   p[LM.CHIN_R]);
+                    function angle3D(center, a, b) {
+                        const v1={x:(a.x-center.x)*W,y:(a.y-center.y)*H,z:(a.z-center.z)*W};
+                        const v2={x:(b.x-center.x)*W,y:(b.y-center.y)*H,z:(b.z-center.z)*W};
+                        const dot=v1.x*v2.x+v1.y*v2.y+v1.z*v2.z;
+                        const m1=Math.sqrt(v1.x**2+v1.y**2+v1.z**2), m2=Math.sqrt(v2.x**2+v2.y**2+v2.z**2);
+                        if(m1===0||m2===0) return 90;
+                        return Math.acos(Math.max(-1,Math.min(1,dot/(m1*m2))))*180/Math.PI;
+                    }
+                    const chinAngle     = angle3D(p[LM.CHIN], p[LM.CHIN_L], p[LM.CHIN_R]);
+                    const upperFaceRatio = foreheadWidth / (cheekWidth + 0.001);
+                    const lowerTaper     = chinWidth / (cheekWidth + 0.001);
+                    const faceRatio      = faceHeight / (faceWidth + 0.001);
+                    const foreheadRatio  = foreheadWidth / (faceWidth + 0.001);
+                    const cheekRatio     = cheekWidth / (faceWidth + 0.001);
+                    const jawRatio       = jawWidth / (faceWidth + 0.001);
+                    const chinRatio      = chinWidth / (jawWidth + 0.001);
+                    const jawForeRatio   = jawWidth / (foreheadWidth + 0.001);
+                    const scores = {
+                        "OVAL":     calcOval(faceRatio, foreheadRatio, cheekRatio, jawRatio, chinAngle, upperFaceRatio, lowerTaper),
+                        "ROUND":    calcRound(faceRatio, cheekRatio, jawRatio, chinAngle, lowerTaper),
+                        "SQUARE":   calcSquare(faceRatio, jawRatio, chinAngle, chinRatio),
+                        "OBLONG":   calcOblong(faceRatio, foreheadRatio, jawRatio, chinRatio),
+                        "HEART":    calcHeart(foreheadRatio, jawRatio, chinAngle, jawForeRatio, lowerTaper),
+                        "DIAMOND":  calcDiamond(foreheadRatio, cheekRatio, jawRatio, chinAngle, upperFaceRatio),
+                        "TRIANGLE": calcTriangle(foreheadRatio, jawRatio, jawForeRatio, lowerTaper)
                     };
+                    const totalScore = Object.values(scores).reduce((a,b)=>a+b,0);
+                    const percentages = {};
+                    for (const [k,v] of Object.entries(scores)) percentages[k] = totalScore>0 ? Math.round((v/totalScore)*100) : 0;
+                    const shape      = Object.entries(scores).reduce((a,b)=>b[1]>a[1]?b:a)[0];
+                    const confidence = percentages[shape];
+                    return { shape, confidence, scores, percentages,
+                        metrics: { faceRatio:+faceRatio.toFixed(3), foreheadRatio:+foreheadRatio.toFixed(3), cheekRatio:+cheekRatio.toFixed(3), jawRatio:+jawRatio.toFixed(3), chinRatio:+chinRatio.toFixed(3), chinAngle:+chinAngle.toFixed(1), upperFaceRatio:+upperFaceRatio.toFixed(3), lowerTaper:+lowerTaper.toFixed(3) }
+                    };
+                }
 
+                // ============================================================
+                // SCORING FUNCTIONS — improved with secondary parameters
+                // ============================================================
+                function calcOval(fr,fore,cheek,jaw,chinA,ufr,lt) {
+                    let s=0;
+                    if(fr>=1.25&&fr<=1.65) s+=3.0;
+                    if(cheek>jaw&&cheek>fore) s+=2.5;
+                    if(fore>jaw) s+=1.0;
+                    if(jaw>=0.58&&jaw<=0.80) s+=1.5;
+                    if(chinA>=65&&chinA<=115) s+=1.0;
+                    if(lt>=0.45&&lt<=0.70) s+=1.0;
+                    if(ufr>=0.88&&ufr<=1.05) s+=0.5;
+                    return s;
+                }
+                function calcRound(fr,cheek,jaw,chinA,lt) {
+                    let s=0;
+                    if(fr<1.2) s+=4.0;
+                    if(cheek>=0.85) s+=2.0;
+                    if(jaw>=0.72) s+=1.5;
+                    if(chinA>=125) s+=2.5;
+                    if(lt>=0.60) s+=1.5;
+                    return s;
+                }
+                function calcSquare(fr,jaw,chinA,chinR) {
+                    let s=0;
+                    if(fr>=0.90&&fr<=1.25) s+=2.5;
+                    if(jaw>=0.82) s+=4.5;
+                    if(chinA>=110) s+=2.5;
+                    if(chinR>=0.75) s+=1.5;
+                    return s;
+                }
+                function calcOblong(fr,fore,jaw,chinR) {
+                    let s=0;
+                    if(fr>=1.60) s+=5.0;
+                    if(fore<0.82) s+=1.5;
+                    if(jaw<0.72) s+=2.0;
+                    if(chinR<0.55) s+=1.5;
+                    return s;
+                }
+                function calcHeart(fore,jaw,chinA,jawFore,lt) {
+                    let s=0;
+                    if(fore>=0.92) s+=3.0;
+                    if(jaw<0.68) s+=3.0;
+                    if(chinA<80) s+=3.0;
+                    if(jawFore<0.75) s+=1.0;
+                    if(lt<0.40) s+=1.5;
+                    return s;
+                }
+                function calcDiamond(fore,cheek,jaw,chinA,ufr) {
+                    let s=0;
+                    if(cheek>fore&&cheek>jaw) s+=5.0;
+                    if(fore<0.82) s+=1.5;
+                    if(jaw<0.68) s+=1.5;
+                    if(chinA<95) s+=2.0;
+                    if(ufr<0.88) s+=1.0;
+                    return s;
+                }
+                function calcTriangle(fore,jaw,jawFore,lt) {
+                    let s=0;
+                    if(jawFore>=1.12) s+=5.0;
+                    if(jaw>=0.85) s+=3.0;
+                    if(fore<0.80) s+=2.0;
+                    if(lt>=0.65) s+=1.0;
+                    return s;
+                }
+
+                // ============================================================
+                // DISPLAY FINAL RESULT
+                // ============================================================
+                function displayFinalResult(analysis, pd) {
+                    const {shape, confidence: conf, percentages, metrics: m} = analysis;
+                    const shapeDesc = {
+                        OVAL:'Wajah simetris, sedikit lebih panjang dari lebar, garis halus.',
+                        ROUND:'Wajah membulat, lebar & tinggi hampir sama, dagu tumpul.',
+                        SQUARE:'Rahang tegas & lebar, dagu kotak, proporsi seimbang.',
+                        OBLONG:'Wajah panjang & sempit, dahi & rahang sejajar.',
+                        HEART:'Dahi lebar menyempit ke dagu yang lancip.',
+                        DIAMOND:'Tulang pipi menonjol, dahi & rahang lebih sempit.',
+                        TRIANGLE:'Rahang lebih lebar dari dahi, wajah membesar ke bawah.'
+                    };
+                    const top3 = Object.entries(percentages).sort((a,b)=>b[1]-a[1]).slice(0,3);
+                    const pdSrc = `*estimasi — kalibrasi lebar wajah ${faceRefMM}mm (rata-rata dewasa)`;
                     const pdHtml = pd
-                        ? `<div style="margin-top:12px; padding:10px 15px; background:rgba(0,207,255,0.07); border:1px solid rgba(0,207,255,0.2); border-radius:12px; width:90%;">
+                        ? `<div style="margin-top:12px;padding:10px 15px;background:rgba(0,207,255,0.07);border:1px solid rgba(0,207,255,0.2);border-radius:12px;width:90%;">
                             <div style="font-size:0.6rem;color:var(--text-muted);letter-spacing:1px;margin-bottom:6px;">PUPILLARY DISTANCE</div>
-                            <div class="pd-row" style="margin-top:0;">
-                                <span class="pd-chip total">PD Total ${pd.total} mm</span>
-                            </div>
-                            <div class="pd-row" style="margin-top:6px;">
-                                <span class="pd-chip">OD (Kanan) ${pd.od} mm</span>
-                                <span class="pd-chip">OS (Kiri) ${pd.os} mm</span>
-                            </div>
-                            <div class="pd-note" style="margin-top:5px;">*estimasi kalibrasi lebar wajah 142mm</div>
+                            <div class="pd-row" style="margin-top:0;"><span class="pd-chip total">PD Total ${pd.total} mm</span></div>
+                            <div class="pd-row" style="margin-top:6px;"><span class="pd-chip">OD (Kanan) ${pd.od} mm</span><span class="pd-chip">OS (Kiri) ${pd.os} mm</span></div>
+                            <div class="pd-note" style="margin-top:5px;">${pdSrc}</div>
                            </div>`
                         : `<div style="font-size:10px;color:#555;margin-top:8px;">Data iris tidak tersedia</div>`;
-
                     resultBox.innerHTML = `
-                        <div style="font-size: 0.65rem; color: var(--text-muted); letter-spacing: 1px; margin-bottom: 6px;">
-                            HASIL ANALISIS TERKUNCI
-                        </div>
-                        <div class="shape-badge" style="font-size: 1.6rem;">${shape}</div>
-                        <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px; max-width: 260px; text-align: center;">
-                            ${shapeDescriptions[shape] || ''}
-                        </div>
-                        <div class="conf-bar-wrap" style="width: 80%; margin-bottom: 8px;">
-                            <div class="conf-bar-fill" style="width: ${conf}%"></div>
-                        </div>
-                        <div style="font-size: 10px; color: #666; margin-bottom: 8px;">
-                            ${top3.map(([s, p]) => `${s} ${p}%`).join(' · ')}
-                        </div>
+                        <div style="font-size:0.65rem;color:var(--text-muted);letter-spacing:1px;margin-bottom:6px;">HASIL ANALISIS</div>
+                        <div class="shape-badge" style="font-size:1.6rem;">${shape}</div>
+                        <div style="font-size:11px;color:var(--text-muted);margin-top:4px;max-width:260px;text-align:center;">${shapeDesc[shape]||''}</div>
+                        <div class="conf-bar-wrap" style="width:80%;margin-top:8px;margin-bottom:6px;"><div class="conf-bar-fill" style="width:${conf}%;"></div></div>
+                        <div style="font-size:10px;color:#666;margin-bottom:8px;">${top3.map(([s,p])=>`${s} ${p}%`).join(' · ')}</div>
                         <div class="metrics-row">
                             <span class="metric-chip">H/W ${m.faceRatio}</span>
                             <span class="metric-chip">Dahi ${m.foreheadRatio}</span>
                             <span class="metric-chip">Pipi ${m.cheekRatio}</span>
                             <span class="metric-chip">Rahang ${m.jawRatio}</span>
                             <span class="metric-chip">Dagu ${m.chinAngle}°</span>
+                            <span class="metric-chip">Taper ${m.lowerTaper}</span>
                         </div>
                         ${pdHtml}
                     `;
-
-                    freezeBtn.innerHTML = '<div class="led"></div> ULANGI SCAN';
-                    freezeBtn.onclick = resetScan;
-                    guide.classList.add('locked');
                 }
 
-                // ----------------------------------------------------------------
+                // ============================================================
+                // FRAME RECOMMENDATIONS
+                // ============================================================
+                const frameRec = {
+                    OVAL:{emoji:'◉',tagline:'Beruntung! Hampir semua frame cocok.',best:[{s:'Rectangular / Wayfarer',r:'Memberikan ketegasan pada wajah proporsional',i:'▬'},{s:'Round / Circular',r:'Mempertegas lekukan wajah oval',i:'●'},{s:'Cat-Eye / Upswept',r:'Menambah ekspresi dan karakter',i:'◣'},{s:'Aviator',r:'Klasik & timeless, proporsional',i:'▽'}],avoid:[],avoidNote:'Tidak ada larangan — semua frame cocok!'},
+                    ROUND:{emoji:'●',tagline:'Pilih frame yang memberi kesan tegas & panjang.',best:[{s:'Rectangular / Square',r:'Mempertegas garis & memberi kesan lebih panjang',i:'▬'},{s:'Browline / Club Master',r:'Garis horizontal menonjolkan struktur wajah',i:'⊓'},{s:'Wayfarer',r:'Trapezoid menyeimbangkan wajah bulat',i:'⬡'},{s:'Angular / Geometric',r:'Kontras dengan garis bulat, kesan modern',i:'◻'}],avoid:[{s:'Round / Circular',r:'Mempertegas kesan bulat'},{s:'Small Oval',r:'Tidak kontras'}],avoidNote:'Hindari frame bulat & oval kecil.'},
+                    SQUARE:{emoji:'■',tagline:'Pilih frame yang melembutkan garis rahang tegas.',best:[{s:'Round / Circular',r:'Melunakkan rahang kotak',i:'●'},{s:'Oval / Soft Rectangle',r:'Menyeimbangkan dengan lekukan halus',i:'◉'},{s:'Semi-Rimless',r:'Ringan visual, tidak menebalkan garis wajah',i:'⌒'},{s:'Aviator / Teardrop',r:'Lekukan bawah melunakkan rahang',i:'▽'}],avoid:[{s:'Square / Rectangular tegas',r:'Mempertegas kesan kotak'},{s:'Geometric angular',r:'Terlalu banyak sudut'}],avoidNote:'Hindari frame kotak tegas.'},
+                    OBLONG:{emoji:'▬',tagline:'Pilih frame yang memberi kesan lebih lebar.',best:[{s:'Oversized / Wide Frame',r:'Mengisi lebar wajah, kesan balance',i:'▬'},{s:'Decorative Top Bar',r:'Garis horizontal mempertegas lebar',i:'⊤'},{s:'Round',r:'Lekukan memecah kesan memanjang',i:'●'},{s:'Low Bridge / Deep Lens',r:'Mengurangi proporsi panjang',i:'◎'}],avoid:[{s:'Small / Narrow frame',r:'Makin panjang kesan wajah'},{s:'Rimless kecil',r:'Tidak memberi efek balancing'}],avoidNote:'Hindari frame sempit & kecil.'},
+                    HEART:{emoji:'♥',tagline:'Pilih frame yang menyeimbangkan dahi lebar.',best:[{s:'Bottom-Heavy / Pear Shape',r:'Frame lebar di bawah seimbangkan dahi',i:'▽'},{s:'Rimless',r:'Minim visual weight bagian atas',i:'◌'},{s:'Oval / Round',r:'Memperhalus kontur dahi lebar',i:'◉'},{s:'Low Set Bridge',r:'Tampak lebih lebar di bawah',i:'⊥'}],avoid:[{s:'Cat-Eye / Top-Heavy',r:'Memperbesar dahi yang sudah lebar'},{s:'Embellished top rim',r:'Visual weight di dahi bertambah'}],avoidNote:'Hindari cat-eye & detail di atas.'},
+                    DIAMOND:{emoji:'◆',tagline:'Pilih frame yang menonjolkan mata.',best:[{s:'Cat-Eye / Upswept',r:'Seimbangkan pipi yang menonjol',i:'◣'},{s:'Oval',r:'Melembutkan sudut pipi',i:'◉'},{s:'Rimless',r:'Tidak tambah visual di pipi dominan',i:'◌'},{s:'Browline',r:'Definisi di bagian atas wajah',i:'⊓'}],avoid:[{s:'Narrow/Angular frame',r:'Mempertegas lebar pipi'}],avoidNote:'Hindari frame terlalu sempit di area pipi.'},
+                    TRIANGLE:{emoji:'▼',tagline:'Pilih frame yang memperlebar bagian atas.',best:[{s:'Cat-Eye / Top-Heavy',r:'Visual ke atas, seimbangkan rahang',i:'◣'},{s:'Browline / Club Master',r:'Perkuat garis dahi yang sempit',i:'⊓'},{s:'Embellished/Decorative top',r:'Alihkan perhatian dari rahang',i:'✦'},{s:'Wide Top Frame',r:'Perluas visual bagian atas',i:'▬'}],avoid:[{s:'Bottom-heavy frame',r:'Mempertegas lebar rahang'},{s:'Small narrow frame',r:'Tidak membantu keseimbangan'}],avoidNote:'Hindari frame berat di bawah.'},
+                };
+
+                function showFrameRecommendation(shape) {
+                    const rec = frameRec[shape]; if (!rec) return;
+                    frameRecContent.innerHTML = `
+                        <div style="font-size:12px;color:#ffaa00;font-weight:700;margin-bottom:10px;">${rec.emoji} ${shape} — ${rec.tagline}</div>
+                        <div style="font-size:0.6rem;color:var(--text-muted);letter-spacing:1px;margin-bottom:6px;">✓ FRAME YANG DISARANKAN</div>
+                        <div style="display:flex;flex-direction:column;gap:7px;margin-bottom:12px;">
+                            ${rec.best.map(f=>`<div style="display:flex;align-items:flex-start;gap:8px;padding:8px 10px;background:rgba(0,255,136,0.05);border:1px solid rgba(0,255,136,0.12);border-radius:10px;">
+                                <span style="font-size:14px;min-width:20px;text-align:center;">${f.i}</span>
+                                <div><div style="font-size:11px;color:#00ff88;font-weight:700;">${f.s}</div><div style="font-size:10px;color:#777;margin-top:2px;">${f.r}</div></div>
+                            </div>`).join('')}
+                        </div>
+                        ${rec.avoid.length?`
+                        <div style="font-size:0.6rem;color:var(--text-muted);letter-spacing:1px;margin-bottom:6px;">✕ FRAME YANG PERLU DIHINDARI</div>
+                        <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px;">
+                            ${rec.avoid.map(f=>`<div style="display:flex;align-items:flex-start;gap:8px;padding:7px 10px;background:rgba(255,77,77,0.05);border:1px solid rgba(255,77,77,0.12);border-radius:10px;">
+                                <span style="font-size:12px;color:#ff4d4d;">✕</span>
+                                <div><div style="font-size:11px;color:#ff4d4d;font-weight:700;">${f.s}</div><div style="font-size:10px;color:#777;margin-top:2px;">${f.r}</div></div>
+                            </div>`).join('')}
+                        </div>
+                        <div style="font-size:10px;color:#555;font-style:italic;">${rec.avoidNote}</div>
+                        `:`<div style="font-size:10px;color:#00ff88;font-style:italic;">${rec.avoidNote}</div>`}
+                    `;
+                    frameRecBox.style.display = 'block';
+                }
+
+                // ============================================================
                 // RESET
-                // ----------------------------------------------------------------
+                // ============================================================
                 function resetScan() {
-                    isFrozen    = false;
-                    stableCount = 0;
-                    lastShape   = null;
-                    frameBuffer = [];
-                    lastAnalysis = null;
-                    lastPD       = null;
+                    isCaptured = false; capturedLM = null; pdBuffer = []; shapeBuffer = []; lastPD = null;
                     guide.classList.remove('locked');
-                    freezeBtn.innerHTML = '<div class="led"></div> FREEZE &amp; LOCK';
-                    freezeBtn.onclick   = () => { if (lastShape && lastAnalysis) freezeResult(lastShape, lastAnalysis); };
+                    liveView.style.display      = 'block';
+                    capturedView.style.display  = 'none';
+                    captureBtn.style.display    = 'inline-block';
+                    analyzeBtn.style.display    = 'none';
+                    analyzeBtn.disabled         = false;
+                    analyzeBtn.innerHTML        = '<div class="led" style="background:#00cfff;box-shadow:0 0 6px #00cfff;"></div> ANALISA';
+                    resetBtn.style.display      = 'none';
+                    switchBtn.style.display     = 'inline-block';
+                    qualityWrap.style.display   = 'block';
+                    poseIndicator.style.display = 'block';
+                    frameRecBox.style.display   = 'none';
                     resultBox.innerHTML = `<span style="color:var(--text-muted);font-size:0.75rem">Posisikan wajah Anda...</span>`;
-                    // Selalu restart kamera (RAF loop) — tidak pakai new Camera() lagi
+                    setStep(2);
                     startCamera();
                 }
 
-                // ----------------------------------------------------------------
+                // ============================================================
                 // UTILITY
-                // ----------------------------------------------------------------
+                // ============================================================
                 function mostFrequent(arr) {
+                    if (!arr.length) return 'OVAL';
                     const freq = {};
-                    arr.forEach(v => freq[v] = (freq[v] || 0) + 1);
-                    return Object.entries(freq).reduce((a, b) => b[1] > a[1] ? b : a)[0];
+                    arr.forEach(v => freq[v] = (freq[v]||0)+1);
+                    return Object.entries(freq).reduce((a,b) => b[1]>a[1]?b:a)[0];
                 }
 
-                // Simpan analisis terakhir untuk keperluan freeze manual
-                let lastAnalysis = null;
-                const origOnResults = onResults;
-
-                // Override onResults untuk simpan lastAnalysis
-                function onResultsWrapper(results) {
-                    if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
-                        lastAnalysis = analyzeFaceShape(results.multiFaceLandmarks[0]);
-                    }
-                    origOnResults(results);
-                }
-
-                // ----------------------------------------------------------------
+                // ============================================================
                 // EVENT HANDLERS
-                // ----------------------------------------------------------------
-                startBtn.onclick = () => {
-                    if (!isRunning) {
-                        loadMediaPipe();
-                        startBtn.innerHTML = '<div class="led"></div> MEMUAT...';
-                        startBtn.disabled  = true;
-                    }
-                };
-
-                switchBtn.onclick = () => {
-                    facingMode = (facingMode === 'user') ? 'environment' : 'user';
-                    // RAF dibersihkan di dalam startCamera()
-                    startCamera();
-                };
-
-                freezeBtn.onclick = () => {
-                    if (lastAnalysis && lastShape) {
-                        freezeResult(lastShape, lastAnalysis);
-                    }
-                };
-
-                // Override faceMesh.onResults setelah inisialisasi untuk simpan lastAnalysis
-                const origInit = initFaceMesh;
-                window._mpInitDone = false;
+                // ============================================================
+                startBtn.onclick   = () => { if (!isRunning) { loadMediaPipe(); startBtn.innerHTML='<div class="led"></div> MEMUAT...'; startBtn.disabled=true; } };
+                switchBtn.onclick  = () => { facingMode = facingMode==='user'?'environment':'user'; startCamera(); };
+                captureBtn.onclick = () => capturePhoto();
+                analyzeBtn.onclick = () => runAnalysis();
+                retakeOverlay.onclick = () => resetScan();
+                resetBtn.onclick   = () => resetScan();
 
             })(); // end IIFE
+
         </script>
     </body>
 </html>
