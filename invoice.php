@@ -216,6 +216,26 @@
                 text-align: center;
             }
 
+            /* IOC preset buttons */
+            .ioc-preset {
+                background: var(--bg-color);
+                border: 1px solid rgba(255,255,255,0.08);
+                border-radius: 20px;
+                color: #555;
+                font-size: 9px;
+                padding: 4px 10px;
+                cursor: pointer;
+                font-family: inherit;
+                letter-spacing: 0.5px;
+                transition: all 0.2s;
+            }
+            .ioc-preset:hover { color: #888; border-color: rgba(0,255,136,0.2); }
+            .ioc-preset.active {
+                color: #00ff88;
+                border-color: rgba(0,255,136,0.4);
+                background: rgba(0,255,136,0.07);
+            }
+
             /* Step indicator */
             .mp-step {
                 display: flex;
@@ -755,6 +775,48 @@
                                     </div>
                                 </div>
 
+                                <!-- PD CALIBRATION: IOC ratio only -->
+                                <div id="cal-box" style="display:none; margin-bottom:14px; border:1px solid rgba(0,255,136,0.15); border-radius:14px; overflow:hidden;">
+                                    <div style="background:rgba(0,255,136,0.05); padding:9px 14px; display:flex; align-items:center; justify-content:space-between;">
+                                        <div>
+                                            <div style="font-size:0.6rem; color:#00ff88; letter-spacing:1px;">📐 KALIBRASI PD — IOC RATIO</div>
+                                            <div style="font-size:9px; color:#555; margin-top:2px;">Tidak perlu objek referensi • Tidak merepotkan customer</div>
+                                        </div>
+                                        <span id="cal-active-label" style="color:#00ff88; font-size:10px; font-weight:700;">IOC 95mm</span>
+                                    </div>
+                                    <div style="padding:12px 14px;">
+                                        <div style="font-size:10px; color:#777; margin-bottom:10px; line-height:1.6; text-align:left;">
+                                            PD dihitung dari rasio <b style="color:#00cfff;">jarak antar pupil</b> ÷ <b style="color:#00cfff;">jarak antar sudut mata luar (IOC)</b>.<br>
+                                            Karena keduanya diukur dalam pixel yang sama, hasilnya tidak terpengaruh jarak kamera atau zoom.
+                                        </div>
+                                        <div style="display:flex; align-items:center; gap:10px; justify-content:center; flex-wrap:wrap;">
+                                            <div style="text-align:left;">
+                                                <div style="font-size:9px; color:#555; letter-spacing:0.5px; margin-bottom:4px;">IOC REFERENSI (mm)</div>
+                                                <div style="display:flex; align-items:center; gap:6px;">
+                                                    <button type="button" onclick="adjustIOC(-0.5)" style="width:28px; height:28px; background:var(--bg-color); border:1px solid rgba(255,255,255,0.1); border-radius:8px; color:#aaa; font-size:16px; cursor:pointer; line-height:1;">−</button>
+                                                    <input type="number" id="cal-ioc-ref" value="95" min="85" max="110" step="0.5"
+                                                        style="width:68px; background:var(--bg-color); border:1px solid rgba(0,255,136,0.3); border-radius:10px; color:#00ff88; padding:6px 4px; font-size:16px; font-weight:800; text-align:center;">
+                                                    <button type="button" onclick="adjustIOC(0.5)" style="width:28px; height:28px; background:var(--bg-color); border:1px solid rgba(255,255,255,0.1); border-radius:8px; color:#aaa; font-size:16px; cursor:pointer; line-height:1;">+</button>
+                                                    <span style="font-size:11px; color:#555;">mm</span>
+                                                </div>
+                                            </div>
+                                            <button type="button" onclick="applyAutoCal()" class="neu-btn" style="padding:8px 16px; font-size:10px; border-color:rgba(0,255,136,0.3); align-self:flex-end;">
+                                                ✓ TERAPKAN
+                                            </button>
+                                        </div>
+                                        <div id="cal-auto-status" style="font-size:10px; color:#00ff88; margin-top:8px; text-align:center;">✓ Aktif — IOC ref: 95mm</div>
+                                        <!-- Quick reference -->
+                                        <div style="margin-top:10px; display:flex; gap:6px; justify-content:center; flex-wrap:wrap;">
+                                            <div style="font-size:9px; color:#444; letter-spacing:0.5px; width:100%; text-align:center; margin-bottom:3px;">REFERENSI CEPAT</div>
+                                            <button type="button" onclick="setIOCPreset(90)" class="ioc-preset">Kecil · 90mm</button>
+                                            <button type="button" onclick="setIOCPreset(93)" class="ioc-preset">Wanita · 93mm</button>
+                                            <button type="button" onclick="setIOCPreset(95)" class="ioc-preset active">Rata-rata · 95mm</button>
+                                            <button type="button" onclick="setIOCPreset(98)" class="ioc-preset">Pria · 98mm</button>
+                                            <button type="button" onclick="setIOCPreset(102)" class="ioc-preset">Besar · 102mm</button>
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <!-- LIVE CAMERA VIEW -->
                                 <div id="mp-live-view">
                                     <p class="scan-instruction" id="mp-instruction">Posisikan wajah di dalam garis hijau</p>
@@ -969,7 +1031,7 @@
                 const poseWarn      = document.getElementById('pose-warn');
                 const qualityWrap   = document.getElementById('quality-bar-wrap');
                 const qualityFill   = document.getElementById('quality-bar-fill');
-                const glassesCal    = { style: { display: '' } }; // dummy — elemen dihapus
+                
                 const step1Ind      = document.getElementById('step1-ind');
                 const step2Ind      = document.getElementById('step2-ind');
                 const step3Ind      = document.getElementById('step3-ind');
@@ -986,6 +1048,7 @@
                 let rafId            = null;
                 let lastPD           = null;
                 let capturedLM       = null;
+                let lastLM       = null;        // landmark terakhir dari live feed
                 let pdBuffer         = [];
                 let shapeBuffer      = [];
                 let metricsBuffer    = [];
@@ -993,8 +1056,9 @@
                 const PD_BUFFER_SIZE    = 30;
                 const SHAPE_BUFFER_SIZE = 15;
 
-                // Kalibrasi: rata-rata lebar wajah dewasa tragus-to-tragus
-                const faceRefMM = 142;
+                // Kalibrasi lebar wajah — default 142mm, dapat dioverride
+                let faceRefMM    = 142;   // diupdate oleh metode kalibrasi
+                let calBoxEl     = null;  // di-assign setelah DOM ready
 
                 // ============================================================
                 // STEP UI HELPER
@@ -1007,8 +1071,58 @@
                 }
 
                 // ============================================================
-                // LOAD MediaPipe — Sequential
+                // KALIBRASI PD — IOC RATIO
+                // PD = (pdPx / iocPx) × iocRefMM
+                // Tidak butuh objek referensi eksternal.
+                // Tidak terpengaruh jarak kamera, zoom, atau ukuran wajah.
                 // ============================================================
+
+                // State — iocRefMM bisa diubah lewat UI
+                let iocRefMM = 95; // rata-rata dewasa, bisa diubah user
+
+                // Preset quick-select
+                function setIOCPreset(val) {
+                    document.getElementById('cal-ioc-ref').value = val;
+                    document.querySelectorAll('.ioc-preset').forEach(b => {
+                        b.classList.toggle('active', parseFloat(b.textContent) === val ||
+                            b.onclick && b.getAttribute('onclick').includes(val));
+                    });
+                    applyAutoCal();
+                }
+                window.setIOCPreset = setIOCPreset;
+
+                // +/− stepper buttons
+                function adjustIOC(delta) {
+                    const inp = document.getElementById('cal-ioc-ref');
+                    const cur = parseFloat(inp.value) || 95;
+                    const next = Math.min(110, Math.max(85, +(cur + delta).toFixed(1)));
+                    inp.value = next;
+                }
+                window.adjustIOC = adjustIOC;
+
+                // Apply IOC reference value
+                function applyAutoCal() {
+                    const val = parseFloat(document.getElementById('cal-ioc-ref').value);
+                    const st  = document.getElementById('cal-auto-status');
+                    if (isNaN(val) || val < 85 || val > 110) {
+                        st.style.color   = '#ff4d4d';
+                        st.textContent   = '⚠ Masukkan nilai 85–110mm';
+                        return;
+                    }
+                    iocRefMM = val;
+                    st.style.color   = '#00ff88';
+                    st.textContent   = `✓ Aktif — IOC ref: ${val}mm`;
+                    const lbl = document.getElementById('cal-active-label');
+                    if (lbl) lbl.textContent = `IOC ${val}mm`;
+                    // Update active preset highlight
+                    document.querySelectorAll('.ioc-preset').forEach(b => {
+                        const match = b.getAttribute('onclick') || '';
+                        b.classList.toggle('active', match.includes('(' + val + ')'));
+                    });
+                }
+                window.applyAutoCal = applyAutoCal;
+
+
                 function loadMediaPipe() {
                     resultBox.innerHTML = `<div class="mp-loading"><div class="spinner"></div> MEMUAT MEDIAPIPE...</div>`;
                     const scripts = [
@@ -1078,6 +1192,9 @@
                             startBtn.innerHTML       = '<div class="led"></div> CAMERA AKTIF';
                             switchBtn.style.display  = 'inline-block';
                             captureBtn.style.display = 'inline-block';
+                            // Show calibration box
+                            const calEl = document.getElementById('cal-box');
+                            if (calEl) calEl.style.display = 'block';
                             qualityWrap.style.display   = 'block';
                             poseIndicator.style.display = 'block';
                             resultBox.innerHTML = `<span style="color:var(--text-muted);font-size:0.75rem">Posisikan wajah Anda...</span>`;
@@ -1149,6 +1266,7 @@
                         return;
                     }
                     const lm = results.multiFaceLandmarks[0];
+                    lastLM = lm; // simpan untuk dipakai fungsi kalibrasi
                     drawMesh(lm, ctx, canvas.width, canvas.height, false);
                     qualityScore = detectPoseQuality(lm);
                     qualityFill.style.width = qualityScore + '%';
@@ -1333,27 +1451,29 @@
                 }
 
                 function measurePD(lm, W, H) {
-                    // Iris centroids — lebih akurat dari 1 titik pupil saja
-                    const rIris = irisCenter(lm, 468, W, H); // OS (kiri pasien)
-                    const lIris = irisCenter(lm, 473, W, H); // OD (kanan pasien)
+                    // Gunakan centroid 5 titik iris per mata — lebih stabil dari 1 titik
+                    const rIris = irisCenter(lm, 468, W, H); // OS (kiri pasien, kanan kamera)
+                    const lIris = irisCenter(lm, 473, W, H); // OD (kanan pasien, kiri kamera)
                     if (!rIris || !lIris) return null;
 
                     const dx   = lIris.x - rIris.x;
                     const dy   = lIris.y - rIris.y;
                     const pdPx = Math.sqrt(dx*dx + dy*dy);
 
-                    // Kalibrasi: tragus-to-tragus (landmark 234–454) ≈ 142mm rata-rata dewasa
-                    const faceWidthPx = Math.abs((lm[LM.JAW_RIGHT].x - lm[LM.JAW_LEFT].x) * W);
-                    if (faceWidthPx < 10) return null;
-                    const mmPerPx = faceRefMM / faceWidthPx;
+                    // IOC ratio: jarak sudut mata luar dalam pixel sebagai denominator
+                    // mmPerPx = iocRefMM / iocPx  →  PD = pdPx × mmPerPx
+                    // Keunggulan: tidak perlu tahu jarak kamera atau ukuran wajah sama sekali.
+                    // Karena pdPx dan iocPx diukur di frame yang sama, rasionya konstan
+                    // terlepas dari seberapa dekat/jauh customer dari kamera.
+                    const iocPx = Math.abs((lm[LM.EYE_R_OUTER].x - lm[LM.EYE_L_OUTER].x) * W);
+                    if (iocPx < 5) return null;
+                    const mmPerPx = iocRefMM / iocPx;
 
                     const pdTotal = +(pdPx * mmPerPx).toFixed(1);
-
-                    // PD monocular: dari pusat hidung (lm 168) ke centroid masing-masing iris
                     const nose    = lm[LM.FACE_CENTER];
                     const noseX   = nose.x * W;
-                    const pdOD    = +(Math.abs(lIris.x - noseX) * mmPerPx).toFixed(1); // OD = kanan pasien
-                    const pdOS    = +(Math.abs(rIris.x - noseX) * mmPerPx).toFixed(1); // OS = kiri pasien
+                    const pdOD    = +(Math.abs(lIris.x - noseX) * mmPerPx).toFixed(1);
+                    const pdOS    = +(Math.abs(rIris.x - noseX) * mmPerPx).toFixed(1);
 
                     return { total: pdTotal, od: pdOD, os: pdOS };
                 }
@@ -1520,7 +1640,7 @@
                         TRIANGLE:'Rahang lebih lebar dari dahi, wajah membesar ke bawah.'
                     };
                     const top3 = Object.entries(percentages).sort((a,b)=>b[1]-a[1]).slice(0,3);
-                    const pdSrc = `*estimasi — kalibrasi lebar wajah ${faceRefMM}mm (rata-rata dewasa)`;
+                    const pdSrc = `*metode IOC ratio — referensi ${iocRefMM}mm`;
                     const pdHtml = pd
                         ? `<div style="margin-top:12px;padding:10px 15px;background:rgba(0,207,255,0.07);border:1px solid rgba(0,207,255,0.2);border-radius:12px;width:90%;">
                             <div style="font-size:0.6rem;color:var(--text-muted);letter-spacing:1px;margin-bottom:6px;">PUPILLARY DISTANCE</div>
@@ -1602,6 +1722,12 @@
                     qualityWrap.style.display   = 'block';
                     poseIndicator.style.display = 'block';
                     frameRecBox.style.display   = 'none';
+                    const calEl = document.getElementById('cal-box');
+                    if (calEl) calEl.style.display = 'none';
+                    // Reset kalibrasi ke default
+                    iocRefMM = 95;
+                    const calLbl = document.getElementById('cal-active-label');
+                    if (calLbl) calLbl.textContent = 'IOC 95mm';
                     resultBox.innerHTML = `<span style="color:var(--text-muted);font-size:0.75rem">Posisikan wajah Anda...</span>`;
                     setStep(2);
                     startCamera();
