@@ -651,14 +651,21 @@
                 inset: 0 !important;
                 z-index: 9999 !important;
                 width: 100vw !important;
+                /* Use dynamic viewport height so mobile address bar doesn't cut off bottom content.
+                   Falls back to 100vh on browsers that don't support dvh. */
                 height: 100vh !important;
+                height: 100dvh !important;
                 max-width: none !important;
                 margin: 0 !important;
-                padding: 56px 12px 12px 12px !important;
+                /* Extra bottom padding ensures the RESCAN / button row stays fully visible
+                   even with iOS safe-area / home indicator */
+                padding: 56px 12px calc(32px + env(safe-area-inset-bottom, 0px)) 12px !important;
                 background: #0a0a0a !important;
                 border-radius: 0 !important;
                 box-shadow: none !important;
                 overflow-y: auto !important;
+                overscroll-behavior: contain;
+                -webkit-overflow-scrolling: touch;
                 display: flex !important;
                 flex-direction: column !important;
                 align-items: center !important;
@@ -669,10 +676,18 @@
                 background: transparent;
                 box-shadow: none;
                 padding: 10px;
+                /* Let content determine height; don't let the flex container squeeze the buttons */
+                flex-shrink: 0;
             }
             body.fullscreen-cam-active .mp-wrapper {
                 width: min(92vw, 440px);
-                height: min(68vh, 580px);
+                /* Shrink the video frame so there's room for buttons below without scrolling-to-cut */
+                height: min(58vh, 520px);
+            }
+            /* Button row inside fullscreen scan: guarantee it keeps natural height and margin */
+            body.fullscreen-cam-active .selection-wrapper {
+                flex-shrink: 0;
+                padding-bottom: 8px;
             }
 
             /* Back button overlay — only visible in fullscreen */
@@ -700,8 +715,10 @@
             body.fullscreen-cam-active #mp-back-btn { display: inline-flex; align-items: center; gap: 6px; }
 
             @media (max-width: 600px) {
-                body.fullscreen-cam-active #mp-scan-card { padding: 52px 6px 8px 6px !important; }
-                body.fullscreen-cam-active .mp-wrapper { width: 96vw; height: 62vh; }
+                body.fullscreen-cam-active #mp-scan-card {
+                    padding: 52px 6px calc(28px + env(safe-area-inset-bottom, 0px)) 6px !important;
+                }
+                body.fullscreen-cam-active .mp-wrapper { width: 96vw; height: 52vh; }
             }
 
             /* =================================================================
@@ -1031,7 +1048,7 @@
                                                     <span style="font-size:11px; color:#555;">mm</span>
                                                 </div>
                                             </div>
-                                            <button type="button" onclick="applyAutoCal()" class="neu-btn" style="padding:8px 16px; font-size:10px; border-color:rgba(0,255,136,0.3); align-self:flex-end;">
+                                            <button type="button" onclick="applyAutoCal()" style="padding:7px 14px; font-size:10px; font-weight:700; letter-spacing:0.8px; background:rgba(0,255,136,0.08); border:1px solid rgba(0,255,136,0.35); border-radius:10px; color:#00ff88; cursor:pointer; font-family:inherit; flex:0 0 auto; white-space:nowrap; align-self:flex-end; height:32px; line-height:1;">
                                                 ✓ APPLY
                                             </button>
                                         </div>
@@ -1044,6 +1061,20 @@
                                             <button type="button" onclick="setIOCPreset(95)" class="ioc-preset active">Average · 95mm</button>
                                             <button type="button" onclick="setIOCPreset(98)" class="ioc-preset">Male · 98mm</button>
                                             <button type="button" onclick="setIOCPreset(102)" class="ioc-preset">Large · 102mm</button>
+                                        </div>
+
+                                        <!-- AUTO-CAPTURE DURATION -->
+                                        <div style="margin-top:14px; padding-top:10px; border-top:1px dashed rgba(255,255,255,0.06);">
+                                            <div style="font-size:9px; color:#555; letter-spacing:0.5px; text-align:center; margin-bottom:6px;">AUTO-CAPTURE DURATION</div>
+                                            <div style="display:flex; align-items:center; gap:6px; justify-content:center; flex-wrap:wrap;">
+                                                <button type="button" onclick="setAutoCapSeconds(parseFloat(document.getElementById('autocap-sec-input').value||3)-1)" style="width:28px; height:28px; background:var(--bg-color); border:1px solid rgba(255,255,255,0.1); border-radius:8px; color:#aaa; font-size:16px; cursor:pointer; line-height:1;">−</button>
+                                                <input type="number" id="autocap-sec-input" value="3" min="1" max="15" step="1"
+                                                    oninput="setAutoCapSeconds(this.value)"
+                                                    style="width:58px; background:var(--bg-color); border:1px solid rgba(0,255,136,0.3); border-radius:10px; color:#00ff88; padding:6px 4px; font-size:15px; font-weight:800; text-align:center;">
+                                                <button type="button" onclick="setAutoCapSeconds(parseFloat(document.getElementById('autocap-sec-input').value||3)+1)" style="width:28px; height:28px; background:var(--bg-color); border:1px solid rgba(255,255,255,0.1); border-radius:8px; color:#aaa; font-size:16px; cursor:pointer; line-height:1;">+</button>
+                                                <span style="font-size:11px; color:#555;">seconds</span>
+                                            </div>
+                                            <div style="font-size:9px; color:#444; text-align:center; margin-top:5px;">Range 1–15s · Default 3s</div>
                                         </div>
                                     </div>
                                 </div>
@@ -1070,7 +1101,7 @@
 
                                     <!-- AUTO-CAPTURE COUNTDOWN -->
                                     <div id="autocap-hint" style="display:none;margin-top:8px;font-size:11px;color:#00ff88;letter-spacing:1px;">
-                                        Hold still… auto-capture in <span id="autocap-sec">5</span>
+                                        Hold still… auto-capture in <span id="autocap-sec">3</span>
                                     </div>
 
                                     <!-- BRIGHTNESS / POSE QUALITY BAR -->
@@ -1310,10 +1341,10 @@
                 const PD_BUFFER_SIZE    = 30;
                 const SHAPE_BUFFER_SIZE = 15;
 
-                // Auto-capture state — triggers when pose is perfect for 5 consecutive seconds
+                // Auto-capture state — user-configurable hold time (default 3s)
                 let autoCapStableSince = 0;
                 let autoCapTimerId     = null;
-                const AUTO_CAP_HOLD_MS = 5000;
+                let AUTO_CAP_HOLD_MS   = 3000;   // default 3 seconds (user-adjustable via #autocap-sec-input)
                 function handleAutoCapture(allOk) {
                     const hint = document.getElementById('autocap-hint');
                     const sec  = document.getElementById('autocap-sec');
@@ -1335,6 +1366,20 @@
                         capturePhoto();
                     }
                 }
+
+                // Setter hooked to the duration input — clamped to 1..15 seconds
+                function setAutoCapSeconds(val) {
+                    const n = parseFloat(val);
+                    if (isNaN(n)) return;
+                    const clamped = Math.max(1, Math.min(15, n));
+                    AUTO_CAP_HOLD_MS = Math.round(clamped * 1000);
+                    autoCapStableSince = 0; // restart the countdown with the new duration
+                    const inp = document.getElementById('autocap-sec-input');
+                    if (inp && parseFloat(inp.value) !== clamped) inp.value = clamped;
+                    const initial = document.getElementById('autocap-sec');
+                    if (initial) initial.textContent = Math.ceil(clamped);
+                }
+                window.setAutoCapSeconds = setAutoCapSeconds;
 
                 // Face-width calibration — default 142mm, can be overridden
                 let faceRefMM    = 142;   // updated by calibration method
@@ -2135,23 +2180,47 @@
                             <div class="pd-note" style="margin-top:5px;">${pdSrc}</div>
                            </div>`
                         : `<div style="font-size:10px;color:#555;margin-top:8px;">Iris data not available</div>`;
+
+                    // Collapsible analysis-details block — hidden by default, toggled via header tap
+                    const detailsHtml = `
+                        <div id="analysis-details-wrap" style="width:100%;margin-top:10px;">
+                            <div onclick="toggleAnalysisDetails()" style="cursor:pointer;user-select:none;display:flex;align-items:center;justify-content:space-between;padding:7px 12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:10px;">
+                                <span style="font-size:0.6rem;color:#888;letter-spacing:1px;">ANALYSIS DETAILS</span>
+                                <span id="analysis-details-chev" style="color:#888;font-size:11px;transition:transform 0.25s;display:inline-block;">▼</span>
+                            </div>
+                            <div id="analysis-details-body" style="display:none;padding:10px 4px 0 4px;">
+                                <div style="font-size:11px;color:var(--text-muted);margin-top:2px;max-width:260px;text-align:center;margin-left:auto;margin-right:auto;">${shapeDesc[shape]||''}</div>
+                                <div class="conf-bar-wrap" style="width:80%;margin:8px auto 6px auto;"><div class="conf-bar-fill" style="width:${conf}%;"></div></div>
+                                <div style="font-size:10px;color:#666;margin-bottom:8px;text-align:center;">${top3.map(([s,p])=>`${s} ${p}%`).join(' · ')}</div>
+                                <div class="metrics-row">
+                                    <span class="metric-chip">H/W ${m.faceRatio}</span>
+                                    <span class="metric-chip">Forehead ${m.foreheadRatio}</span>
+                                    <span class="metric-chip">Cheek ${m.cheekRatio}</span>
+                                    <span class="metric-chip">Jaw ${m.jawRatio}</span>
+                                    <span class="metric-chip">Chin ${m.chinAngle}°</span>
+                                    <span class="metric-chip">Taper ${m.lowerTaper}</span>
+                                </div>
+                            </div>
+                        </div>`;
+
                     resultBox.innerHTML = `
                         <div style="font-size:0.65rem;color:var(--text-muted);letter-spacing:1px;margin-bottom:6px;">ANALYSIS RESULT</div>
                         <div class="shape-badge" style="font-size:1.6rem;">${shape}</div>
-                        <div style="font-size:11px;color:var(--text-muted);margin-top:4px;max-width:260px;text-align:center;">${shapeDesc[shape]||''}</div>
-                        <div class="conf-bar-wrap" style="width:80%;margin-top:8px;margin-bottom:6px;"><div class="conf-bar-fill" style="width:${conf}%;"></div></div>
-                        <div style="font-size:10px;color:#666;margin-bottom:8px;">${top3.map(([s,p])=>`${s} ${p}%`).join(' · ')}</div>
-                        <div class="metrics-row">
-                            <span class="metric-chip">H/W ${m.faceRatio}</span>
-                            <span class="metric-chip">Forehead ${m.foreheadRatio}</span>
-                            <span class="metric-chip">Cheek ${m.cheekRatio}</span>
-                            <span class="metric-chip">Jaw ${m.jawRatio}</span>
-                            <span class="metric-chip">Chin ${m.chinAngle}°</span>
-                            <span class="metric-chip">Taper ${m.lowerTaper}</span>
-                        </div>
                         ${pdHtml}
+                        ${detailsHtml}
                     `;
                 }
+
+                // Collapsible toggle for the ANALYSIS DETAILS block
+                function toggleAnalysisDetails() {
+                    const b = document.getElementById('analysis-details-body');
+                    const c = document.getElementById('analysis-details-chev');
+                    if (!b) return;
+                    const open = b.style.display === 'none';
+                    b.style.display = open ? 'block' : 'none';
+                    if (c) c.style.transform = open ? 'rotate(180deg)' : 'rotate(0deg)';
+                }
+                window.toggleAnalysisDetails = toggleAnalysisDetails;
 
                 // ============================================================
                 // FRAME RECOMMENDATIONS
@@ -2330,20 +2399,44 @@
                         ? `<div style="font-size:9px;color:#888;letter-spacing:0.5px;margin-bottom:8px;">Priority tailored for: <span style="color:#00cfff;font-weight:700;">${genderLabel}</span></div>`
                         : '';
 
-                    // Build a compact legend of all frame-shape colors available (skips if none loaded)
+                    // Build a compact legend of all frame-shape colors available (collapsible)
                     const legendEntries = Object.entries(frameShapeColors || {});
                     const legendHtml = legendEntries.length
-                        ? `<div style="margin-bottom:10px;padding:8px 10px;background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.06);border-radius:10px;">
-                             <div style="font-size:0.55rem;color:#777;letter-spacing:1px;margin-bottom:5px;">FRAME SHAPE COLOR GUIDE</div>
-                             <div style="display:flex;flex-wrap:wrap;gap:5px;">
-                               ${legendEntries.map(([name, color]) => `
-                                 <span style="display:inline-flex;align-items:center;gap:4px;padding:2px 7px 2px 3px;border-radius:20px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);font-size:9px;color:#bbb;letter-spacing:0.5px;">
-                                   <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${color};box-shadow:0 0 4px ${color}66,inset 0 0 0 1px rgba(255,255,255,0.15);"></span>
-                                   ${name}
-                                 </span>`).join('')}
+                        ? `<div style="margin-bottom:10px;background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.06);border-radius:10px;overflow:hidden;">
+                             <div onclick="toggleCollapsible('frame-legend')" style="cursor:pointer;user-select:none;display:flex;align-items:center;justify-content:space-between;padding:8px 12px;">
+                                 <span style="font-size:0.55rem;color:#888;letter-spacing:1px;">FRAME SHAPE COLOR GUIDE</span>
+                                 <span id="frame-legend-chev" style="color:#888;font-size:11px;transition:transform 0.25s;display:inline-block;">▼</span>
+                             </div>
+                             <div id="frame-legend-body" style="display:none;padding:0 10px 10px 10px;">
+                                 <div style="display:flex;flex-wrap:wrap;gap:5px;">
+                                   ${legendEntries.map(([name, color]) => `
+                                     <span style="display:inline-flex;align-items:center;gap:4px;padding:2px 7px 2px 3px;border-radius:20px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);font-size:9px;color:#bbb;letter-spacing:0.5px;">
+                                       <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${color};box-shadow:0 0 4px ${color}66,inset 0 0 0 1px rgba(255,255,255,0.15);"></span>
+                                       ${name}
+                                     </span>`).join('')}
+                                 </div>
                              </div>
                            </div>`
                         : '';
+
+                    // Build collapsible "Frames to Avoid" section
+                    const avoidHtml = rec.avoid.length
+                        ? `<div style="margin-top:6px;background:rgba(255,77,77,0.03);border:1px solid rgba(255,77,77,0.10);border-radius:10px;overflow:hidden;">
+                             <div onclick="toggleCollapsible('frame-avoid')" style="cursor:pointer;user-select:none;display:flex;align-items:center;justify-content:space-between;padding:8px 12px;">
+                                 <span style="font-size:0.6rem;color:#ff4d4d;letter-spacing:1px;">✕ FRAMES TO AVOID (${rec.avoid.length})</span>
+                                 <span id="frame-avoid-chev" style="color:#ff4d4d;font-size:11px;transition:transform 0.25s;display:inline-block;">▼</span>
+                             </div>
+                             <div id="frame-avoid-body" style="display:none;padding:0 10px 10px 10px;">
+                                 <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px;">
+                                     ${rec.avoid.map(f => `<div style="display:flex;align-items:flex-start;gap:8px;padding:7px 10px;background:rgba(255,77,77,0.05);border:1px solid rgba(255,77,77,0.12);border-radius:10px;">
+                                         <span style="font-size:12px;color:#ff4d4d;">✕</span>
+                                         <div style="flex:1;min-width:0;"><div style="font-size:11px;color:#ff4d4d;font-weight:700;">${f.s}</div><div style="font-size:10px;color:#777;margin-top:2px;">${f.r}</div>${renderColorSwatches(f.s)}</div>
+                                     </div>`).join('')}
+                                 </div>
+                                 <div style="font-size:10px;color:#555;font-style:italic;">${rec.avoidNote}</div>
+                             </div>
+                           </div>`
+                        : `<div style="font-size:10px;color:#00ff88;font-style:italic;margin-top:6px;">${rec.avoidNote}</div>`;
 
                     frameRecContent.innerHTML = `
                         <div style="font-size:12px;color:#ffaa00;font-weight:700;margin-bottom:8px;">${rec.emoji} ${shape} — ${rec.tagline}</div>
@@ -2370,19 +2463,22 @@
                                 </div>`;
                             }).join('')}
                         </div>
-                        ${rec.avoid.length?`
-                        <div style="font-size:0.6rem;color:var(--text-muted);letter-spacing:1px;margin-bottom:6px;">✕ FRAMES TO AVOID</div>
-                        <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px;">
-                            ${rec.avoid.map(f=>`<div style="display:flex;align-items:flex-start;gap:8px;padding:7px 10px;background:rgba(255,77,77,0.05);border:1px solid rgba(255,77,77,0.12);border-radius:10px;">
-                                <span style="font-size:12px;color:#ff4d4d;">✕</span>
-                                <div style="flex:1;min-width:0;"><div style="font-size:11px;color:#ff4d4d;font-weight:700;">${f.s}</div><div style="font-size:10px;color:#777;margin-top:2px;">${f.r}</div>${renderColorSwatches(f.s)}</div>
-                            </div>`).join('')}
-                        </div>
-                        <div style="font-size:10px;color:#555;font-style:italic;">${rec.avoidNote}</div>
-                        `:`<div style="font-size:10px;color:#00ff88;font-style:italic;">${rec.avoidNote}</div>`}
+                        ${avoidHtml}
                     `;
                     frameRecBox.style.display = 'block';
                 }
+
+                // Generic collapsible toggle used by the legend + avoid sections.
+                // Expects an element with id "{prefix}-body" and chevron "{prefix}-chev".
+                function toggleCollapsible(prefix) {
+                    const body = document.getElementById(prefix + '-body');
+                    const chev = document.getElementById(prefix + '-chev');
+                    if (!body) return;
+                    const open = body.style.display === 'none';
+                    body.style.display = open ? 'block' : 'none';
+                    if (chev) chev.style.transform = open ? 'rotate(180deg)' : 'rotate(0deg)';
+                }
+                window.toggleCollapsible = toggleCollapsible;
 
                 // ============================================================
                 // RESET
