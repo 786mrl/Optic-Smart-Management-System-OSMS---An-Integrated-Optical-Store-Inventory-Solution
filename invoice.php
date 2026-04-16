@@ -64,6 +64,22 @@
             </div>
         ");
     }
+
+    // Load frame-shape color mapping (optional — fails silently if missing/invalid)
+    $frameShapeColors = [];
+    $colorJsonPath = __DIR__ . '/data_json/color_shape.json';
+    if (is_readable($colorJsonPath)) {
+        $raw = @file_get_contents($colorJsonPath);
+        if ($raw !== false) {
+            $decoded = json_decode($raw, true);
+            if (is_array($decoded)) {
+                // Normalize keys to uppercase for consistent JS lookup
+                foreach ($decoded as $k => $v) {
+                    $frameShapeColors[strtoupper(trim($k))] = $v;
+                }
+            }
+        }
+    }
 ?>
 
 <!DOCTYPE html>
@@ -1190,6 +1206,10 @@
                 // Patient gender from PHP (for gender-aware frame ranking — fix #5)
                 const patientGender = "<?php echo strtolower(trim($data['gender'] ?? '')); ?>";
 
+                // Frame-shape color mapping loaded from ./data_json/color_shape.json
+                // Keys are uppercase frame-shape names (e.g., "WAYFARER"), values are hex colors.
+                const frameShapeColors = <?php echo json_encode($frameShapeColors, JSON_UNESCAPED_UNICODE); ?>;
+
                 // ============================================================
                 // LANDMARK INDEX MAP (MediaPipe Face Mesh 468+10 iris points)
                 // ============================================================
@@ -2194,6 +2214,103 @@
                     return score;
                 }
 
+                // ============================================================
+                // FRAME SHAPE → COLOR LOOKUP
+                // Matches descriptive frame names (e.g. "Rectangular / Wayfarer")
+                // against keys in frameShapeColors ("WAYFARER", "ROUND", ...).
+                // A single frame can map to multiple shape-colors — all matches
+                // are returned, ordered by where they appear in the name.
+                // ============================================================
+                function getFrameColors(frameName) {
+                    if (!frameShapeColors || !frameName) return [];
+                    const nUpper = String(frameName).toUpperCase();
+                    // Helper: returns ALL word-boundary match positions of `needle` in nUpper
+                    function findWordAll(needle) {
+                        const esc = needle.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+                        const re = new RegExp('(^|[^A-Z])' + esc + '(?=[^A-Z]|$)', 'g');
+                        const out = [];
+                        let m;
+                        while ((m = re.exec(nUpper)) !== null) {
+                            out.push(m.index + m[1].length);
+                        }
+                        return out;
+                    }
+                    // Synonym map: each surface form (left) can map to one OR MORE JSON keys (right).
+                    // The matcher will add a swatch for every listed target that exists in the JSON.
+                    // This lets a name like "Rectangular / Square" show BOTH a Rectangle
+                    // swatch (if that key is in the JSON) AND a Square swatch.
+                    const synonyms = {
+                        'CIRCULAR':      ['ROUND'],
+                        'CLUB MASTER':   ['BROWLINE'],
+                        'CLUBMASTER':    ['BROWLINE'],
+                        'UPSWEPT':       ['CAT-EYE'],
+                        'RECTANGULAR':   ['RECTANGLE', 'SQUARE'],
+                        'RECTANGLE':     ['RECTANGLE', 'SQUARE'],
+                        'TEARDROP':      ['AVIATOR'],
+                        'ANGULAR':       ['GEOMETRIC'],
+                        'PEAR SHAPE':    ['BUTTERFLY'],
+                        'PEAR':          ['BUTTERFLY'],
+                        'BOTTOM-HEAVY':  ['BUTTERFLY'],
+                        'TOP-HEAVY':     ['CAT-EYE']
+                    };
+                    // Collect (position, key) hits. De-dup by (pos, key) so the same word
+                    // isn't counted twice when it's both a direct match and a synonym.
+                    const hits = [];
+                    const seen = new Set();
+                    function add(key, pos) {
+                        if (!(key in frameShapeColors)) return;
+                        const sig = pos + ':' + key;
+                        if (seen.has(sig)) return;
+                        seen.add(sig);
+                        hits.push({ key, pos });
+                    }
+                    // Direct key hits
+                    for (const k of Object.keys(frameShapeColors)) {
+                        for (const pos of findWordAll(k)) add(k, pos);
+                    }
+                    // Synonym hits (each synonym can fan out to several target keys)
+                    for (const [syn, targets] of Object.entries(synonyms)) {
+                        const positions = findWordAll(syn);
+                        if (!positions.length) continue;
+                        for (const pos of positions) {
+                            for (const key of targets) add(key, pos);
+                        }
+                    }
+                    hits.sort((a, b) => a.pos - b.pos);
+                    // Final de-dup by key (keep first occurrence) so we never show the
+                    // same swatch twice just because the frame name contained the word
+                    // more than once.
+                    const out = [];
+                    const seenKey = new Set();
+                    for (const h of hits) {
+                        if (seenKey.has(h.key)) continue;
+                        seenKey.add(h.key);
+                        out.push({ name: h.key, color: frameShapeColors[h.key] });
+                    }
+                    return out;
+                }
+
+                // Render helper: colored swatch pills for a given frame name.
+                // size: 'sm' (default — for legend & avoid list) or 'lg' (recommended list)
+                function renderColorSwatches(frameName, size) {
+                    const colors = getFrameColors(frameName);
+                    if (!colors.length) return '';
+                    const large = size === 'lg';
+                    const dot   = large ? 18 : 11;            // circle diameter
+                    const font  = large ? 11 : 9;             // label font-size
+                    const padY  = large ? 4 : 2;
+                    const padX  = large ? 10 : 7;
+                    const gap   = large ? 7 : 4;
+                    const marginTop = large ? 8 : 5;
+                    return `<div style="display:flex;flex-wrap:wrap;gap:${gap}px;margin-top:${marginTop}px;">`
+                        + colors.map(c => `
+                            <span style="display:inline-flex;align-items:center;gap:${large?6:4}px;padding:${padY}px ${padX}px ${padY}px ${Math.max(padY,3)}px;border-radius:20px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);font-size:${font}px;letter-spacing:0.5px;color:#ddd;font-weight:${large?700:500};">
+                                <span style="display:inline-block;width:${dot}px;height:${dot}px;border-radius:50%;background:${c.color};box-shadow:0 0 ${large?8:4}px ${c.color}99,inset 0 0 0 1px rgba(255,255,255,0.2);flex-shrink:0;"></span>
+                                ${c.name}
+                            </span>`).join('')
+                        + `</div>`;
+                }
+
                 function showFrameRecommendation(shape) {
                     const rec = frameRec[shape]; if (!rec) return;
                     const gender = normalizeGender(patientGender);
@@ -2213,9 +2330,25 @@
                         ? `<div style="font-size:9px;color:#888;letter-spacing:0.5px;margin-bottom:8px;">Priority tailored for: <span style="color:#00cfff;font-weight:700;">${genderLabel}</span></div>`
                         : '';
 
+                    // Build a compact legend of all frame-shape colors available (skips if none loaded)
+                    const legendEntries = Object.entries(frameShapeColors || {});
+                    const legendHtml = legendEntries.length
+                        ? `<div style="margin-bottom:10px;padding:8px 10px;background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.06);border-radius:10px;">
+                             <div style="font-size:0.55rem;color:#777;letter-spacing:1px;margin-bottom:5px;">FRAME SHAPE COLOR GUIDE</div>
+                             <div style="display:flex;flex-wrap:wrap;gap:5px;">
+                               ${legendEntries.map(([name, color]) => `
+                                 <span style="display:inline-flex;align-items:center;gap:4px;padding:2px 7px 2px 3px;border-radius:20px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);font-size:9px;color:#bbb;letter-spacing:0.5px;">
+                                   <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${color};box-shadow:0 0 4px ${color}66,inset 0 0 0 1px rgba(255,255,255,0.15);"></span>
+                                   ${name}
+                                 </span>`).join('')}
+                             </div>
+                           </div>`
+                        : '';
+
                     frameRecContent.innerHTML = `
                         <div style="font-size:12px;color:#ffaa00;font-weight:700;margin-bottom:8px;">${rec.emoji} ${shape} — ${rec.tagline}</div>
                         ${genderNote}
+                        ${legendHtml}
                         <div style="font-size:0.6rem;color:var(--text-muted);letter-spacing:1px;margin-bottom:6px;">✓ RECOMMENDED FRAMES (BY PRIORITY)</div>
                         <div style="display:flex;flex-direction:column;gap:7px;margin-bottom:12px;">
                             ${ranked.map((f, i) => {
@@ -2229,9 +2362,10 @@
                                     : '';
                                 return `<div style="display:flex;align-items:flex-start;gap:8px;padding:9px 11px;background:${bg};border:1px solid ${bd};border-radius:10px;">
                                     <span style="font-size:14px;min-width:20px;text-align:center;">${f.i}</span>
-                                    <div style="flex:1;">
+                                    <div style="flex:1;min-width:0;">
                                         <div style="font-size:11px;color:${color};font-weight:700;">${rank}${f.s}${badge}</div>
                                         <div style="font-size:10px;color:#888;margin-top:2px;">${f.r}</div>
+                                        ${renderColorSwatches(f.s, 'lg')}
                                     </div>
                                 </div>`;
                             }).join('')}
@@ -2241,7 +2375,7 @@
                         <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px;">
                             ${rec.avoid.map(f=>`<div style="display:flex;align-items:flex-start;gap:8px;padding:7px 10px;background:rgba(255,77,77,0.05);border:1px solid rgba(255,77,77,0.12);border-radius:10px;">
                                 <span style="font-size:12px;color:#ff4d4d;">✕</span>
-                                <div><div style="font-size:11px;color:#ff4d4d;font-weight:700;">${f.s}</div><div style="font-size:10px;color:#777;margin-top:2px;">${f.r}</div></div>
+                                <div style="flex:1;min-width:0;"><div style="font-size:11px;color:#ff4d4d;font-weight:700;">${f.s}</div><div style="font-size:10px;color:#777;margin-top:2px;">${f.r}</div>${renderColorSwatches(f.s)}</div>
                             </div>`).join('')}
                         </div>
                         <div style="font-size:10px;color:#555;font-style:italic;">${rec.avoidNote}</div>
