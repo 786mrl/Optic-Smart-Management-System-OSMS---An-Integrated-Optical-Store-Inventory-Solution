@@ -625,6 +625,190 @@
                 background: rgba(255,138,77,0.07);
             }
             #autocap-hint { animation: blink 1s linear infinite; }
+
+            /* ==========================================================
+               FULLSCREEN CAMERA MODE (fix #6)
+               ========================================================== */
+            body.fullscreen-cam-active { overflow: hidden; }
+            body.fullscreen-cam-active #mp-scan-card {
+                position: fixed !important;
+                inset: 0 !important;
+                z-index: 9999 !important;
+                width: 100vw !important;
+                height: 100vh !important;
+                max-width: none !important;
+                margin: 0 !important;
+                padding: 56px 12px 12px 12px !important;
+                background: #0a0a0a !important;
+                border-radius: 0 !important;
+                box-shadow: none !important;
+                overflow-y: auto !important;
+                display: flex !important;
+                flex-direction: column !important;
+                align-items: center !important;
+            }
+            body.fullscreen-cam-active #mp-scan-card > .prescription-container {
+                width: 100%;
+                max-width: 520px;
+                background: transparent;
+                box-shadow: none;
+                padding: 10px;
+            }
+            body.fullscreen-cam-active .mp-wrapper {
+                width: min(92vw, 440px);
+                height: min(68vh, 580px);
+            }
+
+            /* Back button overlay — only visible in fullscreen */
+            #mp-back-btn {
+                display: none;
+                position: fixed;
+                top: 12px;
+                left: 12px;
+                z-index: 10000;
+                background: rgba(0,0,0,0.7);
+                border: 1px solid rgba(0,255,136,0.4);
+                color: #00ff88;
+                padding: 9px 14px;
+                border-radius: 22px;
+                font-size: 0.8rem;
+                font-weight: 700;
+                letter-spacing: 1px;
+                cursor: pointer;
+                font-family: inherit;
+                backdrop-filter: blur(8px);
+                -webkit-backdrop-filter: blur(8px);
+                box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+            }
+            #mp-back-btn:active { transform: scale(0.96); }
+            body.fullscreen-cam-active #mp-back-btn { display: inline-flex; align-items: center; gap: 6px; }
+
+            @media (max-width: 600px) {
+                body.fullscreen-cam-active #mp-scan-card { padding: 52px 6px 8px 6px !important; }
+                body.fullscreen-cam-active .mp-wrapper { width: 96vw; height: 62vh; }
+            }
+
+            /* =================================================================
+               MOBILE LAYOUT HARDENING — prevents content from overflowing the
+               outer container on phones. Added last so it wins the cascade.
+               ================================================================= */
+
+            /* Global box-sizing so padding never adds to declared widths */
+            *, *::before, *::after { box-sizing: border-box; }
+
+            /* Kill any horizontal scroll at the root level */
+            html, body {
+                max-width: 100%;
+                overflow-x: hidden;
+            }
+
+            /* Images/canvas/video should never push the layout wider than their parent */
+            img, video, canvas, svg { max-width: 100%; height: auto; }
+
+            /* Read-only boxes sometimes hold long IDs or addresses — let them wrap */
+            .read-only-box {
+                word-break: break-word;
+                overflow-wrap: anywhere;
+                min-width: 0;
+            }
+
+            /* Generic container overflow guard */
+            .main-wrapper, .content-area, .main-card, .neumorph-card,
+            .prescription-container, .info-grid, .full {
+                max-width: 100%;
+                min-width: 0;
+            }
+
+            /* Make the prescription table adapt on narrow screens */
+            .prescription-table { width: 100%; table-layout: fixed; }
+            .prescription-table td, .prescription-table th {
+                word-break: break-word;
+                overflow-wrap: anywhere;
+            }
+            .input-table-neu { width: 100%; min-width: 0; }
+
+            /* Chips/metrics rows wrap instead of overflow */
+            .metrics-row, .pd-row {
+                flex-wrap: wrap;
+                max-width: 100%;
+            }
+            .metric-chip, .pd-chip { max-width: 100%; }
+
+            /* The scan-result card sometimes had width:90% pushing beyond the parent */
+            #mp-result, #mp-frame-rec { width: 100%; max-width: 100%; }
+            #mp-result > div, #mp-frame-rec > div { max-width: 100%; }
+
+            /* Selection-wrapper was set to nowrap on mobile — force wrap so 3+ buttons
+               (START/RESCAN, SWITCH, CAPTURE, RESET) never spill out of the container */
+            .selection-wrapper { flex-wrap: wrap; }
+
+            /* --- Mobile-specific sizing --- */
+            @media (max-width: 600px) {
+                /* Soften the big neumorphic shadow so it doesn't create apparent overflow */
+                .neumorph-card, .main-card, .prescription-container {
+                    box-shadow: 6px 6px 14px var(--shadow-dark), -6px -6px 14px var(--shadow-light);
+                    padding: 14px;
+                }
+                .invoice-body { padding: 8px; }
+
+                /* Reduce nested-container padding (prescription inside prescription) */
+                .prescription-container .prescription-container { padding: 10px; margin-top: 10px; }
+
+                /* Tighten the prescription table so all 5 columns fit */
+                .prescription-table { border-spacing: 3px 6px; }
+                .prescription-table th { font-size: 0.55rem; padding-bottom: 4px; }
+                .input-table-neu {
+                    padding: 8px 2px;
+                    font-size: 0.75rem;
+                    box-shadow: inset 3px 3px 6px var(--shadow-dark),
+                                inset -3px -3px 6px var(--shadow-light);
+                }
+                .eye-indicator { width: 30px; height: 30px; font-size: 0.8rem; }
+
+                /* Buttons: allow wrapping, let them grow but never exceed the row */
+                .selection-wrapper { flex-wrap: wrap !important; gap: 6px; }
+                .neu-btn {
+                    flex: 1 1 calc(50% - 6px);
+                    min-width: 0;
+                    padding: 10px 8px;
+                    font-size: 0.72rem;
+                    white-space: nowrap;
+                }
+
+                /* Buttons below the card (PRINT, BACK TO PREVIOUS PAGE) */
+                .btn-action, .back-main { width: 100%; max-width: 100%; }
+                .btn-group { width: 100%; padding: 0; }
+
+                /* Face-scan card: keep the video inside the card */
+                .mp-wrapper { width: 100%; height: 340px; }
+
+                /* IOC preset buttons — wrap nicely on small screens */
+                .ioc-preset { font-size: 8px; padding: 3px 7px; }
+
+                /* PD calibration header won't let the IOC label overflow */
+                #cal-header { gap: 8px; }
+                #cal-header > div:first-child { min-width: 0; flex: 1; }
+                #cal-active-label { white-space: nowrap; }
+
+                /* Header / brand section */
+                .header-container { padding: 10px; }
+                .company-name { font-size: 1rem; }
+                .company-address { font-size: 0.7rem; }
+                .logout-btn { padding: 6px 12px; font-size: 0.7rem; }
+
+                /* Result box typography a notch smaller so the badge fits */
+                .shape-badge { font-size: 1.2rem; letter-spacing: 1.5px; }
+            }
+
+            /* Extra-narrow (iPhone SE-class ~360px) */
+            @media (max-width: 380px) {
+                .invoice-body { padding: 6px; }
+                .neumorph-card, .main-card, .prescription-container { padding: 10px; }
+                .prescription-table th { font-size: 0.5rem; }
+                .input-table-neu { font-size: 0.7rem; padding: 6px 1px; }
+                .eye-indicator { width: 26px; height: 26px; font-size: 0.7rem; }
+                .neu-btn { flex: 1 1 100%; }
+            }
         </style>
     </head>
 
@@ -782,12 +966,14 @@
                             </div>
                         </div>
 
-                        <div class="full">
+                        <div class="full" id="mp-scan-card">
+                            <!-- Back button (only visible in fullscreen scan mode) -->
+                            <button type="button" id="mp-back-btn" onclick="exitFullscreenCam()">← BACK</button>
                             <div class="prescription-container" style="text-align: center;">
                                 <label>FACE SHAPE ANALYSIS</label>
 
-                                <!-- STEP INDICATOR -->
-                                <div id="mp-steps" style="display:flex;justify-content:center;gap:6px;margin-bottom:14px;">
+                                <!-- STEP INDICATOR (hidden initially — only shown inside fullscreen scan) -->
+                                <div id="mp-steps" style="display:none;justify-content:center;gap:6px;margin-bottom:14px;">
                                     <div class="mp-step active" id="step1-ind">
                                         <span class="step-num">1</span> CAMERA
                                     </div>
@@ -801,16 +987,19 @@
                                     </div>
                                 </div>
 
-                                <!-- PD CALIBRATION: IOC ratio only -->
+                                <!-- PD CALIBRATION: IOC ratio only (collapsible) -->
                                 <div id="cal-box" style="display:none; margin-bottom:14px; border:1px solid rgba(0,255,136,0.15); border-radius:14px; overflow:hidden;">
-                                    <div style="background:rgba(0,255,136,0.05); padding:9px 14px; display:flex; align-items:center; justify-content:space-between;">
+                                    <div id="cal-header" onclick="toggleCalBody()" style="background:rgba(0,255,136,0.05); padding:9px 14px; display:flex; align-items:center; justify-content:space-between; cursor:pointer; user-select:none;">
                                         <div>
                                             <div style="font-size:0.6rem; color:#00ff88; letter-spacing:1px;">📐 PD CALIBRATION — IOC RATIO</div>
-                                            <div style="font-size:9px; color:#555; margin-top:2px;">No reference object needed • Hassle-free for customer</div>
+                                            <div style="font-size:9px; color:#555; margin-top:2px;">Tap to adjust IOC reference (advanced)</div>
                                         </div>
-                                        <span id="cal-active-label" style="color:#00ff88; font-size:10px; font-weight:700;">IOC 95mm</span>
+                                        <div style="display:flex; align-items:center; gap:8px;">
+                                            <span id="cal-active-label" style="color:#00ff88; font-size:10px; font-weight:700;">IOC 95mm</span>
+                                            <span id="cal-chevron" style="color:#00ff88; font-size:11px; transition:transform 0.25s; display:inline-block;">▼</span>
+                                        </div>
                                     </div>
-                                    <div style="padding:12px 14px;">
+                                    <div id="cal-body" style="padding:12px 14px; display:none;">
                                         <div style="font-size:10px; color:#777; margin-bottom:10px; line-height:1.6; text-align:left;">
                                             PD is calculated from the ratio of <b style="color:#00cfff;">inter-pupil distance</b> ÷ <b style="color:#00cfff;">inter-outer-canthus distance (IOC)</b>.<br>
                                             Because both are measured in the same pixel space, the result is not affected by camera distance or zoom.
@@ -843,8 +1032,8 @@
                                     </div>
                                 </div>
 
-                                <!-- LIVE CAMERA VIEW -->
-                                <div id="mp-live-view">
+                                <!-- LIVE CAMERA VIEW (hidden initially — shown when camera starts) -->
+                                <div id="mp-live-view" style="display:none;">
                                     <p class="scan-instruction" id="mp-instruction">Position your face inside the green outline</p>
                                     <div class="mp-wrapper">
                                         <video id="mp-video" autoplay muted playsinline></video>
@@ -865,7 +1054,7 @@
 
                                     <!-- AUTO-CAPTURE COUNTDOWN -->
                                     <div id="autocap-hint" style="display:none;margin-top:8px;font-size:11px;color:#00ff88;letter-spacing:1px;">
-                                        Hold still… auto-capture in <span id="autocap-sec">3</span>
+                                        Hold still… auto-capture in <span id="autocap-sec">5</span>
                                     </div>
 
                                     <!-- BRIGHTNESS / POSE QUALITY BAR -->
@@ -889,8 +1078,8 @@
                                     </div>
                                 </div>
 
-                                <!-- RESULT BOX -->
-                                <div id="mp-result" class="read-only-box" style="color: #00ff88; flex-direction:column; min-height:90px; padding:15px; margin-top:15px;">
+                                <!-- RESULT BOX (hidden initially — shown after analysis / BACK) -->
+                                <div id="mp-result" class="read-only-box" style="display:none; color: #00ff88; flex-direction:column; min-height:90px; padding:15px; margin-top:15px;">
                                     <span style="color:var(--text-muted);font-size:0.75rem">Press START CAMERA to begin</span>
                                 </div>
 
@@ -910,9 +1099,6 @@
                                     </button>
                                     <button type="button" class="neu-btn" id="mp-capture-btn" style="display:none; border-color:rgba(0,255,136,0.4);">
                                         <div class="led" style="background:#00ff88;box-shadow:0 0 6px #00ff88;"></div> 📸 CAPTURE
-                                    </button>
-                                    <button type="button" class="neu-btn" id="mp-analyze-btn" style="display:none; border-color:rgba(0,207,255,0.4);">
-                                        <div class="led" style="background:#00cfff;box-shadow:0 0 6px #00cfff;"></div> ANALYZE
                                     </button>
                                     <button type="button" class="neu-btn" id="mp-reset-btn" style="display:none;">
                                         <div class="led"></div> RESTART SCAN
@@ -1001,6 +1187,9 @@
             
             (function() {
 
+                // Patient gender from PHP (for gender-aware frame ranking — fix #5)
+                const patientGender = "<?php echo strtolower(trim($data['gender'] ?? '')); ?>";
+
                 // ============================================================
                 // LANDMARK INDEX MAP (MediaPipe Face Mesh 468+10 iris points)
                 // ============================================================
@@ -1061,7 +1250,6 @@
                 const startBtn      = document.getElementById('mp-start-btn');
                 const switchBtn     = document.getElementById('mp-switch-btn');
                 const captureBtn    = document.getElementById('mp-capture-btn');
-                const analyzeBtn    = document.getElementById('mp-analyze-btn');
                 const resetBtn      = document.getElementById('mp-reset-btn');
                 const liveView      = document.getElementById('mp-live-view');
                 const capturedView  = document.getElementById('mp-captured-view');
@@ -1102,10 +1290,10 @@
                 const PD_BUFFER_SIZE    = 30;
                 const SHAPE_BUFFER_SIZE = 15;
 
-                // Auto-capture state — triggers when pose is perfect for 3 consecutive seconds
+                // Auto-capture state — triggers when pose is perfect for 5 consecutive seconds
                 let autoCapStableSince = 0;
                 let autoCapTimerId     = null;
-                const AUTO_CAP_HOLD_MS = 3000;
+                const AUTO_CAP_HOLD_MS = 5000;
                 function handleAutoCapture(allOk) {
                     const hint = document.getElementById('autocap-hint');
                     const sec  = document.getElementById('autocap-sec');
@@ -1194,6 +1382,82 @@
                 }
                 window.applyAutoCal = applyAutoCal;
 
+                // ============================================================
+                // PD CALIBRATION TOGGLE (fix #1 — collapsible header)
+                // ============================================================
+                function toggleCalBody() {
+                    const b = document.getElementById('cal-body');
+                    const c = document.getElementById('cal-chevron');
+                    if (!b) return;
+                    const open = b.style.display === 'none';
+                    b.style.display = open ? 'block' : 'none';
+                    if (c) c.style.transform = open ? 'rotate(180deg)' : 'rotate(0deg)';
+                }
+                window.toggleCalBody = toggleCalBody;
+
+                // ============================================================
+                // FULLSCREEN CAMERA MODE (fix #6)
+                // ============================================================
+                function enterFullscreenCam() {
+                    document.body.classList.add('fullscreen-cam-active');
+                    // Reset the BACK button label each time we enter scan mode
+                    const bb = document.getElementById('mp-back-btn');
+                    if (bb) bb.innerHTML = '← BACK';
+                    // Scroll the scan card to the top of the fullscreen view
+                    const card = document.getElementById('mp-scan-card');
+                    if (card) card.scrollTop = 0;
+                }
+                function exitFullscreenCam() {
+                    // Remember whether we had a finished analysis before stopping the camera
+                    const hasResult = !!capturedLM;
+
+                    document.body.classList.remove('fullscreen-cam-active');
+
+                    // Stop the stream & processing loop
+                    if (video && video.srcObject) {
+                        video.srcObject.getTracks().forEach(t => t.stop());
+                        video.srcObject = null;
+                    }
+                    if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+                    isRunning = false;
+                    autoCapStableSince = 0;
+
+                    // Always hide scan-only chrome (steps, live view, pose indicators, calibration, countdown)
+                    const stepsEl = document.getElementById('mp-steps');   if (stepsEl) stepsEl.style.display = 'none';
+                    liveView.style.display       = 'none';
+                    capturedView.style.display   = 'none';
+                    qualityWrap.style.display    = 'none';
+                    poseIndicator.style.display  = 'none';
+                    const pc = document.getElementById('pose-checks');    if (pc) pc.style.display = 'none';
+                    const ah = document.getElementById('autocap-hint');   if (ah) ah.style.display = 'none';
+                    const ce = document.getElementById('cal-box');        if (ce) ce.style.display = 'none';
+
+                    // Scan-mode action buttons are no longer relevant outside fullscreen
+                    switchBtn.style.display  = 'none';
+                    captureBtn.style.display = 'none';
+                    resetBtn.style.display   = 'none';
+                    startBtn.disabled        = false;
+
+                    if (hasResult) {
+                        // Analysis is done — KEEP the result + frame-rec visible on the summary view
+                        resultBox.style.display   = 'flex';
+                        // (frameRecBox visibility was already set by showFrameRecommendation)
+                        startBtn.style.display    = 'inline-block';
+                        startBtn.innerHTML        = '<div class="led"></div> RESCAN';
+                    } else {
+                        // User cancelled before any result — go back to the clean initial state
+                        resultBox.style.display   = 'none';
+                        frameRecBox.style.display = 'none';
+                        resultBox.innerHTML       = '<span style="color:var(--text-muted);font-size:0.75rem">Press START CAMERA to begin</span>';
+                        startBtn.style.display    = 'inline-block';
+                        startBtn.innerHTML        = '<div class="led"></div> START CAMERA';
+                        isCaptured = false;
+                        capturedLM = null;
+                        setStep(1);
+                    }
+                }
+                window.exitFullscreenCam = exitFullscreenCam;
+
 
                 function loadMediaPipe() {
                     resultBox.innerHTML = `<div class="mp-loading"><div class="spinner"></div> LOADING MEDIAPIPE...</div>`;
@@ -1245,7 +1509,13 @@
                         video.srcObject = null;
                     }
                     const constraints = {
-                        video: { facingMode: { ideal: facingMode }, width: { ideal: 640, max: 1280 }, height: { ideal: 480, max: 720 } },
+                        video: {
+                            facingMode: { ideal: facingMode },
+                            width:  { ideal: 1280, max: 1920 },
+                            height: { ideal: 720,  max: 1080 },
+                            frameRate: { ideal: 30, max: 30 },
+                            advanced: [{ focusMode: 'continuous' }]
+                        },
                         audio: false
                     };
                     navigator.mediaDevices.getUserMedia(constraints)
@@ -1262,10 +1532,21 @@
                             applyMirrorState(); // mirror only when using front camera
                             isRunning = true;
                             isCaptured = false;
-                            startBtn.innerHTML       = '<div class="led"></div> CAMERA ACTIVE';
+                            // Hide the (now-useless) START CAMERA button once the camera is running
+                            startBtn.style.display   = 'none';
+                            startBtn.disabled        = false;
                             switchBtn.style.display  = 'inline-block';
                             captureBtn.style.display = 'inline-block';
-                            // Show calibration box
+                            // Reveal the scan UI elements that were hidden on initial load
+                            const stepsEl = document.getElementById('mp-steps');
+                            if (stepsEl) stepsEl.style.display = 'flex';
+                            liveView.style.display  = 'block';
+                            resultBox.style.display = 'flex';
+                            // Hide any previous analysis result from a prior scan
+                            frameRecBox.style.display = 'none';
+                            // Enter fullscreen scan view (fix #6)
+                            enterFullscreenCam();
+                            // Show calibration box (header only — body stays collapsed per fix #1)
                             const calEl = document.getElementById('cal-box');
                             if (calEl) calEl.style.display = 'block';
                             qualityWrap.style.display   = 'block';
@@ -1431,38 +1712,86 @@
                 }
 
                 // ============================================================
-                // CAPTURE PHOTO — step 2
+                // SHARPNESS CHECK — Laplacian variance on a downscaled grayscale frame.
+                // Returns a positive number; higher = sharper. Typical blur < 60, sharp > 120.
+                // ============================================================
+                function measureSharpness(srcCanvas) {
+                    const w = 160, h = Math.round(160 * srcCanvas.height / srcCanvas.width);
+                    const tmp = document.createElement('canvas');
+                    tmp.width = w; tmp.height = h;
+                    const tctx = tmp.getContext('2d');
+                    tctx.drawImage(srcCanvas, 0, 0, w, h);
+                    const img = tctx.getImageData(0, 0, w, h).data;
+                    const gray = new Float32Array(w * h);
+                    for (let i = 0, j = 0; i < img.length; i += 4, j++) {
+                        gray[j] = 0.299 * img[i] + 0.587 * img[i+1] + 0.114 * img[i+2];
+                    }
+                    let sum = 0, sumSq = 0, n = 0;
+                    for (let y = 1; y < h - 1; y++) {
+                        for (let x = 1; x < w - 1; x++) {
+                            const k = y * w + x;
+                            const lap = -4 * gray[k] + gray[k-1] + gray[k+1] + gray[k-w] + gray[k+w];
+                            sum   += lap;
+                            sumSq += lap * lap;
+                            n++;
+                        }
+                    }
+                    const mean = sum / n;
+                    return (sumSq / n) - (mean * mean); // variance
+                }
+
+                // Retry budget for blurry frames during auto-capture
+                let sharpnessRetry = 0;
+                const SHARPNESS_MIN    = 70;  // reject below this
+                const SHARPNESS_RETRIES = 8;   // max retries before accepting anyway
+
+                // ============================================================
+                // CAPTURE PHOTO — step 2 (with blur rejection + auto-analyze)
                 // ============================================================
                 async function capturePhoto() {
                     if (!isRunning || !video.srcObject) return;
-                    photoCanvas.width  = video.videoWidth  || 640;
-                    photoCanvas.height = video.videoHeight || 480;
+
+                    // Build a temp canvas from the raw video frame (no mirroring) for sharpness
+                    const tmpCanvas = document.createElement('canvas');
+                    tmpCanvas.width  = video.videoWidth  || 640;
+                    tmpCanvas.height = video.videoHeight || 480;
+                    tmpCanvas.getContext('2d').drawImage(video, 0, 0);
+
+                    // Blur check — if too blurry, wait ~150ms and try again
+                    const sharp = measureSharpness(tmpCanvas);
+                    if (sharp < SHARPNESS_MIN && sharpnessRetry < SHARPNESS_RETRIES) {
+                        sharpnessRetry++;
+                        const hint = document.getElementById('autocap-hint');
+                        if (hint) {
+                            hint.style.display = 'block';
+                            hint.innerHTML = `⏳ Image blurry, holding for sharp frame… (${sharpnessRetry}/${SHARPNESS_RETRIES})`;
+                        }
+                        setTimeout(() => { capturePhoto(); }, 150);
+                        return;
+                    }
+                    sharpnessRetry = 0;
+
+                    photoCanvas.width  = tmpCanvas.width;
+                    photoCanvas.height = tmpCanvas.height;
                     pCtx.save();
-                    // Mirror the captured image only when using the front (selfie) camera
-                    // so the preview matches what the user saw live.
                     if (facingMode === 'user') {
                         pCtx.translate(photoCanvas.width, 0);
                         pCtx.scale(-1, 1);
                     }
-                    pCtx.drawImage(video, 0, 0);
+                    pCtx.drawImage(tmpCanvas, 0, 0);
                     pCtx.restore();
                     isCaptured = true;
                     if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
-                    resultBox.innerHTML = `<div class="mp-loading"><div class="spinner"></div> DETECTING LANDMARKS...</div>`;
-                    const tmpCanvas = document.createElement('canvas');
-                    tmpCanvas.width  = video.videoWidth;
-                    tmpCanvas.height = video.videoHeight;
-                    tmpCanvas.getContext('2d').drawImage(video, 0, 0);
+                    resultBox.innerHTML = `<div class="mp-loading"><div class="spinner"></div> ANALYZING…</div>`;
+
                     faceMesh.onResults((results) => {
                         capturedLM = (results.multiFaceLandmarks && results.multiFaceLandmarks.length)
                             ? results.multiFaceLandmarks[0] : null;
-                        // Pass actual mirror state so landmarks align with the drawn image
                         if (capturedLM) drawMesh(capturedLM, photoCanvas.getContext('2d'), photoCanvas.width, photoCanvas.height, facingMode === 'user');
                         liveView.style.display      = 'none';
                         capturedView.style.display  = 'block';
                         captureBtn.style.display    = 'none';
                         switchBtn.style.display     = 'none';
-                        analyzeBtn.style.display    = capturedLM ? 'inline-block' : 'none';
                         resetBtn.style.display      = 'inline-block';
                         qualityWrap.style.display   = 'none';
                         poseIndicator.style.display = 'none';
@@ -1470,15 +1799,10 @@
                         document.getElementById('autocap-hint').style.display = 'none';
                         setStep(3);
                         if (capturedLM) {
-                            const q = detectPoseQuality(capturedLM);
-                            const qc = q > 70 ? '#00ff88' : q > 40 ? '#ffaa00' : '#ff4d4d';
-                            resultBox.innerHTML = `
-                                <div style="font-size:0.6rem;color:var(--text-muted);letter-spacing:1px;margin-bottom:4px;">PHOTO CAPTURED</div>
-                                <div style="font-size:11px;color:${qc};">Position quality: ${q}%</div>
-                                <div style="font-size:10px;color:#555;margin-top:4px;">Press ANALYZE for full result</div>
-                            `;
+                            // Auto-run analysis — no button press needed
+                            runAnalysis();
                         } else {
-                            resultBox.innerHTML = `<span style="color:#ff4d4d;font-size:0.75rem">Face not detected. Try again.</span>`;
+                            resultBox.innerHTML = `<span style="color:#ff4d4d;font-size:0.75rem">Face not detected. Tap RESTART SCAN.</span>`;
                         }
                         faceMesh.onResults(onResults);
                     });
@@ -1486,19 +1810,19 @@
                 }
 
                 // ============================================================
-                // RUN ANALYSIS — step 3 (on captured landmarks)
+                // RUN ANALYSIS — step 3 (auto-runs after capture)
                 // ============================================================
                 function runAnalysis() {
                     if (!capturedLM) { resultBox.innerHTML = `<span style="color:#ff4d4d">No landmarks found. Retry the scan.</span>`; return; }
-                    analyzeBtn.innerHTML = '<div class="led" style="background:#00cfff;box-shadow:0 0 6px #00cfff;"></div> PROCESSING...';
-                    analyzeBtn.disabled = true;
                     setTimeout(() => {
                         const analysis = analyzeFaceShape(capturedLM, photoCanvas.width, photoCanvas.height);
                         const finalPD  = measurePD(capturedLM, photoCanvas.width, photoCanvas.height);
                         const avgPD    = (finalPD && pdBuffer.length > 5) ? blendPD(finalPD, averagePD(pdBuffer)) : (finalPD || lastPD);
                         displayFinalResult(analysis, avgPD);
                         showFrameRecommendation(analysis.shape);
-                        analyzeBtn.style.display = 'none';
+                        // Analysis complete — make the BACK button indicate the summary is ready
+                        const bb = document.getElementById('mp-back-btn');
+                        if (bb) bb.innerHTML = '✓ DONE — VIEW SUMMARY';
                     }, 200);
                 }
 
@@ -1784,7 +2108,7 @@
                     const top3 = Object.entries(percentages).sort((a,b)=>b[1]-a[1]).slice(0,3);
                     const pdSrc = `*IOC ratio method — reference ${iocRefMM}mm`;
                     const pdHtml = pd
-                        ? `<div style="margin-top:12px;padding:10px 15px;background:rgba(0,207,255,0.07);border:1px solid rgba(0,207,255,0.2);border-radius:12px;width:90%;">
+                        ? `<div style="margin-top:12px;padding:10px 15px;background:rgba(0,207,255,0.07);border:1px solid rgba(0,207,255,0.2);border-radius:12px;width:100%;max-width:100%;box-sizing:border-box;">
                             <div style="font-size:0.6rem;color:var(--text-muted);letter-spacing:1px;margin-bottom:6px;">PUPILLARY DISTANCE</div>
                             <div class="pd-row" style="margin-top:0;"><span class="pd-chip total">PD Total ${pd.total} mm</span></div>
                             <div class="pd-row" style="margin-top:6px;"><span class="pd-chip">OD (Right) ${pd.od} mm</span><span class="pd-chip">OS (Left) ${pd.os} mm</span></div>
@@ -1822,16 +2146,95 @@
                     TRIANGLE:{emoji:'▼',tagline:'Choose frames that widen the upper area.',best:[{s:'Cat-Eye / Top-Heavy',r:'Lifts the visual line, balances the jaw',i:'◣'},{s:'Browline / Club Master',r:'Strengthens a narrow forehead line',i:'⊓'},{s:'Embellished/Decorative top',r:'Draws attention away from the jaw',i:'✦'},{s:'Wide Top Frame',r:'Expands the upper visual area',i:'▬'}],avoid:[{s:'Bottom-heavy frame',r:'Reinforces jaw width'},{s:'Small narrow frame',r:'Does not help balance'}],avoidNote:'Avoid bottom-heavy frames.'},
                 };
 
+                // ============================================================
+                // GENDER NORMALIZATION + AFFINITY (fix #5)
+                // Returns 'female' | 'male' | '' (unknown). Accepts Indonesian + English.
+                // ============================================================
+                function normalizeGender(g) {
+                    if (!g) return '';
+                    const v = String(g).toLowerCase().trim();
+                    if (['f','female','wanita','perempuan','woman','w','p'].includes(v)) return 'female';
+                    if (['m','male','pria','laki-laki','laki laki','man','l'].includes(v)) return 'male';
+                    return '';
+                }
+
+                // Keyword-based affinity. Higher = better fit for that gender.
+                // Applied on top of the base shape-fit order to re-rank recommendations.
+                function genderAffinity(frameName, gender) {
+                    if (!gender) return 0;
+                    const n = frameName.toLowerCase();
+                    const femaleBoost = [
+                        { kw:'cat-eye',        w:3 },
+                        { kw:'cat eye',        w:3 },
+                        { kw:'upswept',        w:2 },
+                        { kw:'oval',           w:2 },
+                        { kw:'round',          w:2 },
+                        { kw:'rimless',        w:2 },
+                        { kw:'soft',           w:1 },
+                        { kw:'decorative',     w:2 },
+                        { kw:'embellished',    w:2 }
+                    ];
+                    const maleBoost = [
+                        { kw:'wayfarer',       w:3 },
+                        { kw:'browline',       w:3 },
+                        { kw:'club master',    w:3 },
+                        { kw:'clubmaster',     w:3 },
+                        { kw:'aviator',        w:3 },
+                        { kw:'rectangular',    w:3 },
+                        { kw:'square',         w:2 },
+                        { kw:'angular',        w:2 },
+                        { kw:'geometric',      w:2 },
+                        { kw:'oversized',      w:1 },
+                        { kw:'wide',           w:1 },
+                        { kw:'top bar',        w:1 }
+                    ];
+                    const list = gender === 'female' ? femaleBoost : maleBoost;
+                    let score = 0;
+                    for (const { kw, w } of list) if (n.includes(kw)) score += w;
+                    return score;
+                }
+
                 function showFrameRecommendation(shape) {
                     const rec = frameRec[shape]; if (!rec) return;
+                    const gender = normalizeGender(patientGender);
+
+                    // Re-rank recommendations: base rank (higher = better) + gender affinity
+                    const len = rec.best.length;
+                    const ranked = rec.best.map((f, idx) => ({
+                        ...f,
+                        _base:    len - idx,          // preserve original priority
+                        _gender:  genderAffinity(f.s, gender),
+                        _score:   (len - idx) + genderAffinity(f.s, gender) * 1.5
+                    }))
+                    .sort((a, b) => b._score - a._score);
+
+                    const genderLabel = gender === 'female' ? '♀ Female' : gender === 'male' ? '♂ Male' : '';
+                    const genderNote  = gender
+                        ? `<div style="font-size:9px;color:#888;letter-spacing:0.5px;margin-bottom:8px;">Priority tailored for: <span style="color:#00cfff;font-weight:700;">${genderLabel}</span></div>`
+                        : '';
+
                     frameRecContent.innerHTML = `
-                        <div style="font-size:12px;color:#ffaa00;font-weight:700;margin-bottom:10px;">${rec.emoji} ${shape} — ${rec.tagline}</div>
-                        <div style="font-size:0.6rem;color:var(--text-muted);letter-spacing:1px;margin-bottom:6px;">✓ RECOMMENDED FRAMES</div>
+                        <div style="font-size:12px;color:#ffaa00;font-weight:700;margin-bottom:8px;">${rec.emoji} ${shape} — ${rec.tagline}</div>
+                        ${genderNote}
+                        <div style="font-size:0.6rem;color:var(--text-muted);letter-spacing:1px;margin-bottom:6px;">✓ RECOMMENDED FRAMES (BY PRIORITY)</div>
                         <div style="display:flex;flex-direction:column;gap:7px;margin-bottom:12px;">
-                            ${rec.best.map(f=>`<div style="display:flex;align-items:flex-start;gap:8px;padding:8px 10px;background:rgba(0,255,136,0.05);border:1px solid rgba(0,255,136,0.12);border-radius:10px;">
-                                <span style="font-size:14px;min-width:20px;text-align:center;">${f.i}</span>
-                                <div><div style="font-size:11px;color:#00ff88;font-weight:700;">${f.s}</div><div style="font-size:10px;color:#777;margin-top:2px;">${f.r}</div></div>
-                            </div>`).join('')}
+                            ${ranked.map((f, i) => {
+                                const isTop = i === 0;
+                                const bg    = isTop ? 'rgba(255,170,0,0.10)' : 'rgba(0,255,136,0.05)';
+                                const bd    = isTop ? 'rgba(255,170,0,0.45)' : 'rgba(0,255,136,0.12)';
+                                const color = isTop ? '#ffaa00' : '#00ff88';
+                                const rank  = `<span style="display:inline-flex;min-width:18px;height:18px;align-items:center;justify-content:center;border-radius:50%;background:${isTop?'rgba(255,170,0,0.25)':'rgba(0,255,136,0.15)'};color:${color};font-size:9px;font-weight:800;margin-right:4px;">${i+1}</span>`;
+                                const badge = isTop
+                                    ? `<span style="display:inline-block;background:#ffaa00;color:#111;font-size:8px;font-weight:800;letter-spacing:0.8px;padding:2px 7px;border-radius:10px;margin-left:6px;vertical-align:middle;">★ TOP PICK</span>`
+                                    : '';
+                                return `<div style="display:flex;align-items:flex-start;gap:8px;padding:9px 11px;background:${bg};border:1px solid ${bd};border-radius:10px;">
+                                    <span style="font-size:14px;min-width:20px;text-align:center;">${f.i}</span>
+                                    <div style="flex:1;">
+                                        <div style="font-size:11px;color:${color};font-weight:700;">${rank}${f.s}${badge}</div>
+                                        <div style="font-size:10px;color:#888;margin-top:2px;">${f.r}</div>
+                                    </div>
+                                </div>`;
+                            }).join('')}
                         </div>
                         ${rec.avoid.length?`
                         <div style="font-size:0.6rem;color:var(--text-muted);letter-spacing:1px;margin-bottom:6px;">✕ FRAMES TO AVOID</div>
@@ -1856,9 +2259,6 @@
                     liveView.style.display      = 'block';
                     capturedView.style.display  = 'none';
                     captureBtn.style.display    = 'inline-block';
-                    analyzeBtn.style.display    = 'none';
-                    analyzeBtn.disabled         = false;
-                    analyzeBtn.innerHTML        = '<div class="led" style="background:#00cfff;box-shadow:0 0 6px #00cfff;"></div> ANALYZE';
                     resetBtn.style.display      = 'none';
                     switchBtn.style.display     = 'inline-block';
                     qualityWrap.style.display   = 'block';
@@ -1890,10 +2290,19 @@
                 // ============================================================
                 // EVENT HANDLERS
                 // ============================================================
-                startBtn.onclick   = () => { if (!isRunning) { loadMediaPipe(); startBtn.innerHTML='<div class="led"></div> LOADING...'; startBtn.disabled=true; } };
+                startBtn.onclick   = () => {
+                    if (isRunning) return;
+                    if (faceMesh) {
+                        // MediaPipe already loaded (user pressed RESCAN) — skip the script reload
+                        startCamera();
+                    } else {
+                        loadMediaPipe();
+                        startBtn.innerHTML = '<div class="led"></div> LOADING...';
+                        startBtn.disabled = true;
+                    }
+                };
                 switchBtn.onclick  = () => { facingMode = facingMode==='user'?'environment':'user'; startCamera(); };
                 captureBtn.onclick = () => capturePhoto();
-                analyzeBtn.onclick = () => runAnalysis();
                 retakeOverlay.onclick = () => resetScan();
                 resetBtn.onclick   = () => resetScan();
 
@@ -1902,19 +2311,3 @@
         </script>
     </body>
 </html>
-<!-- 
-tolong perbaiki tampilannya (diplay), bagian scan wajah untuk analisa bentuk dan pd:
-
-
-
-1. untuk pd calibration itu jangan langsung muncul detil semuanya, cukup header diatasnya, cuman ketika saya klik yang blok dibawahnya bisa hilang-timbul
-
-2. untuk auto capture tambah jadi 5 detik dan juga pastikan gambar tidak buram
-
-3. hasil scan langsung keluar tidak perlu tekan tombol analisa
-
-4. ketika kamera aktif, button camera active muncul, cuman untuk apa, kalau tidak perlu hilangkan saja
-
-5. jenis frame yang disarankan tampilkan menurut prioritas, kalau bisa kaitkan juga dengan jenis klamin pasien
-
-6. kalau bisa pas saya start camera itu tampil full di layar, cuman ada tombol kembali untuk kembali ke tampilan semula, untuk mempermudah -->
