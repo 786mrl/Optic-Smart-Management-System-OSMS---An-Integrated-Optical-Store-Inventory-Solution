@@ -1,36 +1,90 @@
 {
     "stock": {
         "Single Vision": {
-            "SV-CRMC": 18000,
-            "Blueray": 25000,
-            "Photochromic": 35000,
-            "Bluechromic": 60000,
-            "Bluegard": 70000,
-            "One-Drive": 130000
+            "SV-CRMC": {
+                "cost": 18000,
+                "selling": 90000
+            },
+            "Blueray": {
+                "cost": 25000,
+                "selling": 150000
+            },
+            "Photochromic": {
+                "cost": 35000,
+                "selling": 150000
+            },
+            "Bluechromic": {
+                "cost": 60000,
+                "selling": 285000
+            },
+            "Bluegard": {
+                "cost": 70000,
+                "selling": 285000
+            },
+            "One-Drive": {
+                "cost": 130000,
+                "selling": 500000
+            }
         },
         "KRYPTOK": {
-            "HMC": 18000,
-            "PHOTOCHROMIC": 60000
+            "HMC": {
+                "cost": 18000,
+                "selling": 90000
+            },
+            "PHOTOCHROMIC": {
+                "cost": 60000,
+                "selling": 250000
+            }
         },
         "PROGRESSIVE": {
-            "HMC": 38000,
-            "PHOTOCHROMIC": 60000,
-            "ANTI-BLUE RAY": 60000,
-            "BLUECHROMIC": 120000,
-            "BLUECHROMIC ONE-DRIVE": 180000
+            "HMC": {
+                "cost": 38000,
+                "selling": 0
+            },
+            "PHOTOCHROMIC": {
+                "cost": 60000,
+                "selling": 0
+            },
+            "ANTI-BLUE RAY": {
+                "cost": 60000,
+                "selling": 0
+            },
+            "BLUECHROMIC": {
+                "cost": 120000,
+                "selling": 0
+            },
+            "BLUECHROMIC ONE-DRIVE": {
+                "cost": 180000,
+                "selling": 0
+            }
         }
     },
     "lab": {
         "Progressive": {
-            "Standard": 0,
-            "Premium": 0
+            "Standard": {
+                "cost": 0,
+                "selling": 0
+            },
+            "Premium": {
+                "cost": 0,
+                "selling": 0
+            }
         },
         "SINGLE VISION": {
-            "HMC": 96000,
-            "SHMC": 114000
+            "HMC": {
+                "cost": 96000,
+                "selling": 0
+            },
+            "SHMC": {
+                "cost": 114000,
+                "selling": 0
+            }
         },
         "BIFOCAL": {
-            "KRYPTOK HMC": 124000
+            "KRYPTOK HMC": {
+                "cost": 124000,
+                "selling": 0
+            }
         }
     }
 }

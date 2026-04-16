@@ -22,27 +22,46 @@
     $data = json_decode(file_get_contents($json_file), true);
     $message = '';
 
+    // --- Migrate old flat-price data to new {cost, selling} structure ---
+    foreach ($data as $gk => $cats) {
+        foreach ($cats as $ck => $lenses) {
+            foreach ($lenses as $ln => $val) {
+                if (!is_array($val)) {
+                    $data[$gk][$ck][$ln] = ['cost' => (float)$val, 'selling' => 0.0];
+                }
+            }
+        }
+    }
+
     // --- Price Update & Add New Lense Logic ---
     if ($_SERVER["REQUEST_METHOD"] == "POST") {
         if (isset($_POST['save_prices'])) {
-            // Update existing prices
-            foreach ($_POST['price'] as $group => $categories) {
+            // Update existing prices (cost & selling)
+            foreach ($_POST['price_cost'] as $group => $categories) {
                 foreach ($categories as $category => $lenses) {
-                    foreach ($lenses as $lense_name => $price) {
-                        $data[$group][$category][$lense_name] = (float)$price;
+                    foreach ($lenses as $lense_name => $cost) {
+                        $selling = (float)($_POST['price_selling'][$group][$category][$lense_name] ?? 0);
+                        $data[$group][$category][$lense_name] = [
+                            'cost'    => (float)$cost,
+                            'selling' => $selling
+                        ];
                     }
                 }
             }
             $message = "Prices updated successfully!";
         } elseif (isset($_POST['add_new_lense'])) {
-            // Add new lense type
-            $new_group = $_POST['new_group'];
-            $new_cat = $_POST['new_category'] ?: 'General';
-            $new_name = $_POST['new_lense_name'];
-            $new_price = (float)$_POST['new_lense_price'];
-            
+            // Add new lense type with cost & selling price
+            $new_group   = $_POST['new_group'];
+            $new_cat     = $_POST['new_category'] ?: 'General';
+            $new_name    = $_POST['new_lense_name'];
+            $new_cost    = (float)$_POST['new_lense_price_cost'];
+            $new_selling = (float)$_POST['new_lense_price_selling'];
+
             if (!empty($new_name)) {
-                $data[$new_group][$new_cat][$new_name] = $new_price;
+                $data[$new_group][$new_cat][$new_name] = [
+                    'cost'    => $new_cost,
+                    'selling' => $new_selling
+                ];
                 $message = "Lense $new_name added successfully!";
                 $active_tab = 'add';
             }
@@ -331,17 +350,29 @@
                                     </div>
                                     
                                     <div class="input-group full-width">
-                                        <label>Lense Price</label>
+                                        <label>Cost Price</label>
                                         <input type="text" 
-                                            id="display_price" 
+                                            id="display_price_cost" 
                                             class="input-field" 
                                             placeholder="IDR 0" 
-                                            oninput="formatCurrency(this)"
+                                            oninput="formatCurrencyAdd(this, 'real_price_cost')"
                                             onfocus="this.select()" 
                                             autocomplete="off" 
                                             required>
-                                        
-                                        <input type="hidden" name="new_lense_price" id="real_price">
+                                        <input type="hidden" name="new_lense_price_cost" id="real_price_cost">
+                                    </div>
+
+                                    <div class="input-group full-width">
+                                        <label>Selling Price</label>
+                                        <input type="text" 
+                                            id="display_price_selling" 
+                                            class="input-field" 
+                                            placeholder="IDR 0" 
+                                            oninput="formatCurrencyAdd(this, 'real_price_selling')"
+                                            onfocus="this.select()" 
+                                            autocomplete="off" 
+                                            required>
+                                        <input type="hidden" name="new_lense_price_selling" id="real_price_selling">
                                     </div>      
                                 </div>
 
@@ -387,16 +418,37 @@
                                                 
                                                 <div class="input-container-box">
                                                     <div class="input-grid">
-                                                        <?php foreach ($lenses as $name => $price): ?>
-                                                        <div class="input-group full-width">
-                                                            <label><?php echo $name; ?></label>
-                                                            <input type="text" 
-                                                                class="input-field currency-display" 
-                                                                value="IDR <?php echo number_format($price, 0, ',', '.'); ?>" 
-                                                                oninput="formatMultipleCurrency(this)"
-                                                                onfocus="this.select()"
-                                                                autocomplete="off">
-                                                            <input type="hidden" name="price[<?php echo $group_key; ?>][<?php echo $cat_name; ?>][<?php echo $name; ?>]" value="<?php echo $price ?: 0; ?>">
+                                                        <?php foreach ($lenses as $name => $prices): ?>
+                                                        <?php 
+                                                            $cost    = is_array($prices) ? $prices['cost']    : (float)$prices;
+                                                            $selling = is_array($prices) ? $prices['selling'] : 0.0;
+                                                        ?>
+                                                        <div class="input-group full-width" style="border-bottom: 1px solid #373b41; padding-bottom: 12px; margin-bottom: 4px;">
+                                                            <label style="font-weight:600; color:#e0e0e0;"><?php echo htmlspecialchars($name); ?></label>
+                                                            
+                                                            <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:6px;">
+                                                                <div style="flex:1; min-width:180px;">
+                                                                    <label style="font-size:11px; color:#aaa;">Cost Price</label>
+                                                                    <input type="text" 
+                                                                        class="input-field currency-display" 
+                                                                        value="IDR <?php echo number_format($cost, 0, ',', '.'); ?>" 
+                                                                        oninput="formatMultipleCurrency(this)"
+                                                                        onfocus="this.select()"
+                                                                        autocomplete="off">
+                                                                    <input type="hidden" name="price_cost[<?php echo $group_key; ?>][<?php echo $cat_name; ?>][<?php echo $name; ?>]" value="<?php echo $cost ?: 0; ?>">
+                                                                </div>
+
+                                                                <div style="flex:1; min-width:180px;">
+                                                                    <label style="font-size:11px; color:#00adb5;">Selling Price</label>
+                                                                    <input type="text" 
+                                                                        class="input-field currency-display" 
+                                                                        value="IDR <?php echo number_format($selling, 0, ',', '.'); ?>" 
+                                                                        oninput="formatMultipleCurrency(this)"
+                                                                        onfocus="this.select()"
+                                                                        autocomplete="off">
+                                                                    <input type="hidden" name="price_selling[<?php echo $group_key; ?>][<?php echo $cat_name; ?>][<?php echo $name; ?>]" value="<?php echo $selling ?: 0; ?>">
+                                                                </div>
+                                                            </div>
                                                         </div>
                                                         <?php endforeach; ?>
                                                     </div>
@@ -452,23 +504,21 @@
                 }
             }
 
-            function formatCurrency(input) {
-                // Ambil angka saja dari input
+            function formatCurrencyAdd(input, hiddenId) {
                 let value = input.value.replace(/\D/g, "");
-                
                 if (value) {
-                    // Format angka dengan pemisah ribuan (titik untuk locale Indonesia)
                     let formattedNumber = new Intl.NumberFormat('id-ID').format(value);
-                    
-                    // Gabungkan dengan teks "IDR "
                     input.value = "IDR " + formattedNumber;
-                    
-                    // Simpan angka asli ke hidden input untuk dikirim ke PHP
-                    document.getElementById('real_price').value = value;
+                    document.getElementById(hiddenId).value = value;
                 } else {
                     input.value = "";
-                    document.getElementById('real_price').value = "";
+                    document.getElementById(hiddenId).value = "";
                 }
+            }
+
+            // kept for legacy compatibility
+            function formatCurrency(input) {
+                formatCurrencyAdd(input, 'real_price_cost');
             }
 
             function formatMultipleCurrency(input) {
@@ -511,7 +561,7 @@
                 });
             });
 
-            // Data kategori dari PHP ke JS
+            // Pass category data from PHP to JS
             const lenseData = <?php echo json_encode($data); ?>;
 
             function updateCategoryFilter() {
@@ -560,11 +610,11 @@
                 });
             }
 
-            // Inisialisasi filter saat halaman dimuat
+            // Initialize filter on page load
             document.addEventListener("DOMContentLoaded", function() {
                 updateCategoryFilter();
                 
-                // Kode format currency yang sudah ada tetap di sini...
+                // Re-apply currency formatting on existing inputs
                 const displays = document.querySelectorAll('.currency-display');
                 displays.forEach(display => {
                     if(display.value && !display.value.includes('IDR')) {
