@@ -9,6 +9,7 @@
         exit();
     }
     $username = $_SESSION['username'] ?? 'User';
+    $role = $_SESSION['role'] ?? 'staff'; 
 ?>
 
 <!DOCTYPE html>
@@ -55,6 +56,15 @@
                         Other
                         <div class="led"></div>
                     </button>
+
+                    <?php if ($role === 'admin'): ?>
+                        <button class="neu-button" data-url="lense_price.php" onclick="handleButtonClick(this)">
+                                <span class="icon">🏷️</span>
+                                LENSE PRICE
+                                <div class="led"></div>
+                        </button>
+                    <?php endif; ?>
+
                 </div>
             </div>
         </div>
