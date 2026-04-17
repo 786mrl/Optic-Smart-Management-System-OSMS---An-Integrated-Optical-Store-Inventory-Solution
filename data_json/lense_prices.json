@@ -1,61 +1,140 @@
 {
     "stock": {
         "Single Vision": {
-            "SV-CRMC": {
+            "HMC": {
                 "cost": 18000,
-                "selling": 90000
+                "selling": 90000,
+                "features": [
+                    "INDEKS 1.56",
+                    "GREEN \/ BLUE COAT"
+                ]
             },
             "Blueray": {
                 "cost": 25000,
-                "selling": 150000
+                "selling": 150000,
+                "features": [
+                    "Anti-Blue Ray",
+                    "Multi Coat",
+                    "UV Protection"
+                ]
             },
             "Photochromic": {
                 "cost": 35000,
-                "selling": 150000
+                "selling": 150000,
+                "features": [
+                    "Photochromic",
+                    "Color Adaptive",
+                    "UV Protection"
+                ]
             },
             "Bluechromic": {
                 "cost": 60000,
-                "selling": 285000
+                "selling": 285000,
+                "features": [
+                    "Anti-Blue Ray",
+                    "Photochromic",
+                    "Color Adaptive"
+                ]
             },
             "Bluegard": {
                 "cost": 70000,
-                "selling": 285000
+                "selling": 285000,
+                "features": [
+                    "Blue Light Guard",
+                    "UV Protection",
+                    "Anti-Glare"
+                ]
             },
             "One-Drive": {
                 "cost": 130000,
-                "selling": 500000
+                "selling": 500000,
+                "features": [
+                    "Anti-Blue Ray",
+                    "Photochromic",
+                    "Drive Safe",
+                    "UV Protection"
+                ]
             }
         },
         "KRYPTOK": {
             "HMC": {
                 "cost": 18000,
-                "selling": 90000
+                "selling": 90000,
+                "features": [
+                    "Hard Multi Coat",
+                    "Bifocal",
+                    "UV Protection"
+                ]
             },
             "PHOTOCHROMIC": {
                 "cost": 60000,
-                "selling": 250000
+                "selling": 250000,
+                "features": [
+                    "Photochromic",
+                    "Bifocal",
+                    "Color Adaptive",
+                    "UV Protection"
+                ]
             }
         },
         "PROGRESSIVE": {
             "HMC": {
                 "cost": 38000,
-                "selling": 0
+                "selling": 0,
+                "features": [
+                    "Progressive",
+                    "Hard Multi Coat",
+                    "UV Protection"
+                ]
             },
             "PHOTOCHROMIC": {
                 "cost": 60000,
-                "selling": 0
+                "selling": 0,
+                "features": [
+                    "Progressive",
+                    "Photochromic",
+                    "Color Adaptive"
+                ]
             },
             "ANTI-BLUE RAY": {
                 "cost": 60000,
-                "selling": 0
+                "selling": 0,
+                "features": [
+                    "Progressive",
+                    "Anti-Blue Ray",
+                    "UV Protection"
+                ]
             },
             "BLUECHROMIC": {
                 "cost": 120000,
-                "selling": 0
+                "selling": 0,
+                "features": [
+                    "Progressive",
+                    "Anti-Blue Ray",
+                    "Photochromic",
+                    "Color Adaptive"
+                ]
             },
             "BLUECHROMIC ONE-DRIVE": {
                 "cost": 180000,
-                "selling": 0
+                "selling": 0,
+                "features": [
+                    "Progressive",
+                    "Anti-Blue Ray",
+                    "Photochromic",
+                    "Drive Safe"
+                ]
+            }
+        },
+        "SINGLE VISION": {
+            "SUPERBLOCK 1.67": {
+                "cost": 140000,
+                "selling": 600000,
+                "features": [
+                    "High Index 1.67",
+                    "Super Anti-Reflective",
+                    "Thin & Light"
+                ]
             }
         }
     },
@@ -63,27 +142,121 @@
         "Progressive": {
             "Standard": {
                 "cost": 0,
-                "selling": 0
+                "selling": 0,
+                "features": [
+                    "Progressive",
+                    "Standard Grade",
+                    "Custom Order"
+                ]
             },
             "Premium": {
                 "cost": 0,
-                "selling": 0
+                "selling": 0,
+                "features": [
+                    "Progressive",
+                    "Premium Grade",
+                    "Custom Order",
+                    "Wide Field"
+                ]
             }
         },
         "SINGLE VISION": {
             "HMC": {
                 "cost": 96000,
-                "selling": 0
+                "selling": 0,
+                "features": [
+                    "Hard Multi Coat",
+                    "Custom Rx",
+                    "UV Protection"
+                ]
             },
             "SHMC": {
                 "cost": 114000,
-                "selling": 0
+                "selling": 0,
+                "features": [
+                    "Super Hard Multi Coat",
+                    "Custom Rx",
+                    "UV Protection"
+                ]
+            },
+            "LENTICULAR HMC": {
+                "cost": 150000,
+                "selling": 650000,
+                "features": [
+                    "Lenticular",
+                    "Hard Multi Coat",
+                    "High Power Rx"
+                ]
+            },
+            "LENTICULAR SHMC": {
+                "cost": 180000,
+                "selling": 800000,
+                "features": [
+                    "Lenticular",
+                    "Super Hard Multi Coat",
+                    "High Power Rx"
+                ]
+            },
+            "SUPERBLOCK 1.67": {
+                "cost": 330000,
+                "selling": 1600000,
+                "features": []
             }
         },
         "BIFOCAL": {
             "KRYPTOK HMC": {
                 "cost": 124000,
-                "selling": 0
+                "selling": 0,
+                "features": [
+                    "Kryptok Style",
+                    "Hard Multi Coat",
+                    "Bifocal",
+                    "Custom Rx"
+                ]
+            }
+        },
+        "KRYPTOK": {
+            "LENTICULAR HMC": {
+                "cost": 220000,
+                "selling": 1250000,
+                "features": [
+                    "Lenticular",
+                    "Hard Multi Coat",
+                    "Bifocal",
+                    "High Power Rx"
+                ]
+            },
+            "LENTICULAR SHMC": {
+                "cost": 240000,
+                "selling": 1400000,
+                "features": [
+                    "Lenticular",
+                    "Super Hard Multi Coat",
+                    "Bifocal",
+                    "High Power Rx"
+                ]
+            }
+        },
+        "FLATTOP": {
+            "HMC": {
+                "cost": 110000,
+                "selling": 350000,
+                "features": [
+                    "Flat Top",
+                    "Hard Multi Coat",
+                    "Bifocal",
+                    "Custom Rx"
+                ]
+            },
+            "SHMC": {
+                "cost": 140000,
+                "selling": 600000,
+                "features": [
+                    "Flat Top",
+                    "Super Hard Multi Coat",
+                    "Bifocal",
+                    "Custom Rx"
+                ]
             }
         }
     }

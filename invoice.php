@@ -2541,10 +2541,61 @@
         </script>
     </body>
 </html>
-<!-- 
-oke slenjutnya saya mau menambahkan feature "lense recomended" (di invoice.php), dimana saya ada file json (di ./data_json/lense_prices.json, sudah saya cantumkan juga)
-berdasarkan data-data ini
 
-1. ukuran pemeriksaan yang diterapkan (apakah yang sesuai hasil pemeriksaan atau dimodifikasi) seperti pada invoice.php
-2. umur, visual habits, digital device usage, symptoms dan additional note (optional), bisa dilihat di customer_prescription.php, dimana saya simpan didatabase __customer_examinations__
-buatkan rekomendasi jenis lensa yang cocok, misal untuk yang pekerjaanya indoor menggunakan lensa blueray, kalau ukurannya tinggi beri lensa dengan indeks tinggi, berikan semua skenario yang memungkinkan -->
+<!-- ada revisi
+
+
+
+
+
+untuk add mulai usianya dari >= 39
+
+
+
+apa itu se?
+
+
+
+untuk indoor + screen berat (> 5 jam) itu rekomendasinya Blueray → Bluegard
+
+
+
+apa itu glare symptom dan apa itu Photochromic di-inject jadi TOP PICK
+
+
+
+tempatkan setelah Face Shape Analysis
+
+dan ada satu lagi, jika anda lihat di lense_prices.json itu dikategorikan menjadi dua, yakni stock (siap 2 hari) dan lab (lensa gosok, siap 7-10 hari). 
+
+
+
+
+
+stock itu untuk ukuran sph max -5.00 dan cyl. -2.00, barangnya tidak pesanan dan siap 2 hari, jika sph sampai rentang -8.00 tetap stock (untuk harga) namun barang pesanan 7-10 hari (dipastikan dahulu ada stock atau tidak). 
+
+
+
+untuk lensa stock bluegard dan one-drive itu juga ada kemungkinan pesanan (dipastikan stock terlebih dahulu)
+
+
+
+untuk lab itu lensa gosok, untuk sv itu ukurannya sph > -8.00 dan > +300, cyl > -2.00, dan bisa kombinasi. untuk jauh dekat jika sph > 2.00 (baik + atau -) atau terdapat cyl. dan juga apabila ukuran baca lebih tinggi dari jauhnya
+
+
+
+untuk ukuran +7.00 s/d +17.00 (cyl combinasi itu -0.25 s/d -4.00), ini single vision, jenis lensanya lenticular dan itu lab
+
+
+
+untuk jauh dekat kryptok juga terdapat lenticular (lab juga) dengan aturan ukuran yang sama
+
+
+
+untuk flattop wajib lab
+
+
+
+
+
+ -->
