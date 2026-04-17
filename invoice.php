@@ -2541,3 +2541,10 @@
         </script>
     </body>
 </html>
+<!-- 
+oke slenjutnya saya mau menambahkan feature "lense recomended" (di invoice.php), dimana saya ada file json (di ./data_json/lense_prices.json, sudah saya cantumkan juga)
+berdasarkan data-data ini
+
+1. ukuran pemeriksaan yang diterapkan (apakah yang sesuai hasil pemeriksaan atau dimodifikasi) seperti pada invoice.php
+2. umur, visual habits, digital device usage, symptoms dan additional note (optional), bisa dilihat di customer_prescription.php, dimana saya simpan didatabase __customer_examinations__
+buatkan rekomendasi jenis lensa yang cocok, misal untuk yang pekerjaanya indoor menggunakan lensa blueray, kalau ukurannya tinggi beri lensa dengan indeks tinggi, berikan semua skenario yang memungkinkan -->
