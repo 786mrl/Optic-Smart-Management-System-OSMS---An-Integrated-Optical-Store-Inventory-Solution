@@ -150,70 +150,82 @@
         $isProg = in_array($cat, ['PROGRESSIVE','KRYPTOK','BIFOCAL','FLATTOP']);
 
         // Hard gate: keep only the right design type for this patient
-        if ($isPresby && $isSV)   return -9999;
+        if ($isPresby && $isSV)    return -9999;
         if (!$isPresby && $isProg) return -9999;
 
         $s = 0;
 
-        // ── Presbyopia design preference ───────────────────────
+        // ── Presbyopia design preference ────────────────────────
         if ($isPresby) {
-            if (in_array('PROGRESSIVE', $features))   $s += 20; // progressive > bifocal
-            elseif (in_array('WIDE FIELD', $features)) $s += 15; // premium progressive
+            if (in_array('PROGRESSIVE', $features))    $s += 20;
+            elseif (in_array('WIDE FIELD', $features)) $s += 15;
             elseif (in_array('BIFOCAL', $features) || in_array('FLAT TOP', $features)) $s += 5;
         }
 
-        // ── Feature × lifestyle scoring ────────────────────────
+        // ── Feature × lifestyle scoring ─────────────────────────
+        // Core principle:
+        //   - Features only earn points when they match the patient's actual needs
+        //   - Features that are IRRELEVANT to the lifestyle receive a PENALTY
+        //     so lenses loaded with unnecessary extras rank BELOW simpler options
+        //   - No max(0) cap: negative scores are intentional and drive proper ordering
         foreach ($features as $feat) {
             switch (strtoupper(trim($feat))) {
 
                 case 'ANTI-BLUE RAY':
                 case 'BLUE LIGHT GUARD':
-                    // Digital screen use
-                    $s += ($digital == 3) ? 30 : (($digital == 2) ? 18 : 4);
-                    // Compound benefit when eye-strain / headache present
-                    if ($hasEyeStrain || $hasHeadache) $s += 10;
-                    if ($hasDryEye) $s += 6;
+                    // Earn points only for meaningful screen use (digital >= 2)
+                    // Low screen (digital=1): 0 bonus — lens adds no practical value
+                    if ($digital == 3)     $s += 28;
+                    elseif ($digital == 2) $s += 15;
+                    // Eye-strain / headache bonus only when screen is actually the cause
+                    if (($hasEyeStrain || $hasHeadache) && $digital >= 2) $s += 8;
+                    if ($hasDryEye && $digital >= 2) $s += 4;
                     break;
 
                 case 'PHOTOCHROMIC':
                 case 'COLOR ADAPTIVE':
-                    // Outdoor / mixed lifestyle
-                    $s += ($habit == 2) ? 25 : (($habit == 3) ? 18 : 2);
-                    if ($hasGlare) $s += 14;
+                    // Outdoor: very useful; Indoor: penalised — not needed
+                    if ($habit == 2)     $s += 22;
+                    elseif ($habit == 3) $s += 14;
+                    else                 $s -= 12;   // indoor penalty
+                    if ($hasGlare && $habit >= 2) $s += 10;
                     break;
 
                 case 'DRIVE SAFE':
-                    $s += ($habit >= 2) ? 18 : 6;
+                    // Only adds value for users who go outdoors
+                    if ($habit == 2)     $s += 15;
+                    elseif ($habit == 3) $s += 10;
+                    else                 $s -= 18;   // indoor: significant penalty
                     break;
 
                 case 'HIGH INDEX 1.67':
                 case 'THIN & LIGHT':
-                    // Increasingly important as power rises
-                    if ($maxSE >= 6.0)      $s += 35;
-                    elseif ($maxSE >= 4.0)  $s += 22;
-                    elseif ($maxSE >= 2.0)  $s += 10;
+                    if ($maxSE >= 6.0)     $s += 35;
+                    elseif ($maxSE >= 4.0) $s += 22;
+                    elseif ($maxSE >= 2.0) $s += 10;
                     break;
 
                 case 'LENTICULAR':
-                    // Only beneficial at very high powers
-                    if ($maxSE >= 8.0)      $s += 30;
-                    elseif ($maxSE >= 6.0)  $s += 18;
-                    elseif ($maxSE >= 4.0)  $s += 6;
+                    if ($maxSE >= 8.0)     $s += 30;
+                    elseif ($maxSE >= 6.0) $s += 18;
+                    elseif ($maxSE >= 4.0) $s += 6;
                     break;
 
                 case 'ANTI-GLARE':
                 case 'ANTI-REFLECTIVE':
                 case 'SUPER ANTI-REFLECTIVE':
-                    $s += $hasGlare ? 16 : 5;
+                    // Only useful when glare is an actual complaint
+                    $s += $hasGlare ? 16 : 0;
                     break;
 
                 case 'UV PROTECTION':
-                    $s += ($habit >= 2) ? 6 : 2;
+                    // Only meaningful for outdoor exposure
+                    $s += ($habit >= 2) ? 5 : 0;
                     break;
 
                 case 'SUPER HARD MULTI COAT':
                 case 'SHMC':
-                    $s += 4; // durability bonus
+                    $s += 3;
                     break;
 
                 case 'CUSTOM RX':
@@ -227,16 +239,34 @@
             }
         }
 
-        // ── Source bonus ──────────────────────────────────────
-        // Prefer stock for mild prescriptions (faster readiness),
-        // prefer lab options for high prescriptions (wider range, custom fit).
+        // ── Source bonus ─────────────────────────────────────────
         if ($source === 'stock' && $maxSE < 4.0 && $maxCyl < 2.0) $s += 5;
         if ($source === 'lab'   && ($maxSE >= 5.0 || $maxCyl >= 3.0)) $s += 8;
 
-        return max($s, 0);
+        // Note: intentionally NO max(0) clamp — negative scores are valid
+        // and ensure irrelevant lenses rank below relevant simpler ones
+        return $s;
     }
 
     // ── Build sorted candidate list ───────────────────────────
+
+    // First pass: check if prescription fits within ANY stock lens limits.
+    // If yes → lab lenses are redundant and should not be shown.
+    $lr_anyStockFits = false;
+    foreach (($lr_catalog['stock'] ?? []) as $category => $types) {
+        foreach ($types as $type => $lens) {
+            $lim = $lens['limits'] ?? [];
+            if (!empty($lim) && lr_fits_limits($lr_r_sph, $lr_r_cyl, $lr_l_sph, $lr_l_cyl, $lim)) {
+                $lr_anyStockFits = true;
+                break 2;
+            }
+        }
+    }
+
+    // Threshold for High-Index / SUPERBLOCK to be relevant (SE or CYL must be significant)
+    // Below this, high-index lenses provide no practical benefit
+    $lr_hiIndexThreshold = 3.0; // SE >= 3.0 D before high-index is worth recommending
+
     $lr_candidates = [];
     foreach ($lr_catalog as $source => $categories) {
         $readiness = ($source === 'stock') ? 'Siap 1-2 Hari' : 'Gosok Lab, Siap 7-10 Hari';
@@ -247,6 +277,15 @@
                 $selling  = (int)($lens['selling'] ?? 0);
                 $lensNote = $lim['note'] ?? '';
 
+                // Skip lab lenses entirely when stock already covers this prescription
+                if ($source === 'lab' && $lr_anyStockFits) continue;
+
+                // Skip HIGH INDEX / SUPERBLOCK lenses when power is too low to benefit
+                $isHighIndex = in_array('HIGH INDEX 1.67', $features)
+                            || in_array('THIN & LIGHT', $features)
+                            || in_array('LENTICULAR', $features);
+                if ($isHighIndex && $lr_maxSE < $lr_hiIndexThreshold && $lr_maxCyl < $lr_hiIndexThreshold) continue;
+
                 // Skip if prescription out of range for this lens
                 if (!empty($lim) && !lr_fits_limits($lr_r_sph, $lr_r_cyl, $lr_l_sph, $lr_l_cyl, $lim)) continue;
 
@@ -256,6 +295,11 @@
                     $lr_hasGlare, $lr_hasEyeStrain, $lr_hasHeadache, $lr_hasDryEye);
 
                 if ($score <= -9999) continue;
+
+                // Price tiebreaker: among equal-scoring lenses prefer the cheaper one.
+                // Scale: 600k lens → -1.0 impact; 90k lens → -0.15 impact.
+                // Small enough not to override genuine feature differences.
+                if ($selling > 0) $score -= ($selling / 600000.0);
 
                 $lr_candidates[] = [
                     'source'    => $source,      // 'stock' | 'lab'
@@ -270,7 +314,7 @@
             }
         }
     }
-    usort($lr_candidates, function($a, $b) { return $b['score'] - $a['score']; });
+    usort($lr_candidates, function($a, $b) { return ($b['score'] > $a['score']) ? 1 : (($b['score'] < $a['score']) ? -1 : 0); });
 
     // ── Special warning notes ─────────────────────────────────
     $lr_specialNotes = [];
