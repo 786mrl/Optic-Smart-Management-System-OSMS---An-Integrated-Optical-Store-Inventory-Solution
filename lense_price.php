@@ -51,11 +51,11 @@
         $data[$gk] = $new_cats;
     }
 
-    // Format Rx value with sign
+    // Format Rx value with sign (integer format, value × 100; e.g. -25 = -0.25)
     function fmtRx($v) {
-        $v = (float)$v;
-        if ($v > 0) return '+'.number_format($v,2);
-        return number_format($v,2);
+        $v = (int)round((float)$v);
+        if ($v > 0) return '+'.$v;
+        return (string)$v;
     }
 
     // Detect if category uses ADD field (bifocal/progressive)
@@ -97,13 +97,13 @@
 
                         $lp = $_POST['price_limits'][$group][$category][$old_name] ?? [];
                         $limits = [
-                            'sph_from' => (float)($lp['sph_from'] ?? 0),
-                            'sph_to'   => (float)($lp['sph_to']   ?? 0),
-                            'cyl_from' => (float)($lp['cyl_from'] ?? 0),
-                            'cyl_to'   => (float)($lp['cyl_to']   ?? 0),
-                            'add_from' => (float)($lp['add_from'] ?? 0),
-                            'add_to'   => (float)($lp['add_to']   ?? 0),
-                            'comb_max' => (float)($lp['comb_max'] ?? 0),
+                            'sph_from' => (int)round((float)($lp['sph_from'] ?? 0)),
+                            'sph_to'   => (int)round((float)($lp['sph_to']   ?? 0)),
+                            'cyl_from' => (int)round((float)($lp['cyl_from'] ?? 0)),
+                            'cyl_to'   => (int)round((float)($lp['cyl_to']   ?? 0)),
+                            'add_from' => (int)round((float)($lp['add_from'] ?? 0)),
+                            'add_to'   => (int)round((float)($lp['add_to']   ?? 0)),
+                            'comb_max' => (int)round((float)($lp['comb_max'] ?? 0)),
                             'note'     => trim($lp['note'] ?? ''),
                         ];
 
@@ -135,14 +135,19 @@
             ));
 
             $lp = $_POST['new_limits'] ?? [];
+            // Default comb_max depends on group: stock = -1000, lab = -1100
+            $default_comb = ($new_group === 'lab') ? -1100 : -1000;
+            $comb_max_val = isset($lp['comb_max']) && $lp['comb_max'] !== ''
+                            ? (int)round((float)$lp['comb_max'])
+                            : $default_comb;
             $new_limits = [
-                'sph_from' => (float)($lp['sph_from'] ?? 0),
-                'sph_to'   => (float)($lp['sph_to']   ?? 0),
-                'cyl_from' => (float)($lp['cyl_from'] ?? 0),
-                'cyl_to'   => (float)($lp['cyl_to']   ?? 0),
-                'add_from' => (float)($lp['add_from'] ?? 0),
-                'add_to'   => (float)($lp['add_to']   ?? 0),
-                'comb_max' => (float)($lp['comb_max'] ?? 0),
+                'sph_from' => (int)round((float)($lp['sph_from'] ?? 0)),
+                'sph_to'   => (int)round((float)($lp['sph_to']   ?? 0)),
+                'cyl_from' => (int)round((float)($lp['cyl_from'] ?? 0)),
+                'cyl_to'   => (int)round((float)($lp['cyl_to']   ?? 0)),
+                'add_from' => (int)round((float)($lp['add_from'] ?? 0)),
+                'add_to'   => (int)round((float)($lp['add_to']   ?? 0)),
+                'comb_max' => $comb_max_val,
                 'note'     => trim($lp['note'] ?? ''),
             ];
 
@@ -154,6 +159,21 @@
                 $message    = "Lens \"".htmlspecialchars($new_name)."\" added successfully.";
                 $active_tab = 'add';
             }
+
+        } elseif (isset($_POST['delete_lense'])) {
+            $dg = $_POST['del_group']    ?? '';
+            $dc = uc_trim($_POST['del_category'] ?? '');
+            $dn = uc_trim($_POST['del_lense']    ?? '');
+            if ($dg !== '' && $dc !== '' && $dn !== '' && isset($data[$dg][$dc][$dn])) {
+                unset($data[$dg][$dc][$dn]);
+                // Clean up empty category so dropdown stays tidy
+                if (empty($data[$dg][$dc])) {
+                    unset($data[$dg][$dc]);
+                }
+                $message = "Lens \"".htmlspecialchars($dn)."\" deleted successfully.";
+            } else {
+                $message = "Could not delete: lens not found.";
+            }
         }
 
         file_put_contents($json_file, json_encode($data, JSON_PRETTY_PRINT));
@@ -161,8 +181,10 @@
 
     $selected_group = $_POST['last_group'] ?? 'stock';
     $selected_cat   = $_POST['last_category'] ?? '';
-    if (empty($selected_cat) && isset($data[$selected_group])) {
-        $selected_cat = array_key_first($data[$selected_group]);
+    // Fallback if the remembered category no longer exists (e.g. emptied by delete)
+    if ((empty($selected_cat) || !isset($data[$selected_group][$selected_cat])) && isset($data[$selected_group])) {
+        $first_cat = array_key_first($data[$selected_group]);
+        $selected_cat = $first_cat ?? '';
     }
 ?>
 <!DOCTYPE html>
@@ -249,6 +271,49 @@
                 padding:2px 8px; border-radius:10px;
                 text-transform:uppercase;
             }
+            .btn-delete-lens {
+                position:absolute; top:-10px; right:12px;
+                background:#2a1e1e; color:#f87171;
+                border:1px solid #4a2525; border-radius:50%;
+                width:22px; height:22px; padding:0;
+                font-size:13px; font-weight:700; line-height:1;
+                cursor:pointer;
+                display:inline-flex; align-items:center; justify-content:center;
+                transition:all .2s;
+            }
+            .btn-delete-lens:hover {
+                background:#f87171; color:#fff; border-color:#f87171;
+                box-shadow:0 0 0 3px rgba(248,113,113,0.15);
+            }
+
+            /* ── Collapse toggle ─────────────────────────────────────── */
+            .btn-toggle-lens {
+                background:transparent; border:none; cursor:pointer;
+                color:#6b7280; padding:0; flex-shrink:0;
+                width:20px; height:20px;
+                display:inline-flex; align-items:center; justify-content:center;
+                border-radius:4px; font-size:9px;
+                transition:background .15s, color .15s;
+            }
+            .btn-toggle-lens:hover { background:#2e3138; color:#00adb5; }
+            .btn-toggle-lens .toggle-arrow { display:inline-block; transition:transform .2s ease; }
+            .lens-card:not(.collapsed) .btn-toggle-lens .toggle-arrow { transform:rotate(90deg); color:#00adb5; }
+
+            /* Collapsible body */
+            .lens-card.collapsed .lens-card-body { display:none; }
+            .lens-card:not(.collapsed) .lens-card-body { animation:slideDown .2s ease-out; }
+
+            /* Compact card when collapsed */
+            .lens-card.collapsed { padding:10px 14px 10px 18px; }
+            .lens-card.collapsed .lens-name-row { margin-bottom:0; }
+            .lens-card.collapsed .lens-name-badge { display:none; }
+
+            /* Preview summary — only shown when card is collapsed */
+            .lens-preview-summary { display:none; font-size:10.5px; font-weight:500; margin-left:12px; flex-shrink:0; white-space:nowrap; padding-right:28px; }
+            .lens-card.collapsed .lens-preview-summary { display:inline-flex; gap:8px; align-items:center; }
+            .lens-preview-summary .sum-price      { color:#2dd4bf; font-weight:700; }
+            .lens-preview-summary .sum-feat-count { color:#6b7280; font-style:italic; }
+            .lens-preview-summary .sum-dot        { color:#3a3d44; font-weight:700; }
 
             .lens-name-row { display:flex; align-items:center; gap:8px; margin-bottom:14px; }
             .lens-name-icon { color:#4b5563; font-size:12px; flex-shrink:0; }
@@ -393,7 +458,7 @@
                     </div>
 
                     <?php if ($message): ?>
-                    <div style="background:#065f46;color:#6ee7b7;border:1px solid #047857;padding:10px 16px;border-radius:8px;margin-bottom:16px;text-align:center;font-size:13px;">
+                    <div id="status-message" style="background:#065f46;color:#6ee7b7;border:1px solid #047857;padding:10px 16px;border-radius:8px;margin-bottom:16px;text-align:center;font-size:13px;transition:opacity .4s ease, margin .4s ease, padding .4s ease, max-height .4s ease;overflow:hidden;max-height:100px;">
                         <?php echo $message; ?>
                     </div>
                     <?php endif; ?>
@@ -413,7 +478,7 @@
 
                                 <div class="form-field">
                                     <label>Group</label>
-                                    <select name="new_group" class="input-field">
+                                    <select name="new_group" id="new_group_select" class="input-field" onchange="updateCombMaxDefault()">
                                         <option value="stock">Stock Lens</option>
                                         <option value="lab">Lab Lens (Custom Order)</option>
                                     </select>
@@ -466,36 +531,36 @@
                                     <div style="display:flex;flex-direction:column;gap:10px;background:#1c1f25;border:1px solid #2a2d34;border-radius:8px;padding:14px;">
 
                                         <div class="rx-group">
-                                            <div class="rx-group-label sph">SPH — Sphere</div>
+                                            <div class="rx-group-label sph">SPH &mdash; Sphere <span style="color:#374151;font-weight:400;font-size:9px;margin-left:4px;">(value &times;100, e.g. -25 = -0.25)</span></div>
                                             <div class="rx-row">
-                                                <div class="rx-subfield"><label>From</label><input type="number" step="0.25" class="rx-input" name="new_limits[sph_from]" value="0.00" placeholder="0.00"></div>
-                                                <div class="rx-arrow">→</div>
-                                                <div class="rx-subfield"><label>To</label><input type="number" step="0.25" class="rx-input" name="new_limits[sph_to]" value="0.00" placeholder="0.00"></div>
+                                                <div class="rx-subfield"><label>From</label><input type="number" step="25" class="rx-input" name="new_limits[sph_from]" value="0" placeholder="0"></div>
+                                                <div class="rx-arrow">&rarr;</div>
+                                                <div class="rx-subfield"><label>To</label><input type="number" step="25" class="rx-input" name="new_limits[sph_to]" value="0" placeholder="0"></div>
                                             </div>
                                         </div>
 
                                         <div class="rx-group">
-                                            <div class="rx-group-label cyl">CYL — Cylinder</div>
+                                            <div class="rx-group-label cyl">CYL &mdash; Cylinder</div>
                                             <div class="rx-row">
-                                                <div class="rx-subfield"><label>From</label><input type="number" step="0.25" class="rx-input" name="new_limits[cyl_from]" value="0.00" placeholder="0.00"></div>
-                                                <div class="rx-arrow">→</div>
-                                                <div class="rx-subfield"><label>To</label><input type="number" step="0.25" class="rx-input" name="new_limits[cyl_to]" value="0.00" placeholder="0.00"></div>
+                                                <div class="rx-subfield"><label>From</label><input type="number" step="25" class="rx-input" name="new_limits[cyl_from]" value="0" placeholder="0"></div>
+                                                <div class="rx-arrow">&rarr;</div>
+                                                <div class="rx-subfield"><label>To</label><input type="number" step="25" class="rx-input" name="new_limits[cyl_to]" value="0" placeholder="0"></div>
                                             </div>
                                         </div>
 
                                         <div class="rx-group">
-                                            <div class="rx-group-label add">ADD — Reading Addition</div>
+                                            <div class="rx-group-label add">ADD &mdash; Reading Addition</div>
                                             <div class="rx-row">
-                                                <div class="rx-subfield"><label>From</label><input type="number" step="0.25" class="rx-input" name="new_limits[add_from]" value="0.00" placeholder="0.00"></div>
-                                                <div class="rx-arrow">→</div>
-                                                <div class="rx-subfield"><label>To</label><input type="number" step="0.25" class="rx-input" name="new_limits[add_to]" value="0.00" placeholder="0.00"></div>
+                                                <div class="rx-subfield"><label>From</label><input type="number" step="25" class="rx-input" name="new_limits[add_from]" value="0" placeholder="0"></div>
+                                                <div class="rx-arrow">&rarr;</div>
+                                                <div class="rx-subfield"><label>To</label><input type="number" step="25" class="rx-input" name="new_limits[add_to]" value="0" placeholder="0"></div>
                                             </div>
                                         </div>
 
                                         <div class="rx-group">
-                                            <div class="rx-group-label comb">COMB — Max Combination</div>
-                                            <input type="number" step="0.25" class="rx-input" style="max-width:130px;" name="new_limits[comb_max]" value="0.00" placeholder="0.00">
-                                            <div class="rx-hint">|SPH| + |CYL| limit. Leave 0 if not applicable.</div>
+                                            <div class="rx-group-label comb">COMB &mdash; Max Combination</div>
+                                            <input type="number" step="25" class="rx-input" id="new_comb_max" style="max-width:130px;" name="new_limits[comb_max]" value="-1000" placeholder="-1000">
+                                            <div class="rx-hint">|SPH| + |CYL| limit. Default: Stock=-1000, Lab=-1100.</div>
                                         </div>
 
                                         <div class="rx-group">
@@ -569,18 +634,35 @@
                                     $lim      = is_array($prices) ? ($prices['limits']   ?? $DEFAULT_LIMITS) : $DEFAULT_LIMITS;
                                     $lim      = array_merge($DEFAULT_LIMITS, $lim); // fill any missing keys
                                 ?>
-                                <div class="lens-card">
+                                <div class="lens-card collapsed">
                                     <span class="lens-card-index">#<?php echo str_pad($card_index, 2, '0', STR_PAD_LEFT); ?></span>
+                                    <button type="button" class="btn-delete-lens"
+                                        data-group="<?php echo htmlspecialchars($group_key);?>"
+                                        data-category="<?php echo htmlspecialchars($cat_name);?>"
+                                        data-name="<?php echo htmlspecialchars($name);?>"
+                                        title="Delete this lens">&times;</button>
 
-                                    <!-- Name -->
+                                    <!-- Name + toggle -->
                                     <div class="lens-name-row">
+                                        <button type="button" class="btn-toggle-lens" onclick="toggleLensCard(this)" title="Show / hide details">
+                                            <span class="toggle-arrow">&#9654;</span>
+                                        </button>
                                         <span class="lens-name-icon">&#9998;</span>
                                         <input type="text" class="lens-name-input uppercase-input"
                                             oninput="this.value=this.value.toUpperCase()"
                                             name="price_name[<?php echo $group_key;?>][<?php echo $cat_name;?>][<?php echo $name;?>]"
                                             value="<?php echo htmlspecialchars($name);?>" title="Click to rename">
                                         <span class="lens-name-badge">click to rename</span>
+                                        <span class="lens-preview-summary">
+                                            <span class="sum-price">IDR <?php echo number_format($selling ?: $cost, 0, ',', '.'); ?></span>
+                                            <?php if (count($features)): ?>
+                                            <span class="sum-dot">&bull;</span>
+                                            <span class="sum-feat-count"><?php echo count($features); ?> feature<?php echo count($features)!==1?'s':''; ?></span>
+                                            <?php endif; ?>
+                                        </span>
                                     </div>
+
+                                    <div class="lens-card-body">
 
                                     <!-- Prices -->
                                     <div class="lens-prices-row">
@@ -654,18 +736,18 @@
 
                                             <!-- SPH -->
                                             <div class="rx-group">
-                                                <div class="rx-group-label sph">SPH — Sphere</div>
+                                                <div class="rx-group-label sph">SPH &mdash; Sphere <span style="color:#374151;font-weight:400;font-size:9px;margin-left:4px;">(value &times;100, e.g. -25 = -0.25)</span></div>
                                                 <div class="rx-row">
                                                     <div class="rx-subfield">
                                                         <label>From</label>
-                                                        <input type="number" step="0.25" class="rx-input"
+                                                        <input type="number" step="25" class="rx-input"
                                                             name="price_limits[<?php echo $group_key;?>][<?php echo $cat_name;?>][<?php echo $name;?>][sph_from]"
                                                             value="<?php echo fmtRx($lim['sph_from']);?>">
                                                     </div>
-                                                    <div class="rx-arrow">→</div>
+                                                    <div class="rx-arrow">&rarr;</div>
                                                     <div class="rx-subfield">
                                                         <label>To</label>
-                                                        <input type="number" step="0.25" class="rx-input"
+                                                        <input type="number" step="25" class="rx-input"
                                                             name="price_limits[<?php echo $group_key;?>][<?php echo $cat_name;?>][<?php echo $name;?>][sph_to]"
                                                             value="<?php echo fmtRx($lim['sph_to']);?>">
                                                     </div>
@@ -675,18 +757,18 @@
                                             <?php if ($has_cyl): ?>
                                             <!-- CYL -->
                                             <div class="rx-group">
-                                                <div class="rx-group-label cyl">CYL — Cylinder</div>
+                                                <div class="rx-group-label cyl">CYL &mdash; Cylinder</div>
                                                 <div class="rx-row">
                                                     <div class="rx-subfield">
                                                         <label>From</label>
-                                                        <input type="number" step="0.25" class="rx-input"
+                                                        <input type="number" step="25" class="rx-input"
                                                             name="price_limits[<?php echo $group_key;?>][<?php echo $cat_name;?>][<?php echo $name;?>][cyl_from]"
                                                             value="<?php echo fmtRx($lim['cyl_from']);?>">
                                                     </div>
-                                                    <div class="rx-arrow">→</div>
+                                                    <div class="rx-arrow">&rarr;</div>
                                                     <div class="rx-subfield">
                                                         <label>To</label>
-                                                        <input type="number" step="0.25" class="rx-input"
+                                                        <input type="number" step="25" class="rx-input"
                                                             name="price_limits[<?php echo $group_key;?>][<?php echo $cat_name;?>][<?php echo $name;?>][cyl_to]"
                                                             value="<?php echo fmtRx($lim['cyl_to']);?>">
                                                     </div>
@@ -701,18 +783,18 @@
                                             <?php if ($has_add): ?>
                                             <!-- ADD -->
                                             <div class="rx-group">
-                                                <div class="rx-group-label add">ADD — Reading Addition</div>
+                                                <div class="rx-group-label add">ADD &mdash; Reading Addition</div>
                                                 <div class="rx-row">
                                                     <div class="rx-subfield">
                                                         <label>From</label>
-                                                        <input type="number" step="0.25" class="rx-input"
+                                                        <input type="number" step="25" class="rx-input"
                                                             name="price_limits[<?php echo $group_key;?>][<?php echo $cat_name;?>][<?php echo $name;?>][add_from]"
                                                             value="<?php echo fmtRx($lim['add_from']);?>">
                                                     </div>
-                                                    <div class="rx-arrow">→</div>
+                                                    <div class="rx-arrow">&rarr;</div>
                                                     <div class="rx-subfield">
                                                         <label>To</label>
-                                                        <input type="number" step="0.25" class="rx-input"
+                                                        <input type="number" step="25" class="rx-input"
                                                             name="price_limits[<?php echo $group_key;?>][<?php echo $cat_name;?>][<?php echo $name;?>][add_to]"
                                                             value="<?php echo fmtRx($lim['add_to']);?>">
                                                     </div>
@@ -725,11 +807,11 @@
 
                                             <!-- COMB -->
                                             <div class="rx-group">
-                                                <div class="rx-group-label comb">COMB — Max Combination</div>
-                                                <input type="number" step="0.25" class="rx-input" style="max-width:130px;"
+                                                <div class="rx-group-label comb">COMB &mdash; Max Combination</div>
+                                                <input type="number" step="25" class="rx-input" style="max-width:130px;"
                                                     name="price_limits[<?php echo $group_key;?>][<?php echo $cat_name;?>][<?php echo $name;?>][comb_max]"
                                                     value="<?php echo fmtRx($lim['comb_max']);?>">
-                                                <div class="rx-hint">|SPH| + |CYL| limit. Leave 0 if not applicable.</div>
+                                                <div class="rx-hint">|SPH| + |CYL| limit. Default: Stock=-1000, Lab=-1100.</div>
                                             </div>
 
                                             <!-- Note -->
@@ -743,6 +825,8 @@
                                         </div><!-- /.rx-limits-body -->
                                     </details>
 
+                                    </div><!-- /.lens-card-body -->
+
                                 </div><!-- /.lens-card -->
                                 <?php endforeach; ?>
                                 </div><!-- /.lense-panel -->
@@ -754,6 +838,16 @@
                         <div class="save-bar">
                             <button type="submit" name="save_prices" class="btn-save" style="min-width:180px;">Save All Changes</button>
                         </div>
+                    </form>
+
+                    <!-- Hidden form for lens deletion -->
+                    <form id="delete-lense-form" action="lense_price.php" method="POST" style="display:none;">
+                        <input type="hidden" name="delete_lense" value="1">
+                        <input type="hidden" name="del_group"    id="del_group">
+                        <input type="hidden" name="del_category" id="del_category">
+                        <input type="hidden" name="del_lense"    id="del_lense">
+                        <input type="hidden" name="last_group"    id="del_last_group">
+                        <input type="hidden" name="last_category" id="del_last_category">
                     </form>
 
                     <div class="btn-group">
@@ -868,6 +962,40 @@
                 });
             }
 
+            // ─── Collapse / expand lens card ─────────────────────────────
+            function toggleLensCard(btn) {
+                const card = btn.closest('.lens-card');
+                if (card) card.classList.toggle('collapsed');
+            }
+
+            // ─── Delete lens ─────────────────────────────────────────────
+            function confirmDeleteLens(group, category, name) {
+                const msg = 'Delete lens "' + name + '" from ' + category + '?\n\nThis action cannot be undone.\nNote: Any unsaved price edits will be discarded.';
+                if (!confirm(msg)) return;
+                document.getElementById('del_group').value       = group;
+                document.getElementById('del_category').value    = category;
+                document.getElementById('del_lense').value       = name;
+                // Preserve filter so user stays on the same view after reload
+                const fg = document.getElementById('filter-group');
+                const fc = document.getElementById('filter-category');
+                document.getElementById('del_last_group').value    = fg ? fg.value : (group || 'stock');
+                document.getElementById('del_last_category').value = fc ? fc.value : (category || '');
+                document.getElementById('delete-lense-form').submit();
+            }
+
+            // ─── COMB-MAX auto default based on Group ────────────────────
+            function updateCombMaxDefault() {
+                const grp = document.getElementById('new_group_select');
+                const comb = document.getElementById('new_comb_max');
+                if (!grp || !comb) return;
+                const def = grp.value === 'lab' ? -1100 : -1000;
+                // Only override if user hasn't typed a custom value (still matches the previous default 0 / -1000 / -1100)
+                const cur = parseInt(comb.value, 10);
+                if (isNaN(cur) || cur === 0 || cur === -1000 || cur === -1100) {
+                    comb.value = def;
+                }
+            }
+
             // ─── Init ─────────────────────────────────────────────────────
             document.addEventListener('DOMContentLoaded', () => {
                 <?php if (isset($active_tab) && $active_tab==='add'): ?>showTab('add');<?php else: ?>updateCategoryFilter();<?php endif; ?>
@@ -876,6 +1004,25 @@
                     initFeatureTags(el.getAttribute('data-safe-key'), JSON.parse(el.getAttribute('data-features')||'[]'));
                 });
                 initFeatureTags('new_lense',[]);
+                updateCombMaxDefault();
+                // Wire up delete buttons
+                document.querySelectorAll('.btn-delete-lens').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        confirmDeleteLens(btn.dataset.group, btn.dataset.category, btn.dataset.name);
+                    });
+                });
+                // Auto-dismiss status message after 5 seconds
+                const statusMsg = document.getElementById('status-message');
+                if (statusMsg) {
+                    setTimeout(() => {
+                        statusMsg.style.opacity = '0';
+                        statusMsg.style.maxHeight = '0';
+                        statusMsg.style.marginBottom = '0';
+                        statusMsg.style.paddingTop = '0';
+                        statusMsg.style.paddingBottom = '0';
+                        setTimeout(() => statusMsg.remove(), 400);
+                    }, 5000);
+                }
             });
         </script>
     </body>

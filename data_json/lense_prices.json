@@ -1,24 +1,6 @@
 {
     "stock": {
         "SINGLE VISION": {
-            "HMC": {
-                "cost": 18000,
-                "selling": 90000,
-                "features": [
-                    "MULTI COAT",
-                    "CR RESIN"
-                ],
-                "limits": {
-                    "sph_from": 0,
-                    "sph_to": -8,
-                    "cyl_from": -0.25,
-                    "cyl_to": -2,
-                    "add_from": 0,
-                    "add_to": 0,
-                    "comb_max": 0,
-                    "note": ""
-                }
-            },
             "BLUERAY": {
                 "cost": 25000,
                 "selling": 150000,
@@ -29,12 +11,12 @@
                 ],
                 "limits": {
                     "sph_from": 0,
-                    "sph_to": -8,
-                    "cyl_from": -0.25,
-                    "cyl_to": -2,
+                    "sph_to": -800,
+                    "cyl_from": -25,
+                    "cyl_to": -200,
                     "add_from": 0,
                     "add_to": 0,
-                    "comb_max": 0,
+                    "comb_max": -1000,
                     "note": ""
                 }
             },
@@ -48,12 +30,12 @@
                 ],
                 "limits": {
                     "sph_from": 0,
-                    "sph_to": -8,
-                    "cyl_from": -0.25,
-                    "cyl_to": -2,
+                    "sph_to": -800,
+                    "cyl_from": -25,
+                    "cyl_to": -200,
                     "add_from": 0,
                     "add_to": 0,
-                    "comb_max": 0,
+                    "comb_max": -1000,
                     "note": ""
                 }
             },
@@ -67,12 +49,12 @@
                 ],
                 "limits": {
                     "sph_from": 0,
-                    "sph_to": -8,
-                    "cyl_from": -0.25,
-                    "cyl_to": -2,
+                    "sph_to": -800,
+                    "cyl_from": -25,
+                    "cyl_to": -200,
                     "add_from": 0,
                     "add_to": 0,
-                    "comb_max": 0,
+                    "comb_max": -1000,
                     "note": ""
                 }
             },
@@ -86,12 +68,12 @@
                 ],
                 "limits": {
                     "sph_from": 0,
-                    "sph_to": -8,
-                    "cyl_from": -0.25,
-                    "cyl_to": -2,
+                    "sph_to": -800,
+                    "cyl_from": -25,
+                    "cyl_to": -200,
                     "add_from": 0,
                     "add_to": 0,
-                    "comb_max": 0,
+                    "comb_max": -1000,
                     "note": ""
                 }
             },
@@ -106,12 +88,12 @@
                 ],
                 "limits": {
                     "sph_from": 0,
-                    "sph_to": -8,
-                    "cyl_from": -0.25,
-                    "cyl_to": -2,
+                    "sph_to": -800,
+                    "cyl_from": -25,
+                    "cyl_to": -200,
                     "add_from": 0,
                     "add_to": 0,
-                    "comb_max": 0,
+                    "comb_max": -1000,
                     "note": ""
                 }
             },
@@ -125,12 +107,12 @@
                 ],
                 "limits": {
                     "sph_from": 0,
-                    "sph_to": -8,
-                    "cyl_from": -0.25,
-                    "cyl_to": -2,
+                    "sph_to": -800,
+                    "cyl_from": -25,
+                    "cyl_to": -200,
                     "add_from": 0,
                     "add_to": 0,
-                    "comb_max": 0,
+                    "comb_max": -1000,
                     "note": ""
                 }
             }
@@ -146,12 +128,12 @@
                 ],
                 "limits": {
                     "sph_from": 0,
-                    "sph_to": -2,
+                    "sph_to": -200,
                     "cyl_from": 0,
                     "cyl_to": 0,
                     "add_from": 0,
                     "add_to": 0,
-                    "comb_max": 0,
+                    "comb_max": -1000,
                     "note": "Reading power must not exceed distance SPH. If exceeded, order from lab."
                 }
             },
@@ -166,12 +148,12 @@
                 ],
                 "limits": {
                     "sph_from": 0,
-                    "sph_to": -2,
+                    "sph_to": -200,
                     "cyl_from": 0,
                     "cyl_to": 0,
                     "add_from": 0,
                     "add_to": 0,
-                    "comb_max": 0,
+                    "comb_max": -1000,
                     "note": "Reading power must not exceed distance SPH. If exceeded, order from lab."
                 }
             }
@@ -187,12 +169,12 @@
                 ],
                 "limits": {
                     "sph_from": 0,
-                    "sph_to": -2,
+                    "sph_to": -200,
                     "cyl_from": 0,
                     "cyl_to": 0,
                     "add_from": 0,
                     "add_to": 0,
-                    "comb_max": 0,
+                    "comb_max": -1000,
                     "note": ""
                 }
             },
@@ -206,12 +188,12 @@
                 ],
                 "limits": {
                     "sph_from": 0,
-                    "sph_to": -2,
+                    "sph_to": -200,
                     "cyl_from": 0,
                     "cyl_to": 0,
                     "add_from": 0,
                     "add_to": 0,
-                    "comb_max": 0,
+                    "comb_max": -1000,
                     "note": ""
                 }
             },
@@ -225,12 +207,12 @@
                 ],
                 "limits": {
                     "sph_from": 0,
-                    "sph_to": -2,
+                    "sph_to": -200,
                     "cyl_from": 0,
                     "cyl_to": 0,
                     "add_from": 0,
                     "add_to": 0,
-                    "comb_max": 0,
+                    "comb_max": -1000,
                     "note": ""
                 }
             },
@@ -245,12 +227,12 @@
                 ],
                 "limits": {
                     "sph_from": 0,
-                    "sph_to": -2,
+                    "sph_to": -200,
                     "cyl_from": 0,
                     "cyl_to": 0,
                     "add_from": 0,
                     "add_to": 0,
-                    "comb_max": 0,
+                    "comb_max": -1000,
                     "note": ""
                 }
             },
@@ -265,12 +247,12 @@
                 ],
                 "limits": {
                     "sph_from": 0,
-                    "sph_to": -2,
+                    "sph_to": -200,
                     "cyl_from": 0,
                     "cyl_to": 0,
                     "add_from": 0,
                     "add_to": 0,
-                    "comb_max": 0,
+                    "comb_max": -1000,
                     "note": ""
                 }
             }
@@ -288,12 +270,12 @@
                 ],
                 "limits": {
                     "sph_from": 0,
-                    "sph_to": -7,
-                    "cyl_from": -0.25,
-                    "cyl_to": -4,
+                    "sph_to": -700,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
                     "add_from": 0,
                     "add_to": 0,
-                    "comb_max": -9,
+                    "comb_max": -1100,
                     "note": ""
                 }
             },
@@ -308,12 +290,12 @@
                 ],
                 "limits": {
                     "sph_from": 0,
-                    "sph_to": -7,
-                    "cyl_from": -0.25,
-                    "cyl_to": -4,
+                    "sph_to": -700,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
                     "add_from": 0,
                     "add_to": 0,
-                    "comb_max": -9,
+                    "comb_max": -1100,
                     "note": ""
                 }
             }
@@ -321,7 +303,7 @@
         "SINGLE VISION": {
             "HMC": {
                 "cost": 96000,
-                "selling": 0,
+                "selling": 285000,
                 "features": [
                     "HARD MULTI COAT",
                     "CUSTOM RX",
@@ -329,18 +311,18 @@
                 ],
                 "limits": {
                     "sph_from": 0,
-                    "sph_to": -11,
-                    "cyl_from": -0.25,
-                    "cyl_to": -4,
+                    "sph_to": -1100,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
                     "add_from": 0,
                     "add_to": 0,
-                    "comb_max": -11,
+                    "comb_max": -1100,
                     "note": ""
                 }
             },
             "SHMC": {
                 "cost": 114000,
-                "selling": 0,
+                "selling": 450000,
                 "features": [
                     "SUPER HARD MULTI COAT",
                     "CUSTOM RX",
@@ -348,12 +330,12 @@
                 ],
                 "limits": {
                     "sph_from": 0,
-                    "sph_to": -11,
-                    "cyl_from": -0.25,
-                    "cyl_to": -4,
+                    "sph_to": -1100,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
                     "add_from": 0,
                     "add_to": 0,
-                    "comb_max": -11,
+                    "comb_max": -1100,
                     "note": ""
                 }
             },
@@ -367,12 +349,12 @@
                 ],
                 "limits": {
                     "sph_from": 0,
-                    "sph_to": -11,
-                    "cyl_from": -0.25,
-                    "cyl_to": -4,
+                    "sph_to": -1100,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
                     "add_from": 0,
                     "add_to": 0,
-                    "comb_max": -11,
+                    "comb_max": -1100,
                     "note": ""
                 }
             },
@@ -386,12 +368,12 @@
                 ],
                 "limits": {
                     "sph_from": 0,
-                    "sph_to": -11,
-                    "cyl_from": -0.25,
-                    "cyl_to": -4,
+                    "sph_to": -1100,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
                     "add_from": 0,
                     "add_to": 0,
-                    "comb_max": -11,
+                    "comb_max": -1100,
                     "note": ""
                 }
             },
@@ -406,12 +388,12 @@
                 ],
                 "limits": {
                     "sph_from": 0,
-                    "sph_to": -11,
-                    "cyl_from": -0.25,
-                    "cyl_to": -4,
+                    "sph_to": -1100,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
                     "add_from": 0,
                     "add_to": 0,
-                    "comb_max": -11,
+                    "comb_max": -1100,
                     "note": ""
                 }
             }
@@ -428,12 +410,12 @@
                 ],
                 "limits": {
                     "sph_from": 0,
-                    "sph_to": -7,
+                    "sph_to": -700,
                     "cyl_from": 0,
                     "cyl_to": 0,
                     "add_from": 0,
                     "add_to": 0,
-                    "comb_max": -9,
+                    "comb_max": -1100,
                     "note": ""
                 }
             }
@@ -450,12 +432,12 @@
                 ],
                 "limits": {
                     "sph_from": 0,
-                    "sph_to": -7,
+                    "sph_to": -700,
                     "cyl_from": 0,
                     "cyl_to": 0,
                     "add_from": 0,
                     "add_to": 0,
-                    "comb_max": -9,
+                    "comb_max": -1100,
                     "note": ""
                 }
             },
@@ -470,12 +452,12 @@
                 ],
                 "limits": {
                     "sph_from": 0,
-                    "sph_to": -7,
+                    "sph_to": -700,
                     "cyl_from": 0,
                     "cyl_to": 0,
                     "add_from": 0,
                     "add_to": 0,
-                    "comb_max": -9,
+                    "comb_max": -1100,
                     "note": ""
                 }
             }
@@ -492,12 +474,12 @@
                 ],
                 "limits": {
                     "sph_from": 0,
-                    "sph_to": -7,
+                    "sph_to": -700,
                     "cyl_from": 0,
                     "cyl_to": 0,
                     "add_from": 0,
                     "add_to": 0,
-                    "comb_max": -9,
+                    "comb_max": -1100,
                     "note": ""
                 }
             },
@@ -512,12 +494,12 @@
                 ],
                 "limits": {
                     "sph_from": 0,
-                    "sph_to": -7,
+                    "sph_to": -700,
                     "cyl_from": 0,
                     "cyl_to": 0,
                     "add_from": 0,
                     "add_to": 0,
-                    "comb_max": -9,
+                    "comb_max": -1100,
                     "note": ""
                 }
             }
