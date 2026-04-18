@@ -403,6 +403,18 @@
             .rx-input:focus { border-color:#00adb5; }
             .rx-arrow { font-size:11px; color:#374151; padding-bottom:7px; flex-shrink:0; }
 
+            /* Locked rx input (readonly). .rx-locked allows double-click to unlock, .rx-locked-hard stays locked. */
+            .rx-input.rx-locked,
+            .rx-input.rx-locked-hard {
+                background:#15181e !important;
+                color:#6b7280 !important;
+                border-color:#242830 !important;
+                -webkit-text-fill-color:#6b7280;
+            }
+            .rx-input.rx-locked      { cursor:pointer; }
+            .rx-input.rx-locked-hard { cursor:not-allowed; opacity:0.55; }
+            .rx-input.rx-locked:hover { border-color:#2e3138 !important; }
+
             .rx-input-full { width:100%; background:#13151a; border:1px solid #2a2d34; border-radius:6px; color:#9ca3af; font-size:12px; padding:7px 10px; outline:none; resize:none; box-sizing:border-box; transition:border-color .2s; line-height:1.5; }
             .rx-input-full:focus { border-color:#00adb5; }
 
@@ -478,16 +490,36 @@
 
                                 <div class="form-field">
                                     <label>Group</label>
-                                    <select name="new_group" id="new_group_select" class="input-field" onchange="updateCombMaxDefault()">
-                                        <option value="stock">Stock Lens</option>
-                                        <option value="lab">Lab Lens (Custom Order)</option>
+                                    <select name="new_group" id="new_group_select" class="input-field" onchange="updateRxLimitsDefault()">
+                                        <option value="stock">STOCK LENS</option>
+                                        <option value="lab">LAB LENS (CUSTOM ORDER)</option>
                                     </select>
                                 </div>
                                 <div class="form-field">
                                     <label>Category</label>
-                                    <input type="text" class="input-field uppercase-input" name="new_category"
-                                        oninput="this.value=this.value.toUpperCase()"
-                                        placeholder="e.g. SINGLE VISION">
+                                    <?php
+                                        // Collect all unique categories that already exist, plus common defaults
+                                        $all_cats = [];
+                                        foreach ($data as $g => $cats) {
+                                            foreach (array_keys($cats) as $c) $all_cats[$c] = true;
+                                        }
+                                        foreach (['SINGLE VISION','KRYPTOK','FLATTOP','PROGRESSIVE','BIFOCAL'] as $dc) {
+                                            $all_cats[$dc] = true;
+                                        }
+                                        $all_cats = array_keys($all_cats);
+                                        sort($all_cats);
+                                    ?>
+                                    <select id="new_category_select" class="input-field" onchange="handleCategorySelect(this)">
+                                        <?php foreach ($all_cats as $c): ?>
+                                            <option value="<?php echo htmlspecialchars($c); ?>"><?php echo htmlspecialchars($c); ?></option>
+                                        <?php endforeach; ?>
+                                        <option value="__custom__">&#43; Other (Custom)&hellip;</option>
+                                    </select>
+                                    <input type="text" id="new_category_custom" class="input-field"
+                                        oninput="updateCustomCat(this)"
+                                        placeholder="e.g. ASPHERIC"
+                                        style="display:none; margin-top:8px;" autocomplete="off">
+                                    <input type="hidden" name="new_category" id="new_category_hidden" value="<?php echo htmlspecialchars($all_cats[0] ?? 'SINGLE VISION'); ?>">
                                 </div>
                                 <div class="form-field">
                                     <label>Lens Name</label>
@@ -533,27 +565,27 @@
                                         <div class="rx-group">
                                             <div class="rx-group-label sph">SPH &mdash; Sphere <span style="color:#374151;font-weight:400;font-size:9px;margin-left:4px;">(value &times;100, e.g. -25 = -0.25)</span></div>
                                             <div class="rx-row">
-                                                <div class="rx-subfield"><label>From</label><input type="number" step="25" class="rx-input" name="new_limits[sph_from]" value="0" placeholder="0"></div>
+                                                <div class="rx-subfield"><label>From</label><input type="number" step="25" id="new_sph_from" class="rx-input" name="new_limits[sph_from]" value="0" placeholder="0"></div>
                                                 <div class="rx-arrow">&rarr;</div>
-                                                <div class="rx-subfield"><label>To</label><input type="number" step="25" class="rx-input" name="new_limits[sph_to]" value="0" placeholder="0"></div>
+                                                <div class="rx-subfield"><label>To</label><input type="number" step="25" id="new_sph_to" class="rx-input" name="new_limits[sph_to]" value="-800" placeholder="0"></div>
                                             </div>
                                         </div>
 
                                         <div class="rx-group">
                                             <div class="rx-group-label cyl">CYL &mdash; Cylinder</div>
                                             <div class="rx-row">
-                                                <div class="rx-subfield"><label>From</label><input type="number" step="25" class="rx-input" name="new_limits[cyl_from]" value="0" placeholder="0"></div>
+                                                <div class="rx-subfield"><label>From</label><input type="number" step="25" id="new_cyl_from" class="rx-input" name="new_limits[cyl_from]" value="-25" placeholder="0"></div>
                                                 <div class="rx-arrow">&rarr;</div>
-                                                <div class="rx-subfield"><label>To</label><input type="number" step="25" class="rx-input" name="new_limits[cyl_to]" value="0" placeholder="0"></div>
+                                                <div class="rx-subfield"><label>To</label><input type="number" step="25" id="new_cyl_to" class="rx-input" name="new_limits[cyl_to]" value="-200" placeholder="0"></div>
                                             </div>
                                         </div>
 
                                         <div class="rx-group">
-                                            <div class="rx-group-label add">ADD &mdash; Reading Addition</div>
+                                            <div class="rx-group-label add">ADD &mdash; Reading Addition <span style="color:#374151;font-weight:400;font-size:9px;margin-left:4px;">(double-click to edit)</span></div>
                                             <div class="rx-row">
-                                                <div class="rx-subfield"><label>From</label><input type="number" step="25" class="rx-input" name="new_limits[add_from]" value="0" placeholder="0"></div>
+                                                <div class="rx-subfield"><label>From</label><input type="number" step="25" id="new_add_from" class="rx-input rx-locked" name="new_limits[add_from]" value="100" placeholder="0" readonly title="Double-click to edit"></div>
                                                 <div class="rx-arrow">&rarr;</div>
-                                                <div class="rx-subfield"><label>To</label><input type="number" step="25" class="rx-input" name="new_limits[add_to]" value="0" placeholder="0"></div>
+                                                <div class="rx-subfield"><label>To</label><input type="number" step="25" id="new_add_to" class="rx-input rx-locked" name="new_limits[add_to]" value="300" placeholder="0" readonly title="Double-click to edit"></div>
                                             </div>
                                         </div>
 
@@ -983,16 +1015,98 @@
                 document.getElementById('delete-lense-form').submit();
             }
 
-            // ─── COMB-MAX auto default based on Group ────────────────────
-            function updateCombMaxDefault() {
+            // ─── Category dropdown / custom input ────────────────────────
+            function handleCategorySelect(sel) {
+                const custom = document.getElementById('new_category_custom');
+                const hidden = document.getElementById('new_category_hidden');
+                if (sel.value === '__custom__') {
+                    custom.style.display = 'block';
+                    hidden.value = (custom.value || '').trim().toUpperCase();
+                    setTimeout(() => { custom.focus(); custom.select(); }, 0);
+                } else {
+                    custom.style.display = 'none';
+                    hidden.value = sel.value;
+                }
+                updateAddDefaults();
+            }
+            function updateCustomCat(inp) {
+                inp.value = inp.value.toUpperCase();
+                document.getElementById('new_category_hidden').value = inp.value.trim();
+                updateAddDefaults();
+            }
+
+            // ─── ADD field lock / defaults based on Category ─────────────
+            // SINGLE VISION → ADD forced to 0, fully locked (no double-click)
+            // Other categories → ADD default +100 → +300, locked but double-click unlocks
+            function updateAddDefaults() {
+                const catHidden = document.getElementById('new_category_hidden');
+                const addFrom   = document.getElementById('new_add_from');
+                const addTo     = document.getElementById('new_add_to');
+                if (!catHidden || !addFrom || !addTo) return;
+                const cat  = (catHidden.value || '').toUpperCase().trim();
+                const isSV = (cat === 'SINGLE VISION' || cat === 'SV');
+                [addFrom, addTo].forEach(el => {
+                    el.classList.remove('rx-locked', 'rx-locked-hard');
+                    el.readOnly = true;
+                });
+                if (isSV) {
+                    addFrom.value = 0;
+                    addTo.value   = 0;
+                    addFrom.classList.add('rx-locked-hard');
+                    addTo.classList.add('rx-locked-hard');
+                    addFrom.title = 'Not applicable for Single Vision';
+                    addTo.title   = 'Not applicable for Single Vision';
+                } else {
+                    addFrom.value = 100;
+                    addTo.value   = 300;
+                    addFrom.classList.add('rx-locked');
+                    addTo.classList.add('rx-locked');
+                    addFrom.title = 'Double-click to edit';
+                    addTo.title   = 'Double-click to edit';
+                }
+            }
+
+            // ─── Default Rx limits based on Group ────────────────────────
+            // stock: SPH  0 → -800,  CYL -25 → -200,  COMB -1000
+            // lab:   SPH +850 → -1100, CYL -25 → -400, COMB -1100
+            const RX_DEFAULTS = {
+                stock: { sph_from: 0,   sph_to: -800,  cyl_from: -25, cyl_to: -200, comb_max: -1000 },
+                lab:   { sph_from: 850, sph_to: -1100, cyl_from: -25, cyl_to: -400, comb_max: -1100 }
+            };
+            function updateRxLimitsDefault() {
                 const grp = document.getElementById('new_group_select');
-                const comb = document.getElementById('new_comb_max');
-                if (!grp || !comb) return;
-                const def = grp.value === 'lab' ? -1100 : -1000;
-                // Only override if user hasn't typed a custom value (still matches the previous default 0 / -1000 / -1100)
-                const cur = parseInt(comb.value, 10);
-                if (isNaN(cur) || cur === 0 || cur === -1000 || cur === -1100) {
-                    comb.value = def;
+                if (!grp) return;
+                const d = RX_DEFAULTS[grp.value] || RX_DEFAULTS.stock;
+                const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+                set('new_sph_from', d.sph_from);
+                set('new_sph_to',   d.sph_to);
+                set('new_cyl_from', d.cyl_from);
+                set('new_cyl_to',   d.cyl_to);
+                set('new_comb_max', d.comb_max);
+            }
+
+            // ─── Thousand shortcut: typing "180" becomes "180,000" on blur ──
+            // Applies only if raw value is > 0 and < 1000
+            function maybeMultiplyThousand(raw) {
+                const n = parseInt(raw || '0', 10);
+                return (n > 0 && n < 1000) ? n * 1000 : n;
+            }
+            function applyThousandShortcutAdd(input, hiddenId) {
+                const hidden = document.getElementById(hiddenId);
+                if (!hidden) return;
+                const newVal = maybeMultiplyThousand(hidden.value);
+                if (newVal > 0) {
+                    hidden.value = newVal;
+                    input.value = 'IDR ' + new Intl.NumberFormat('id-ID').format(newVal);
+                }
+            }
+            function applyThousandShortcutMulti(input) {
+                const hidden = input.nextElementSibling;
+                if (!hidden) return;
+                const newVal = maybeMultiplyThousand(hidden.value);
+                if (newVal > 0) {
+                    hidden.value = newVal;
+                    input.value = 'IDR ' + new Intl.NumberFormat('id-ID').format(newVal);
                 }
             }
 
@@ -1004,11 +1118,40 @@
                     initFeatureTags(el.getAttribute('data-safe-key'), JSON.parse(el.getAttribute('data-features')||'[]'));
                 });
                 initFeatureTags('new_lense',[]);
-                updateCombMaxDefault();
+                updateRxLimitsDefault();
+                updateAddDefaults();
+                // Double-click on a soft-locked rx input unlocks it for editing
+                document.addEventListener('dblclick', (e) => {
+                    const t = e.target;
+                    if (t && t.classList && t.classList.contains('rx-locked')) {
+                        t.readOnly = false;
+                        t.classList.remove('rx-locked');
+                        t.title = '';
+                        setTimeout(() => { try { t.focus(); t.select(); } catch(ex) {} }, 0);
+                    }
+                });
                 // Wire up delete buttons
                 document.querySelectorAll('.btn-delete-lens').forEach(btn => {
                     btn.addEventListener('click', () => {
                         confirmDeleteLens(btn.dataset.group, btn.dataset.category, btn.dataset.name);
+                    });
+                });
+                // Thousand-shortcut blur handlers for currency inputs
+                const addCost = document.getElementById('add_display_cost');
+                const addSell = document.getElementById('add_display_selling');
+                if (addCost) addCost.addEventListener('blur', () => applyThousandShortcutAdd(addCost, 'add_real_cost'));
+                if (addSell) addSell.addEventListener('blur', () => applyThousandShortcutAdd(addSell, 'add_real_selling'));
+                document.querySelectorAll('.currency-display').forEach(el => {
+                    el.addEventListener('blur', () => applyThousandShortcutMulti(el));
+                });
+                // Select-all-on-focus for every text / number input and textarea
+                document.querySelectorAll(
+                    '.content-area input[type=text], .content-area input[type=number], .content-area textarea'
+                ).forEach(el => {
+                    el.addEventListener('focus', function() {
+                        if (this.readOnly || this.disabled) return;
+                        // setTimeout so the browser places the caret first, then we override with select
+                        setTimeout(() => { try { this.select(); } catch(e) {} }, 0);
                     });
                 });
                 // Auto-dismiss status message after 5 seconds

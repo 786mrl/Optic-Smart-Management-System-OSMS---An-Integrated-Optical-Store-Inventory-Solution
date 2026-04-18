@@ -115,6 +115,25 @@
                     "comb_max": -1000,
                     "note": ""
                 }
+            },
+            "HMC": {
+                "cost": 18000,
+                "selling": 90000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT",
+                    "ANTI-REFLECTIVE"
+                ],
+                "limits": {
+                    "sph_from": 0,
+                    "sph_to": -800,
+                    "cyl_from": -25,
+                    "cyl_to": -200,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": -1000,
+                    "note": ""
+                }
             }
         },
         "KRYPTOK": {
