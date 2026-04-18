@@ -22,18 +22,33 @@
     // Default limits template
     $DEFAULT_LIMITS = ['sph_from'=>0,'sph_to'=>0,'cyl_from'=>0,'cyl_to'=>0,'add_from'=>0,'add_to'=>0,'comb_max'=>0,'note'=>''];
 
-    // Migrate old data structure
+    // Helper: uppercase a string safely (trim + strtoupper)
+    function uc_trim($s) { return strtoupper(trim((string)$s)); }
+
+    // Migrate old data structure + uppercase category/lens/feature keys & values.
+    // If collisions happen (e.g., "Single Vision" and "SINGLE VISION"), entries are merged.
     foreach ($data as $gk => $cats) {
+        $new_cats = [];
         foreach ($cats as $ck => $lenses) {
+            $ck_upper = uc_trim($ck);
+            if ($ck_upper === '') $ck_upper = 'GENERAL';
+            if (!isset($new_cats[$ck_upper])) $new_cats[$ck_upper] = [];
             foreach ($lenses as $ln => $val) {
+                $ln_upper = uc_trim($ln);
+                if ($ln_upper === '') continue;
                 if (!is_array($val)) {
-                    $data[$gk][$ck][$ln] = ['cost'=>(float)$val,'selling'=>0.0,'features'=>[],'limits'=>$DEFAULT_LIMITS];
+                    $entry = ['cost'=>(float)$val,'selling'=>0.0,'features'=>[],'limits'=>$DEFAULT_LIMITS];
                 } else {
-                    if (!isset($val['features'])) $data[$gk][$ck][$ln]['features'] = [];
-                    if (!isset($val['limits']))   $data[$gk][$ck][$ln]['limits']   = $DEFAULT_LIMITS;
+                    if (!isset($val['features']) || !is_array($val['features'])) $val['features'] = [];
+                    if (!isset($val['limits'])   || !is_array($val['limits']))   $val['limits']   = $DEFAULT_LIMITS;
+                    // Uppercase every feature string
+                    $val['features'] = array_values(array_filter(array_map('uc_trim', $val['features']), function($x){ return $x !== ''; }));
+                    $entry = $val;
                 }
+                $new_cats[$ck_upper][$ln_upper] = $entry;
             }
         }
+        $data[$gk] = $new_cats;
     }
 
     // Format Rx value with sign
@@ -60,15 +75,25 @@
     if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
         if (isset($_POST['save_prices'])) {
+            // Rebuild entire tree so category + lens-name keys become UPPERCASE.
+            $new_data = [];
             foreach ($_POST['price_cost'] as $group => $categories) {
+                if (!isset($new_data[$group])) $new_data[$group] = [];
                 foreach ($categories as $category => $lenses) {
-                    $rebuilt = [];
+                    $cat_upper = uc_trim($category);
+                    if ($cat_upper === '') $cat_upper = 'GENERAL';
+                    if (!isset($new_data[$group][$cat_upper])) $new_data[$group][$cat_upper] = [];
                     foreach ($lenses as $old_name => $cost) {
-                        $new_name     = trim($_POST['price_name'][$group][$category][$old_name] ?? $old_name);
-                        if (empty($new_name)) $new_name = $old_name;
+                        $raw_new      = $_POST['price_name'][$group][$category][$old_name] ?? $old_name;
+                        $new_name     = uc_trim($raw_new);
+                        if ($new_name === '') $new_name = uc_trim($old_name);
                         $selling      = (float)($_POST['price_selling'][$group][$category][$old_name] ?? 0);
                         $features_raw = $_POST['price_features'][$group][$category][$old_name] ?? '';
-                        $features     = array_values(array_filter(array_map('trim', explode(',', $features_raw))));
+                        // Split by comma, trim, UPPERCASE, drop empties
+                        $features     = array_values(array_filter(
+                            array_map('uc_trim', explode(',', $features_raw)),
+                            function($x){ return $x !== ''; }
+                        ));
 
                         $lp = $_POST['price_limits'][$group][$category][$old_name] ?? [];
                         $limits = [
@@ -82,21 +107,32 @@
                             'note'     => trim($lp['note'] ?? ''),
                         ];
 
-                        $rebuilt[$new_name] = ['cost'=>(float)$cost,'selling'=>$selling,'features'=>$features,'limits'=>$limits];
+                        $new_data[$group][$cat_upper][$new_name] = [
+                            'cost'=>(float)$cost,'selling'=>$selling,
+                            'features'=>$features,'limits'=>$limits,
+                        ];
                     }
-                    $data[$group][$category] = $rebuilt;
                 }
             }
+            // Preserve groups that might not have been posted (safety)
+            foreach ($data as $gk => $cats) {
+                if (!isset($new_data[$gk])) $new_data[$gk] = $cats;
+            }
+            $data = $new_data;
             $message = "All changes saved successfully.";
 
         } elseif (isset($_POST['add_new_lense'])) {
             $new_group    = $_POST['new_group'];
-            $new_cat      = trim($_POST['new_category']) ?: 'General';
-            $new_name     = trim($_POST['new_lense_name']);
+            $new_cat      = uc_trim($_POST['new_category'] ?? '');
+            if ($new_cat === '') $new_cat = 'GENERAL';
+            $new_name     = uc_trim($_POST['new_lense_name'] ?? '');
             $new_cost     = (float)$_POST['new_lense_price_cost'];
             $new_selling  = (float)$_POST['new_lense_price_selling'];
             $features_raw = $_POST['new_lense_features'] ?? '';
-            $new_features = array_values(array_filter(array_map('trim', explode(',', $features_raw))));
+            $new_features = array_values(array_filter(
+                array_map('uc_trim', explode(',', $features_raw)),
+                function($x){ return $x !== ''; }
+            ));
 
             $lp = $_POST['new_limits'] ?? [];
             $new_limits = [
@@ -185,13 +221,34 @@
             .lense-panel {
                 border:1px solid #00adb5; border-top:none;
                 border-bottom-left-radius:10px; border-bottom-right-radius:10px;
-                overflow:hidden; animation:slideDown .2s ease-out;
+                overflow:hidden;
+                background:#181a1f; /* darker than card → card borders pop */
+                padding:10px 10px 12px;
+                animation:slideDown .2s ease-out;
             }
             @keyframes slideDown { from{opacity:0;transform:translateY(-6px)} to{opacity:1;transform:translateY(0)} }
 
             /* ── Lens card ───────────────────────────────────────────── */
-            .lens-card { background:#23262d; border-bottom:1px solid #2e3138; padding:16px 20px; }
-            .lens-card:last-child { border-bottom:none; }
+            .lens-card {
+                background:#262932;
+                border:1px solid #343842;
+                border-radius:10px;
+                padding:16px 18px;
+                margin:10px 4px;
+                box-shadow:0 2px 4px rgba(0,0,0,0.25);
+                position:relative;
+                transition:border-color .2s, box-shadow .2s;
+            }
+            .lens-card:hover { border-color:#4b5563; box-shadow:0 3px 8px rgba(0,0,0,0.35); }
+            .lens-card:first-child { margin-top:4px; }
+            .lens-card:last-child  { margin-bottom:4px; }
+            .lens-card-index {
+                position:absolute; top:-9px; left:14px;
+                background:#00adb5; color:#0f1115;
+                font-size:9px; font-weight:800; letter-spacing:.8px;
+                padding:2px 8px; border-radius:10px;
+                text-transform:uppercase;
+            }
 
             .lens-name-row { display:flex; align-items:center; gap:8px; margin-bottom:14px; }
             .lens-name-icon { color:#4b5563; font-size:12px; flex-shrink:0; }
@@ -202,6 +259,10 @@
             }
             .lens-name-input:focus { border-bottom-color:#00adb5; color:#fff; }
             .lens-name-badge { font-size:10px; color:#374151; font-style:italic; white-space:nowrap; }
+
+            /* Force UPPERCASE display for text inputs that must store uppercase */
+            .uppercase-input { text-transform:uppercase; }
+            .uppercase-input::placeholder { text-transform:none; letter-spacing:normal; }
 
             .lens-prices-row { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:14px; }
             .price-col { flex:1; min-width:160px; }
@@ -359,11 +420,15 @@
                                 </div>
                                 <div class="form-field">
                                     <label>Category</label>
-                                    <input type="text" class="input-field" name="new_category" placeholder="e.g. Single Vision">
+                                    <input type="text" class="input-field uppercase-input" name="new_category"
+                                        oninput="this.value=this.value.toUpperCase()"
+                                        placeholder="e.g. SINGLE VISION">
                                 </div>
                                 <div class="form-field">
                                     <label>Lens Name</label>
-                                    <input type="text" name="new_lense_name" class="input-field" placeholder="e.g. SV-CRMC" required>
+                                    <input type="text" name="new_lense_name" class="input-field uppercase-input"
+                                        oninput="this.value=this.value.toUpperCase()"
+                                        placeholder="e.g. SV-CRMC" required>
                                 </div>
 
                                 <div class="lens-prices-row" style="margin:0;">
@@ -386,9 +451,10 @@
                                     <label>Features</label>
                                     <div class="features-tag-wrapper" id="tags-new_lense" style="margin-bottom:8px;min-height:20px;"></div>
                                     <div class="feature-add-row">
-                                        <input type="text" id="feat-input-new_lense" class="feature-add-input"
-                                            placeholder="Type a feature, press Enter or Add"
-                                            onkeydown="handleFeatureKeydown(event,'new_lense')">
+                                        <input type="text" id="feat-input-new_lense" class="feature-add-input uppercase-input"
+                                            placeholder="Type features, separate with comma (e.g. UV, ANTI-GLARE)"
+                                            onkeydown="handleFeatureKeydown(event,'new_lense')"
+                                            oninput="handleFeatureInput(this,'new_lense')">
                                         <button type="button" class="btn-add-feature" onclick="addFeatureTag('new_lense')">+ Add</button>
                                     </div>
                                     <input type="hidden" name="new_lense_features" id="feat-hidden-new_lense">
@@ -493,8 +559,9 @@
                                 </summary>
 
                                 <div class="lense-panel">
-                                <?php foreach ($lenses as $name => $prices):
+                                <?php $card_index = 0; foreach ($lenses as $name => $prices):
                                     $lens_counter++;
+                                    $card_index++;
                                     $sk       = 'lens_'.$lens_counter;
                                     $cost     = is_array($prices) ? ($prices['cost']     ?? 0)  : (float)$prices;
                                     $selling  = is_array($prices) ? ($prices['selling']  ?? 0)  : 0.0;
@@ -503,11 +570,13 @@
                                     $lim      = array_merge($DEFAULT_LIMITS, $lim); // fill any missing keys
                                 ?>
                                 <div class="lens-card">
+                                    <span class="lens-card-index">#<?php echo str_pad($card_index, 2, '0', STR_PAD_LEFT); ?></span>
 
                                     <!-- Name -->
                                     <div class="lens-name-row">
                                         <span class="lens-name-icon">&#9998;</span>
-                                        <input type="text" class="lens-name-input"
+                                        <input type="text" class="lens-name-input uppercase-input"
+                                            oninput="this.value=this.value.toUpperCase()"
                                             name="price_name[<?php echo $group_key;?>][<?php echo $cat_name;?>][<?php echo $name;?>]"
                                             value="<?php echo htmlspecialchars($name);?>" title="Click to rename">
                                         <span class="lens-name-badge">click to rename</span>
@@ -541,9 +610,10 @@
                                         data-features='<?php echo htmlspecialchars(json_encode($features),ENT_QUOTES);?>'>
                                     </div>
                                     <div class="feature-add-row">
-                                        <input type="text" id="feat-input-<?php echo $sk;?>" class="feature-add-input"
-                                            placeholder="Type a feature and press Enter or Add"
-                                            onkeydown="handleFeatureKeydown(event,'<?php echo $sk;?>')">
+                                        <input type="text" id="feat-input-<?php echo $sk;?>" class="feature-add-input uppercase-input"
+                                            placeholder="Type features, separate with comma (e.g. UV, ANTI-GLARE)"
+                                            onkeydown="handleFeatureKeydown(event,'<?php echo $sk;?>')"
+                                            oninput="handleFeatureInput(this,'<?php echo $sk;?>')">
                                         <button type="button" class="btn-add-feature" onclick="addFeatureTag('<?php echo $sk;?>')">+ Add</button>
                                     </div>
                                     <input type="hidden" id="feat-hidden-<?php echo $sk;?>"
@@ -724,7 +794,11 @@
 
             // ─── Feature tags ─────────────────────────────────────────────
             const lenseFeatures = {};
-            function initFeatureTags(k, f) { lenseFeatures[k] = Array.isArray(f)?f.slice():[]; renderFeatureTags(k); }
+            function initFeatureTags(k, f) {
+                // Normalize existing features to UPPERCASE on load
+                lenseFeatures[k] = Array.isArray(f) ? f.map(t=>String(t).trim().toUpperCase()).filter(t=>t) : [];
+                renderFeatureTags(k);
+            }
             function renderFeatureTags(k) {
                 const c = document.getElementById('tags-'+k); if(!c) return;
                 const f = lenseFeatures[k]||[];
@@ -738,8 +812,29 @@
                 const inp = document.getElementById('feat-input-'+k); if(!inp) return;
                 const v = inp.value.trim(); if(!v) return;
                 if(!lenseFeatures[k]) lenseFeatures[k]=[];
-                v.split(',').map(t=>t.trim()).filter(t=>t).forEach(t=>lenseFeatures[k].push(t));
+                v.split(',').map(t=>t.trim().toUpperCase()).filter(t=>t).forEach(t=>{
+                    // Avoid duplicates (case-insensitive since everything is uppercased)
+                    if (!lenseFeatures[k].includes(t)) lenseFeatures[k].push(t);
+                });
                 renderFeatureTags(k); inp.value=''; inp.focus();
+            }
+            // Auto-split when user types a comma — no need to click +Add
+            function handleFeatureInput(inp, k) {
+                // Force uppercase as user types
+                inp.value = inp.value.toUpperCase();
+                if (inp.value.indexOf(',') !== -1) {
+                    const parts = inp.value.split(',');
+                    const tail  = parts.pop();                 // text after the last comma stays in input
+                    const toAdd = parts.map(t=>t.trim()).filter(t=>t);
+                    if (toAdd.length) {
+                        if(!lenseFeatures[k]) lenseFeatures[k]=[];
+                        toAdd.forEach(t=>{
+                            if (!lenseFeatures[k].includes(t)) lenseFeatures[k].push(t);
+                        });
+                        renderFeatureTags(k);
+                    }
+                    inp.value = tail.trim();                   // keep the unfinished tail
+                }
             }
             function handleFeatureKeydown(e,k) { if(e.key==='Enter'){e.preventDefault();addFeatureTag(k);} }
             function syncFeaturesHidden(k) { const h=document.getElementById('feat-hidden-'+k); if(h) h.value=(lenseFeatures[k]||[]).join(', '); }

@@ -1,179 +1,525 @@
 {
     "stock": {
-        "Single Vision": {
-            "SV-CRMC": {
+        "SINGLE VISION": {
+            "HMC": {
                 "cost": 18000,
                 "selling": 90000,
-                "features": ["CR Resin", "Multi Coat", "UV Protection"],
-                "limits": { "sph_from": 0.00, "sph_to": -8.00, "cyl_from": -0.25, "cyl_to": -2.00, "add_from": 0, "add_to": 0, "comb_max": 0, "note": "" }
+                "features": [
+                    "MULTI COAT",
+                    "CR RESIN"
+                ],
+                "limits": {
+                    "sph_from": 0,
+                    "sph_to": -8,
+                    "cyl_from": -0.25,
+                    "cyl_to": -2,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 0,
+                    "note": ""
+                }
             },
-            "Blueray": {
+            "BLUERAY": {
                 "cost": 25000,
                 "selling": 150000,
-                "features": ["Anti-Blue Ray", "Multi Coat", "UV Protection"],
-                "limits": { "sph_from": 0.00, "sph_to": -8.00, "cyl_from": -0.25, "cyl_to": -2.00, "add_from": 0, "add_to": 0, "comb_max": 0, "note": "" }
+                "features": [
+                    "ANTI-BLUE RAY",
+                    "MULTI COAT",
+                    "UV PROTECTION"
+                ],
+                "limits": {
+                    "sph_from": 0,
+                    "sph_to": -8,
+                    "cyl_from": -0.25,
+                    "cyl_to": -2,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 0,
+                    "note": ""
+                }
             },
-            "Photochromic": {
+            "PHOTOCHROMIC": {
                 "cost": 35000,
                 "selling": 150000,
-                "features": ["Photochromic", "Color Adaptive", "UV Protection"],
-                "limits": { "sph_from": 0.00, "sph_to": -8.00, "cyl_from": -0.25, "cyl_to": -2.00, "add_from": 0, "add_to": 0, "comb_max": 0, "note": "" }
+                "features": [
+                    "PHOTOCHROMIC",
+                    "COLOR ADAPTIVE",
+                    "UV PROTECTION"
+                ],
+                "limits": {
+                    "sph_from": 0,
+                    "sph_to": -8,
+                    "cyl_from": -0.25,
+                    "cyl_to": -2,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 0,
+                    "note": ""
+                }
             },
-            "Bluechromic": {
+            "BLUECHROMIC": {
                 "cost": 60000,
                 "selling": 285000,
-                "features": ["Anti-Blue Ray", "Photochromic", "Color Adaptive"],
-                "limits": { "sph_from": 0.00, "sph_to": -8.00, "cyl_from": -0.25, "cyl_to": -2.00, "add_from": 0, "add_to": 0, "comb_max": 0, "note": "" }
+                "features": [
+                    "ANTI-BLUE RAY",
+                    "PHOTOCHROMIC",
+                    "COLOR ADAPTIVE"
+                ],
+                "limits": {
+                    "sph_from": 0,
+                    "sph_to": -8,
+                    "cyl_from": -0.25,
+                    "cyl_to": -2,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 0,
+                    "note": ""
+                }
             },
-            "Bluegard": {
+            "BLUEGARD": {
                 "cost": 70000,
                 "selling": 285000,
-                "features": ["Blue Light Guard", "UV Protection", "Anti-Glare"],
-                "limits": { "sph_from": 0.00, "sph_to": -8.00, "cyl_from": -0.25, "cyl_to": -2.00, "add_from": 0, "add_to": 0, "comb_max": 0, "note": "" }
+                "features": [
+                    "BLUE LIGHT GUARD",
+                    "UV PROTECTION",
+                    "ANTI-GLARE"
+                ],
+                "limits": {
+                    "sph_from": 0,
+                    "sph_to": -8,
+                    "cyl_from": -0.25,
+                    "cyl_to": -2,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 0,
+                    "note": ""
+                }
             },
-            "One-Drive": {
+            "ONE-DRIVE": {
                 "cost": 130000,
                 "selling": 500000,
-                "features": ["Anti-Blue Ray", "Photochromic", "Drive Safe", "UV Protection"],
-                "limits": { "sph_from": 0.00, "sph_to": -8.00, "cyl_from": -0.25, "cyl_to": -2.00, "add_from": 0, "add_to": 0, "comb_max": 0, "note": "" }
+                "features": [
+                    "ANTI-BLUE RAY",
+                    "PHOTOCHROMIC",
+                    "DRIVE SAFE",
+                    "UV PROTECTION"
+                ],
+                "limits": {
+                    "sph_from": 0,
+                    "sph_to": -8,
+                    "cyl_from": -0.25,
+                    "cyl_to": -2,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 0,
+                    "note": ""
+                }
+            },
+            "SUPERBLOCK 1.67": {
+                "cost": 140000,
+                "selling": 600000,
+                "features": [
+                    "HIGH INDEX 1.67",
+                    "SUPER ANTI-REFLECTIVE",
+                    "THIN & LIGHT"
+                ],
+                "limits": {
+                    "sph_from": 0,
+                    "sph_to": -8,
+                    "cyl_from": -0.25,
+                    "cyl_to": -2,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 0,
+                    "note": ""
+                }
             }
         },
         "KRYPTOK": {
             "HMC": {
                 "cost": 18000,
                 "selling": 90000,
-                "features": ["Hard Multi Coat", "Bifocal", "UV Protection"],
-                "limits": { "sph_from": 2.00, "sph_to": -2.00, "cyl_from": 0, "cyl_to": 0, "add_from": 1.00, "add_to": 3.00, "comb_max": 0, "note": "Reading power must not exceed distance SPH. If exceeded, order from lab." }
+                "features": [
+                    "HARD MULTI COAT",
+                    "BIFOCAL",
+                    "UV PROTECTION"
+                ],
+                "limits": {
+                    "sph_from": 0,
+                    "sph_to": -2,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 0,
+                    "note": "Reading power must not exceed distance SPH. If exceeded, order from lab."
+                }
             },
             "PHOTOCHROMIC": {
                 "cost": 60000,
                 "selling": 250000,
-                "features": ["Photochromic", "Bifocal", "Color Adaptive", "UV Protection"],
-                "limits": { "sph_from": 2.00, "sph_to": -2.00, "cyl_from": 0, "cyl_to": 0, "add_from": 1.00, "add_to": 3.00, "comb_max": 0, "note": "Reading power must not exceed distance SPH. If exceeded, order from lab." }
+                "features": [
+                    "PHOTOCHROMIC",
+                    "BIFOCAL",
+                    "COLOR ADAPTIVE",
+                    "UV PROTECTION"
+                ],
+                "limits": {
+                    "sph_from": 0,
+                    "sph_to": -2,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 0,
+                    "note": "Reading power must not exceed distance SPH. If exceeded, order from lab."
+                }
             }
         },
         "PROGRESSIVE": {
             "HMC": {
                 "cost": 38000,
                 "selling": 0,
-                "features": ["Progressive", "Hard Multi Coat", "UV Protection"],
-                "limits": { "sph_from": 2.00, "sph_to": -2.00, "cyl_from": 0, "cyl_to": 0, "add_from": 1.00, "add_to": 3.00, "comb_max": 0, "note": "" }
+                "features": [
+                    "PROGRESSIVE",
+                    "HARD MULTI COAT",
+                    "UV PROTECTION"
+                ],
+                "limits": {
+                    "sph_from": 0,
+                    "sph_to": -2,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 0,
+                    "note": ""
+                }
             },
             "PHOTOCHROMIC": {
                 "cost": 60000,
                 "selling": 0,
-                "features": ["Progressive", "Photochromic", "Color Adaptive"],
-                "limits": { "sph_from": 2.00, "sph_to": -2.00, "cyl_from": 0, "cyl_to": 0, "add_from": 1.00, "add_to": 3.00, "comb_max": 0, "note": "" }
+                "features": [
+                    "PROGRESSIVE",
+                    "PHOTOCHROMIC",
+                    "COLOR ADAPTIVE"
+                ],
+                "limits": {
+                    "sph_from": 0,
+                    "sph_to": -2,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 0,
+                    "note": ""
+                }
             },
             "ANTI-BLUE RAY": {
                 "cost": 60000,
                 "selling": 0,
-                "features": ["Progressive", "Anti-Blue Ray", "UV Protection"],
-                "limits": { "sph_from": 2.00, "sph_to": -2.00, "cyl_from": 0, "cyl_to": 0, "add_from": 1.00, "add_to": 3.00, "comb_max": 0, "note": "" }
+                "features": [
+                    "PROGRESSIVE",
+                    "ANTI-BLUE RAY",
+                    "UV PROTECTION"
+                ],
+                "limits": {
+                    "sph_from": 0,
+                    "sph_to": -2,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 0,
+                    "note": ""
+                }
             },
             "BLUECHROMIC": {
                 "cost": 120000,
                 "selling": 0,
-                "features": ["Progressive", "Anti-Blue Ray", "Photochromic", "Color Adaptive"],
-                "limits": { "sph_from": 2.00, "sph_to": -2.00, "cyl_from": 0, "cyl_to": 0, "add_from": 1.00, "add_to": 3.00, "comb_max": 0, "note": "" }
+                "features": [
+                    "PROGRESSIVE",
+                    "ANTI-BLUE RAY",
+                    "PHOTOCHROMIC",
+                    "COLOR ADAPTIVE"
+                ],
+                "limits": {
+                    "sph_from": 0,
+                    "sph_to": -2,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 0,
+                    "note": ""
+                }
             },
             "BLUECHROMIC ONE-DRIVE": {
                 "cost": 180000,
                 "selling": 0,
-                "features": ["Progressive", "Anti-Blue Ray", "Photochromic", "Drive Safe"],
-                "limits": { "sph_from": 2.00, "sph_to": -2.00, "cyl_from": 0, "cyl_to": 0, "add_from": 1.00, "add_to": 3.00, "comb_max": 0, "note": "" }
-            }
-        },
-        "SINGLE VISION": {
-            "SUPERBLOCK 1.67": {
-                "cost": 140000,
-                "selling": 600000,
-                "features": ["High Index 1.67", "Super Anti-Reflective", "Thin & Light"],
-                "limits": { "sph_from": 0.00, "sph_to": -8.00, "cyl_from": -0.25, "cyl_to": -2.00, "add_from": 0, "add_to": 0, "comb_max": 0, "note": "" }
+                "features": [
+                    "PROGRESSIVE",
+                    "ANTI-BLUE RAY",
+                    "PHOTOCHROMIC",
+                    "DRIVE SAFE"
+                ],
+                "limits": {
+                    "sph_from": 0,
+                    "sph_to": -2,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 0,
+                    "note": ""
+                }
             }
         }
     },
     "lab": {
-        "Progressive": {
-            "Standard": {
+        "PROGRESSIVE": {
+            "STANDARD": {
                 "cost": 0,
                 "selling": 0,
-                "features": ["Progressive", "Standard Grade", "Custom Order"],
-                "limits": { "sph_from": 6.50, "sph_to": -7.00, "cyl_from": -0.25, "cyl_to": -4.00, "add_from": 1.00, "add_to": 3.00, "comb_max": -9.00, "note": "" }
+                "features": [
+                    "PROGRESSIVE",
+                    "STANDARD GRADE",
+                    "CUSTOM ORDER"
+                ],
+                "limits": {
+                    "sph_from": 0,
+                    "sph_to": -7,
+                    "cyl_from": -0.25,
+                    "cyl_to": -4,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": -9,
+                    "note": ""
+                }
             },
-            "Premium": {
+            "PREMIUM": {
                 "cost": 0,
                 "selling": 0,
-                "features": ["Progressive", "Premium Grade", "Custom Order", "Wide Field"],
-                "limits": { "sph_from": 6.50, "sph_to": -7.00, "cyl_from": -0.25, "cyl_to": -4.00, "add_from": 1.00, "add_to": 3.00, "comb_max": -9.00, "note": "" }
+                "features": [
+                    "PROGRESSIVE",
+                    "PREMIUM GRADE",
+                    "CUSTOM ORDER",
+                    "WIDE FIELD"
+                ],
+                "limits": {
+                    "sph_from": 0,
+                    "sph_to": -7,
+                    "cyl_from": -0.25,
+                    "cyl_to": -4,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": -9,
+                    "note": ""
+                }
             }
         },
         "SINGLE VISION": {
             "HMC": {
                 "cost": 96000,
                 "selling": 0,
-                "features": ["Hard Multi Coat", "Custom Rx", "UV Protection"],
-                "limits": { "sph_from": 8.50, "sph_to": -11.00, "cyl_from": -0.25, "cyl_to": -4.00, "add_from": 0, "add_to": 0, "comb_max": -11.00, "note": "" }
+                "features": [
+                    "HARD MULTI COAT",
+                    "CUSTOM RX",
+                    "UV PROTECTION"
+                ],
+                "limits": {
+                    "sph_from": 0,
+                    "sph_to": -11,
+                    "cyl_from": -0.25,
+                    "cyl_to": -4,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": -11,
+                    "note": ""
+                }
             },
             "SHMC": {
                 "cost": 114000,
                 "selling": 0,
-                "features": ["Super Hard Multi Coat", "Custom Rx", "UV Protection"],
-                "limits": { "sph_from": 8.50, "sph_to": -11.00, "cyl_from": -0.25, "cyl_to": -4.00, "add_from": 0, "add_to": 0, "comb_max": -11.00, "note": "" }
+                "features": [
+                    "SUPER HARD MULTI COAT",
+                    "CUSTOM RX",
+                    "UV PROTECTION"
+                ],
+                "limits": {
+                    "sph_from": 0,
+                    "sph_to": -11,
+                    "cyl_from": -0.25,
+                    "cyl_to": -4,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": -11,
+                    "note": ""
+                }
             },
             "LENTICULAR HMC": {
                 "cost": 150000,
                 "selling": 650000,
-                "features": ["Lenticular", "Hard Multi Coat", "High Power Rx"],
-                "limits": { "sph_from": 8.50, "sph_to": -11.00, "cyl_from": -0.25, "cyl_to": -4.00, "add_from": 0, "add_to": 0, "comb_max": -11.00, "note": "" }
+                "features": [
+                    "LENTICULAR",
+                    "HARD MULTI COAT",
+                    "HIGH POWER RX"
+                ],
+                "limits": {
+                    "sph_from": 0,
+                    "sph_to": -11,
+                    "cyl_from": -0.25,
+                    "cyl_to": -4,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": -11,
+                    "note": ""
+                }
             },
             "LENTICULAR SHMC": {
                 "cost": 180000,
                 "selling": 800000,
-                "features": ["Lenticular", "Super Hard Multi Coat", "High Power Rx"],
-                "limits": { "sph_from": 8.50, "sph_to": -11.00, "cyl_from": -0.25, "cyl_to": -4.00, "add_from": 0, "add_to": 0, "comb_max": -11.00, "note": "" }
+                "features": [
+                    "LENTICULAR",
+                    "SUPER HARD MULTI COAT",
+                    "HIGH POWER RX"
+                ],
+                "limits": {
+                    "sph_from": 0,
+                    "sph_to": -11,
+                    "cyl_from": -0.25,
+                    "cyl_to": -4,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": -11,
+                    "note": ""
+                }
             },
             "SUPERBLOCK 1.67": {
                 "cost": 330000,
                 "selling": 1600000,
-                "features": ["High Index 1.67", "Super Anti-Reflective", "Thin & Light", "Custom Rx"],
-                "limits": { "sph_from": 8.50, "sph_to": -11.00, "cyl_from": -0.25, "cyl_to": -4.00, "add_from": 0, "add_to": 0, "comb_max": -11.00, "note": "" }
+                "features": [
+                    "HIGH INDEX 1.67",
+                    "SUPER ANTI-REFLECTIVE",
+                    "THIN & LIGHT",
+                    "CUSTOM RX"
+                ],
+                "limits": {
+                    "sph_from": 0,
+                    "sph_to": -11,
+                    "cyl_from": -0.25,
+                    "cyl_to": -4,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": -11,
+                    "note": ""
+                }
             }
         },
         "BIFOCAL": {
             "KRYPTOK HMC": {
                 "cost": 124000,
                 "selling": 0,
-                "features": ["Kryptok Style", "Hard Multi Coat", "Bifocal", "Custom Rx"],
-                "limits": { "sph_from": 6.50, "sph_to": -7.00, "cyl_from": -0.25, "cyl_to": -4.00, "add_from": 1.00, "add_to": 3.00, "comb_max": -9.00, "note": "" }
+                "features": [
+                    "KRYPTOK STYLE",
+                    "HARD MULTI COAT",
+                    "BIFOCAL",
+                    "CUSTOM RX"
+                ],
+                "limits": {
+                    "sph_from": 0,
+                    "sph_to": -7,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": -9,
+                    "note": ""
+                }
             }
         },
         "KRYPTOK": {
             "LENTICULAR HMC": {
                 "cost": 220000,
                 "selling": 1250000,
-                "features": ["Lenticular", "Hard Multi Coat", "Bifocal", "High Power Rx"],
-                "limits": { "sph_from": 6.50, "sph_to": -7.00, "cyl_from": -0.25, "cyl_to": -4.00, "add_from": 1.00, "add_to": 3.00, "comb_max": -9.00, "note": "" }
+                "features": [
+                    "LENTICULAR",
+                    "HARD MULTI COAT",
+                    "BIFOCAL",
+                    "HIGH POWER RX"
+                ],
+                "limits": {
+                    "sph_from": 0,
+                    "sph_to": -7,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": -9,
+                    "note": ""
+                }
             },
             "LENTICULAR SHMC": {
                 "cost": 240000,
                 "selling": 1400000,
-                "features": ["Lenticular", "Super Hard Multi Coat", "Bifocal", "High Power Rx"],
-                "limits": { "sph_from": 6.50, "sph_to": -7.00, "cyl_from": -0.25, "cyl_to": -4.00, "add_from": 1.00, "add_to": 3.00, "comb_max": -9.00, "note": "" }
+                "features": [
+                    "LENTICULAR",
+                    "SUPER HARD MULTI COAT",
+                    "BIFOCAL",
+                    "HIGH POWER RX"
+                ],
+                "limits": {
+                    "sph_from": 0,
+                    "sph_to": -7,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": -9,
+                    "note": ""
+                }
             }
         },
         "FLATTOP": {
             "HMC": {
                 "cost": 110000,
                 "selling": 350000,
-                "features": ["Flat Top", "Hard Multi Coat", "Bifocal", "Custom Rx"],
-                "limits": { "sph_from": 6.50, "sph_to": -7.00, "cyl_from": -0.25, "cyl_to": -4.00, "add_from": 1.00, "add_to": 3.00, "comb_max": -9.00, "note": "" }
+                "features": [
+                    "FLAT TOP",
+                    "HARD MULTI COAT",
+                    "BIFOCAL",
+                    "CUSTOM RX"
+                ],
+                "limits": {
+                    "sph_from": 0,
+                    "sph_to": -7,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": -9,
+                    "note": ""
+                }
             },
             "SHMC": {
                 "cost": 140000,
                 "selling": 600000,
-                "features": ["Flat Top", "Super Hard Multi Coat", "Bifocal", "Custom Rx"],
-                "limits": { "sph_from": 6.50, "sph_to": -7.00, "cyl_from": -0.25, "cyl_to": -4.00, "add_from": 1.00, "add_to": 3.00, "comb_max": -9.00, "note": "" }
+                "features": [
+                    "FLAT TOP",
+                    "SUPER HARD MULTI COAT",
+                    "BIFOCAL",
+                    "CUSTOM RX"
+                ],
+                "limits": {
+                    "sph_from": 0,
+                    "sph_to": -7,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": -9,
+                    "note": ""
+                }
             }
         }
     }
