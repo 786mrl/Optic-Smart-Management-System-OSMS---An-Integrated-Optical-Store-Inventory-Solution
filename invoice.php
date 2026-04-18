@@ -74,7 +74,11 @@
     function lrVal($data, $modKey, $origKey) {
         $raw = ($data['lens_modification'] == 1 && isset($data[$modKey]) && $data[$modKey] !== '')
                ? $data[$modKey] : $data[$origKey];
-        return floatval(str_replace('+', '', $raw ?? '0'));
+        $val = floatval(str_replace('+', '', $raw ?? '0'));
+        // Shorthand input: -50 means -0.50, -225 means -2.25, -100 means -1.00
+        // Any |value| >= 10 is treated as already-multiplied-by-100 format
+        if (abs($val) >= 10) $val = $val / 100;
+        return $val;
     }
     $lr_r_sph = lrVal($data, 'mod_r_sph', 'new_r_sph');
     $lr_r_cyl = lrVal($data, 'mod_r_cyl', 'new_r_cyl');
