@@ -65,6 +65,229 @@
         ");
     }
 
+    // ============================================================
+    // LENS RECOMMENDATION ENGINE v2
+    // ============================================================
+
+    // Active prescription: use modified values when modification is saved
+    $lr_rMod = ($data['lens_modification'] == 1);
+    function lrVal($data, $modKey, $origKey) {
+        $raw = ($data['lens_modification'] == 1 && isset($data[$modKey]) && $data[$modKey] !== '')
+               ? $data[$modKey] : $data[$origKey];
+        return floatval(str_replace('+', '', $raw ?? '0'));
+    }
+    $lr_r_sph = lrVal($data, 'mod_r_sph', 'new_r_sph');
+    $lr_r_cyl = lrVal($data, 'mod_r_cyl', 'new_r_cyl');
+    $lr_r_add = lrVal($data, 'mod_r_add', 'new_r_add');
+    $lr_l_sph = lrVal($data, 'mod_l_sph', 'new_l_sph');
+    $lr_l_cyl = lrVal($data, 'mod_l_cyl', 'new_l_cyl');
+    $lr_l_add = lrVal($data, 'mod_l_add', 'new_l_add');
+
+    $lr_age     = (int)($data['age']           ?? 0);
+    $lr_habit   = (int)($data['visual_habit']  ?? 1); // 1=indoor 2=outdoor 3=both
+    $lr_digital = (int)($data['digital_usage'] ?? 1); // 1=low 2=moderate 3=high
+    $lr_txt     = strtolower(($data['symptoms'] ?? '') . ' ' . ($data['exam_notes'] ?? ''));
+
+    // ── Derived power metrics ─────────────────────────────────
+    // SE (Spherical Equivalent) = |SPH| + |CYL|/2
+    // Gives a single "total power" number for each eye
+    $lr_seR   = abs($lr_r_sph) + abs($lr_r_cyl) / 2;
+    $lr_seL   = abs($lr_l_sph) + abs($lr_l_cyl) / 2;
+    $lr_maxSE = max($lr_seR, $lr_seL);
+    $lr_maxSph = max(abs($lr_r_sph), abs($lr_l_sph));
+    $lr_maxCyl = max(abs($lr_r_cyl), abs($lr_l_cyl));
+    $lr_maxAdd = max(abs($lr_r_add), abs($lr_l_add));
+
+    // ── Profile flags ─────────────────────────────────────────
+    // Presbyopia: ADD ≥ 0.75 and age ≥ 39
+    $lr_isPresbyopia  = ($lr_maxAdd >= 0.75 && $lr_age >= 39);
+    $lr_isHighPow     = ($lr_maxSE >= 4.0 || $lr_maxCyl >= 2.0);
+    $lr_isVeryHighPow = ($lr_maxSE >= 6.0 || $lr_maxCyl >= 3.0);
+
+    // ── Symptom flags ─────────────────────────────────────────
+    $lr_hasGlare     = (bool)preg_match('/glare|silau/', $lr_txt);
+    $lr_hasEyeStrain = (bool)preg_match('/eye.?strain|mata.?lelah|\blelah\b/', $lr_txt);
+    $lr_hasHeadache  = (bool)preg_match('/headache|sakit.?kepala/', $lr_txt);
+    $lr_hasDM        = (strpos($lr_txt, 'diabetes') !== false);
+    $lr_hasHT        = (strpos($lr_txt, 'hypertension') !== false);
+    $lr_hasDryEye    = (bool)preg_match('/dry.?eye|mata.?kering/', $lr_txt);
+
+    // ── Load lens catalog ─────────────────────────────────────
+    $lr_catalog = [];
+    $lr_jsonPath = __DIR__ . '/data_json/lense_prices.json';
+    if (is_readable($lr_jsonPath)) {
+        $raw = @file_get_contents($lr_jsonPath);
+        if ($raw !== false) $lr_catalog = json_decode($raw, true) ?? [];
+    }
+
+    // ── Prescription-fit check ────────────────────────────────
+    // Returns true if BOTH eyes fall within the lens power limits
+    function lr_fits_limits($r_sph, $r_cyl, $l_sph, $l_cyl, $lim) {
+        $maxS = max(abs($r_sph), abs($l_sph));
+        $maxC = max(abs($r_cyl), abs($l_cyl));
+        // Sphere check (sph_to = max magnitude; 0 = no restriction)
+        if ($lim['sph_to'] != 0 && $maxS > abs($lim['sph_to'])) return false;
+        // Cylinder check (cyl_to = max magnitude; 0 = no restriction)
+        if ($lim['cyl_to'] != 0 && $maxC > abs($lim['cyl_to'])) return false;
+        // Combined check (comb_max; 0 = no restriction)
+        if ($lim['comb_max'] != 0 && ($maxS + $maxC) > abs($lim['comb_max'])) return false;
+        return true;
+    }
+
+    // ── Relevance scoring ─────────────────────────────────────
+    // Returns a score ≥ 0 for how well a lens matches this customer's profile,
+    // or -9999 (effectively excluded) for category mismatches.
+    function lr_score($features, $source, $category, $isPresby,
+                      $habit, $digital, $maxSE, $maxCyl,
+                      $hasGlare, $hasEyeStrain, $hasHeadache, $hasDryEye) {
+
+        $cat = strtoupper($category);
+        $isSV   = ($cat === 'SINGLE VISION');
+        $isProg = in_array($cat, ['PROGRESSIVE','KRYPTOK','BIFOCAL','FLATTOP']);
+
+        // Hard gate: keep only the right design type for this patient
+        if ($isPresby && $isSV)   return -9999;
+        if (!$isPresby && $isProg) return -9999;
+
+        $s = 0;
+
+        // ── Presbyopia design preference ───────────────────────
+        if ($isPresby) {
+            if (in_array('PROGRESSIVE', $features))   $s += 20; // progressive > bifocal
+            elseif (in_array('WIDE FIELD', $features)) $s += 15; // premium progressive
+            elseif (in_array('BIFOCAL', $features) || in_array('FLAT TOP', $features)) $s += 5;
+        }
+
+        // ── Feature × lifestyle scoring ────────────────────────
+        foreach ($features as $feat) {
+            switch (strtoupper(trim($feat))) {
+
+                case 'ANTI-BLUE RAY':
+                case 'BLUE LIGHT GUARD':
+                    // Digital screen use
+                    $s += ($digital == 3) ? 30 : (($digital == 2) ? 18 : 4);
+                    // Compound benefit when eye-strain / headache present
+                    if ($hasEyeStrain || $hasHeadache) $s += 10;
+                    if ($hasDryEye) $s += 6;
+                    break;
+
+                case 'PHOTOCHROMIC':
+                case 'COLOR ADAPTIVE':
+                    // Outdoor / mixed lifestyle
+                    $s += ($habit == 2) ? 25 : (($habit == 3) ? 18 : 2);
+                    if ($hasGlare) $s += 14;
+                    break;
+
+                case 'DRIVE SAFE':
+                    $s += ($habit >= 2) ? 18 : 6;
+                    break;
+
+                case 'HIGH INDEX 1.67':
+                case 'THIN & LIGHT':
+                    // Increasingly important as power rises
+                    if ($maxSE >= 6.0)      $s += 35;
+                    elseif ($maxSE >= 4.0)  $s += 22;
+                    elseif ($maxSE >= 2.0)  $s += 10;
+                    break;
+
+                case 'LENTICULAR':
+                    // Only beneficial at very high powers
+                    if ($maxSE >= 8.0)      $s += 30;
+                    elseif ($maxSE >= 6.0)  $s += 18;
+                    elseif ($maxSE >= 4.0)  $s += 6;
+                    break;
+
+                case 'ANTI-GLARE':
+                case 'ANTI-REFLECTIVE':
+                case 'SUPER ANTI-REFLECTIVE':
+                    $s += $hasGlare ? 16 : 5;
+                    break;
+
+                case 'UV PROTECTION':
+                    $s += ($habit >= 2) ? 6 : 2;
+                    break;
+
+                case 'SUPER HARD MULTI COAT':
+                case 'SHMC':
+                    $s += 4; // durability bonus
+                    break;
+
+                case 'CUSTOM RX':
+                case 'CUSTOM ORDER':
+                    if ($maxSE >= 5.0 || $maxCyl >= 3.0) $s += 12;
+                    break;
+
+                case 'WIDE FIELD':
+                    $s += 5;
+                    break;
+            }
+        }
+
+        // ── Source bonus ──────────────────────────────────────
+        // Prefer stock for mild prescriptions (faster readiness),
+        // prefer lab options for high prescriptions (wider range, custom fit).
+        if ($source === 'stock' && $maxSE < 4.0 && $maxCyl < 2.0) $s += 5;
+        if ($source === 'lab'   && ($maxSE >= 5.0 || $maxCyl >= 3.0)) $s += 8;
+
+        return max($s, 0);
+    }
+
+    // ── Build sorted candidate list ───────────────────────────
+    $lr_candidates = [];
+    foreach ($lr_catalog as $source => $categories) {
+        $readiness = ($source === 'stock') ? 'Siap 1-2 Hari' : 'Gosok Lab, Siap 7-10 Hari';
+        foreach ($categories as $category => $types) {
+            foreach ($types as $type => $lens) {
+                $lim      = $lens['limits']   ?? [];
+                $features = $lens['features'] ?? [];
+                $selling  = (int)($lens['selling'] ?? 0);
+                $lensNote = $lim['note'] ?? '';
+
+                // Skip if prescription out of range for this lens
+                if (!empty($lim) && !lr_fits_limits($lr_r_sph, $lr_r_cyl, $lr_l_sph, $lr_l_cyl, $lim)) continue;
+
+                $score = lr_score($features, $source, $category,
+                    $lr_isPresbyopia, $lr_habit, $lr_digital,
+                    $lr_maxSE, $lr_maxCyl,
+                    $lr_hasGlare, $lr_hasEyeStrain, $lr_hasHeadache, $lr_hasDryEye);
+
+                if ($score <= -9999) continue;
+
+                $lr_candidates[] = [
+                    'source'    => $source,      // 'stock' | 'lab'
+                    'category'  => $category,
+                    'type'      => $type,
+                    'selling'   => $selling,
+                    'features'  => $features,
+                    'note'      => $lensNote,
+                    'score'     => $score,
+                    'readiness' => $readiness,
+                ];
+            }
+        }
+    }
+    usort($lr_candidates, function($a, $b) { return $b['score'] - $a['score']; });
+
+    // ── Special warning notes ─────────────────────────────────
+    $lr_specialNotes = [];
+    if ($lr_hasDM)
+        $lr_specialNotes[] = ['🩸', 'DIABETES — Risiko katarak lebih tinggi. Disarankan lensa dengan UV protection.'];
+    if ($lr_hasHT)
+        $lr_specialNotes[] = ['❤️', 'HYPERTENSION — Pantau perubahan visus secara berkala.'];
+    if ($lr_isVeryHighPow)
+        $lr_specialNotes[] = ['⚡', 'Ukuran sangat tinggi (SE ≥ 6.00D) — Lensa High Index atau Lenticular sangat dianjurkan untuk estetika dan kenyamanan.'];
+    if ($lr_hasEyeStrain || $lr_hasHeadache)
+        $lr_specialNotes[] = ['😣', 'Keluhan mata lelah / sakit kepala — Lensa anti-blue atau Bluechromic dapat membantu meringankan.'];
+    if ($lr_hasDryEye)
+        $lr_specialNotes[] = ['💧', 'Dry Eye — Lensa anti-blue mengurangi silau layar yang memperburuk gejala dry eye.'];
+
+    // Helper: format price
+    function lr_fmt_price($v) {
+        if ((int)$v <= 0) return '<span style="color:#555;font-size:9.5px;font-style:italic;">Hubungi Staff</span>';
+        return 'Rp&nbsp;' . number_format((int)$v, 0, ',', '.');
+    }
+
+
     // Load frame-shape color mapping (optional — fails silently if missing/invalid)
     $frameShapeColors = [];
     $colorJsonPath = __DIR__ . '/data_json/color_shape.json';
@@ -1153,6 +1376,226 @@
                                 </div>
                             </div>
                         </div>
+
+                        <!-- ============================================================
+                             LENS RECOMMENDED — appears AFTER Face Shape Analysis
+                             ============================================================ -->
+                        <div class="full" id="lens-rec-wrap">
+                            <div class="prescription-container" style="border:1px solid rgba(255,170,0,0.18);">
+
+                                <!-- ── HEADER (click to open/close) ─────────────────── -->
+                                <div onclick="lrToggle()" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;">
+                                    <div style="display:flex;align-items:center;gap:10px;">
+                                        <span style="font-size:1.25rem;">🔬</span>
+                                        <div>
+                                            <div style="font-size:0.7rem;letter-spacing:2px;color:#ffaa00;font-weight:700;">LENS RECOMMENDED</div>
+                                            <div style="font-size:8.5px;color:#555;margin-top:1px;letter-spacing:0.5px;">Berdasarkan ukuran · kebiasaan · keluhan</div>
+                                        </div>
+                                    </div>
+                                    <div style="display:flex;align-items:center;gap:8px;">
+                                        <span style="font-size:8px;background:rgba(255,170,0,0.1);color:#ffaa00;border:1px solid rgba(255,170,0,0.28);border-radius:20px;padding:3px 9px;letter-spacing:0.5px;">
+                                            <?php echo $lr_isPresbyopia ? 'PRESBYOPIA' : 'SINGLE VISION'; ?>
+                                        </span>
+                                        <span id="lr-chev" style="color:#ffaa00;font-size:11px;display:inline-block;transition:transform 0.3s;">▼</span>
+                                    </div>
+                                </div>
+
+                                <!-- ── COLLAPSIBLE BODY ──────────────────────────────── -->
+                                <div id="lr-body" style="display:none;margin-top:16px;">
+
+                                    <!-- Context chips -->
+                                    <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:14px;">
+                                        <?php
+                                        $lr_habitLbl  = ['','INDOOR','OUTDOOR','INDOOR & OUTDOOR'][$lr_habit] ?? 'INDOOR';
+                                        $lr_digitalLbl = ['','SCREEN RENDAH','SCREEN SEDANG (2-5 JAM)','SCREEN TINGGI (>5 JAM)'][$lr_digital] ?? '';
+                                        $lr_ctx = [
+                                            ['🎂', 'USIA '.$lr_age.' TH',          '#00cfff'],
+                                            ['👁️', $lr_habitLbl,                   '#00ff88'],
+                                            ['💻', $lr_digitalLbl,                  '#aa88ff'],
+                                        ];
+                                        if ($lr_isVeryHighPow) $lr_ctx[] = ['⚡', 'UKURAN SANGAT TINGGI', '#ff4d4d'];
+                                        elseif ($lr_isHighPow) $lr_ctx[] = ['📈', 'UKURAN TINGGI',        '#ff8a4d'];
+                                        if ($lr_isPresbyopia)  $lr_ctx[] = ['📖', 'PRESBYOPIA (ADD)',     '#ffcc00'];
+                                        if ($lr_hasGlare)      $lr_ctx[] = ['☀️', 'SENSITIF CAHAYA',      '#ffaa00'];
+                                        if ($lr_hasEyeStrain || $lr_hasHeadache) $lr_ctx[] = ['😣','MATA LELAH / SAKIT KEPALA','#ff6699'];
+                                        if ($lr_hasDM)         $lr_ctx[] = ['🩸', 'DIABETES',             '#ff6655'];
+                                        if ($lr_hasHT)         $lr_ctx[] = ['❤️', 'HIPERTENSI',           '#ff6655'];
+                                        if ($lr_hasDryEye)     $lr_ctx[] = ['💧', 'DRY EYE',              '#66ccff'];
+                                        foreach ($lr_ctx as $c):
+                                        ?>
+                                        <span style="display:inline-flex;align-items:center;gap:3px;font-size:8px;color:<?php echo $c[2]; ?>;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.07);border-radius:20px;padding:3px 8px;letter-spacing:0.4px;">
+                                            <?php echo $c[0]; ?> <?php echo $c[1]; ?>
+                                        </span>
+                                        <?php endforeach; ?>
+                                    </div>
+
+                                    <!-- Power summary bar -->
+                                    <div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.05);border-radius:12px;padding:10px 14px;margin-bottom:14px;">
+                                        <div style="font-size:7.5px;color:#444;letter-spacing:1px;margin-bottom:8px;">RESEP AKTIF <?php echo $lr_rMod ? '(MODIFIKASI)' : '(ORIGINAL)'; ?></div>
+                                        <div style="display:flex;flex-wrap:wrap;gap:14px;justify-content:space-around;">
+                                        <?php
+                                        $lr_pw = [
+                                            ['R SPH', $lr_r_sph], ['R CYL', $lr_r_cyl], ['R ADD', $lr_r_add],
+                                            ['L SPH', $lr_l_sph], ['L CYL', $lr_l_cyl], ['L ADD', $lr_l_add],
+                                            ['MAX SE', $lr_maxSE],
+                                        ];
+                                        foreach ($lr_pw as $pw):
+                                            $val = number_format($pw[1], 2, '.', '');
+                                            $zero = abs($pw[1]) < 0.01;
+                                        ?>
+                                        <div style="text-align:center;">
+                                            <div style="font-size:7px;color:#444;letter-spacing:0.5px;margin-bottom:2px;"><?php echo $pw[0]; ?></div>
+                                            <div style="font-size:10px;font-weight:700;color:<?php echo $zero ? '#2e2e2e' : '#ccc'; ?>;font-family:monospace;"><?php echo $val; ?></div>
+                                        </div>
+                                        <?php endforeach; ?>
+                                        </div>
+                                    </div>
+
+                                    <!-- Special warning notes -->
+                                    <?php foreach ($lr_specialNotes as $sn): ?>
+                                    <div style="display:flex;align-items:flex-start;gap:8px;font-size:9.5px;color:#ffcc00;background:rgba(255,204,0,0.05);border:1px solid rgba(255,204,0,0.15);border-radius:10px;padding:8px 11px;margin-bottom:8px;">
+                                        <span><?php echo $sn[0]; ?></span>
+                                        <span><?php echo htmlspecialchars($sn[1]); ?></span>
+                                    </div>
+                                    <?php endforeach; ?>
+
+                                    <!-- ── Ranked lens cards ──────────────────────────── -->
+                                    <div style="font-size:0.6rem;color:var(--text-muted);letter-spacing:1px;margin-bottom:10px;">
+                                        ✦ URUTAN LENSA TERBAIK UNTUK CUSTOMER INI
+                                    </div>
+
+                                    <?php if (empty($lr_candidates)): ?>
+                                    <div style="font-size:11px;color:#555;text-align:center;padding:20px;">
+                                        Tidak ada lensa yang cocok ditemukan dalam katalog.
+                                    </div>
+                                    <?php else: ?>
+                                    <div style="display:flex;flex-direction:column;gap:7px;" id="lr-list">
+                                    <?php
+                                    $lr_featureIcons = [
+                                        'ANTI-BLUE RAY'         => '💙',
+                                        'BLUE LIGHT GUARD'      => '🛡️',
+                                        'PHOTOCHROMIC'          => '🌅',
+                                        'COLOR ADAPTIVE'        => '🎨',
+                                        'DRIVE SAFE'            => '🚗',
+                                        'UV PROTECTION'         => '🌞',
+                                        'HIGH INDEX 1.67'       => '💎',
+                                        'THIN & LIGHT'          => '✨',
+                                        'LENTICULAR'            => '🔬',
+                                        'ANTI-GLARE'            => '💡',
+                                        'ANTI-REFLECTIVE'       => '💡',
+                                        'SUPER ANTI-REFLECTIVE' => '💡',
+                                        'MULTI COAT'            => '🔵',
+                                        'HARD MULTI COAT'       => '🔵',
+                                        'SUPER HARD MULTI COAT' => '🔵',
+                                        'PROGRESSIVE'           => '📐',
+                                        'BIFOCAL'               => '📖',
+                                        'FLAT TOP'              => '📖',
+                                        'KRYPTOK STYLE'         => '📖',
+                                        'CUSTOM RX'             => '⚙️',
+                                        'CUSTOM ORDER'          => '⚙️',
+                                        'WIDE FIELD'            => '🔭',
+                                        'CR RESIN'              => '⚗️',
+                                        'STANDARD GRADE'        => '📋',
+                                        'PREMIUM GRADE'         => '🏆',
+                                        'HIGH POWER RX'         => '⚡',
+                                    ];
+                                    // Rank palette: top-3 get gold/silver/bronze
+                                    $lr_rankStyle = [
+                                        0 => ['★ #1', '#ffaa00', 'rgba(255,170,0,0.12)', 'rgba(255,170,0,0.40)'],
+                                        1 => ['★ #2', '#c0c0c0', 'rgba(180,180,180,0.08)', 'rgba(180,180,180,0.28)'],
+                                        2 => ['★ #3', '#cd7f32', 'rgba(180,120,60,0.08)',  'rgba(180,120,60,0.28)'],
+                                    ];
+                                    foreach ($lr_candidates as $i => $cand):
+                                        $rs   = $lr_rankStyle[$i] ?? ['#'.($i+1), '#00ff88', 'rgba(0,255,136,0.05)', 'rgba(0,255,136,0.15)'];
+                                        [$rankLbl, $rankColor, $bg, $bd] = $rs;
+                                        $srcBadgeColor = ($cand['source'] === 'stock') ? '#00ff88' : '#ff8a4d';
+                                        $srcBadgeBg    = ($cand['source'] === 'stock') ? 'rgba(0,255,136,0.10)' : 'rgba(255,138,77,0.10)';
+                                        $srcBadgeBd    = ($cand['source'] === 'stock') ? 'rgba(0,255,136,0.25)' : 'rgba(255,138,77,0.25)';
+                                        $srcLabel      = ($cand['source'] === 'stock') ? 'STOCK' : 'LAB';
+                                        $cardId        = 'lr-card-' . $i;
+                                        $detailId      = 'lr-detail-' . $i;
+                                        $chevId        = 'lr-chev-' . $i;
+                                    ?>
+                                    <div id="<?php echo $cardId; ?>"
+                                         style="border:1px solid <?php echo $bd; ?>;border-radius:12px;overflow:hidden;background:<?php echo $bg; ?>;">
+
+                                        <!-- Collapsed row: rank + name + source badge + price + chevron -->
+                                        <div onclick="lrCardToggle(<?php echo $i; ?>)"
+                                             style="display:flex;align-items:center;gap:10px;padding:11px 13px;cursor:pointer;">
+
+                                            <!-- Rank badge -->
+                                            <span style="display:inline-flex;align-items:center;justify-content:center;min-width:30px;height:24px;background:<?php echo $bd; ?>;border-radius:20px;font-size:9px;font-weight:800;color:<?php echo $rankColor; ?>;letter-spacing:0.5px;flex-shrink:0;"><?php echo $rankLbl; ?></span>
+
+                                            <!-- Name block -->
+                                            <div style="flex:1;min-width:0;">
+                                                <div style="font-size:11px;font-weight:700;color:<?php echo $rankColor; ?>;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+                                                    <?php echo htmlspecialchars($cand['category']); ?> — <?php echo htmlspecialchars($cand['type']); ?>
+                                                </div>
+                                                <!-- Source badge + readiness (shown in row) -->
+                                                <div style="display:flex;align-items:center;gap:5px;margin-top:3px;">
+                                                    <span style="font-size:7.5px;font-weight:700;color:<?php echo $srcBadgeColor; ?>;background:<?php echo $srcBadgeBg; ?>;border:1px solid <?php echo $srcBadgeBd; ?>;border-radius:20px;padding:1px 7px;letter-spacing:0.5px;"><?php echo $srcLabel; ?></span>
+                                                    <span style="font-size:8px;color:#555;">⏱ <?php echo htmlspecialchars($cand['readiness']); ?></span>
+                                                </div>
+                                            </div>
+
+                                            <!-- Price -->
+                                            <div style="font-size:11px;font-weight:700;color:<?php echo $rankColor; ?>;font-family:monospace;text-align:right;flex-shrink:0;">
+                                                <?php echo lr_fmt_price($cand['selling']); ?>
+                                            </div>
+
+                                            <!-- Expand chevron -->
+                                            <span id="<?php echo $chevId; ?>" style="color:#555;font-size:11px;flex-shrink:0;transition:transform 0.25s;display:inline-block;">▼</span>
+                                        </div>
+
+                                        <!-- Expandable detail panel -->
+                                        <div id="<?php echo $detailId; ?>" style="display:none;padding:0 13px 13px 13px;border-top:1px solid <?php echo $bd; ?>;">
+
+                                            <!-- Feature chips -->
+                                            <div style="font-size:7.5px;color:#444;letter-spacing:1px;margin:10px 0 7px;">FITUR LENSA</div>
+                                            <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px;">
+                                                <?php foreach ($cand['features'] as $feat):
+                                                    $ficon = $lr_featureIcons[strtoupper(trim($feat))] ?? '•';
+                                                ?>
+                                                <span style="display:inline-flex;align-items:center;gap:4px;font-size:9px;color:#ddd;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.10);border-radius:20px;padding:4px 10px;letter-spacing:0.3px;">
+                                                    <?php echo $ficon; ?> <?php echo htmlspecialchars($feat); ?>
+                                                </span>
+                                                <?php endforeach; ?>
+                                            </div>
+
+                                            <!-- Readiness banner -->
+                                            <div style="display:flex;align-items:center;gap:8px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:10px;padding:8px 12px;">
+                                                <span style="font-size:1rem;"><?php echo ($cand['source'] === 'stock') ? '🏪' : '🔧'; ?></span>
+                                                <div>
+                                                    <div style="font-size:10px;font-weight:700;color:<?php echo $srcBadgeColor; ?>;">
+                                                        <?php echo ($cand['source'] === 'stock') ? 'Stok Tersedia' : 'Gosok Lab (Custom Order)'; ?>
+                                                    </div>
+                                                    <div style="font-size:9px;color:#555;margin-top:1px;"><?php echo htmlspecialchars($cand['readiness']); ?></div>
+                                                </div>
+                                            </div>
+
+                                            <!-- Optional lens note -->
+                                            <?php if (!empty($cand['note'])): ?>
+                                            <div style="margin-top:8px;font-size:9px;color:#666;font-style:italic;padding-left:4px;">
+                                                📋 <?php echo htmlspecialchars($cand['note']); ?>
+                                            </div>
+                                            <?php endif; ?>
+                                        </div>
+
+                                    </div><!-- /card -->
+                                    <?php endforeach; ?>
+                                    </div><!-- /lr-list -->
+                                    <?php endif; ?>
+
+                                    <!-- Disclaimer -->
+                                    <div style="margin-top:12px;font-size:8px;color:#2e2e2e;font-style:italic;border-top:1px solid rgba(255,255,255,0.04);padding-top:10px;">
+                                        * Urutan berdasarkan kesesuaian ukuran, kebiasaan, dan keluhan. Pilihan akhir menyesuaikan preferensi dan budget customer.
+                                    </div>
+
+                                </div><!-- /lr-body -->
+                            </div>
+                        </div>
+                        <!-- END LENS RECOMMENDATION -->
+
                     </div>
 
                     <div style="margin-top: 40px; text-align: center;">
@@ -1214,6 +1657,29 @@
                     f.removeEventListener('blur', formatZeroValue);
                 });
             };
+
+            // ============================================================
+            // LENS RECOMMENDATION — toggle functions
+            // ============================================================
+            function lrToggle() {
+                const body = document.getElementById('lr-body');
+                const chev = document.getElementById('lr-chev');
+                if (!body) return;
+                const open = body.style.display === 'none' || body.style.display === '';
+                body.style.display = open ? 'block' : 'none';
+                if (chev) chev.style.transform = open ? 'rotate(180deg)' : 'rotate(0deg)';
+            }
+            function lrCardToggle(i) {
+                const detail = document.getElementById('lr-detail-' + i);
+                const chev   = document.getElementById('lr-chev-' + i);
+                if (!detail) return;
+                const open = detail.style.display === 'none' || detail.style.display === '';
+                detail.style.display = open ? 'block' : 'none';
+                if (chev) chev.style.transform = open ? 'rotate(180deg)' : 'rotate(0deg)';
+            }
+            window.lrToggle     = lrToggle;
+            window.lrCardToggle = lrCardToggle;
+
 
             window.onload = () => {
                 const isModified = <?php echo $data['lens_modification'] == 1 ? 'true' : 'false'; ?>;
@@ -2541,61 +3007,3 @@
         </script>
     </body>
 </html>
-
-<!-- ada revisi
-
-
-
-
-
-untuk add mulai usianya dari >= 39
-
-
-
-apa itu se?
-
-
-
-untuk indoor + screen berat (> 5 jam) itu rekomendasinya Blueray → Bluegard
-
-
-
-apa itu glare symptom dan apa itu Photochromic di-inject jadi TOP PICK
-
-
-
-tempatkan setelah Face Shape Analysis
-
-dan ada satu lagi, jika anda lihat di lense_prices.json itu dikategorikan menjadi dua, yakni stock (siap 2 hari) dan lab (lensa gosok, siap 7-10 hari). 
-
-
-
-
-
-stock itu untuk ukuran sph max -5.00 dan cyl. -2.00, barangnya tidak pesanan dan siap 2 hari, jika sph sampai rentang -8.00 tetap stock (untuk harga) namun barang pesanan 7-10 hari (dipastikan dahulu ada stock atau tidak). 
-
-
-
-untuk lensa stock bluegard dan one-drive itu juga ada kemungkinan pesanan (dipastikan stock terlebih dahulu)
-
-
-
-untuk lab itu lensa gosok, untuk sv itu ukurannya sph > -8.00 dan > +300, cyl > -2.00, dan bisa kombinasi. untuk jauh dekat jika sph > 2.00 (baik + atau -) atau terdapat cyl. dan juga apabila ukuran baca lebih tinggi dari jauhnya
-
-
-
-untuk ukuran +7.00 s/d +17.00 (cyl combinasi itu -0.25 s/d -4.00), ini single vision, jenis lensanya lenticular dan itu lab
-
-
-
-untuk jauh dekat kryptok juga terdapat lenticular (lab juga) dengan aturan ukuran yang sama
-
-
-
-untuk flattop wajib lab
-
-
-
-
-
- -->
