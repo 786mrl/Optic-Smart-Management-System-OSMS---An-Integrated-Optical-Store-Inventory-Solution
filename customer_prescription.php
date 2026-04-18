@@ -314,6 +314,108 @@
                 margin-bottom: 20px;
             }
 
+            /* --- PRESCRIPTION ANALYSIS PANEL --- */
+            #prescription_analysis {
+                display: none;
+                grid-column: 1 / -1;
+                width: 100%;
+                margin-top: 20px;
+                background: #25282a;
+                padding: 20px;
+                border-radius: 15px;
+                border: 1px solid #00ccff66;
+                box-shadow: 0 0 15px rgba(0, 204, 255, 0.1);
+            }
+            #prescription_analysis h3.analysis-title {
+                color: #00ccff;
+                font-size: 1em;
+                text-align: center;
+                margin-top: 0;
+                margin-bottom: 20px;
+                letter-spacing: 2px;
+            }
+            .analysis-eye-block {
+                background: #1a1c1d;
+                border-left: 4px solid #00ccff;
+                border-radius: 10px;
+                padding: 15px;
+                margin-bottom: 15px;
+            }
+            .analysis-eye-block h4 {
+                color: #00ccff;
+                margin: 0 0 12px 0;
+                font-size: 0.9em;
+                letter-spacing: 1px;
+            }
+            .analysis-condition {
+                margin-bottom: 14px;
+                padding-bottom: 12px;
+                border-bottom: 1px dashed #333;
+            }
+            .analysis-condition:last-child {
+                border-bottom: none;
+                padding-bottom: 0;
+                margin-bottom: 0;
+            }
+            .analysis-badge {
+                display: inline-block;
+                padding: 4px 10px;
+                border-radius: 6px;
+                font-size: 0.72em;
+                font-weight: bold;
+                margin-bottom: 8px;
+                letter-spacing: 1px;
+                font-family: monospace;
+            }
+            .badge-mild     { background: #2d4a2d; color: #66ff66; border: 1px solid #66ff66; }
+            .badge-moderate { background: #4a432d; color: #ffcc00; border: 1px solid #ffcc00; }
+            .badge-high     { background: #4a2d2d; color: #ff8866; border: 1px solid #ff8866; }
+            .badge-severe   { background: #4a2d4a; color: #ff4466; border: 1px solid #ff4466; }
+            .badge-normal   { background: #2d3a4a; color: #66ccff; border: 1px solid #66ccff; }
+            .analysis-label {
+                font-size: 0.72em;
+                color: #888;
+                text-transform: uppercase;
+                letter-spacing: 1px;
+                margin-top: 8px;
+                margin-bottom: 4px;
+                font-weight: bold;
+            }
+            .analysis-text {
+                color: #ddd;
+                font-size: 0.85em;
+                line-height: 1.5;
+                margin: 0;
+            }
+            .analysis-text ul {
+                margin: 4px 0 0 0;
+                padding-left: 20px;
+            }
+            .analysis-text ul li {
+                margin-bottom: 3px;
+            }
+            .analysis-recommendation {
+                background: #1a2c2a;
+                border: 1px solid #00ff8844;
+                border-radius: 10px;
+                padding: 15px;
+                margin-top: 15px;
+            }
+            .analysis-recommendation h4 {
+                color: #00ff88;
+                margin: 0 0 10px 0;
+                font-size: 0.85em;
+                letter-spacing: 1px;
+            }
+            .analysis-disclaimer {
+                margin-top: 14px;
+                font-size: 0.7em;
+                color: #777;
+                text-align: center;
+                font-style: italic;
+                line-height: 1.4;
+            }
+
             .swal2-popup {
                 border: 1px solid #00ff88 !important;
                 box-shadow: 0 0 20px rgba(0, 255, 136, 0.2) !important;
@@ -711,6 +813,18 @@
                                     </div>
                                 </div>
                             </div>
+
+                            <!-- PRESCRIPTION ANALYSIS PANEL (AUTO-GENERATED) -->
+                            <div id="prescription_analysis">
+                                <h3 class="analysis-title">◆ CLINICAL ANALYSIS &amp; INTERPRETATION ◆</h3>
+                                <div id="analysis_right" class="analysis-eye-block"></div>
+                                <div id="analysis_left" class="analysis-eye-block"></div>
+                                <div id="analysis_summary"></div>
+                                <p class="analysis-disclaimer">
+                                    * This analysis is an automated reference based on refractive values and is intended to assist the optometrist during consultation.<br>
+                                    It does not replace a direct clinical diagnosis by a licensed ophthalmologist.
+                                </p>
+                            </div>
                         </div>
 
                         <!-- NOTES -->
@@ -830,6 +944,275 @@
                 if (age > 60) return "+3.00";
                 return "0.00";
             }
+
+            // ================================================================
+            // === PRESCRIPTION ANALYSIS LOGIC ================================
+            // ================================================================
+
+            // 1. Analyze SPHERE (Myopia / Hyperopia)
+            function analyzeSPH(sph) {
+                if (sph === 0) return null;
+
+                if (sph < 0) {
+                    // MYOPIA — Nearsightedness
+                    const abs = Math.abs(sph);
+                    let badge, category;
+                    if (abs <= 3.00)      { badge = 'badge-mild';     category = 'MILD MYOPIA'; }
+                    else if (abs <= 6.00) { badge = 'badge-moderate'; category = 'MODERATE MYOPIA'; }
+                    else if (abs <= 9.00) { badge = 'badge-high';     category = 'HIGH MYOPIA'; }
+                    else                  { badge = 'badge-severe';   category = 'SEVERE MYOPIA'; }
+
+                    const symptoms = [
+                        'Blurry vision when looking at distant objects (road signs, whiteboard, TV)',
+                        'Squinting or narrowing the eyes to see far away',
+                        'Headaches from sustained eye strain',
+                        'Fatigue when driving or doing distance-related activities'
+                    ];
+                    if (abs > 6) {
+                        symptoms.push('Possible night vision difficulty (night myopia)');
+                        symptoms.push('Higher long-term risk of retinal complications (e.g. retinal detachment, myopic maculopathy)');
+                    }
+
+                    const causes = [
+                        'Genetic / hereditary factors (especially if parents are myopic)',
+                        'Excessive near-work activities (reading, phones, computers)',
+                        'Insufficient outdoor time and natural light exposure',
+                        'Prolonged digital screen time without rest breaks'
+                    ];
+                    if (abs > 6) causes.push('Progressive elongation of the eyeball (axial myopia)');
+
+                    return {
+                        badge, category,
+                        value: sph.toFixed(2),
+                        description: 'Nearsightedness (Myopia) — the patient can see nearby objects clearly, but distant objects appear blurry. Light focuses in front of the retina instead of directly on it.',
+                        symptoms, causes
+                    };
+                } else {
+                    // HYPEROPIA — Farsightedness
+                    let badge, category;
+                    if (sph <= 2.00)      { badge = 'badge-mild';     category = 'MILD HYPEROPIA'; }
+                    else if (sph <= 5.00) { badge = 'badge-moderate'; category = 'MODERATE HYPEROPIA'; }
+                    else                  { badge = 'badge-high';     category = 'HIGH HYPEROPIA'; }
+
+                    const symptoms = [
+                        'Blurry vision when reading or doing close-up work',
+                        'Eye strain and fatigue after short reading sessions',
+                        'Frontal headaches, especially in the afternoon or evening',
+                        'Tendency to hold books or phones farther away from the face',
+                        'Difficulty focusing on fine print or small text'
+                    ];
+                    if (sph > 2.00) {
+                        symptoms.push('Burning or aching sensation around the eyes');
+                        symptoms.push('Possible crossed eyes (accommodative esotropia), especially in children');
+                    }
+
+                    const causes = [
+                        'Shorter-than-average eyeball length (axial hyperopia)',
+                        'Flatter-than-normal cornea curvature',
+                        'Genetic / hereditary factors',
+                        'Natural condition in young children (usually decreases with growth)'
+                    ];
+                    if (sph > 2.00) causes.push('Reduced lens accommodation ability (often worsens with age)');
+
+                    return {
+                        badge, category,
+                        value: '+' + sph.toFixed(2),
+                        description: 'Farsightedness (Hyperopia) — the patient can usually see distant objects more comfortably, but nearby objects appear blurry or cause strain. Light focuses behind the retina instead of directly on it.',
+                        symptoms, causes
+                    };
+                }
+            }
+
+            // 2. Analyze CYLINDER (Astigmatism)
+            function analyzeCYL(cyl) {
+                if (cyl === 0) return null;
+                const abs = Math.abs(cyl);
+                let badge, category;
+                if (abs <= 1.00)      { badge = 'badge-mild';     category = 'MILD ASTIGMATISM'; }
+                else if (abs <= 2.00) { badge = 'badge-moderate'; category = 'MODERATE ASTIGMATISM'; }
+                else if (abs <= 4.00) { badge = 'badge-high';     category = 'HIGH ASTIGMATISM'; }
+                else                  { badge = 'badge-severe';   category = 'SEVERE ASTIGMATISM'; }
+
+                const symptoms = [
+                    'Blurry or distorted vision at all distances (near AND far)',
+                    'Lights appearing streaked, smeared, or with halos (especially at night)',
+                    'Eye strain and fatigue, particularly after visual tasks',
+                    'Headaches, often after reading or screen work',
+                    'Squinting frequently to try to focus'
+                ];
+                if (abs > 2.00) {
+                    symptoms.push('Double vision (diplopia) in some cases');
+                    symptoms.push('Significant difficulty with night driving due to glare');
+                }
+
+                const causes = [
+                    'Irregular cornea curvature (oval/football-shaped instead of spherical)',
+                    'Genetic / congenital (usually present from birth)',
+                    'Can result from eye injury or surgery',
+                    'Excessive eye rubbing over long periods'
+                ];
+                if (abs > 4.00) causes.push('Keratoconus or other progressive corneal conditions should be ruled out');
+
+                return {
+                    badge, category,
+                    value: cyl.toFixed(2),
+                    description: 'Astigmatism — an irregularly shaped cornea (or lens) causes light to focus at multiple points rather than a single point on the retina, resulting in distorted or blurred vision at all distances.',
+                    symptoms, causes
+                };
+            }
+
+            // 3. Analyze ADD (Presbyopia)
+            function analyzeADD(add, age) {
+                if (add <= 0) return null;
+                let badge, category;
+                if (add <= 1.25)      { badge = 'badge-mild';     category = 'EARLY PRESBYOPIA'; }
+                else if (add <= 2.00) { badge = 'badge-moderate'; category = 'MODERATE PRESBYOPIA'; }
+                else                  { badge = 'badge-high';     category = 'ADVANCED PRESBYOPIA'; }
+
+                const symptoms = [
+                    'Difficulty reading small print (menus, labels, phone screens)',
+                    'Need to hold reading material farther from the eyes ("short-arm syndrome")',
+                    'Eye fatigue during prolonged reading',
+                    'Needing brighter light for close-up tasks',
+                    'Headaches after sustained near work'
+                ];
+                if (add > 1.25) symptoms.push('Difficulty transitioning focus between near and far objects');
+
+                const causes = [
+                    'Natural aging of the crystalline lens (gradual loss of elasticity)',
+                    'Weakening of the ciliary muscle that controls focus',
+                    'Normal physiological process — this is NOT a disease'
+                ];
+                if (add >= 2.25) causes.push('Progression with age (typically stabilizes around age 60–65)');
+                if (age > 0 && age < 40) causes.push('Early-onset presbyopia — may warrant further evaluation for underlying causes');
+
+                return {
+                    badge, category,
+                    value: '+' + add.toFixed(2),
+                    description: 'Presbyopia — an age-related condition where the eye\'s lens loses flexibility, making it harder to focus on nearby objects. It is a normal part of aging, typically starting around age 40.',
+                    symptoms, causes
+                };
+            }
+
+            // 4. Build HTML for one eye
+            function buildEyeAnalysisHTML(eyeLabel, sph, cyl, add, age) {
+                const sphData = analyzeSPH(sph);
+                const cylData = analyzeCYL(cyl);
+                const addData = analyzeADD(add, age);
+
+                let html = `<h4>◉ ${eyeLabel}</h4>`;
+
+                if (!sphData && !cylData && !addData) {
+                    html += `<div class="analysis-condition">
+                        <span class="analysis-badge badge-normal">EMMETROPIA / NORMAL</span>
+                        <p class="analysis-text">No significant refractive error detected for this eye. The eye appears to focus light correctly onto the retina.</p>
+                    </div>`;
+                    return html;
+                }
+
+                const conditions = [sphData, cylData, addData].filter(Boolean);
+                conditions.forEach(c => {
+                    html += `
+                        <div class="analysis-condition">
+                            <span class="analysis-badge ${c.badge}">${c.category} (${c.value})</span>
+                            <p class="analysis-text">${c.description}</p>
+                            <div class="analysis-label">▸ Patient may experience:</div>
+                            <div class="analysis-text"><ul>${c.symptoms.map(s => `<li>${s}</li>`).join('')}</ul></div>
+                            <div class="analysis-label">▸ Possible causes:</div>
+                            <div class="analysis-text"><ul>${c.causes.map(s => `<li>${s}</li>`).join('')}</ul></div>
+                        </div>
+                    `;
+                });
+                return html;
+            }
+
+            // 5. Build overall recommendation
+            function buildRecommendation(r_sph, r_cyl, r_add, l_sph, l_cyl, l_add) {
+                const recommendations = [];
+                const maxSphAbs = Math.max(Math.abs(r_sph), Math.abs(l_sph));
+                const maxCylAbs = Math.max(Math.abs(r_cyl), Math.abs(l_cyl));
+                const maxAdd = Math.max(r_add, l_add);
+                const sphDiff = Math.abs(r_sph - l_sph);
+                const cylDiff = Math.abs(r_cyl - l_cyl);
+
+                if (maxAdd > 0) {
+                    recommendations.push('Consider <b>progressive lenses</b> or bifocals for seamless near-and-far vision.');
+                }
+                if (maxSphAbs >= 4 || maxCylAbs >= 2) {
+                    recommendations.push('Recommend <b>high-index lenses</b> (1.67 or 1.74) to reduce lens thickness and weight.');
+                }
+                if (maxSphAbs > 0 || maxCylAbs > 0) {
+                    recommendations.push('<b>Anti-reflective (AR) coating</b> is highly recommended to reduce glare and improve visual clarity.');
+                }
+                if (sphDiff >= 2 || cylDiff >= 1.5) {
+                    recommendations.push('Significant difference between the two eyes detected (<b>anisometropia</b>) — ensure proper lens adaptation and consider contact lenses as an alternative.');
+                }
+                if (maxSphAbs >= 6) {
+                    recommendations.push('High refractive error — <b>annual comprehensive eye examinations</b> are strongly advised to monitor retinal health.');
+                }
+                recommendations.push('<b>Blue light filtering</b> is advisable if the patient has significant digital device usage.');
+
+                return `
+                    <div class="analysis-recommendation">
+                        <h4>► LENS &amp; CARE RECOMMENDATIONS</h4>
+                        <ul class="analysis-text" style="padding-left: 20px; margin: 0;">
+                            ${recommendations.map(r => `<li>${r}</li>`).join('')}
+                        </ul>
+                    </div>
+                `;
+            }
+
+            // 6. Main trigger function
+            function analyzePrescription() {
+                const r_sph = parseFloat(document.querySelector('input[name="new_r_sph"]').value) || 0;
+                const r_cyl = parseFloat(document.querySelector('input[name="new_r_cyl"]').value) || 0;
+                const r_add = parseFloat(document.querySelector('input[name="new_r_add"]').value) || 0;
+                const l_sph = parseFloat(document.querySelector('input[name="new_l_sph"]').value) || 0;
+                const l_cyl = parseFloat(document.querySelector('input[name="new_l_cyl"]').value) || 0;
+                const l_add = parseFloat(document.querySelector('input[name="new_l_add"]').value) || 0;
+
+                const panel = document.getElementById('prescription_analysis');
+
+                // Hide panel if all values are zero
+                if (r_sph === 0 && r_cyl === 0 && r_add === 0 && l_sph === 0 && l_cyl === 0 && l_add === 0) {
+                    panel.style.display = 'none';
+                    return;
+                }
+
+                // Get age from input (supports both "25" and ".96" formats)
+                const ageVal = document.getElementById('age').value.trim();
+                let age = 0;
+                if (ageVal.includes('.')) {
+                    const yearInput = ageVal.replace('.', '');
+                    const yearVal = parseInt(yearInput);
+                    const currentYear = 2026;
+                    const fullYear = yearInput.length <= 2
+                        ? (yearVal > 26 ? 1900 + yearVal : 2000 + yearVal)
+                        : yearVal;
+                    age = currentYear - fullYear;
+                } else {
+                    age = parseInt(ageVal) || 0;
+                }
+
+                // Build analysis
+                document.getElementById('analysis_right').innerHTML = buildEyeAnalysisHTML('RIGHT EYE (OD)', r_sph, r_cyl, r_add, age);
+                document.getElementById('analysis_left').innerHTML  = buildEyeAnalysisHTML('LEFT EYE (OS)',  l_sph, l_cyl, l_add, age);
+                document.getElementById('analysis_summary').innerHTML = buildRecommendation(r_sph, r_cyl, r_add, l_sph, l_cyl, l_add);
+
+                panel.style.display = 'block';
+            }
+
+            // 7. Attach listeners — analysis re-runs whenever a prescription field loses focus
+            ['new_r_sph', 'new_r_cyl', 'new_r_add', 'new_l_sph', 'new_l_cyl', 'new_l_add'].forEach(name => {
+                const input = document.querySelector(`input[name="${name}"]`);
+                if (input) input.addEventListener('blur', analyzePrescription);
+            });
+            // Also re-run when age changes (presbyopia threshold shifts)
+            document.getElementById('age').addEventListener('blur', analyzePrescription);
+
+            // ================================================================
+            // === END PRESCRIPTION ANALYSIS LOGIC ============================
+            // ================================================================
 
             // 2. When Right eye is input, Left eye follows immediately (Raw value)
             rAddInput.addEventListener('input', function() {
