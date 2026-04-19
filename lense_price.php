@@ -160,12 +160,45 @@
             ];
 
             if (!empty($new_name)) {
-                $data[$new_group][$new_cat][$new_name] = [
+                // Check if a lens with the same name already exists in this group+category
+                $save_name = $new_name;
+                if (isset($data[$new_group][$new_cat][$new_name])) {
+                    $existing = $data[$new_group][$new_cat][$new_name];
+                    $cost_diff    = abs(($existing['cost']    ?? 0) - $new_cost)    > 0.001;
+                    $selling_diff = abs(($existing['selling'] ?? 0) - $new_selling) > 0.001;
+                    // Compare limits field by field
+                    $limits_diff  = false;
+                    foreach (['sph_from','sph_to','cyl_from','cyl_to','add_from','add_to','comb_max'] as $lk) {
+                        if ((int)($existing['limits'][$lk] ?? 0) !== (int)($new_limits[$lk] ?? 0)) {
+                            $limits_diff = true; break;
+                        }
+                    }
+
+                    if ($cost_diff || $selling_diff || $limits_diff) {
+                        // Different price or limits → save as a new entry with a unique suffix
+                        $suffix = 2;
+                        while (isset($data[$new_group][$new_cat][$new_name.' ('.$suffix.')'])) {
+                            $suffix++;
+                        }
+                        $save_name = $new_name.' ('.$suffix.')';
+                        $message = "Lens \"".htmlspecialchars($new_name)."\" already exists with different price/Rx limits. "
+                                 . "Saved as \"".htmlspecialchars($save_name)."\".";
+                    } else {
+                        // Exactly the same cost, selling, and limits → skip saving
+                        $message    = "Lens \"".htmlspecialchars($new_name)."\" already exists with the same price and Rx limits. No changes made.";
+                        $active_tab = 'add';
+                        goto skip_save;
+                    }
+                } else {
+                    $message = "Lens \"".htmlspecialchars($save_name)."\" added successfully.";
+                }
+
+                $data[$new_group][$new_cat][$save_name] = [
                     'cost'=>$new_cost,'selling'=>$new_selling,
                     'features'=>$new_features,'limits'=>$new_limits,
                 ];
-                $message    = "Lens \"".htmlspecialchars($new_name)."\" added successfully.";
                 $active_tab = 'add';
+                skip_save:;
             }
 
         } elseif (isset($_POST['delete_lense'])) {
@@ -187,8 +220,14 @@
         file_put_contents($json_file, json_encode($data, JSON_PRETTY_PRINT));
     }
 
-    $selected_group = $_POST['last_group'] ?? 'stock';
-    $selected_cat   = $_POST['last_category'] ?? '';
+    // After add_new_lense: point filter to the newly added group+category
+    if (isset($_POST['add_new_lense']) && !empty($new_group) && !empty($new_cat)) {
+        $selected_group = $new_group;
+        $selected_cat   = $new_cat;
+    } else {
+        $selected_group = $_POST['last_group'] ?? 'stock';
+        $selected_cat   = $_POST['last_category'] ?? '';
+    }
     // Fallback if the remembered category no longer exists (e.g. emptied by delete)
     if ((empty($selected_cat) || !isset($data[$selected_group][$selected_cat])) && isset($data[$selected_group])) {
         $first_cat = array_key_first($data[$selected_group]);
@@ -292,6 +331,44 @@
             .btn-delete-lens:hover {
                 background:#f87171; color:#fff; border-color:#f87171;
                 box-shadow:0 0 0 3px rgba(248,113,113,0.15);
+            }
+
+            /* ── ALL-view (read-only) mode ───────────────────────────── */
+            .all-view-badge {
+                display:inline-block; font-size:9px; font-weight:700; letter-spacing:.8px;
+                background:#1e3a5f; color:#60a5fa; border:1px solid #2563eb;
+                border-radius:6px; padding:2px 8px; margin-left:10px;
+                text-transform:uppercase; vertical-align:middle;
+            }
+            .all-view-group-label {
+                font-size:9px; font-weight:700; letter-spacing:.6px; text-transform:uppercase;
+                color:#4b5563; margin-right:6px;
+            }
+            /* ALL view card — read-only look */
+            #all-view-container .lens-card { cursor:pointer; border-color:#2a2d34; }
+            #all-view-container .lens-card:hover { border-color:#374151; }
+            #all-view-container .lens-card.collapsed .lens-card-body { display:none; }
+            #all-view-container .lens-card:not(.collapsed) .lens-card-body { animation:slideDown .2s ease-out; display:block; }
+            #all-view-container .lens-card-index { background:#374151; color:#9ca3af; }
+            /* Mute all inputs in ALL view */
+            #all-view-container input, #all-view-container textarea,
+            #all-view-container select { pointer-events:none; opacity:.75; }
+            #all-view-container .btn-delete-lens,
+            #all-view-container .btn-add-feature,
+            #all-view-container .btn-remove-tag,
+            #all-view-container .preset-feat-btn,
+            #all-view-container .feature-add-row { display:none !important; }
+            #all-view-container .lens-name-badge { display:none !important; }
+            #all-view-container .lens-name-input { border-bottom-color:transparent !important; cursor:default; }
+            #all-view-container .rx-limits-details summary { pointer-events:none; }
+            #all-view-container .card-divider + .lens-section-label,
+            #all-view-container .card-divider + .lens-section-label ~ * { }
+            /* Clickable row — clicking anywhere on collapsed card opens it */
+            #all-view-container .lens-card.collapsed { cursor:pointer; }
+            #all-view-container .lens-name-row { cursor:pointer; }
+            /* readonly badge on name row */
+            .all-view-readonly-hint {
+                font-size:9px; color:#374151; font-style:italic; white-space:nowrap; margin-left:auto; padding-right:4px;
             }
 
             /* ── Collapse toggle ─────────────────────────────────────── */
@@ -561,6 +638,8 @@
                         ADD NEW LENS
                     ════════════════════════════════════ -->
                     <form id="form-add-lense" action="lense_price.php" method="POST" class="hidden-form">
+                        <input type="hidden" name="last_group"    id="add_last_group"    value="<?php echo htmlspecialchars($selected_group); ?>">
+                        <input type="hidden" name="last_category" id="add_last_category" value="<?php echo htmlspecialchars($selected_cat); ?>">
                         <div class="add-form-card">
                             <div class="add-form-title">Add New Lens</div>
                             <div class="add-form-grid">
@@ -702,8 +781,9 @@
                                 <label>Group</label>
                                 <select id="filter-group" class="input-field" onchange="updateCategoryFilter()">
                                     <?php foreach (array_keys($data) as $g): ?>
-                                        <option value="<?php echo $g; ?>"><?php echo ucfirst($g); ?> Lenses</option>
+                                        <option value="<?php echo $g; ?>"<?php if($g===$selected_group) echo ' selected'; ?>><?php echo ucfirst($g); ?> Lenses</option>
                                     <?php endforeach; ?>
+                                    <option value="__all__">&#9776; All Groups</option>
                                 </select>
                             </div>
                             <div>
@@ -962,7 +1042,94 @@
                         <?php endforeach; endforeach; ?>
                         </div><!-- /#lense-display-container -->
 
-                        <div class="save-bar">
+                        <!-- ── ALL VIEW (read-only) container ── -->
+                        <div id="all-view-container" style="display:none; width:100%;">
+                        <?php
+                            $all_counter = 0;
+                            foreach ($data as $av_group => $av_cats):
+                                foreach ($av_cats as $av_cat => $av_lenses):
+                                    $av_has_add = catHasAdd($av_cat);
+                                    $av_has_cyl = catHasCyl($av_cat, $av_group);
+                        ?>
+                        <div class="lense-group-wrapper">
+                            <details class="lense-details" open>
+                                <summary>
+                                    <span>
+                                        <span class="all-view-group-label"><?php echo ucfirst($av_group); ?> /</span>
+                                        <?php echo htmlspecialchars($av_cat); ?>
+                                        <span style="font-size:11px;font-weight:400;color:#4b5563;margin-left:8px;"><?php echo count($av_lenses); ?> lens<?php echo count($av_lenses)!==1?'es':''; ?></span>
+                                        <span class="all-view-badge">Read Only</span>
+                                    </span>
+                                    <span class="summary-arrow">&#9660;</span>
+                                </summary>
+                                <div class="lense-panel">
+                                <?php $av_idx=0; foreach ($av_lenses as $av_name => $av_prices):
+                                    $all_counter++;
+                                    $av_idx++;
+                                    $av_cost     = is_array($av_prices) ? ($av_prices['cost']     ?? 0) : (float)$av_prices;
+                                    $av_selling  = is_array($av_prices) ? ($av_prices['selling']  ?? 0) : 0.0;
+                                    $av_features = is_array($av_prices) ? ($av_prices['features'] ?? []) : [];
+                                    $av_lim      = is_array($av_prices) ? ($av_prices['limits']   ?? $DEFAULT_LIMITS) : $DEFAULT_LIMITS;
+                                    $av_lim      = array_merge($DEFAULT_LIMITS, $av_lim);
+                                ?>
+                                <div class="lens-card collapsed" onclick="toggleLensCardEl(this)">
+                                    <span class="lens-card-index">#<?php echo str_pad($av_idx,2,'0',STR_PAD_LEFT);?></span>
+                                    <div class="lens-name-row" style="margin-bottom:0;">
+                                        <span class="lens-name-icon" style="color:#374151;">&#9654;</span>
+                                        <span style="flex:1;color:#e5e7eb;font-size:14px;font-weight:700;padding:4px 2px;text-transform:uppercase;"><?php echo htmlspecialchars($av_name);?></span>
+                                        <span class="lens-preview-summary" style="display:inline-flex;">
+                                            <span class="sum-price">IDR <?php echo number_format($av_selling ?: $av_cost,0,',','.');?></span>
+                                            <?php if(count($av_features)):?>
+                                            <span class="sum-dot">&bull;</span>
+                                            <span class="sum-feat-count"><?php echo count($av_features);?> feature<?php echo count($av_features)!==1?'s':'';?></span>
+                                            <?php endif;?>
+                                        </span>
+                                    </div>
+                                    <div class="lens-card-body" style="margin-top:12px;">
+                                        <div class="lens-prices-row">
+                                            <div class="price-col cost-col">
+                                                <label>Cost Price</label>
+                                                <input type="text" class="input-field" readonly value="IDR <?php echo number_format($av_cost,0,',','.');?>">
+                                            </div>
+                                            <div class="price-col sell-col">
+                                                <label>Selling Price</label>
+                                                <input type="text" class="input-field" readonly value="IDR <?php echo number_format($av_selling,0,',','.');?>">
+                                            </div>
+                                        </div>
+                                        <?php if(count($av_features)):?>
+                                        <hr class="card-divider">
+                                        <div class="lens-section-label">Features</div>
+                                        <div class="features-tag-wrapper" style="pointer-events:none;">
+                                            <?php foreach($av_features as $ft):?>
+                                            <span class="feature-tag"><span class="feature-tag-dot"></span><?php echo htmlspecialchars($ft);?></span>
+                                            <?php endforeach;?>
+                                        </div>
+                                        <?php endif;?>
+                                        <?php
+                                            $av_preview=[];
+                                            if($av_lim['sph_from']!=0||$av_lim['sph_to']!=0) $av_preview[]='SPH '.fmtRx($av_lim['sph_from']).' ~ '.fmtRx($av_lim['sph_to']);
+                                            if($av_has_cyl&&($av_lim['cyl_from']!=0||$av_lim['cyl_to']!=0)) $av_preview[]='CYL '.fmtRx($av_lim['cyl_from']).' ~ '.fmtRx($av_lim['cyl_to']);
+                                            if($av_has_add&&($av_lim['add_from']!=0||$av_lim['add_to']!=0)) $av_preview[]='ADD '.fmtRx($av_lim['add_from']).' ~ '.fmtRx($av_lim['add_to']);
+                                            if($av_lim['comb_max']!=0) $av_preview[]='COMB '.fmtRx($av_lim['comb_max']);
+                                        ?>
+                                        <?php if(!empty($av_preview)):?>
+                                        <hr class="card-divider">
+                                        <div class="lens-section-label">Rx Limits</div>
+                                        <div style="font-size:11px;color:#4b5563;font-style:italic;"><?php echo implode('&nbsp;&nbsp;|&nbsp;&nbsp;',$av_preview);?></div>
+                                        <?php if(!empty($av_lim['note'])):?>
+                                        <div style="font-size:11px;color:#6b7280;margin-top:6px;">&#9888; <?php echo htmlspecialchars($av_lim['note']);?></div>
+                                        <?php endif;?>
+                                        <?php endif;?>
+                                    </div>
+                                </div>
+                                <?php endforeach;?>
+                                </div>
+                            </details>
+                        </div>
+                        <?php endforeach; endforeach;?>
+                        </div><!-- /#all-view-container -->
+
+                        <div class="save-bar" id="save-bar">
                             <button type="submit" name="save_prices" class="btn-save" style="min-width:180px;">Save All Changes</button>
                         </div>
                     </form>
@@ -1059,11 +1226,22 @@
             function renderFeatureTags(k) {
                 const c = document.getElementById('tags-'+k); if(!c) return;
                 const f = lenseFeatures[k]||[];
-                c.innerHTML = f.length===0
-                    ? '<span class="no-features-text">No features added yet</span>'
-                    : f.map((t,i)=>`<span class="feature-tag"><span class="feature-tag-dot"></span>${escapeHtml(t)}<button type="button" class="btn-remove-tag" onclick="removeFeatureTag('${k}',${i})" title="Remove">&#215;</button></span>`).join('');
+                const presetUppers = PRESET_FEATURES.map(p => p.toUpperCase());
+                // Only show custom features (not in preset list) in "Selected Features" section
+                const customFeats = f.map((t,i)=>({t,i})).filter(({t}) => !presetUppers.includes(t.toUpperCase()));
+                if (customFeats.length === 0) {
+                    c.innerHTML = '<span class="no-features-text">No custom features — use Quick Select above or type below</span>';
+                } else {
+                    c.innerHTML = customFeats.map(({t,i})=>`<span class="feature-tag"><span class="feature-tag-dot"></span>${escapeHtml(t)}<button type="button" class="btn-remove-tag" onclick="removeFeatureTag('${k}',${i})" title="Remove">&#215;</button></span>`).join('');
+                }
                 syncFeaturesHidden(k);
                 renderPresetFeatures(k);
+            }
+            // Toggle for ALL-view read-only cards (click anywhere on card)
+            function toggleLensCardEl(card) {
+                card.classList.toggle('collapsed');
+                const arrow = card.querySelector('.lens-name-icon');
+                if (arrow) arrow.style.transform = card.classList.contains('collapsed') ? '' : 'rotate(90deg)';
             }
             function removeFeatureTag(k,i) { if(lenseFeatures[k]) { lenseFeatures[k].splice(i,1); renderFeatureTags(k); } }
             function addFeatureTag(k) {
@@ -1104,8 +1282,25 @@
                 const gs = document.getElementById('filter-group');
                 const cs = document.getElementById('filter-category');
                 const g  = gs.value;
-                document.getElementById('last_group').value = g;
+                document.getElementById('last_group').value = g === '__all__' ? '' : g;
                 cs.innerHTML = '';
+                const mainContainer = document.getElementById('lense-display-container');
+                const allContainer  = document.getElementById('all-view-container');
+                const saveBar       = document.getElementById('save-bar');
+                if (g === '__all__') {
+                    // Show ALL view, hide normal editable view + save bar
+                    mainContainer.style.display = 'none';
+                    allContainer.style.display  = 'block';
+                    if (saveBar) saveBar.style.display = 'none';
+                    const o = document.createElement('option');
+                    o.value = '__all__'; o.textContent = 'All Categories';
+                    cs.appendChild(o);
+                    return;
+                }
+                // Normal group selected
+                mainContainer.style.display = '';
+                allContainer.style.display  = 'none';
+                if (saveBar) saveBar.style.display = '';
                 if (lenseData[g]) {
                     const last = "<?php echo addslashes($selected_cat); ?>";
                     Object.keys(lenseData[g]).forEach(cat => {
@@ -1119,9 +1314,10 @@
             }
             function filterLenses() {
                 const g = document.getElementById('filter-group').value;
+                if (g === '__all__') return;
                 const c = document.getElementById('filter-category').value;
                 document.getElementById('last_category').value = c;
-                document.querySelectorAll('.lense-group-wrapper').forEach(w => {
+                document.querySelectorAll('#lense-display-container .lense-group-wrapper').forEach(w => {
                     w.style.display = (w.dataset.group===g && w.dataset.category===c) ? 'block' : 'none';
                 });
             }
@@ -1463,14 +1659,13 @@
 
             // ─── Init ─────────────────────────────────────────────────────
             document.addEventListener('DOMContentLoaded', () => {
-                <?php if (isset($active_tab) && $active_tab==='add'): ?>showTab('add');<?php else: ?>updateCategoryFilter();<?php endif; ?>
+                updateCategoryFilter();
+                <?php if (isset($active_tab) && $active_tab==='add'): ?>showTab('add');<?php endif; ?>
                 document.querySelectorAll('.currency-display').forEach(el => { if(el.value&&!el.value.includes('IDR')) formatMultipleCurrency(el); });
                 document.querySelectorAll('.features-tag-wrapper[data-safe-key]').forEach(el => {
                     initFeatureTags(el.getAttribute('data-safe-key'), JSON.parse(el.getAttribute('data-features')||'[]'));
                 });
                 initFeatureTags('new_lense',[]);
-                // Render preset feature buttons for the "Add New Lens" form too
-                renderPresetFeatures('new_lense');
                 // Apply last-opened / previously-opened markers
                 applyOpenedMarkers();
                 // Convert all .rx-input from type=number to type=text so the "+" sign

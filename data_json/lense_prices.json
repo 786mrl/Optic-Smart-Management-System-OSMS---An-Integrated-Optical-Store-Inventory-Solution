@@ -22,7 +22,7 @@
                 }
             },
             "PHOTOCHROMIC": {
-                "cost": 35000,
+                "cost": 30000,
                 "selling": 150000,
                 "features": [
                     "PHOTOCHROMIC",
@@ -50,29 +50,6 @@
                     "ANTI-REFLECTIVE (AR) COATING",
                     "BLUE LIGHT BLOCKING",
                     "SCRATCH-RESISTANT COATING"
-                ],
-                "limits": {
-                    "sph_from": 0,
-                    "sph_to": -800,
-                    "cyl_from": -25,
-                    "cyl_to": -200,
-                    "add_from": 0,
-                    "add_to": 0,
-                    "comb_max": -1000,
-                    "note": ""
-                }
-            },
-            "BLUEGARD": {
-                "cost": 70000,
-                "selling": 285000,
-                "features": [
-                    "UV PROTECTION",
-                    "SMUDGE-RESISTANT",
-                    "SUPER HYDROPHOBIC",
-                    "SCRATCH-RESISTANT COATING",
-                    "ANTI-REFLECTIVE (AR) COATING",
-                    "ANTI-STATIC",
-                    "BLUE LIGHT BLOCKING"
                 ],
                 "limits": {
                     "sph_from": 0,
@@ -205,12 +182,12 @@
                     "ANTI-REFLECTIVE (AR) COATING"
                 ],
                 "limits": {
-                    "sph_from": 200,
+                    "sph_from": 0,
                     "sph_to": -200,
                     "cyl_from": 0,
                     "cyl_to": 0,
-                    "add_from": 100,
-                    "add_to": 300,
+                    "add_from": 0,
+                    "add_to": 0,
                     "comb_max": 0,
                     "note": ""
                 }
@@ -225,12 +202,12 @@
                     "PHOTOCHROMIC"
                 ],
                 "limits": {
-                    "sph_from": 200,
+                    "sph_from": 0,
                     "sph_to": -200,
                     "cyl_from": 0,
                     "cyl_to": 0,
-                    "add_from": 100,
-                    "add_to": 300,
+                    "add_from": 0,
+                    "add_to": 0,
                     "comb_max": 0,
                     "note": ""
                 }
@@ -245,12 +222,12 @@
                     "BLUE LIGHT BLOCKING"
                 ],
                 "limits": {
-                    "sph_from": 200,
+                    "sph_from": 0,
                     "sph_to": -200,
                     "cyl_from": 0,
                     "cyl_to": 0,
-                    "add_from": 100,
-                    "add_to": 300,
+                    "add_from": 0,
+                    "add_to": 0,
                     "comb_max": 0,
                     "note": ""
                 }
@@ -266,12 +243,12 @@
                     "ANTI-REFLECTIVE (AR) COATING"
                 ],
                 "limits": {
-                    "sph_from": 200,
+                    "sph_from": 0,
                     "sph_to": -200,
                     "cyl_from": 0,
                     "cyl_to": 0,
-                    "add_from": 100,
-                    "add_to": 300,
+                    "add_from": 0,
+                    "add_to": 0,
                     "comb_max": 0,
                     "note": ""
                 }
@@ -292,12 +269,12 @@
                     "SMUDGE-RESISTANT"
                 ],
                 "limits": {
-                    "sph_from": 200,
+                    "sph_from": 0,
                     "sph_to": -200,
                     "cyl_from": 0,
                     "cyl_to": 0,
-                    "add_from": 100,
-                    "add_to": 300,
+                    "add_from": 0,
+                    "add_to": 0,
                     "comb_max": 0,
                     "note": ""
                 }
@@ -452,6 +429,99 @@
                     "add_from": 0,
                     "add_to": 0,
                     "comb_max": -1400,
+                    "note": ""
+                }
+            },
+            "BLUGARD (STOCK)": {
+                "cost": 60000,
+                "selling": 350000,
+                "features": [
+                    "UV PROTECTION",
+                    "SMUDGE-RESISTANT",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SUPER HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING"
+                ],
+                "limits": {
+                    "sph_from": 0,
+                    "sph_to": -600,
+                    "cyl_from": -25,
+                    "cyl_to": -200,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 0,
+                    "note": ""
+                }
+            },
+            "BLUGARD (STOCK) (2)": {
+                "cost": 90000,
+                "selling": 450000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "SUPER HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING"
+                ],
+                "limits": {
+                    "sph_from": 25,
+                    "sph_to": 400,
+                    "cyl_from": -25,
+                    "cyl_to": -200,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 0,
+                    "note": ""
+                }
+            },
+            "BLUGARD (STOCK) (3)": {
+                "cost": 110000,
+                "selling": 500000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "SUPER HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING"
+                ],
+                "limits": {
+                    "sph_from": 0,
+                    "sph_to": -400,
+                    "cyl_from": -225,
+                    "cyl_to": -400,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 0,
+                    "note": ""
+                }
+            },
+            "BLUGARD (STOCK) (4)": {
+                "cost": 180000,
+                "selling": 700000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "SUPER HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING",
+                    "HIGHT INDEX 1.67"
+                ],
+                "limits": {
+                    "sph_from": -400,
+                    "sph_to": -1200,
+                    "cyl_from": -25,
+                    "cyl_to": -200,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 0,
                     "note": ""
                 }
             }
