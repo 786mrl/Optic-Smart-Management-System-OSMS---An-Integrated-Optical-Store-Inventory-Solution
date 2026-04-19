@@ -117,12 +117,12 @@
                     "ANTI-REFLECTIVE (AR) COATING"
                 ],
                 "limits": {
-                    "sph_from": 0,
+                    "sph_from": 200,
                     "sph_to": -200,
                     "cyl_from": 0,
                     "cyl_to": 0,
-                    "add_from": 0,
-                    "add_to": 0,
+                    "add_from": 100,
+                    "add_to": 300,
                     "comb_max": 0,
                     "note": "Reading power must not exceed distance SPH. If exceeded, order from lab."
                 }
@@ -763,8 +763,8 @@
                     "PHOTOCHROMIC"
                 ],
                 "limits": {
-                    "sph_from": 0,
-                    "sph_to": -200,
+                    "sph_from": -200,
+                    "sph_to": 0,
                     "cyl_from": 0,
                     "cyl_to": 0,
                     "add_from": 0,
@@ -784,12 +784,12 @@
                     "ANTI-REFLECTIVE (AR) COATING"
                 ],
                 "limits": {
-                    "sph_from": 650,
+                    "sph_from": 0,
                     "sph_to": -500,
                     "cyl_from": -25,
                     "cyl_to": -400,
-                    "add_from": 100,
-                    "add_to": 300,
+                    "add_from": 0,
+                    "add_to": 0,
                     "comb_max": -500,
                     "note": ""
                 }
@@ -806,12 +806,12 @@
                     "SMUDGE-RESISTANT"
                 ],
                 "limits": {
-                    "sph_from": 650,
+                    "sph_from": 0,
                     "sph_to": -500,
                     "cyl_from": -25,
                     "cyl_to": -400,
-                    "add_from": 100,
-                    "add_to": 300,
+                    "add_from": 0,
+                    "add_to": 0,
                     "comb_max": -500,
                     "note": ""
                 }
@@ -829,12 +829,12 @@
                     "BLUE LIGHT BLOCKING"
                 ],
                 "limits": {
-                    "sph_from": 650,
+                    "sph_from": 0,
                     "sph_to": -600,
                     "cyl_from": -25,
                     "cyl_to": -400,
-                    "add_from": 100,
-                    "add_to": 300,
+                    "add_from": 0,
+                    "add_to": 0,
                     "comb_max": -600,
                     "note": ""
                 }
@@ -852,12 +852,12 @@
                     "BLUE LIGHT BLOCKING"
                 ],
                 "limits": {
-                    "sph_from": 650,
+                    "sph_from": 0,
                     "sph_to": -600,
                     "cyl_from": -25,
                     "cyl_to": -400,
-                    "add_from": 100,
-                    "add_to": 300,
+                    "add_from": 0,
+                    "add_to": 0,
                     "comb_max": -600,
                     "note": ""
                 }
