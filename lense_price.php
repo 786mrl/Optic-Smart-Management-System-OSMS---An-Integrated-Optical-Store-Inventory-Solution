@@ -893,6 +893,11 @@
                                     $features = is_array($prices) ? ($prices['features'] ?? []) : [];
                                     $lim      = is_array($prices) ? ($prices['limits']   ?? $DEFAULT_LIMITS) : $DEFAULT_LIMITS;
                                     $lim      = array_merge($DEFAULT_LIMITS, $lim); // fill any missing keys
+                                    // ── FIX: show CYL/ADD if category qualifies OR saved data is non-zero.
+                                    // Prevents silent hiding (and silent reset-to-0 on next save) of values
+                                    // that the user entered for custom / non-standard category names.
+                                    $show_cyl = $has_cyl || ($lim['cyl_from'] != 0 || $lim['cyl_to'] != 0);
+                                    $show_add = $has_add || ($lim['add_from'] != 0 || $lim['add_to'] != 0);
                                 ?>
                                 <div class="lens-card collapsed"
                                     data-group="<?php echo htmlspecialchars($group_key);?>"
@@ -983,9 +988,9 @@
                                                     $preview = [];
                                                     if ($lim['sph_from'] != 0 || $lim['sph_to'] != 0)
                                                         $preview[] = 'SPH '.fmtRx($lim['sph_from']).' ~ '.fmtRx($lim['sph_to']);
-                                                    if ($has_cyl && ($lim['cyl_from'] != 0 || $lim['cyl_to'] != 0))
+                                                    if ($show_cyl && ($lim['cyl_from'] != 0 || $lim['cyl_to'] != 0))
                                                         $preview[] = 'CYL '.fmtRx($lim['cyl_from']).' ~ '.fmtRx($lim['cyl_to']);
-                                                    if ($has_add && ($lim['add_from'] != 0 || $lim['add_to'] != 0))
+                                                    if ($show_add && ($lim['add_from'] != 0 || $lim['add_to'] != 0))
                                                         $preview[] = 'ADD '.fmtRx($lim['add_from']).' ~ '.fmtRx($lim['add_to']);
                                                     if ($lim['comb_max'] != 0)
                                                         $preview[] = 'COMB '.fmtRx($lim['comb_max']);
@@ -1022,7 +1027,7 @@
                                                 </div>
                                             </div>
 
-                                            <?php if ($has_cyl): ?>
+                                            <?php if ($show_cyl): ?>
                                             <!-- CYL -->
                                             <div class="rx-group">
                                                 <div class="rx-group-label cyl">CYL &mdash; Cylinder</div>
@@ -1043,12 +1048,12 @@
                                                 </div>
                                             </div>
                                             <?php else: ?>
-                                            <!-- Hidden CYL (preserve zeros) -->
-                                            <input type="hidden" name="price_limits[<?php echo $group_key;?>][<?php echo $cat_name;?>][<?php echo $name;?>][cyl_from]" value="0">
-                                            <input type="hidden" name="price_limits[<?php echo $group_key;?>][<?php echo $cat_name;?>][<?php echo $name;?>][cyl_to]"   value="0">
+                                            <!-- Hidden CYL: preserve saved value so a later "Save All Changes" doesn't silently zero it out -->
+                                            <input type="hidden" name="price_limits[<?php echo $group_key;?>][<?php echo $cat_name;?>][<?php echo $name;?>][cyl_from]" value="<?php echo (int)$lim['cyl_from']; ?>">
+                                            <input type="hidden" name="price_limits[<?php echo $group_key;?>][<?php echo $cat_name;?>][<?php echo $name;?>][cyl_to]"   value="<?php echo (int)$lim['cyl_to']; ?>">
                                             <?php endif; ?>
 
-                                            <?php if ($has_add): ?>
+                                            <?php if ($show_add): ?>
                                             <!-- ADD -->
                                             <div class="rx-group">
                                                 <div class="rx-group-label add">ADD &mdash; Reading Addition</div>
@@ -1069,8 +1074,9 @@
                                                 </div>
                                             </div>
                                             <?php else: ?>
-                                            <input type="hidden" name="price_limits[<?php echo $group_key;?>][<?php echo $cat_name;?>][<?php echo $name;?>][add_from]" value="0">
-                                            <input type="hidden" name="price_limits[<?php echo $group_key;?>][<?php echo $cat_name;?>][<?php echo $name;?>][add_to]"   value="0">
+                                            <!-- Hidden ADD: preserve saved value so a later "Save All Changes" doesn't silently zero it out -->
+                                            <input type="hidden" name="price_limits[<?php echo $group_key;?>][<?php echo $cat_name;?>][<?php echo $name;?>][add_from]" value="<?php echo (int)$lim['add_from']; ?>">
+                                            <input type="hidden" name="price_limits[<?php echo $group_key;?>][<?php echo $cat_name;?>][<?php echo $name;?>][add_to]"   value="<?php echo (int)$lim['add_to']; ?>">
                                             <?php endif; ?>
 
                                             <!-- COMB -->
@@ -1132,6 +1138,9 @@
                                     $av_features = is_array($av_prices) ? ($av_prices['features'] ?? []) : [];
                                     $av_lim      = is_array($av_prices) ? ($av_prices['limits']   ?? $DEFAULT_LIMITS) : $DEFAULT_LIMITS;
                                     $av_lim      = array_merge($DEFAULT_LIMITS, $av_lim);
+                                    // ── FIX: same show-if-saved-non-zero logic as the editable Price List above
+                                    $av_show_cyl = $av_has_cyl || ($av_lim['cyl_from'] != 0 || $av_lim['cyl_to'] != 0);
+                                    $av_show_add = $av_has_add || ($av_lim['add_from'] != 0 || $av_lim['add_to'] != 0);
                                 ?>
                                 <div class="lens-card collapsed" onclick="toggleLensCardEl(this)">
                                     <span class="lens-card-index">#<?php echo str_pad($av_idx,2,'0',STR_PAD_LEFT);?></span>
@@ -1169,8 +1178,8 @@
                                         <?php
                                             $av_preview=[];
                                             if($av_lim['sph_from']!=0||$av_lim['sph_to']!=0) $av_preview[]='SPH '.fmtRx($av_lim['sph_from']).' ~ '.fmtRx($av_lim['sph_to']);
-                                            if($av_has_cyl&&($av_lim['cyl_from']!=0||$av_lim['cyl_to']!=0)) $av_preview[]='CYL '.fmtRx($av_lim['cyl_from']).' ~ '.fmtRx($av_lim['cyl_to']);
-                                            if($av_has_add&&($av_lim['add_from']!=0||$av_lim['add_to']!=0)) $av_preview[]='ADD '.fmtRx($av_lim['add_from']).' ~ '.fmtRx($av_lim['add_to']);
+                                            if($av_show_cyl&&($av_lim['cyl_from']!=0||$av_lim['cyl_to']!=0)) $av_preview[]='CYL '.fmtRx($av_lim['cyl_from']).' ~ '.fmtRx($av_lim['cyl_to']);
+                                            if($av_show_add&&($av_lim['add_from']!=0||$av_lim['add_to']!=0)) $av_preview[]='ADD '.fmtRx($av_lim['add_from']).' ~ '.fmtRx($av_lim['add_to']);
                                             if($av_lim['comb_max']!=0) $av_preview[]='COMB '.fmtRx($av_lim['comb_max']);
                                         ?>
                                         <?php if(!empty($av_preview)):?>
