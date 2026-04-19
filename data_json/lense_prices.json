@@ -351,13 +351,13 @@
                     "ANTI-REFLECTIVE (AR) COATING"
                 ],
                 "limits": {
-                    "sph_from": 750,
-                    "sph_to": 1700,
+                    "sph_from": 0,
+                    "sph_to": 0,
                     "cyl_from": -25,
                     "cyl_to": -400,
                     "add_from": 0,
                     "add_to": 0,
-                    "comb_max": 1700,
+                    "comb_max": 0,
                     "note": ""
                 }
             },
@@ -374,13 +374,13 @@
                     "SMUDGE-RESISTANT"
                 ],
                 "limits": {
-                    "sph_from": 700,
-                    "sph_to": 1700,
+                    "sph_from": 0,
+                    "sph_to": 0,
                     "cyl_from": -25,
                     "cyl_to": -400,
                     "add_from": 0,
                     "add_to": 0,
-                    "comb_max": 1700,
+                    "comb_max": 0,
                     "note": ""
                 }
             },
@@ -535,11 +535,12 @@
                     "SMUDGE-RESISTANT",
                     "HYDROPHOBIC",
                     "ANTI-STATIC",
-                    "BLUE LIGHT BLOCKING"
+                    "BLUE LIGHT BLOCKING",
+                    "HIGH INDEX 1.67"
                 ],
                 "limits": {
-                    "sph_from": 0,
-                    "sph_to": -375,
+                    "sph_from": -400,
+                    "sph_to": -1200,
                     "cyl_from": -25,
                     "cyl_to": -200,
                     "add_from": 0,
@@ -558,10 +559,80 @@
                     "SMUDGE-RESISTANT",
                     "HYDROPHOBIC",
                     "ANTI-STATIC",
-                    "BLUE LIGHT BLOCKING"
+                    "BLUE LIGHT BLOCKING",
+                    "HIGH INDEX 1.67"
                 ],
                 "limits": {
                     "sph_from": -1225,
+                    "sph_to": -1500,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 0,
+                    "note": ""
+                }
+            },
+            "SUPERBLOCK": {
+                "cost": 180000,
+                "selling": 700000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING"
+                ],
+                "limits": {
+                    "sph_from": 850,
+                    "sph_to": -950,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": -950,
+                    "note": ""
+                }
+            },
+            "SUPERBLOCK (STOCK) (3)": {
+                "cost": 110000,
+                "selling": 300000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING"
+                ],
+                "limits": {
+                    "sph_from": 0,
+                    "sph_to": -375,
+                    "cyl_from": -25,
+                    "cyl_to": -200,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 0,
+                    "note": ""
+                }
+            },
+            "SUPERBLOCK (STOCK) (4)": {
+                "cost": 110000,
+                "selling": 300000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING"
+                ],
+                "limits": {
+                    "sph_from": 0,
                     "sph_to": 0,
                     "cyl_from": 0,
                     "cyl_to": 0,
