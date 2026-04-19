@@ -84,7 +84,10 @@
 
         if (isset($_POST['save_prices'])) {
             // Rebuild entire tree so category + lens-name keys become UPPERCASE.
-            $new_data = [];
+            $new_data        = [];
+            $rename_warnings = []; // collect rename-collision messages for user feedback
+            $save_log_rows   = []; // collect rows for debug log (see end of handler)
+
             foreach ($_POST['price_cost'] as $group => $categories) {
                 if (!isset($new_data[$group])) $new_data[$group] = [];
                 foreach ($categories as $category => $lenses) {
@@ -115,19 +118,77 @@
                             'note'     => trim($lp['note'] ?? ''),
                         ];
 
-                        $new_data[$group][$cat_upper][$new_name] = [
+                        // ── FIX #1: Anti-overwrite on rename collision ─────────
+                        // If $new_name already exists in this category AND it's
+                        // different from $old_name (i.e. a rename just produced
+                        // a collision with a sibling lens), don't silently wipe
+                        // the existing entry. Append (2), (3)… until unique.
+                        $save_name     = $new_name;
+                        $old_name_uc   = uc_trim($old_name);
+                        $is_rename     = ($save_name !== $old_name_uc);
+                        if ($is_rename && isset($new_data[$group][$cat_upper][$save_name])) {
+                            $suffix = 2;
+                            while (isset($new_data[$group][$cat_upper][$save_name.' ('.$suffix.')'])) {
+                                $suffix++;
+                            }
+                            $save_name = $new_name.' ('.$suffix.')';
+                            $rename_warnings[] = "\"".htmlspecialchars($old_name_uc)."\" renamed to \"".htmlspecialchars($new_name)."\" but that name was already taken — saved as \"".htmlspecialchars($save_name)."\" instead.";
+                        }
+
+                        $new_data[$group][$cat_upper][$save_name] = [
                             'cost'=>(float)$cost,'selling'=>$selling,
                             'features'=>$features,'limits'=>$limits,
                         ];
+
+                        $save_log_rows[] = "  $group / $cat_upper / $old_name_uc"
+                                         . ($is_rename ? " → $save_name" : "")
+                                         . "  [sph {$limits['sph_from']}..{$limits['sph_to']}"
+                                         . "  cyl {$limits['cyl_from']}..{$limits['cyl_to']}"
+                                         . "  add {$limits['add_from']}..{$limits['add_to']}"
+                                         . "  comb {$limits['comb_max']}]";
                     }
                 }
             }
-            // Preserve groups that might not have been posted (safety)
+
+            // ── FIX #2: Preserve per-lens, not just per-group ─────────────
+            // If a group, category, or individual lens was missing from the
+            // POST (e.g. a browser quirk dropped some inputs, or a future UI
+            // change only submits visible cards), keep the old value instead
+            // of silently deleting it.
             foreach ($data as $gk => $cats) {
-                if (!isset($new_data[$gk])) $new_data[$gk] = $cats;
+                if (!isset($new_data[$gk])) { $new_data[$gk] = $cats; continue; }
+                foreach ($cats as $ck => $lenses) {
+                    if (!isset($new_data[$gk][$ck])) { $new_data[$gk][$ck] = $lenses; continue; }
+                    foreach ($lenses as $ln => $entry) {
+                        if (!isset($new_data[$gk][$ck][$ln])) {
+                            $new_data[$gk][$ck][$ln] = $entry;
+                        }
+                    }
+                }
             }
+
             $data = $new_data;
-            $message = "All changes saved successfully.";
+
+            // ── FIX #3: Debug log ─────────────────────────────────────────
+            // Append to data_json/save_log.txt so we can diagnose any future
+            // "the other lens reverted" reports. Keeps last ~200 KB only.
+            $log_file = 'data_json/save_log.txt';
+            $log_line = "[".date('Y-m-d H:i:s')."] save_prices by user="
+                      . ($_SESSION['username'] ?? $_SESSION['user'] ?? 'admin')
+                      . " — ".count($save_log_rows)." lens rows posted:\n"
+                      . implode("\n", $save_log_rows) . "\n\n";
+            @file_put_contents($log_file, $log_line, FILE_APPEND);
+            if (file_exists($log_file) && filesize($log_file) > 200000) {
+                // Truncate: keep only the last 150 KB
+                $tail = @file_get_contents($log_file, false, null, -150000);
+                if ($tail !== false) @file_put_contents($log_file, "... (earlier entries trimmed)\n".$tail);
+            }
+
+            if (!empty($rename_warnings)) {
+                $message = "Saved with warnings: " . implode(" | ", $rename_warnings);
+            } else {
+                $message = "All changes saved successfully.";
+            }
 
         } elseif (isset($_POST['add_new_lense'])) {
             $new_group    = $_POST['new_group'];
