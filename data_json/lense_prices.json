@@ -5,9 +5,10 @@
                 "cost": 25000,
                 "selling": 150000,
                 "features": [
-                    "ANTI-BLUE RAY",
-                    "MULTI COAT",
-                    "UV PROTECTION"
+                    "UV PROTECTION",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SCRATCH-RESISTANT COATING",
+                    "BLUE LIGHT BLOCKING"
                 ],
                 "limits": {
                     "sph_from": 0,
@@ -25,8 +26,9 @@
                 "selling": 150000,
                 "features": [
                     "PHOTOCHROMIC",
-                    "COLOR ADAPTIVE",
-                    "UV PROTECTION"
+                    "UV PROTECTION",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SCRATCH-RESISTANT COATING"
                 ],
                 "limits": {
                     "sph_from": 0,
@@ -43,9 +45,11 @@
                 "cost": 60000,
                 "selling": 285000,
                 "features": [
-                    "ANTI-BLUE RAY",
                     "PHOTOCHROMIC",
-                    "COLOR ADAPTIVE"
+                    "UV PROTECTION",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "BLUE LIGHT BLOCKING",
+                    "SCRATCH-RESISTANT COATING"
                 ],
                 "limits": {
                     "sph_from": 0,
@@ -62,9 +66,13 @@
                 "cost": 70000,
                 "selling": 285000,
                 "features": [
-                    "BLUE LIGHT GUARD",
                     "UV PROTECTION",
-                    "ANTI-GLARE"
+                    "SMUDGE-RESISTANT",
+                    "SUPER HYDROPHOBIC",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING"
                 ],
                 "limits": {
                     "sph_from": 0,
@@ -81,10 +89,15 @@
                 "cost": 130000,
                 "selling": 500000,
                 "features": [
-                    "ANTI-BLUE RAY",
+                    "HIGH-INDEX UV400 PROTECTION",
+                    "ANTI-STATIC",
+                    "SUPER HYDROPHOBIC",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "BLUE LIGHT BLOCKING",
                     "PHOTOCHROMIC",
-                    "DRIVE SAFE",
-                    "UV PROTECTION"
+                    "NIGHT DRIVE COATING"
                 ],
                 "limits": {
                     "sph_from": 0,
@@ -102,8 +115,13 @@
                 "selling": 600000,
                 "features": [
                     "HIGH INDEX 1.67",
-                    "SUPER ANTI-REFLECTIVE",
-                    "THIN & LIGHT"
+                    "UV PROTECTION",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING"
                 ],
                 "limits": {
                     "sph_from": 0,
@@ -121,8 +139,8 @@
                 "selling": 90000,
                 "features": [
                     "UV PROTECTION",
-                    "SCRATCH-RESISTANT",
-                    "ANTI-REFLECTIVE"
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING"
                 ],
                 "limits": {
                     "sph_from": 0,
@@ -141,9 +159,9 @@
                 "cost": 18000,
                 "selling": 90000,
                 "features": [
-                    "HARD MULTI COAT",
-                    "BIFOCAL",
-                    "UV PROTECTION"
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING"
                 ],
                 "limits": {
                     "sph_from": 0,
@@ -152,7 +170,7 @@
                     "cyl_to": 0,
                     "add_from": 0,
                     "add_to": 0,
-                    "comb_max": -1000,
+                    "comb_max": 0,
                     "note": "Reading power must not exceed distance SPH. If exceeded, order from lab."
                 }
             },
@@ -161,9 +179,9 @@
                 "selling": 250000,
                 "features": [
                     "PHOTOCHROMIC",
-                    "BIFOCAL",
-                    "COLOR ADAPTIVE",
-                    "UV PROTECTION"
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING"
                 ],
                 "limits": {
                     "sph_from": 0,
@@ -172,7 +190,7 @@
                     "cyl_to": 0,
                     "add_from": 0,
                     "add_to": 0,
-                    "comb_max": -1000,
+                    "comb_max": 0,
                     "note": "Reading power must not exceed distance SPH. If exceeded, order from lab."
                 }
             }
@@ -182,18 +200,18 @@
                 "cost": 38000,
                 "selling": 0,
                 "features": [
-                    "PROGRESSIVE",
-                    "HARD MULTI COAT",
-                    "UV PROTECTION"
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING"
                 ],
                 "limits": {
-                    "sph_from": 0,
+                    "sph_from": 200,
                     "sph_to": -200,
                     "cyl_from": 0,
                     "cyl_to": 0,
-                    "add_from": 0,
-                    "add_to": 0,
-                    "comb_max": -1000,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": 0,
                     "note": ""
                 }
             },
@@ -201,18 +219,19 @@
                 "cost": 60000,
                 "selling": 0,
                 "features": [
-                    "PROGRESSIVE",
-                    "PHOTOCHROMIC",
-                    "COLOR ADAPTIVE"
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "PHOTOCHROMIC"
                 ],
                 "limits": {
-                    "sph_from": 0,
+                    "sph_from": 200,
                     "sph_to": -200,
                     "cyl_from": 0,
                     "cyl_to": 0,
-                    "add_from": 0,
-                    "add_to": 0,
-                    "comb_max": -1000,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": 0,
                     "note": ""
                 }
             },
@@ -220,18 +239,19 @@
                 "cost": 60000,
                 "selling": 0,
                 "features": [
-                    "PROGRESSIVE",
-                    "ANTI-BLUE RAY",
-                    "UV PROTECTION"
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "BLUE LIGHT BLOCKING"
                 ],
                 "limits": {
-                    "sph_from": 0,
+                    "sph_from": 200,
                     "sph_to": -200,
                     "cyl_from": 0,
                     "cyl_to": 0,
-                    "add_from": 0,
-                    "add_to": 0,
-                    "comb_max": -1000,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": 0,
                     "note": ""
                 }
             },
@@ -239,39 +259,46 @@
                 "cost": 120000,
                 "selling": 0,
                 "features": [
-                    "PROGRESSIVE",
-                    "ANTI-BLUE RAY",
                     "PHOTOCHROMIC",
-                    "COLOR ADAPTIVE"
+                    "BLUE LIGHT BLOCKING",
+                    "SCRATCH-RESISTANT COATING",
+                    "UV PROTECTION",
+                    "ANTI-REFLECTIVE (AR) COATING"
                 ],
                 "limits": {
-                    "sph_from": 0,
+                    "sph_from": 200,
                     "sph_to": -200,
                     "cyl_from": 0,
                     "cyl_to": 0,
-                    "add_from": 0,
-                    "add_to": 0,
-                    "comb_max": -1000,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": 0,
                     "note": ""
                 }
             },
             "BLUECHROMIC ONE-DRIVE": {
                 "cost": 180000,
-                "selling": 0,
+                "selling": 1000000,
                 "features": [
-                    "PROGRESSIVE",
-                    "ANTI-BLUE RAY",
                     "PHOTOCHROMIC",
-                    "DRIVE SAFE"
+                    "UV PROTECTION",
+                    "HIGH-INDEX UV400 PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SUPER HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING",
+                    "NIGHT DRIVE COATING",
+                    "SMUDGE-RESISTANT"
                 ],
                 "limits": {
-                    "sph_from": 0,
+                    "sph_from": 200,
                     "sph_to": -200,
                     "cyl_from": 0,
                     "cyl_to": 0,
-                    "add_from": 0,
-                    "add_to": 0,
-                    "comb_max": -1000,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": 0,
                     "note": ""
                 }
             }
@@ -324,9 +351,9 @@
                 "cost": 96000,
                 "selling": 285000,
                 "features": [
-                    "HARD MULTI COAT",
-                    "CUSTOM RX",
-                    "UV PROTECTION"
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING"
                 ],
                 "limits": {
                     "sph_from": 0,
@@ -343,9 +370,12 @@
                 "cost": 114000,
                 "selling": 450000,
                 "features": [
-                    "SUPER HARD MULTI COAT",
-                    "CUSTOM RX",
-                    "UV PROTECTION"
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SUPER HYDROPHOBIC",
+                    "SMUDGE-RESISTANT",
+                    "ANTI-STATIC"
                 ],
                 "limits": {
                     "sph_from": 0,
@@ -362,18 +392,19 @@
                 "cost": 150000,
                 "selling": 650000,
                 "features": [
-                    "LENTICULAR",
-                    "HARD MULTI COAT",
-                    "HIGH POWER RX"
+                    "HIGH POWER RX",
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING"
                 ],
                 "limits": {
                     "sph_from": 0,
-                    "sph_to": -1100,
+                    "sph_to": 0,
                     "cyl_from": -25,
                     "cyl_to": -400,
                     "add_from": 0,
                     "add_to": 0,
-                    "comb_max": -1100,
+                    "comb_max": 0,
                     "note": ""
                 }
             },
@@ -381,18 +412,22 @@
                 "cost": 180000,
                 "selling": 800000,
                 "features": [
-                    "LENTICULAR",
-                    "SUPER HARD MULTI COAT",
-                    "HIGH POWER RX"
+                    "HIGH POWER RX",
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SUPER HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "SMUDGE-RESISTANT"
                 ],
                 "limits": {
                     "sph_from": 0,
-                    "sph_to": -1100,
+                    "sph_to": 0,
                     "cyl_from": -25,
                     "cyl_to": -400,
                     "add_from": 0,
                     "add_to": 0,
-                    "comb_max": -1100,
+                    "comb_max": 0,
                     "note": ""
                 }
             },
@@ -401,18 +436,22 @@
                 "selling": 1600000,
                 "features": [
                     "HIGH INDEX 1.67",
-                    "SUPER ANTI-REFLECTIVE",
-                    "THIN & LIGHT",
-                    "CUSTOM RX"
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING"
                 ],
                 "limits": {
-                    "sph_from": 0,
-                    "sph_to": -1100,
+                    "sph_from": -300,
+                    "sph_to": -1400,
                     "cyl_from": -25,
                     "cyl_to": -400,
                     "add_from": 0,
                     "add_to": 0,
-                    "comb_max": -1100,
+                    "comb_max": -1400,
                     "note": ""
                 }
             }

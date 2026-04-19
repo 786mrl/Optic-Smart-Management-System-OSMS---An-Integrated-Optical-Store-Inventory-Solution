@@ -66,9 +66,17 @@
     }
 
     // Detect if category uses CYL field
-    function catHasCyl($cat) {
+    // Rules:
+    //   - LAB group: always has CYL (all categories).
+    //   - STOCK group: only Single Vision has CYL.
+    //   - Other/unknown groups: Kryptok/Bifocal/Flattop excluded (legacy behavior).
+    function catHasCyl($cat, $group = '') {
         $u = strtoupper(trim($cat));
-        return strpos($u,'KRYPTOK') === false && strpos($u,'BIFOCAL') === false && strpos($u,'FLATTOP') === false;
+        if ($group === 'lab')   return true;
+        if ($group === 'stock') return ($u === 'SINGLE VISION' || $u === 'SV');
+        return strpos($u,'KRYPTOK') === false
+            && strpos($u,'BIFOCAL') === false
+            && strpos($u,'FLATTOP') === false;
     }
 
     // ── POST handlers ──────────────────────────────────────────────────
@@ -350,6 +358,75 @@
             .btn-add-feature { background:#1a3a3c; color:#00adb5; border:1px solid #1e4a4d; border-radius:8px; padding:7px 14px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap; flex-shrink:0; transition:all .2s; }
             .btn-add-feature:hover { background:#00adb5; color:#fff; border-color:#00adb5; }
 
+            /* ── Preset feature quick-select ─────────────────────────── */
+            .features-preset-label { font-size:9px; font-weight:600; text-transform:uppercase; letter-spacing:.5px; color:#4b5563; margin:2px 0 6px; }
+            .features-selected-label { font-size:9px; font-weight:600; text-transform:uppercase; letter-spacing:.5px; color:#4b5563; margin:12px 0 6px; }
+            .preset-features-grid {
+                display:flex; flex-wrap:wrap; gap:5px;
+                padding:10px; background:#1c1f25;
+                border:1px solid #2a2d34; border-radius:8px;
+                margin-bottom:4px;
+            }
+            .preset-feat-btn {
+                display:inline-flex; align-items:center; gap:4px;
+                background:#1e2127; color:#6b7280;
+                border:1px solid #2e3138; border-radius:16px;
+                padding:4px 10px; font-size:11px; font-weight:500;
+                cursor:pointer; transition:all .15s; line-height:1.3;
+            }
+            .preset-feat-btn:hover { border-color:#4b5563; color:#9ca3af; }
+            .preset-feat-btn.active {
+                background:#162829; color:#2dd4bf;
+                border-color:#1e4a4d; font-weight:600;
+            }
+            .preset-feat-btn.active:hover { background:#1a3537; border-color:#2a6668; }
+            .preset-feat-check { font-size:10px; color:#2dd4bf; }
+
+            /* ── Last-opened / previously-opened card markers ────────── */
+            /* Last-opened: golden glow + golden index badge + "LAST EDITED" badge */
+            .lens-card.lens-last-opened {
+                border-color:#fbbf24 !important;
+                box-shadow:0 0 0 1px rgba(251,191,36,0.35), 0 3px 12px rgba(251, 191, 36, 0.18) !important;
+            }
+            .lens-card.lens-last-opened .lens-card-index {
+                background:#fbbf24; color:#1f1611;
+            }
+            .lens-last-opened-badge {
+                display:none; position:absolute;
+                top:-9px; left:58px;
+                background:linear-gradient(90deg,#fbbf24,#f59e0b);
+                color:#1f1611; font-size:9px; font-weight:800;
+                letter-spacing:.7px; padding:2px 8px;
+                border-radius:10px; text-transform:uppercase;
+                white-space:nowrap; z-index:2;
+                box-shadow:0 1px 3px rgba(251,191,36,0.35);
+            }
+            .lens-card.lens-last-opened .lens-last-opened-badge { display:inline-block; }
+
+            /* Previously-opened: subtle grey dot at top-left */
+            .lens-prev-opened-dot {
+                display:none; position:absolute;
+                top:-4px; left:58px;
+                width:7px; height:7px; border-radius:50%;
+                background:#9ca3af; z-index:2;
+                box-shadow:0 0 0 2px #262932;
+            }
+            .lens-card.lens-previously-opened .lens-prev-opened-dot { display:inline-block; }
+
+            /* Jump-to-last-edited button */
+            .jump-last-btn {
+                background:#3a2f12; color:#fbbf24;
+                border:1px solid #5a4a1e; border-radius:8px;
+                padding:6px 12px; font-size:11px; font-weight:600;
+                cursor:pointer; white-space:nowrap;
+                display:none; align-items:center; gap:6px;
+                transition:all .2s;
+            }
+            .jump-last-btn:hover { background:#fbbf24; color:#1f1611; border-color:#fbbf24; }
+            .jump-last-btn.visible { display:inline-flex; }
+            .jump-last-btn-dot { width:6px; height:6px; border-radius:50%; background:#fbbf24; }
+            .jump-last-btn:hover .jump-last-btn-dot { background:#1f1611; }
+
             /* ── Divider between sections inside card ────────────────── */
             .card-divider { border:none; border-top:1px solid #2e3138; margin:14px 0; }
 
@@ -546,10 +623,13 @@
                                 <!-- Features -->
                                 <div class="form-field">
                                     <label>Features</label>
+                                    <div class="features-preset-label" style="margin-top:0;">Quick select &mdash; click to toggle:</div>
+                                    <div class="preset-features-grid" id="preset-new_lense"></div>
+                                    <div class="features-selected-label">Selected features:</div>
                                     <div class="features-tag-wrapper" id="tags-new_lense" style="margin-bottom:8px;min-height:20px;"></div>
                                     <div class="feature-add-row">
                                         <input type="text" id="feat-input-new_lense" class="feature-add-input uppercase-input"
-                                            placeholder="Type features, separate with comma (e.g. UV, ANTI-GLARE)"
+                                            placeholder="Or type custom feature, separate with comma"
                                             onkeydown="handleFeatureKeydown(event,'new_lense')"
                                             oninput="handleFeatureInput(this,'new_lense')">
                                         <button type="button" class="btn-add-feature" onclick="addFeatureTag('new_lense')">+ Add</button>
@@ -630,6 +710,13 @@
                                 <label>Category</label>
                                 <select id="filter-category" class="input-field" onchange="filterLenses()"></select>
                             </div>
+                            <div style="flex:0 0 auto;">
+                                <label style="visibility:hidden;">Jump</label>
+                                <button type="button" id="jump-last-btn" class="jump-last-btn" onclick="jumpToLastEdited()" title="Jump to the last lens you edited">
+                                    <span class="jump-last-btn-dot"></span>
+                                    Jump to Last Edited
+                                </button>
+                            </div>
                         </div>
 
                         <div id="lense-display-container" style="width:100%;">
@@ -638,7 +725,7 @@
                             foreach ($data as $group_key => $categories):
                                 foreach ($categories as $cat_name => $lenses):
                                     $has_add  = catHasAdd($cat_name);
-                                    $has_cyl  = catHasCyl($cat_name);
+                                    $has_cyl  = catHasCyl($cat_name, $group_key);
                         ?>
                         <div class="lense-group-wrapper"
                             data-group="<?php echo htmlspecialchars($group_key); ?>"
@@ -666,8 +753,13 @@
                                     $lim      = is_array($prices) ? ($prices['limits']   ?? $DEFAULT_LIMITS) : $DEFAULT_LIMITS;
                                     $lim      = array_merge($DEFAULT_LIMITS, $lim); // fill any missing keys
                                 ?>
-                                <div class="lens-card collapsed">
+                                <div class="lens-card collapsed"
+                                    data-group="<?php echo htmlspecialchars($group_key);?>"
+                                    data-category="<?php echo htmlspecialchars($cat_name);?>"
+                                    data-name="<?php echo htmlspecialchars($name);?>">
                                     <span class="lens-card-index">#<?php echo str_pad($card_index, 2, '0', STR_PAD_LEFT); ?></span>
+                                    <span class="lens-prev-opened-dot" title="You've opened this lens before"></span>
+                                    <span class="lens-last-opened-badge">Last Edited</span>
                                     <button type="button" class="btn-delete-lens"
                                         data-group="<?php echo htmlspecialchars($group_key);?>"
                                         data-category="<?php echo htmlspecialchars($cat_name);?>"
@@ -718,6 +810,9 @@
 
                                     <!-- Features -->
                                     <div class="lens-section-label">Features</div>
+                                    <div class="features-preset-label">Quick select &mdash; click to toggle:</div>
+                                    <div class="preset-features-grid" id="preset-<?php echo $sk;?>"></div>
+                                    <div class="features-selected-label">Selected features:</div>
                                     <div class="features-tag-wrapper"
                                         id="tags-<?php echo $sk;?>"
                                         data-safe-key="<?php echo $sk;?>"
@@ -725,7 +820,7 @@
                                     </div>
                                     <div class="feature-add-row">
                                         <input type="text" id="feat-input-<?php echo $sk;?>" class="feature-add-input uppercase-input"
-                                            placeholder="Type features, separate with comma (e.g. UV, ANTI-GLARE)"
+                                            placeholder="Or type custom feature, separate with comma"
                                             onkeydown="handleFeatureKeydown(event,'<?php echo $sk;?>')"
                                             oninput="handleFeatureInput(this,'<?php echo $sk;?>')">
                                         <button type="button" class="btn-add-feature" onclick="addFeatureTag('<?php echo $sk;?>')">+ Add</button>
@@ -919,10 +1014,46 @@
             }
 
             // ─── Feature tags ─────────────────────────────────────────────
+            // Preset feature options (order matters — shown as quick-select chips)
+            const PRESET_FEATURES = [
+                'UV Protection',
+                'High-Index UV400 Protection',
+                'Scratch-Resistant Coating',
+                'Anti-Reflective (AR) Coating',
+                'Smudge-Resistant',
+                'Hydrophobic',
+                'Super Hydrophobic',
+                'Anti-Static',
+                'Blue Light Blocking',
+                'Impact-Resistant',
+                'Photochromic',
+                'Night Drive Coating'
+            ];
             const lenseFeatures = {};
             function initFeatureTags(k, f) {
                 // Normalize existing features to UPPERCASE on load
                 lenseFeatures[k] = Array.isArray(f) ? f.map(t=>String(t).trim().toUpperCase()).filter(t=>t) : [];
+                renderFeatureTags(k);
+            }
+            function renderPresetFeatures(k) {
+                const c = document.getElementById('preset-'+k); if(!c) return;
+                const current = (lenseFeatures[k]||[]).map(t=>t.toUpperCase());
+                c.innerHTML = PRESET_FEATURES.map(feat => {
+                    const upper = feat.toUpperCase();
+                    const active = current.includes(upper);
+                    const safe = upper.replace(/'/g,"\\'");
+                    return `<button type="button" class="preset-feat-btn${active?' active':''}" onclick="togglePresetFeature('${k}','${safe}')" title="${active?'Click to remove':'Click to add'}">${escapeHtml(feat)}${active?'<span class="preset-feat-check">&#10003;</span>':''}</button>`;
+                }).join('');
+            }
+            function togglePresetFeature(k, feat) {
+                if (!lenseFeatures[k]) lenseFeatures[k] = [];
+                const upper = String(feat).toUpperCase();
+                const idx = lenseFeatures[k].findIndex(f => String(f).toUpperCase() === upper);
+                if (idx >= 0) {
+                    lenseFeatures[k].splice(idx, 1);
+                } else {
+                    lenseFeatures[k].push(upper);
+                }
                 renderFeatureTags(k);
             }
             function renderFeatureTags(k) {
@@ -932,6 +1063,7 @@
                     ? '<span class="no-features-text">No features added yet</span>'
                     : f.map((t,i)=>`<span class="feature-tag"><span class="feature-tag-dot"></span>${escapeHtml(t)}<button type="button" class="btn-remove-tag" onclick="removeFeatureTag('${k}',${i})" title="Remove">&#215;</button></span>`).join('');
                 syncFeaturesHidden(k);
+                renderPresetFeatures(k);
             }
             function removeFeatureTag(k,i) { if(lenseFeatures[k]) { lenseFeatures[k].splice(i,1); renderFeatureTags(k); } }
             function addFeatureTag(k) {
@@ -994,10 +1126,97 @@
                 });
             }
 
-            // ─── Collapse / expand lens card ─────────────────────────────
+            // ─── Collapse / expand lens card + track last-opened ─────────
+            const LAST_OPENED_KEY    = 'lense_price_last_opened';
+            const OPENED_HISTORY_KEY = 'lense_price_opened_history';
+
+            function cardIdFromEl(card) {
+                const g = card.dataset.group || '';
+                const c = card.dataset.category || '';
+                const n = card.dataset.name || '';
+                if (!g || !c || !n) return null;
+                return { id: g+'||'+c+'||'+n, group: g, category: c, name: n };
+            }
+            function readLast() {
+                try { return JSON.parse(localStorage.getItem(LAST_OPENED_KEY) || 'null'); }
+                catch(e) { return null; }
+            }
+            function readHistory() {
+                try { return JSON.parse(localStorage.getItem(OPENED_HISTORY_KEY) || '{}'); }
+                catch(e) { return {}; }
+            }
+            function markCardAsOpened(card) {
+                const meta = cardIdFromEl(card); if (!meta) return;
+                const now = Date.now();
+                try {
+                    localStorage.setItem(LAST_OPENED_KEY, JSON.stringify({...meta, timestamp: now}));
+                    const hist = readHistory();
+                    hist[meta.id] = now;
+                    localStorage.setItem(OPENED_HISTORY_KEY, JSON.stringify(hist));
+                } catch(e) {}
+                applyOpenedMarkers();
+            }
+            function applyOpenedMarkers() {
+                const last = readLast();
+                const hist = readHistory();
+                document.querySelectorAll('.lens-card').forEach(card => {
+                    const meta = cardIdFromEl(card); if (!meta) return;
+                    card.classList.remove('lens-last-opened','lens-previously-opened');
+                    if (last && last.id === meta.id) {
+                        card.classList.add('lens-last-opened');
+                    } else if (hist[meta.id]) {
+                        card.classList.add('lens-previously-opened');
+                    }
+                });
+                // Toggle visibility of the "Jump to Last Edited" button
+                const jumpBtn = document.getElementById('jump-last-btn');
+                if (jumpBtn) {
+                    if (last) jumpBtn.classList.add('visible');
+                    else      jumpBtn.classList.remove('visible');
+                }
+            }
+            function jumpToLastEdited() {
+                const last = readLast(); if (!last) return;
+                // Switch filters to the correct group/category
+                const gs = document.getElementById('filter-group');
+                const cs = document.getElementById('filter-category');
+                if (gs && gs.value !== last.group) {
+                    gs.value = last.group;
+                    updateCategoryFilter();
+                }
+                if (cs) {
+                    // Give updateCategoryFilter a beat to repopulate options
+                    setTimeout(() => {
+                        if (cs.value !== last.category) {
+                            cs.value = last.category;
+                            filterLenses();
+                        }
+                        // Open the parent <details> and scroll to the card
+                        const card = document.querySelector(
+                            '.lens-card[data-group="'+cssEscape(last.group)+'"][data-category="'+cssEscape(last.category)+'"][data-name="'+cssEscape(last.name)+'"]'
+                        );
+                        if (card) {
+                            const details = card.closest('details.lense-details');
+                            if (details) details.open = true;
+                            setTimeout(() => {
+                                card.scrollIntoView({behavior:'smooth', block:'center'});
+                            }, 50);
+                        }
+                    }, 30);
+                }
+            }
+            // Minimal CSS.escape polyfill for attr selector use
+            function cssEscape(s) {
+                return String(s).replace(/(["\\])/g, '\\$1');
+            }
+
             function toggleLensCard(btn) {
                 const card = btn.closest('.lens-card');
-                if (card) card.classList.toggle('collapsed');
+                if (!card) return;
+                const wasCollapsed = card.classList.contains('collapsed');
+                card.classList.toggle('collapsed');
+                // Mark as opened only when expanding (not when collapsing)
+                if (wasCollapsed) markCardAsOpened(card);
             }
 
             // ─── Delete lens ─────────────────────────────────────────────
@@ -1035,6 +1254,136 @@
                 updateAddDefaults();
             }
 
+            // ─── Rx input helpers: +sign formatting, step, arrow-key nav ──
+            // Parse any rx-input string to an integer (strip "+", spaces, junk)
+            function rxParse(s) {
+                s = String(s == null ? '' : s).trim();
+                if (s === '' || s === '-' || s === '+') return 0;
+                const n = parseInt(s.replace(/[^\-0-9]/g, ''), 10);
+                return isNaN(n) ? 0 : n;
+            }
+            // Format integer → "+100" / "-100" / "0"
+            function rxFormat(n) {
+                n = parseInt(n, 10) || 0;
+                if (n > 0) return '+' + n;
+                return String(n);
+            }
+            // Increment / decrement value by its step (default 25)
+            function rxStep(input, delta) {
+                if (input.readOnly || input.disabled) return;
+                const step = parseInt(input.getAttribute('step') || input.dataset.step || '25', 10);
+                input.value = rxFormat(rxParse(input.value) + delta * step);
+                try { input.select(); } catch(e) {}
+            }
+            // List of navigable rx-inputs within the same rx-limits-body or add-form-card
+            function rxGetNavList(fromInput) {
+                const scope = fromInput.closest('.rx-limits-body')
+                           || fromInput.closest('.add-form-card')
+                           || document.body;
+                return Array.from(scope.querySelectorAll('input.rx-input'))
+                    .filter(el => !el.disabled && !el.readOnly
+                               && !el.classList.contains('rx-locked')
+                               && !el.classList.contains('rx-locked-hard')
+                               && el.offsetParent !== null);
+            }
+            // Move focus to previous (dir=-1) or next (dir=1) rx-input
+            function rxMoveFocus(fromInput, dir) {
+                const list = rxGetNavList(fromInput);
+                const idx  = list.indexOf(fromInput);
+                if (idx < 0) return false;
+                const target = list[idx + dir];
+                if (!target) return false;
+                target.focus();
+                setTimeout(() => { try { target.select(); } catch(e) {} }, 0);
+                return true;
+            }
+            // Normalize stored value to proper "+N / -N / 0" format
+            function rxNormalize(input) {
+                if (!input) return;
+                if (input.value === '' && !input.readOnly) return; // keep placeholder
+                input.value = rxFormat(rxParse(input.value));
+            }
+            // Convert rx-input from type=number to type=text so the "+" sign stays visible.
+            // Called once on DOM ready — after this, up/down/left/right are handled by our keydown listener below.
+            function rxConvertToText() {
+                document.querySelectorAll('input.rx-input').forEach(el => {
+                    const step = el.getAttribute('step') || '25';
+                    if (el.type === 'number') el.type = 'text';
+                    el.setAttribute('inputmode', 'numeric');
+                    el.setAttribute('autocomplete', 'off');
+                    if (!el.dataset.step) el.dataset.step = step;
+                    rxNormalize(el);
+                });
+            }
+            // Global keydown: Up/Down steps the value; Left/Right jumps between rx-inputs
+            // (besides Tab). Left/Right only jumps when the caret is at a boundary OR the
+            // text is fully selected — otherwise normal caret movement is preserved.
+            document.addEventListener('keydown', function(e) {
+                const t = e.target;
+                if (!t || !t.classList || !t.classList.contains('rx-input')) return;
+                if (t.tagName !== 'INPUT') return;
+                const key = e.key;
+                if (key === 'ArrowUp') {
+                    e.preventDefault();
+                    rxStep(t, 1);
+                } else if (key === 'ArrowDown') {
+                    e.preventDefault();
+                    rxStep(t, -1);
+                } else if (key === 'ArrowLeft') {
+                    const len = t.value.length;
+                    const fullSel = (t.selectionStart === 0 && t.selectionEnd === len && len > 0);
+                    const atStart = (t.selectionStart === 0 && t.selectionEnd === 0);
+                    if (fullSel || atStart) {
+                        if (rxMoveFocus(t, -1)) e.preventDefault();
+                    }
+                } else if (key === 'ArrowRight') {
+                    const len = t.value.length;
+                    const fullSel = (t.selectionStart === 0 && t.selectionEnd === len && len > 0);
+                    const atEnd   = (t.selectionStart === len && t.selectionEnd === len);
+                    if (fullSel || atEnd) {
+                        if (rxMoveFocus(t, 1)) e.preventDefault();
+                    }
+                }
+            });
+            // Re-format value on blur so "100" typed by user becomes "+100"
+            document.addEventListener('focusout', function(e) {
+                const t = e.target;
+                if (!t || !t.classList || !t.classList.contains('rx-input')) return;
+                if (t.tagName !== 'INPUT') return;
+                rxNormalize(t);
+            });
+
+            // ─── CYL show/hide based on Group × Category ─────────────────
+            // Rules (match PHP catHasCyl):
+            //   - LAB group: always show CYL.
+            //   - STOCK group: only Single Vision has CYL.
+            //   - Fallback: Kryptok/Bifocal/Flattop never have CYL.
+            function updateCylVisibility() {
+                const grp       = document.getElementById('new_group_select');
+                const catHidden = document.getElementById('new_category_hidden');
+                const cylFrom   = document.getElementById('new_cyl_from');
+                const cylTo     = document.getElementById('new_cyl_to');
+                if (!grp || !catHidden || !cylFrom || !cylTo) return;
+                const cat  = (catHidden.value || '').toUpperCase().trim();
+                const isSV = (cat === 'SINGLE VISION' || cat === 'SV');
+                let hide;
+                if (grp.value === 'lab') {
+                    hide = false;
+                } else if (grp.value === 'stock') {
+                    hide = !isSV;
+                } else {
+                    hide = cat.indexOf('KRYPTOK') !== -1
+                         || cat.indexOf('BIFOCAL') !== -1
+                         || cat.indexOf('FLATTOP') !== -1;
+                }
+                const cylGroup = cylFrom.closest('.rx-group');
+                if (cylGroup) cylGroup.style.display = hide ? 'none' : '';
+                if (hide) {
+                    cylFrom.value = rxFormat(0);
+                    cylTo.value   = rxFormat(0);
+                }
+            }
+
             // ─── ADD field lock / defaults based on Category ─────────────
             // SINGLE VISION → ADD forced to 0, fully locked (no double-click)
             // Other categories → ADD default +100 → +300, locked but double-click unlocks
@@ -1050,20 +1399,21 @@
                     el.readOnly = true;
                 });
                 if (isSV) {
-                    addFrom.value = 0;
-                    addTo.value   = 0;
+                    addFrom.value = rxFormat(0);
+                    addTo.value   = rxFormat(0);
                     addFrom.classList.add('rx-locked-hard');
                     addTo.classList.add('rx-locked-hard');
                     addFrom.title = 'Not applicable for Single Vision';
                     addTo.title   = 'Not applicable for Single Vision';
                 } else {
-                    addFrom.value = 100;
-                    addTo.value   = 300;
+                    addFrom.value = rxFormat(100);
+                    addTo.value   = rxFormat(300);
                     addFrom.classList.add('rx-locked');
                     addTo.classList.add('rx-locked');
                     addFrom.title = 'Double-click to edit';
                     addTo.title   = 'Double-click to edit';
                 }
+                updateCylVisibility();
             }
 
             // ─── Default Rx limits based on Group ────────────────────────
@@ -1077,12 +1427,13 @@
                 const grp = document.getElementById('new_group_select');
                 if (!grp) return;
                 const d = RX_DEFAULTS[grp.value] || RX_DEFAULTS.stock;
-                const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+                const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = rxFormat(v); };
                 set('new_sph_from', d.sph_from);
                 set('new_sph_to',   d.sph_to);
                 set('new_cyl_from', d.cyl_from);
                 set('new_cyl_to',   d.cyl_to);
                 set('new_comb_max', d.comb_max);
+                updateCylVisibility();
             }
 
             // ─── Thousand shortcut: typing "180" becomes "180,000" on blur ──
@@ -1118,6 +1469,13 @@
                     initFeatureTags(el.getAttribute('data-safe-key'), JSON.parse(el.getAttribute('data-features')||'[]'));
                 });
                 initFeatureTags('new_lense',[]);
+                // Render preset feature buttons for the "Add New Lens" form too
+                renderPresetFeatures('new_lense');
+                // Apply last-opened / previously-opened markers
+                applyOpenedMarkers();
+                // Convert all .rx-input from type=number to type=text so the "+" sign
+                // for positive values stays visible. Must run before rx default setters.
+                rxConvertToText();
                 updateRxLimitsDefault();
                 updateAddDefaults();
                 // Double-click on a soft-locked rx input unlocks it for editing
