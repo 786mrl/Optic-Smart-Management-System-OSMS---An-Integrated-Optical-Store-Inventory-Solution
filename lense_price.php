@@ -181,7 +181,7 @@
             $resp['selling']    = $selling;
             $resp['features']   = $features;
             if ($resp['message'] === '') {
-                $resp['message'] = "Tersimpan: $save_name";
+                $resp['message'] = "Saved: $save_name";
             }
             echo json_encode($resp); exit;
         }
@@ -2044,8 +2044,8 @@
                     // Clear dirty indicator on the button
                     if (btn) btn.classList.remove('is-dirty');
 
-                    setLensStatus(card, 'ok', '✓ Tersimpan');
-                    showToast(json.message || ('Tersimpan: ' + (json.saved_name || data.newName)),
+                    setLensStatus(card, 'ok', '✓ Saved');
+                    showToast(json.message || ('Saved: ' + (json.saved_name || data.newName)),
                               json.renamed ? 'warn' : 'ok');
 
                 } catch (err) {
