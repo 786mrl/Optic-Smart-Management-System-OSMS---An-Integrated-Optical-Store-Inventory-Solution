@@ -82,6 +82,110 @@
     // ── POST handlers ──────────────────────────────────────────────────
     if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
+        // ── AJAX: save ONE lens at a time (per-lens save) ────────────────
+        // Avoids the "Save All" lost-update problem where a stale form would
+        // overwrite other lenses that had been edited in another tab.
+        // Expects POST keys: save_single_lens=1, group, old_category, old_name,
+        // new_name, cost, selling, features (comma-separated), limits[*].
+        // Responds with JSON; does NOT render the page.
+        if (isset($_POST['save_single_lens'])) {
+            header('Content-Type: application/json; charset=utf-8');
+            $resp = ['ok' => false, 'message' => '', 'saved_name' => '', 'limits' => [], 'renamed' => false];
+
+            $group    = $_POST['group']        ?? '';
+            $old_cat  = uc_trim($_POST['old_category'] ?? '');
+            $old_name = uc_trim($_POST['old_name']     ?? '');
+            $new_cat  = uc_trim($_POST['new_category'] ?? $old_cat);
+            if ($new_cat === '') $new_cat = $old_cat;
+            $raw_new  = $_POST['new_name'] ?? $old_name;
+            $new_name = uc_trim($raw_new);
+            if ($new_name === '') $new_name = $old_name;
+
+            if ($group === '' || $old_cat === '' || $old_name === '') {
+                $resp['message'] = 'Invalid request: missing group / category / name.';
+                echo json_encode($resp); exit;
+            }
+            if (!isset($data[$group][$old_cat][$old_name])) {
+                $resp['message'] = 'Lens not found on server. Please refresh the page.';
+                echo json_encode($resp); exit;
+            }
+
+            $cost     = (float)($_POST['cost']    ?? 0);
+            $selling  = (float)($_POST['selling'] ?? 0);
+            $features = array_values(array_filter(
+                array_map('uc_trim', explode(',', $_POST['features'] ?? '')),
+                function($x){ return $x !== ''; }
+            ));
+
+            $lp = $_POST['limits'] ?? [];
+            $limits = [
+                'sph_from' => (int)round((float)($lp['sph_from'] ?? 0)),
+                'sph_to'   => (int)round((float)($lp['sph_to']   ?? 0)),
+                'cyl_from' => (int)round((float)($lp['cyl_from'] ?? 0)),
+                'cyl_to'   => (int)round((float)($lp['cyl_to']   ?? 0)),
+                'add_from' => (int)round((float)($lp['add_from'] ?? 0)),
+                'add_to'   => (int)round((float)($lp['add_to']   ?? 0)),
+                'comb_max' => (int)round((float)($lp['comb_max'] ?? 0)),
+                'note'     => trim($lp['note'] ?? ''),
+            ];
+
+            // Handle rename / category change with collision suffix (same rule
+            // as the add_new_lense handler, for consistency).
+            $save_name = $new_name;
+            $is_rename_or_move = ($new_name !== $old_name) || ($new_cat !== $old_cat);
+            if ($is_rename_or_move
+                && isset($data[$group][$new_cat][$save_name])
+                && !($new_cat === $old_cat && $save_name === $old_name)) {
+                $suffix = 2;
+                while (isset($data[$group][$new_cat][$new_name.' ('.$suffix.')'])) $suffix++;
+                $save_name = $new_name.' ('.$suffix.')';
+                $resp['renamed']  = true;
+                $resp['message']  = "\"$new_name\" sudah ada di \"$new_cat\" — disimpan sebagai \"$save_name\".";
+            }
+
+            // Remove old entry (rename / move)
+            if ($is_rename_or_move || $save_name !== $old_name) {
+                unset($data[$group][$old_cat][$old_name]);
+                if (empty($data[$group][$old_cat])) unset($data[$group][$old_cat]);
+            }
+            if (!isset($data[$group][$new_cat])) $data[$group][$new_cat] = [];
+
+            $data[$group][$new_cat][$save_name] = [
+                'cost' => $cost, 'selling' => $selling,
+                'features' => $features, 'limits' => $limits,
+            ];
+
+            $ok = @file_put_contents($json_file, json_encode($data, JSON_PRETTY_PRINT));
+            if ($ok === false) {
+                $resp['message'] = 'Failed to write JSON file (check permissions).';
+                echo json_encode($resp); exit;
+            }
+
+            // Append to save_log for audit trail (same format as bulk save)
+            $log_file = 'data_json/save_log.txt';
+            $log_line = "[".date('Y-m-d H:i:s')."] save_single_lens by user="
+                      . ($_SESSION['username'] ?? $_SESSION['user'] ?? 'admin')
+                      . " — $group / $old_cat / $old_name"
+                      . ($is_rename_or_move ? " → $new_cat / $save_name" : "")
+                      . "  [sph {$limits['sph_from']}..{$limits['sph_to']}"
+                      . "  cyl {$limits['cyl_from']}..{$limits['cyl_to']}"
+                      . "  add {$limits['add_from']}..{$limits['add_to']}"
+                      . "  comb {$limits['comb_max']}]\n";
+            @file_put_contents($log_file, $log_line, FILE_APPEND);
+
+            $resp['ok']         = true;
+            $resp['saved_name'] = $save_name;
+            $resp['saved_cat']  = $new_cat;
+            $resp['limits']     = $limits;
+            $resp['cost']       = $cost;
+            $resp['selling']    = $selling;
+            $resp['features']   = $features;
+            if ($resp['message'] === '') {
+                $resp['message'] = "Tersimpan: $save_name";
+            }
+            echo json_encode($resp); exit;
+        }
+
         if (isset($_POST['save_prices'])) {
             // Rebuild entire tree so category + lens-name keys become UPPERCASE.
             $new_data        = [];
@@ -647,6 +751,72 @@
             .save-bar { margin-top:20px; padding:14px 20px; background:#1e2127; border:1px solid #2e3138; border-radius:12px; display:flex; justify-content:flex-end; }
             #form-price-list { width:100%; display:flex; flex-direction:column; align-items:center; }
 
+            /* ── Per-lens save button (inside each lens card) ────────── */
+            .lens-save-row {
+                display:flex; align-items:center; justify-content:flex-end;
+                gap:12px; margin-top:14px; padding-top:12px;
+                border-top:1px dashed #2e3138;
+            }
+            .lens-save-status {
+                font-size:11px; font-style:italic;
+                opacity:0; transition:opacity .25s;
+                min-height:14px;
+            }
+            .lens-save-status.show     { opacity:1; }
+            .lens-save-status.ok       { color:#34d399; font-style:normal; }
+            .lens-save-status.err      { color:#f87171; font-style:normal; }
+            .lens-save-status.pending  { color:#9ca3af; }
+            .btn-save-lens {
+                padding:8px 16px; border:1px solid #00adb5;
+                background:#0f2b2d; color:#00adb5;
+                border-radius:8px; cursor:pointer;
+                font-size:12px; font-weight:700; letter-spacing:.4px;
+                transition:all .2s; white-space:nowrap;
+            }
+            .btn-save-lens:hover  { background:#00adb5; color:#0f1115; box-shadow:0 0 0 3px rgba(0,173,181,.15); }
+            .btn-save-lens:active { transform:translateY(1px); }
+            .btn-save-lens:disabled {
+                opacity:.55; cursor:not-allowed;
+                background:#1e2127; color:#6b7280; border-color:#2e3138; box-shadow:none;
+            }
+            .btn-save-lens.is-dirty {
+                background:#2d2410; color:#fbbf24; border-color:#fbbf24;
+            }
+            .btn-save-lens.is-dirty:hover {
+                background:#fbbf24; color:#0f1115;
+            }
+            /* Read-only "all view" doesn't need the save row */
+            #all-view-container .lens-save-row { display:none !important; }
+
+            /* Banner that replaces the old "Save All Changes" bar */
+            .save-info-banner {
+                flex:1; text-align:center;
+                color:#9ca3af; font-size:12px; line-height:1.55;
+                padding:4px 12px;
+            }
+            .save-info-banner b { color:#00adb5; font-weight:700; }
+
+            /* ── Toast (slides in from bottom-right on save result) ── */
+            #save-toast-container {
+                position:fixed; bottom:24px; right:24px;
+                display:flex; flex-direction:column; gap:8px;
+                z-index:9999; pointer-events:none;
+            }
+            .save-toast {
+                min-width:240px; max-width:380px;
+                padding:12px 16px; border-radius:10px;
+                font-size:13px; font-weight:500; line-height:1.4;
+                box-shadow:0 8px 24px rgba(0,0,0,.45);
+                animation:toastIn .25s ease-out;
+                pointer-events:auto;
+            }
+            .save-toast.ok  { background:#052e24; color:#34d399; border:1px solid #065f46; }
+            .save-toast.err { background:#2a1210; color:#f87171; border:1px solid #7f1d1d; }
+            .save-toast.warn{ background:#2a1e0c; color:#fbbf24; border:1px solid #78350f; }
+            .save-toast.fade-out { animation:toastOut .3s ease-in forwards; }
+            @keyframes toastIn  { from { opacity:0; transform:translateX(20px); } to { opacity:1; transform:translateX(0); } }
+            @keyframes toastOut { to   { opacity:0; transform:translateX(20px); } }
+
             /* ── Mobile ──────────────────────────────────────────────── */
             @media (max-width:600px) {
                 .config-window   { padding:0 8px; box-sizing:border-box; }
@@ -833,7 +1003,7 @@
                     <!-- ════════════════════════════════════
                         PRICE LIST
                     ════════════════════════════════════ -->
-                    <form id="form-price-list" action="lense_price.php" method="POST">
+                    <form id="form-price-list" action="lense_price.php" method="POST" onsubmit="return false;">
                         <input type="hidden" name="last_group"    id="last_group"    value="<?php echo htmlspecialchars($selected_group); ?>">
                         <input type="hidden" name="last_category" id="last_category" value="<?php echo htmlspecialchars($selected_cat); ?>">
 
@@ -893,9 +1063,7 @@
                                     $features = is_array($prices) ? ($prices['features'] ?? []) : [];
                                     $lim      = is_array($prices) ? ($prices['limits']   ?? $DEFAULT_LIMITS) : $DEFAULT_LIMITS;
                                     $lim      = array_merge($DEFAULT_LIMITS, $lim); // fill any missing keys
-                                    // ── FIX: show CYL/ADD if category qualifies OR saved data is non-zero.
-                                    // Prevents silent hiding (and silent reset-to-0 on next save) of values
-                                    // that the user entered for custom / non-standard category names.
+                                    // Show CYL/ADD row if category qualifies OR saved data is non-zero
                                     $show_cyl = $has_cyl || ($lim['cyl_from'] != 0 || $lim['cyl_to'] != 0);
                                     $show_add = $has_add || ($lim['add_from'] != 0 || $lim['add_to'] != 0);
                                 ?>
@@ -1048,7 +1216,7 @@
                                                 </div>
                                             </div>
                                             <?php else: ?>
-                                            <!-- Hidden CYL: preserve saved value so a later "Save All Changes" doesn't silently zero it out -->
+                                            <!-- Hidden CYL: preserve saved value so it doesn't get silently zeroed -->
                                             <input type="hidden" name="price_limits[<?php echo $group_key;?>][<?php echo $cat_name;?>][<?php echo $name;?>][cyl_from]" value="<?php echo (int)$lim['cyl_from']; ?>">
                                             <input type="hidden" name="price_limits[<?php echo $group_key;?>][<?php echo $cat_name;?>][<?php echo $name;?>][cyl_to]"   value="<?php echo (int)$lim['cyl_to']; ?>">
                                             <?php endif; ?>
@@ -1074,7 +1242,7 @@
                                                 </div>
                                             </div>
                                             <?php else: ?>
-                                            <!-- Hidden ADD: preserve saved value so a later "Save All Changes" doesn't silently zero it out -->
+                                            <!-- Hidden ADD: preserve saved value so it doesn't get silently zeroed -->
                                             <input type="hidden" name="price_limits[<?php echo $group_key;?>][<?php echo $cat_name;?>][<?php echo $name;?>][add_from]" value="<?php echo (int)$lim['add_from']; ?>">
                                             <input type="hidden" name="price_limits[<?php echo $group_key;?>][<?php echo $cat_name;?>][<?php echo $name;?>][add_to]"   value="<?php echo (int)$lim['add_to']; ?>">
                                             <?php endif; ?>
@@ -1098,6 +1266,17 @@
 
                                         </div><!-- /.rx-limits-body -->
                                     </details>
+
+                                    <!-- Per-lens save button (AJAX, avoids "Save All" lost-update) -->
+                                    <div class="lens-save-row">
+                                        <span class="lens-save-status" aria-live="polite"></span>
+                                        <button type="button" class="btn-save-lens"
+                                            data-group="<?php echo htmlspecialchars($group_key);?>"
+                                            data-category="<?php echo htmlspecialchars($cat_name);?>"
+                                            data-name="<?php echo htmlspecialchars($name);?>">
+                                            <span class="lens-save-label">&#128190; Save this lens</span>
+                                        </button>
+                                    </div>
 
                                     </div><!-- /.lens-card-body -->
 
@@ -1138,7 +1317,6 @@
                                     $av_features = is_array($av_prices) ? ($av_prices['features'] ?? []) : [];
                                     $av_lim      = is_array($av_prices) ? ($av_prices['limits']   ?? $DEFAULT_LIMITS) : $DEFAULT_LIMITS;
                                     $av_lim      = array_merge($DEFAULT_LIMITS, $av_lim);
-                                    // ── FIX: same show-if-saved-non-zero logic as the editable Price List above
                                     $av_show_cyl = $av_has_cyl || ($av_lim['cyl_from'] != 0 || $av_lim['cyl_to'] != 0);
                                     $av_show_add = $av_has_add || ($av_lim['add_from'] != 0 || $av_lim['add_to'] != 0);
                                 ?>
@@ -1200,7 +1378,10 @@
                         </div><!-- /#all-view-container -->
 
                         <div class="save-bar" id="save-bar">
-                            <button type="submit" name="save_prices" class="btn-save" style="min-width:180px;">Save All Changes</button>
+                            <div class="save-info-banner">
+                                &#8505;&ensp;Each lens is saved individually using the <b>&#128190; Save this lens</b> button within its card.
+                                Unsaved changes will be lost if you navigate away from the page.
+                            </div>
                         </div>
                     </form>
 
@@ -1727,6 +1908,164 @@
                 }
             }
 
+            // ════════════════════════════════════════════════════════════════
+            //  PER-LENS SAVE — replaces the old "Save All Changes" flow.
+            //  Each lens card has its own Save button. Only that lens's data
+            //  is sent to the server (AJAX). Avoids the lost-update problem
+            //  where a stale form would overwrite other lenses.
+            // ════════════════════════════════════════════════════════════════
+
+            // Show a transient toast message in the bottom-right corner
+            function showToast(message, kind) {
+                const cont = document.getElementById('save-toast-container');
+                if (!cont) return;
+                const t = document.createElement('div');
+                t.className = 'save-toast ' + (kind || 'ok');
+                t.textContent = message;
+                cont.appendChild(t);
+                const lifetime = (kind === 'err') ? 6000 : 3500;
+                setTimeout(() => {
+                    t.classList.add('fade-out');
+                    setTimeout(() => t.remove(), 320);
+                }, lifetime);
+            }
+
+            // Set the small inline status label next to each Save button
+            function setLensStatus(card, kind, text) {
+                const status = card.querySelector('.lens-save-status');
+                if (!status) return;
+                status.className = 'lens-save-status show ' + (kind || '');
+                status.textContent = text || '';
+                if (kind === 'ok') {
+                    setTimeout(() => status.classList.remove('show'), 2500);
+                }
+            }
+
+            // Collect everything needed to save ONE lens from its card DOM
+            function collectLensCardData(card) {
+                const group     = card.dataset.group;
+                const oldCat    = card.dataset.category;
+                const oldName   = card.dataset.name;
+
+                // Rename input (lens name)
+                const nameInput = card.querySelector('.lens-name-input');
+                const newName   = nameInput ? nameInput.value.trim() : oldName;
+
+                // Cost & selling — hidden inputs hold the raw numeric value
+                const costHidden    = card.querySelector('input[name^="price_cost["]');
+                const sellingHidden = card.querySelector('input[name^="price_selling["]');
+                const cost    = costHidden    ? parseFloat(costHidden.value    || '0') : 0;
+                const selling = sellingHidden ? parseFloat(sellingHidden.value || '0') : 0;
+
+                // Features
+                const featHidden = card.querySelector('input[name^="price_features["]');
+                const features  = featHidden ? (featHidden.value || '') : '';
+
+                // Rx limits — collect all 8 keys. Hidden inputs exist for
+                // CYL/ADD when the category doesn't show them.
+                const limitKeys = ['sph_from','sph_to','cyl_from','cyl_to','add_from','add_to','comb_max','note'];
+                const limits = {};
+                limitKeys.forEach(k => {
+                    // Match the name attribute containing [k]
+                    const input = card.querySelector('[name$="[' + k + ']"]');
+                    limits[k] = input ? input.value : '';
+                });
+
+                return { group, oldCat, oldName, newName, cost, selling, features, limits };
+            }
+
+            // Send one lens save to the server via fetch()
+            async function saveLensCard(card) {
+                const btn    = card.querySelector('.btn-save-lens');
+                const data   = collectLensCardData(card);
+
+                if (!data.group || !data.oldCat || !data.oldName) {
+                    setLensStatus(card, 'err', 'Missing lens ID');
+                    return;
+                }
+
+                // Build form-encoded body
+                const body = new URLSearchParams();
+                body.append('save_single_lens', '1');
+                body.append('group',        data.group);
+                body.append('old_category', data.oldCat);
+                body.append('old_name',     data.oldName);
+                body.append('new_category', data.oldCat); // category change not supported from card UI
+                body.append('new_name',     data.newName);
+                body.append('cost',         String(data.cost));
+                body.append('selling',      String(data.selling));
+                body.append('features',     data.features);
+                Object.keys(data.limits).forEach(k => {
+                    body.append('limits[' + k + ']', data.limits[k]);
+                });
+
+                // UI: pending state
+                if (btn) btn.disabled = true;
+                setLensStatus(card, 'pending', 'Menyimpan...');
+
+                try {
+                    const resp = await fetch('lense_price.php', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: body.toString(),
+                        credentials: 'same-origin',
+                    });
+
+                    // Server returns JSON; if it returns HTML (e.g. login redirect),
+                    // this will throw and we'll catch it below.
+                    const json = await resp.json();
+
+                    if (!json.ok) {
+                        setLensStatus(card, 'err', json.message || 'Gagal');
+                        showToast(json.message || 'Gagal menyimpan lens', 'err');
+                        return;
+                    }
+
+                    // Success: sync the card with what the server actually saved
+                        if (json.saved_name && json.saved_name !== data.oldName) {
+                            // The lens was renamed (collision suffix). Update card identity
+                            // so a second save from the same card targets the new key.
+                            card.dataset.name = json.saved_name;
+                            const nameInput2 = card.querySelector('.lens-name-input');
+                            if (nameInput2) nameInput2.value = json.saved_name;
+                            // Update all inputs with name="...[OLDNAME]..." / "...[OLDNAME][...]"
+                            const oldKey = '[' + data.oldName + ']';
+                            const newKey = '[' + json.saved_name + ']';
+                            card.querySelectorAll('input[name], textarea[name]').forEach(el => {
+                                if (el.name.indexOf(oldKey) !== -1) {
+                                    el.name = el.name.split(oldKey).join(newKey);
+                                }
+                            });
+                            // Also update the delete button's data-name
+                            const delBtn = card.querySelector('.btn-delete-lens');
+                            if (delBtn) delBtn.dataset.name = json.saved_name;
+                        }
+
+                    // Clear dirty indicator on the button
+                    if (btn) btn.classList.remove('is-dirty');
+
+                    setLensStatus(card, 'ok', '✓ Tersimpan');
+                    showToast(json.message || ('Tersimpan: ' + (json.saved_name || data.newName)),
+                              json.renamed ? 'warn' : 'ok');
+
+                } catch (err) {
+                    console.error('save lens failed:', err);
+                    setLensStatus(card, 'err', 'Network / server error');
+                    showToast('Gagal menyimpan: ' + (err.message || err), 'err');
+                } finally {
+                    if (btn) btn.disabled = false;
+                }
+            }
+
+            // Mark a card as "dirty" (unsaved changes) whenever any input inside
+            // changes. The user sees the Save button turn amber as a hint.
+            function markCardDirty(card) {
+                const btn = card.querySelector('.btn-save-lens');
+                if (btn) btn.classList.add('is-dirty');
+                const status = card.querySelector('.lens-save-status');
+                if (status) { status.classList.remove('show'); }
+            }
+
             // ─── Init ─────────────────────────────────────────────────────
             document.addEventListener('DOMContentLoaded', () => {
                 updateCategoryFilter();
@@ -1757,6 +2096,25 @@
                 document.querySelectorAll('.btn-delete-lens').forEach(btn => {
                     btn.addEventListener('click', () => {
                         confirmDeleteLens(btn.dataset.group, btn.dataset.category, btn.dataset.name);
+                    });
+                });
+
+                // ─── Wire up per-lens Save buttons (AJAX) ───────────────────
+                document.querySelectorAll('.btn-save-lens').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        const card = btn.closest('.lens-card');
+                        if (!card) return;
+                        saveLensCard(card);
+                    });
+                });
+
+                // ─── Dirty-tracking: mark card amber when any input changes ─
+                document.querySelectorAll('#lense-display-container .lens-card').forEach(card => {
+                    const onChange = () => markCardDirty(card);
+                    card.querySelectorAll('input, textarea').forEach(el => {
+                        el.addEventListener('input',  onChange);
+                        el.addEventListener('change', onChange);
                     });
                 });
                 // Thousand-shortcut blur handlers for currency inputs
@@ -1791,5 +2149,8 @@
                 }
             });
         </script>
+
+        <!-- Toast container for per-lens save feedback -->
+        <div id="save-toast-container"></div>
     </body>
 </html>
