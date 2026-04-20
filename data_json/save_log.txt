@@ -220,3 +220,8 @@
 [2026-04-20 12:26:45] save_single_lens by user=LenZa786 — lab / KRYPTOK / BLUGARD  [sph -650..-900  cyl -25..-400  add 100..300  comb -900]
 [2026-04-20 12:27:19] save_single_lens by user=LenZa786 — lab / KRYPTOK / BLUECHROMIC  [sph 650..-500  cyl -25..-400  add 100..300  comb -500]
 [2026-04-20 12:27:57] save_single_lens by user=LenZa786 — lab / KRYPTOK / BLUECHROMIC (STOCK)  [sph -200..200  cyl 0..0  add 100..300  comb 0]
+[2026-04-20 12:30:34] save_single_lens by user=LenZa786 — lab / FLATTOP / HMC  [sph 650..-500  cyl -25..-400  add 100..300  comb -500]
+[2026-04-20 12:30:59] save_single_lens by user=LenZa786 — lab / FLATTOP / SHMC  [sph 50..-500  cyl -25..-400  add 100..300  comb -500]
+[2026-04-20 12:31:23] save_single_lens by user=LenZa786 — lab / FLATTOP / SUPERBLOCK  [sph 650..-600  cyl -25..-400  add 100..300  comb -600]
+[2026-04-20 12:31:53] save_single_lens by user=LenZa786 — lab / FLATTOP / BLUGARD  [sph 650..-600  cyl -25..-400  add 100..300  comb -600]
+[2026-04-20 12:52:20] save_single_lens by user=LenZa786 — lab / SINGLE VISION / BLUECHROMIC (STOCK) (2)  [sph -1225..-1500  cyl 0..0  add 0..0  comb 0]

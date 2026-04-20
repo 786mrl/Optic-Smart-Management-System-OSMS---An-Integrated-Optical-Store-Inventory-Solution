@@ -641,6 +641,125 @@
                     "comb_max": 0,
                     "note": ""
                 }
+            },
+            "SENSIBLE 6 GREY": {
+                "cost": 180000,
+                "selling": 850000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "PHOTOCHROMIC"
+                ],
+                "limits": {
+                    "sph_from": 850,
+                    "sph_to": -1000,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": -1000,
+                    "note": ""
+                }
+            },
+            "SENSIBLE 6 BROWN": {
+                "cost": 200000,
+                "selling": 1000000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "PHOTOCHROMIC"
+                ],
+                "limits": {
+                    "sph_from": 850,
+                    "sph_to": -100,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": -1000,
+                    "note": ""
+                }
+            },
+            "BLUECHROMIC (STOCK)": {
+                "cost": 180000,
+                "selling": 1100000,
+                "features": [
+                    "HIGH-INDEX UV400 PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "SUPER HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING",
+                    "PHOTOCHROMIC",
+                    "HIGH INDEX 1.67"
+                ],
+                "limits": {
+                    "sph_from": -400,
+                    "sph_to": -1200,
+                    "cyl_from": -25,
+                    "cyl_to": -200,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 0,
+                    "note": ""
+                }
+            },
+            "BLUECHROMIC": {
+                "cost": 350000,
+                "selling": 2050000,
+                "features": [
+                    "HIGH-INDEX UV400 PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "SUPER HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING",
+                    "PHOTOCHROMIC"
+                ],
+                "limits": {
+                    "sph_from": -300,
+                    "sph_to": -1400,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": -1400,
+                    "note": ""
+                }
+            },
+            "BLUECHROMIC (STOCK) (2)": {
+                "cost": 180000,
+                "selling": 1100000,
+                "features": [
+                    "HIGH-INDEX UV400 PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "SUPER HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING",
+                    "PHOTOCHROMIC"
+                ],
+                "limits": {
+                    "sph_from": -1225,
+                    "sph_to": -1500,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 0,
+                    "note": ""
+                }
             }
         },
         "BIFOCAL": {
@@ -843,6 +962,29 @@
                     "comb_max": 0,
                     "note": ""
                 }
+            },
+            "SENSIBLE 6 GREY": {
+                "cost": 200000,
+                "selling": 1000000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "PHOTOCHROMIC"
+                ],
+                "limits": {
+                    "sph_from": 650,
+                    "sph_to": -700,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -700,
+                    "note": ""
+                }
             }
         },
         "FLATTOP": {
@@ -855,12 +997,12 @@
                     "ANTI-REFLECTIVE (AR) COATING"
                 ],
                 "limits": {
-                    "sph_from": 0,
+                    "sph_from": 650,
                     "sph_to": -500,
                     "cyl_from": -25,
                     "cyl_to": -400,
-                    "add_from": 0,
-                    "add_to": 0,
+                    "add_from": 100,
+                    "add_to": 300,
                     "comb_max": -500,
                     "note": ""
                 }
@@ -877,12 +1019,12 @@
                     "SMUDGE-RESISTANT"
                 ],
                 "limits": {
-                    "sph_from": 0,
+                    "sph_from": 50,
                     "sph_to": -500,
                     "cyl_from": -25,
                     "cyl_to": -400,
-                    "add_from": 0,
-                    "add_to": 0,
+                    "add_from": 100,
+                    "add_to": 300,
                     "comb_max": -500,
                     "note": ""
                 }
@@ -900,12 +1042,12 @@
                     "BLUE LIGHT BLOCKING"
                 ],
                 "limits": {
-                    "sph_from": 0,
+                    "sph_from": 650,
                     "sph_to": -600,
                     "cyl_from": -25,
                     "cyl_to": -400,
-                    "add_from": 0,
-                    "add_to": 0,
+                    "add_from": 100,
+                    "add_to": 300,
                     "comb_max": -600,
                     "note": ""
                 }
@@ -923,12 +1065,82 @@
                     "BLUE LIGHT BLOCKING"
                 ],
                 "limits": {
-                    "sph_from": 0,
+                    "sph_from": 650,
                     "sph_to": -600,
                     "cyl_from": -25,
                     "cyl_to": -400,
-                    "add_from": 0,
-                    "add_to": 0,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -600,
+                    "note": ""
+                }
+            },
+            "TAFT": {
+                "cost": 220000,
+                "selling": 1100000,
+                "features": [
+                    "UV PROTECTION",
+                    "SMUDGE-RESISTANT",
+                    "SUPER HYDROPHOBIC",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING",
+                    "IMPACT-RESISTANT"
+                ],
+                "limits": {
+                    "sph_from": 500,
+                    "sph_to": -825,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -825,
+                    "note": ""
+                }
+            },
+            "SENSIBLE 6 BROWN": {
+                "cost": 220000,
+                "selling": 1200000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "PHOTOCHROMIC"
+                ],
+                "limits": {
+                    "sph_from": 650,
+                    "sph_to": -600,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -600,
+                    "note": ""
+                }
+            },
+            "SENSIBLE 6 GREY": {
+                "cost": 210000,
+                "selling": 1100000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "SMUDGE-RESISTANT",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "PHOTOCHROMIC"
+                ],
+                "limits": {
+                    "sph_from": 650,
+                    "sph_to": -600,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
                     "comb_max": -600,
                     "note": ""
                 }
