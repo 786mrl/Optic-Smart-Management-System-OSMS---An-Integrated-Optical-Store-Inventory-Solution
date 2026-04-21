@@ -151,26 +151,26 @@
         "PROGRESSIVE": {
             "HMC": {
                 "cost": 38000,
-                "selling": 0,
+                "selling": 160000,
                 "features": [
                     "UV PROTECTION",
                     "SCRATCH-RESISTANT COATING",
                     "ANTI-REFLECTIVE (AR) COATING"
                 ],
                 "limits": {
-                    "sph_from": 0,
-                    "sph_to": -200,
+                    "sph_from": -200,
+                    "sph_to": 200,
                     "cyl_from": 0,
                     "cyl_to": 0,
-                    "add_from": 0,
-                    "add_to": 0,
+                    "add_from": 100,
+                    "add_to": 300,
                     "comb_max": 0,
                     "note": ""
                 }
             },
             "PHOTOCHROMIC": {
                 "cost": 60000,
-                "selling": 0,
+                "selling": 250000,
                 "features": [
                     "UV PROTECTION",
                     "SCRATCH-RESISTANT COATING",
@@ -178,19 +178,19 @@
                     "PHOTOCHROMIC"
                 ],
                 "limits": {
-                    "sph_from": 0,
-                    "sph_to": -200,
+                    "sph_from": -200,
+                    "sph_to": 200,
                     "cyl_from": 0,
                     "cyl_to": 0,
-                    "add_from": 0,
-                    "add_to": 0,
+                    "add_from": 100,
+                    "add_to": 300,
                     "comb_max": 0,
                     "note": ""
                 }
             },
             "ANTI-BLUE RAY": {
                 "cost": 60000,
-                "selling": 0,
+                "selling": 250000,
                 "features": [
                     "UV PROTECTION",
                     "SCRATCH-RESISTANT COATING",
@@ -198,19 +198,19 @@
                     "BLUE LIGHT BLOCKING"
                 ],
                 "limits": {
-                    "sph_from": 0,
-                    "sph_to": -200,
+                    "sph_from": -200,
+                    "sph_to": 200,
                     "cyl_from": 0,
                     "cyl_to": 0,
-                    "add_from": 0,
-                    "add_to": 0,
+                    "add_from": 100,
+                    "add_to": 300,
                     "comb_max": 0,
                     "note": ""
                 }
             },
             "BLUECHROMIC": {
                 "cost": 120000,
-                "selling": 0,
+                "selling": 450000,
                 "features": [
                     "PHOTOCHROMIC",
                     "BLUE LIGHT BLOCKING",
@@ -219,38 +219,12 @@
                     "ANTI-REFLECTIVE (AR) COATING"
                 ],
                 "limits": {
-                    "sph_from": 0,
-                    "sph_to": -200,
+                    "sph_from": -200,
+                    "sph_to": 200,
                     "cyl_from": 0,
                     "cyl_to": 0,
-                    "add_from": 0,
-                    "add_to": 0,
-                    "comb_max": 0,
-                    "note": ""
-                }
-            },
-            "BLUECHROMIC ONE-DRIVE": {
-                "cost": 180000,
-                "selling": 1000000,
-                "features": [
-                    "PHOTOCHROMIC",
-                    "UV PROTECTION",
-                    "HIGH-INDEX UV400 PROTECTION",
-                    "SCRATCH-RESISTANT COATING",
-                    "ANTI-REFLECTIVE (AR) COATING",
-                    "SUPER HYDROPHOBIC",
-                    "ANTI-STATIC",
-                    "BLUE LIGHT BLOCKING",
-                    "NIGHT DRIVE COATING",
-                    "SMUDGE-RESISTANT"
-                ],
-                "limits": {
-                    "sph_from": 0,
-                    "sph_to": -200,
-                    "cyl_from": 0,
-                    "cyl_to": 0,
-                    "add_from": 0,
-                    "add_to": 0,
+                    "add_from": 100,
+                    "add_to": 200,
                     "comb_max": 0,
                     "note": ""
                 }
@@ -258,47 +232,6 @@
         }
     },
     "lab": {
-        "PROGRESSIVE": {
-            "STANDARD": {
-                "cost": 0,
-                "selling": 0,
-                "features": [
-                    "PROGRESSIVE",
-                    "STANDARD GRADE",
-                    "CUSTOM ORDER"
-                ],
-                "limits": {
-                    "sph_from": 0,
-                    "sph_to": -700,
-                    "cyl_from": -25,
-                    "cyl_to": -400,
-                    "add_from": 0,
-                    "add_to": 0,
-                    "comb_max": -1100,
-                    "note": ""
-                }
-            },
-            "PREMIUM": {
-                "cost": 0,
-                "selling": 0,
-                "features": [
-                    "PROGRESSIVE",
-                    "PREMIUM GRADE",
-                    "CUSTOM ORDER",
-                    "WIDE FIELD"
-                ],
-                "limits": {
-                    "sph_from": 0,
-                    "sph_to": -700,
-                    "cyl_from": -25,
-                    "cyl_to": -400,
-                    "add_from": 0,
-                    "add_to": 0,
-                    "comb_max": -1100,
-                    "note": ""
-                }
-            }
-        },
         "SINGLE VISION": {
             "HMC": {
                 "cost": 96000,
@@ -1142,6 +1075,246 @@
                     "add_from": 100,
                     "add_to": 300,
                     "comb_max": -600,
+                    "note": ""
+                }
+            }
+        },
+        "PROGRESSIVE": {
+            "FLEXI BLUCHROMIC ONE-DRIVE (STOCK)": {
+                "cost": 250000,
+                "selling": 1100000,
+                "features": [
+                    "HIGH-INDEX UV400 PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "SUPER HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING",
+                    "PHOTOCHROMIC",
+                    "NIGHT DRIVE COATING",
+                    "FAR & NEAR OPTIMIZED LENS"
+                ],
+                "limits": {
+                    "sph_from": -200,
+                    "sph_to": 200,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": 0,
+                    "note": ""
+                }
+            },
+            "BALANCE BLUCHROMIC ONE-DRIVE (STOCK)": {
+                "cost": 260000,
+                "selling": 1250000,
+                "features": [
+                    "HIGH-INDEX UV400 PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "SUPER HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING",
+                    "PHOTOCHROMIC",
+                    "NIGHT DRIVE COATING",
+                    "ALL-DISTANCE PROGRESSIVE"
+                ],
+                "limits": {
+                    "sph_from": -200,
+                    "sph_to": 200,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": 0,
+                    "note": ""
+                }
+            },
+            "FLEXI BLUCHROMIC ONE-DRIVE": {
+                "cost": 330000,
+                "selling": 1800000,
+                "features": [
+                    "HIGH-INDEX UV400 PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "SUPER HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING",
+                    "PHOTOCHROMIC",
+                    "NIGHT DRIVE COATING",
+                    "FAR & NEAR OPTIMIZED LENS"
+                ],
+                "limits": {
+                    "sph_from": 500,
+                    "sph_to": -700,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -700,
+                    "note": ""
+                }
+            },
+            "BALANCE BLUCHROMIC ONE-DRIVE": {
+                "cost": 350000,
+                "selling": 1900000,
+                "features": [
+                    "HIGH-INDEX UV400 PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "SUPER HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING",
+                    "PHOTOCHROMIC",
+                    "NIGHT DRIVE COATING",
+                    "ALL-DISTANCE PROGRESSIVE"
+                ],
+                "limits": {
+                    "sph_from": 500,
+                    "sph_to": -700,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -700,
+                    "note": ""
+                }
+            },
+            "STANDARD CORD HMC": {
+                "cost": 140000,
+                "selling": 500000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "DYNAMIC DISTANCE LENS"
+                ],
+                "limits": {
+                    "sph_from": 600,
+                    "sph_to": -10,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -1000,
+                    "note": ""
+                }
+            },
+            "STANDARD CORD SHMC": {
+                "cost": 170000,
+                "selling": 600000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "DYNAMIC DISTANCE LENS"
+                ],
+                "limits": {
+                    "sph_from": 600,
+                    "sph_to": -1000,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -1000,
+                    "note": ""
+                }
+            },
+            "STANDARD CORD SUPERBLOCK": {
+                "cost": 200000,
+                "selling": 750000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING",
+                    "DYNAMIC DISTANCE LENS"
+                ],
+                "limits": {
+                    "sph_from": 650,
+                    "sph_to": -700,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -1000,
+                    "note": ""
+                }
+            },
+            "SHORT CORD HMC": {
+                "cost": 180000,
+                "selling": 650000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "NEAR-OPTIMIZED LENS"
+                ],
+                "limits": {
+                    "sph_from": 600,
+                    "sph_to": -1000,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -1000,
+                    "note": ""
+                }
+            },
+            "SHORT CORD SHMC": {
+                "cost": 200000,
+                "selling": 700000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "NEAR-OPTIMIZED LENS"
+                ],
+                "limits": {
+                    "sph_from": 600,
+                    "sph_to": -1000,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -1000,
+                    "note": ""
+                }
+            },
+            "SHORT CORD SUPERBLOCK": {
+                "cost": 330000,
+                "selling": 850000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING",
+                    "NEAR-OPTIMIZED LENS"
+                ],
+                "limits": {
+                    "sph_from": 650,
+                    "sph_to": -700,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -700,
                     "note": ""
                 }
             }
