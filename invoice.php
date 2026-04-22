@@ -66,7 +66,10 @@
     }
 
     // ============================================================
-    // LENS RECOMMENDATION ENGINE v2
+    // LENS RECOMMENDATION ENGINE v3
+    // (Fixed: feature names aligned with lense_prices.json,
+    //  full scoring for all 19 lens features, ADD-aware limit
+    //  check, corrected presbyopia design gate)
     // ============================================================
 
     // Active prescription: use modified values when modification is saved
@@ -93,11 +96,9 @@
     $lr_txt     = strtolower(($data['symptoms'] ?? '') . ' ' . ($data['exam_notes'] ?? ''));
 
     // ── Derived power metrics ─────────────────────────────────
-    // SE (Spherical Equivalent) = |SPH| + |CYL|/2
-    // Gives a single "total power" number for each eye
-    $lr_seR   = abs($lr_r_sph) + abs($lr_r_cyl) / 2;
-    $lr_seL   = abs($lr_l_sph) + abs($lr_l_cyl) / 2;
-    $lr_maxSE = max($lr_seR, $lr_seL);
+    $lr_seR    = abs($lr_r_sph) + abs($lr_r_cyl) / 2;
+    $lr_seL    = abs($lr_l_sph) + abs($lr_l_cyl) / 2;
+    $lr_maxSE  = max($lr_seR, $lr_seL);
     $lr_maxSph = max(abs($lr_r_sph), abs($lr_l_sph));
     $lr_maxCyl = max(abs($lr_r_cyl), abs($lr_l_cyl));
     $lr_maxAdd = max(abs($lr_r_add), abs($lr_l_add));
@@ -108,13 +109,15 @@
     $lr_isHighPow     = ($lr_maxSE >= 4.0 || $lr_maxCyl >= 2.0);
     $lr_isVeryHighPow = ($lr_maxSE >= 6.0 || $lr_maxCyl >= 3.0);
 
-    // ── Symptom flags ─────────────────────────────────────────
+    // ── Symptom / notes flags ─────────────────────────────────
     $lr_hasGlare     = (bool)preg_match('/glare|silau/', $lr_txt);
     $lr_hasEyeStrain = (bool)preg_match('/eye.?strain|mata.?lelah|\blelah\b/', $lr_txt);
     $lr_hasHeadache  = (bool)preg_match('/headache|sakit.?kepala/', $lr_txt);
     $lr_hasDM        = (strpos($lr_txt, 'diabetes') !== false);
     $lr_hasHT        = (strpos($lr_txt, 'hypertension') !== false);
     $lr_hasDryEye    = (bool)preg_match('/dry.?eye|mata.?kering/', $lr_txt);
+    $lr_hasDriving   = (bool)preg_match('/bawa.?mobil|mengemudi|driving|berkendara/', $lr_txt);
+    $lr_hasImpact    = (bool)preg_match('/olahraga|sport|bentur|impact/', $lr_txt);
 
     // ── Load lens catalog ─────────────────────────────────────
     $lr_catalog = [];
@@ -124,117 +127,199 @@
         if ($raw !== false) $lr_catalog = json_decode($raw, true) ?? [];
     }
 
-    // ── Prescription-fit check ────────────────────────────────
+    // ── Prescription-fit check (includes ADD for presbyopia lenses) ──
     // Returns true if BOTH eyes fall within the lens power limits
-    function lr_fits_limits($r_sph, $r_cyl, $l_sph, $l_cyl, $lim) {
-        $maxS = max(abs($r_sph), abs($l_sph));
-        $maxC = max(abs($r_cyl), abs($l_cyl));
+    function lr_fits_limits($r_sph, $r_cyl, $l_sph, $l_cyl, $r_add, $l_add, $lim) {
+        $maxS   = max(abs($r_sph), abs($l_sph));
+        $maxC   = max(abs($r_cyl), abs($l_cyl));
+        $maxAdd = max(abs($r_add), abs($l_add));
+
         // Sphere check (sph_to = max magnitude; 0 = no restriction)
         if ($lim['sph_to'] != 0 && $maxS > abs($lim['sph_to'])) return false;
         // Cylinder check (cyl_to = max magnitude; 0 = no restriction)
         if ($lim['cyl_to'] != 0 && $maxC > abs($lim['cyl_to'])) return false;
         // Combined check (comb_max; 0 = no restriction)
         if ($lim['comb_max'] != 0 && ($maxS + $maxC) > abs($lim['comb_max'])) return false;
+        // ADD range check (only when lens has ADD limits)
+        if ($lim['add_to'] != 0) {
+            $addMin = abs($lim['add_from']);
+            $addMax = abs($lim['add_to']);
+            if ($maxAdd < $addMin || $maxAdd > $addMax) return false;
+        }
         return true;
     }
 
-    // ── Relevance scoring ─────────────────────────────────────
-    // Returns a score ≥ 0 for how well a lens matches this customer's profile,
-    // or -9999 (effectively excluded) for category mismatches.
-    function lr_score($features, $source, $category, $isPresby,
-                      $habit, $digital, $maxSE, $maxCyl,
-                      $hasGlare, $hasEyeStrain, $hasHeadache, $hasDryEye) {
+    // ── Determine presbyopia design type needed ───────────────
+    // Based on visual habits and notes to pick the right lens design
+    function lr_presbyopia_design($habit, $digital, $lr_txt) {
+        // near-dominant: reading / close work emphasis
+        $nearDominant = (bool)preg_match('/baca|membaca|jahit|sewing|close.?work|near.?work/', $lr_txt);
+        // driving / outdoor intermediate distance
+        $drivingFocus = (bool)preg_match('/mengemudi|bawa.?mobil|driving|berkendara/', $lr_txt);
 
-        $cat = strtoupper($category);
+        if ($nearDominant) return 'near'; // SHORT CORD / MINICORD / ENHANCED NEAR VISION
+        if ($drivingFocus) return 'far_near'; // FLEXI CORD / FAR & NEAR OPTIMIZED
+        if ($habit == 3 || ($digital >= 2 && $habit >= 2)) return 'all_distance'; // BALANCE CORD
+        if ($habit == 2) return 'far_near'; // outdoor = far & near
+        return 'far_near'; // default
+    }
+    $lr_presbyDesign = $lr_isPresbyopia
+        ? lr_presbyopia_design($lr_habit, $lr_digital, $lr_txt)
+        : '';
+
+    // ── Relevance scoring ─────────────────────────────────────
+    // Returns a score for how well a lens matches this customer's profile.
+    // -9999 = hard exclusion (wrong design category).
+    function lr_score($features, $source, $category, $isPresby, $presbyDesign,
+                      $habit, $digital, $maxSE, $maxCyl, $maxAdd, $age,
+                      $hasGlare, $hasEyeStrain, $hasHeadache, $hasDryEye,
+                      $hasDriving, $hasImpact) {
+
+        $cat    = strtoupper($category);
         $isSV   = ($cat === 'SINGLE VISION');
-        $isProg = in_array($cat, ['PROGRESSIVE','KRYPTOK','BIFOCAL','FLATTOP']);
+        $isProg = in_array($cat, ['PROGRESSIVE', 'KRYPTOK', 'FLATTOP']);
 
         // Hard gate: keep only the right design type for this patient
-        if ($isPresby && $isSV)    return -9999;
+        if ($isPresby  && $isSV)   return -9999;
         if (!$isPresby && $isProg) return -9999;
 
         $s = 0;
 
-        // ── Presbyopia design preference ────────────────────────
+        // ── Presbyopia: score lens design features ───────────────
+        // The feature names in the JSON determine the design type.
         if ($isPresby) {
-            if (in_array('PROGRESSIVE', $features))    $s += 20;
-            elseif (in_array('WIDE FIELD', $features)) $s += 15;
-            elseif (in_array('BIFOCAL', $features) || in_array('FLAT TOP', $features)) $s += 5;
+            $hasAllDist    = in_array('ALL-DISTANCE PROGRESSIVE', $features);
+            $hasFarNear    = in_array('FAR & NEAR OPTIMIZED LENS', $features);
+            $hasDynamic    = in_array('DYNAMIC DISTANCE LENS', $features);
+            $hasNearOpt    = in_array('NEAR-OPTIMIZED LENS', $features);
+            $hasEnhNear    = in_array('ENHANCED NEAR VISION', $features);
+
+            // Score based on design match
+            if ($presbyDesign === 'all_distance') {
+                if ($hasAllDist)  $s += 40;
+                elseif ($hasFarNear) $s += 25;
+                elseif ($hasDynamic) $s += 15;
+                elseif ($hasNearOpt || $hasEnhNear) $s += 5;
+            } elseif ($presbyDesign === 'far_near') {
+                if ($hasFarNear)  $s += 40;
+                elseif ($hasAllDist) $s += 28;
+                elseif ($hasDynamic) $s += 15;
+                elseif ($hasNearOpt || $hasEnhNear) $s += 5;
+            } elseif ($presbyDesign === 'near') {
+                if ($hasEnhNear)  $s += 40;
+                elseif ($hasNearOpt) $s += 35;
+                elseif ($hasFarNear) $s += 15;
+                elseif ($hasAllDist) $s += 10;
+            } else {
+                // Default fallback: ALL-DISTANCE > FAR_NEAR > rest
+                if ($hasAllDist)  $s += 30;
+                elseif ($hasFarNear) $s += 25;
+            }
+
+            // Flat-top / kryptok style: older patients may prefer simplicity
+            if ($cat === 'KRYPTOK' || $cat === 'FLATTOP') {
+                $s += ($age >= 65) ? 10 : 2;
+            }
         }
 
         // ── Feature × lifestyle scoring ─────────────────────────
-        // Core principle:
-        //   - Features only earn points when they match the patient's actual needs
-        //   - Features that are IRRELEVANT to the lifestyle receive a PENALTY
-        //     so lenses loaded with unnecessary extras rank BELOW simpler options
-        //   - No max(0) cap: negative scores are intentional and drive proper ordering
         foreach ($features as $feat) {
             switch (strtoupper(trim($feat))) {
 
-                case 'ANTI-BLUE RAY':
-                case 'BLUE LIGHT GUARD':
-                    // Earn points only for meaningful screen use (digital >= 2)
-                    // Low screen (digital=1): 0 bonus — lens adds no practical value
+                // ── Blue light blocking ──────────────────────────
+                case 'BLUE LIGHT BLOCKING':
                     if ($digital == 3)     $s += 28;
                     elseif ($digital == 2) $s += 15;
-                    // Eye-strain / headache bonus only when screen is actually the cause
                     if (($hasEyeStrain || $hasHeadache) && $digital >= 2) $s += 8;
                     if ($hasDryEye && $digital >= 2) $s += 4;
                     break;
 
+                // ── Photochromic ─────────────────────────────────
                 case 'PHOTOCHROMIC':
-                case 'COLOR ADAPTIVE':
-                    // Outdoor: very useful; Indoor: penalised — not needed
-                    if ($habit == 2)     $s += 22;
-                    elseif ($habit == 3) $s += 14;
-                    else                 $s -= 12;   // indoor penalty
+                    if ($habit == 2)      $s += 22;
+                    elseif ($habit == 3)  $s += 14;
+                    else                  $s -= 12;   // indoor: penalty
                     if ($hasGlare && $habit >= 2) $s += 10;
                     break;
 
-                case 'DRIVE SAFE':
-                    // Only adds value for users who go outdoors
-                    if ($habit == 2)     $s += 15;
-                    elseif ($habit == 3) $s += 10;
-                    else                 $s -= 18;   // indoor: significant penalty
+                // ── Night drive coating ──────────────────────────
+                case 'NIGHT DRIVE COATING':
+                    if ($hasDriving)     $s += 20;
+                    elseif ($habit >= 2) $s += 8;
+                    else                 $s -= 10;   // indoor: penalty
                     break;
 
+                // ── High index 1.67 ──────────────────────────────
                 case 'HIGH INDEX 1.67':
-                case 'THIN & LIGHT':
+                case 'HIGHT INDEX 1.67':  // typo variant in JSON
                     if ($maxSE >= 6.0)     $s += 35;
                     elseif ($maxSE >= 4.0) $s += 22;
                     elseif ($maxSE >= 2.0) $s += 10;
                     break;
 
-                case 'LENTICULAR':
-                    if ($maxSE >= 8.0)     $s += 30;
-                    elseif ($maxSE >= 6.0) $s += 18;
-                    elseif ($maxSE >= 4.0) $s += 6;
+                // ── High-index UV400 (premium coating tier) ──────
+                case 'HIGH-INDEX UV400 PROTECTION':
+                    $s += 4; // base coating bonus
+                    if ($habit >= 2) $s += 5; // outdoor UV bonus
                     break;
 
-                case 'ANTI-GLARE':
-                case 'ANTI-REFLECTIVE':
-                case 'SUPER ANTI-REFLECTIVE':
-                    // Only useful when glare is an actual complaint
-                    $s += $hasGlare ? 16 : 0;
+                // ── High power Rx (lenticular) ───────────────────
+                case 'HIGH POWER RX':
+                    if ($maxSE >= 8.0)     $s += 35;
+                    elseif ($maxSE >= 6.0) $s += 22;
+                    elseif ($maxSE >= 4.0) $s += 8;
                     break;
 
-                case 'UV PROTECTION':
-                    // Only meaningful for outdoor exposure
-                    $s += ($habit >= 2) ? 5 : 0;
+                // ── Impact resistant ─────────────────────────────
+                case 'IMPACT-RESISTANT':
+                    if ($hasImpact)      $s += 20;
+                    elseif ($habit >= 2) $s += 6;
                     break;
 
-                case 'SUPER HARD MULTI COAT':
-                case 'SHMC':
+                // ── Super hydrophobic / hydrophobic ──────────────
+                case 'SUPER HYDROPHOBIC':
+                    $s += ($habit >= 2) ? 8 : 2;
+                    break;
+                case 'HYDROPHOBIC':
+                    $s += ($habit >= 2) ? 5 : 1;
+                    break;
+
+                // ── Smudge-resistant ─────────────────────────────
+                case 'SMUDGE-RESISTANT':
                     $s += 3;
                     break;
 
-                case 'CUSTOM RX':
-                case 'CUSTOM ORDER':
-                    if ($maxSE >= 5.0 || $maxCyl >= 3.0) $s += 12;
+                // ── Anti-static ──────────────────────────────────
+                case 'ANTI-STATIC':
+                    $s += 2;
                     break;
 
-                case 'WIDE FIELD':
-                    $s += 5;
+                // ── Scratch-resistant ────────────────────────────
+                case 'SCRATCH-RESISTANT COATING':
+                    $s += ($habit >= 2) ? 4 : 1;
+                    break;
+
+                // ── Anti-reflective ──────────────────────────────
+                case 'ANTI-REFLECTIVE (AR) COATING':
+                    // Bonus when glare / eye strain / screen use is present
+                    if ($hasGlare)       $s += 12;
+                    elseif ($hasEyeStrain || $digital >= 2) $s += 6;
+                    else                 $s += 2;
+                    break;
+
+                // ── UV protection ────────────────────────────────
+                case 'UV PROTECTION':
+                    $s += ($habit >= 2) ? 5 : 0;
+                    break;
+
+                // ── Lens design features — already scored above ──
+                // These cases prevent double-counting; we just break silently.
+                case 'ALL-DISTANCE PROGRESSIVE':
+                case 'FAR & NEAR OPTIMIZED LENS':
+                case 'DYNAMIC DISTANCE LENS':
+                case 'NEAR-OPTIMIZED LENS':
+                case 'ENHANCED NEAR VISION':
+                    // Handled in presbyopia design block above
                     break;
             }
         }
@@ -243,8 +328,6 @@
         if ($source === 'stock' && $maxSE < 4.0 && $maxCyl < 2.0) $s += 5;
         if ($source === 'lab'   && ($maxSE >= 5.0 || $maxCyl >= 3.0)) $s += 8;
 
-        // Note: intentionally NO max(0) clamp — negative scores are valid
-        // and ensure irrelevant lenses rank below relevant simpler ones
         return $s;
     }
 
@@ -256,16 +339,17 @@
     foreach (($lr_catalog['stock'] ?? []) as $category => $types) {
         foreach ($types as $type => $lens) {
             $lim = $lens['limits'] ?? [];
-            if (!empty($lim) && lr_fits_limits($lr_r_sph, $lr_r_cyl, $lr_l_sph, $lr_l_cyl, $lim)) {
+            if (!empty($lim) && lr_fits_limits(
+                    $lr_r_sph, $lr_r_cyl, $lr_l_sph, $lr_l_cyl,
+                    $lr_r_add, $lr_l_add, $lim)) {
                 $lr_anyStockFits = true;
                 break 2;
             }
         }
     }
 
-    // Threshold for High-Index / SUPERBLOCK to be relevant (SE or CYL must be significant)
-    // Below this, high-index lenses provide no practical benefit
-    $lr_hiIndexThreshold = 3.0; // SE >= 3.0 D before high-index is worth recommending
+    // Threshold for High-Index to be relevant
+    $lr_hiIndexThreshold = 3.0;
 
     $lr_candidates = [];
     foreach ($lr_catalog as $source => $categories) {
@@ -280,29 +364,34 @@
                 // Skip lab lenses entirely when stock already covers this prescription
                 if ($source === 'lab' && $lr_anyStockFits) continue;
 
-                // Skip HIGH INDEX / SUPERBLOCK lenses when power is too low to benefit
+                // Skip HIGH INDEX lenses when power is too low to benefit
                 $isHighIndex = in_array('HIGH INDEX 1.67', $features)
-                            || in_array('THIN & LIGHT', $features)
-                            || in_array('LENTICULAR', $features);
+                            || in_array('HIGHT INDEX 1.67', $features)  // typo in JSON
+                            || in_array('HIGH POWER RX', $features);
                 if ($isHighIndex && $lr_maxSE < $lr_hiIndexThreshold && $lr_maxCyl < $lr_hiIndexThreshold) continue;
 
-                // Skip if prescription out of range for this lens
-                if (!empty($lim) && !lr_fits_limits($lr_r_sph, $lr_r_cyl, $lr_l_sph, $lr_l_cyl, $lim)) continue;
+                // Skip if prescription out of range for this lens (includes ADD check)
+                if (!empty($lim) && !lr_fits_limits(
+                        $lr_r_sph, $lr_r_cyl, $lr_l_sph, $lr_l_cyl,
+                        $lr_r_add, $lr_l_add, $lim)) continue;
 
-                $score = lr_score($features, $source, $category,
-                    $lr_isPresbyopia, $lr_habit, $lr_digital,
-                    $lr_maxSE, $lr_maxCyl,
-                    $lr_hasGlare, $lr_hasEyeStrain, $lr_hasHeadache, $lr_hasDryEye);
+                $score = lr_score(
+                    $features, $source, $category,
+                    $lr_isPresbyopia, $lr_presbyDesign,
+                    $lr_habit, $lr_digital,
+                    $lr_maxSE, $lr_maxCyl, $lr_maxAdd, $lr_age,
+                    $lr_hasGlare, $lr_hasEyeStrain, $lr_hasHeadache,
+                    $lr_hasDryEye, $lr_hasDriving, $lr_hasImpact
+                );
 
                 if ($score <= -9999) continue;
 
-                // Price tiebreaker: among equal-scoring lenses prefer the cheaper one.
-                // Scale: 600k lens → -1.0 impact; 90k lens → -0.15 impact.
-                // Small enough not to override genuine feature differences.
+                // Price tiebreaker: cheaper wins among equal scores.
+                // Scale: 2M lens → -3.3 impact; 90k → -0.15 impact.
                 if ($selling > 0) $score -= ($selling / 600000.0);
 
                 $lr_candidates[] = [
-                    'source'    => $source,      // 'stock' | 'lab'
+                    'source'    => $source,
                     'category'  => $category,
                     'type'      => $type,
                     'selling'   => $selling,
@@ -314,20 +403,30 @@
             }
         }
     }
-    usort($lr_candidates, function($a, $b) { return ($b['score'] > $a['score']) ? 1 : (($b['score'] < $a['score']) ? -1 : 0); });
+    usort($lr_candidates, function($a, $b) {
+        return ($b['score'] > $a['score']) ? 1 : (($b['score'] < $a['score']) ? -1 : 0);
+    });
 
     // ── Special warning notes ─────────────────────────────────
     $lr_specialNotes = [];
     if ($lr_hasDM)
-        $lr_specialNotes[] = ['🩸', 'DIABETES — Risiko katarak lebih tinggi. Disarankan lensa dengan UV protection.'];
+        $lr_specialNotes[] = ['🩸', 'DIABETES — Risiko katarak lebih tinggi. Disarankan lensa dengan UV protection & anti-blue.'];
     if ($lr_hasHT)
         $lr_specialNotes[] = ['❤️', 'HYPERTENSION — Pantau perubahan visus secara berkala.'];
     if ($lr_isVeryHighPow)
-        $lr_specialNotes[] = ['⚡', 'Ukuran sangat tinggi (SE ≥ 6.00D) — Lensa High Index atau Lenticular sangat dianjurkan untuk estetika dan kenyamanan.'];
+        $lr_specialNotes[] = ['⚡', 'Ukuran sangat tinggi (SE ≥ 6.00D) — Lensa High Index 1.67 atau Lenticular sangat dianjurkan.'];
+    if ($lr_isPresbyopia && $lr_presbyDesign === 'all_distance')
+        $lr_specialNotes[] = ['👁️', 'Presbiopi: butuh semua jarak — Progressive ALL-DISTANCE paling sesuai.'];
+    elseif ($lr_isPresbyopia && $lr_presbyDesign === 'far_near')
+        $lr_specialNotes[] = ['👓', 'Presbiopi: dominan jauh & dekat — Lensa FAR & NEAR OPTIMIZED direkomendasikan.'];
+    elseif ($lr_isPresbyopia && $lr_presbyDesign === 'near')
+        $lr_specialNotes[] = ['📚', 'Presbiopi: dominan dekat — Lensa ENHANCED NEAR VISION / SHORT CORD paling sesuai.'];
     if ($lr_hasEyeStrain || $lr_hasHeadache)
-        $lr_specialNotes[] = ['😣', 'Keluhan mata lelah / sakit kepala — Lensa anti-blue atau Bluechromic dapat membantu meringankan.'];
+        $lr_specialNotes[] = ['😣', 'Keluhan mata lelah / sakit kepala — Lensa Blue Light Blocking dapat membantu.'];
     if ($lr_hasDryEye)
-        $lr_specialNotes[] = ['💧', 'Dry Eye — Lensa anti-blue mengurangi silau layar yang memperburuk gejala dry eye.'];
+        $lr_specialNotes[] = ['💧', 'Dry Eye — Lensa Blue Light Blocking & Super Hydrophobic mengurangi iritasi layar.'];
+    if ($lr_hasDriving)
+        $lr_specialNotes[] = ['🚗', 'Sering berkendara — Lensa dengan Night Drive Coating & Photochromic sangat dianjurkan.'];
 
     // Helper: format price
     function lr_fmt_price($v) {
@@ -1520,32 +1619,31 @@
                                     <div style="display:flex;flex-direction:column;gap:7px;" id="lr-list">
                                     <?php
                                     $lr_featureIcons = [
-                                        'ANTI-BLUE RAY'         => '💙',
-                                        'BLUE LIGHT GUARD'      => '🛡️',
-                                        'PHOTOCHROMIC'          => '🌅',
-                                        'COLOR ADAPTIVE'        => '🎨',
-                                        'DRIVE SAFE'            => '🚗',
-                                        'UV PROTECTION'         => '🌞',
-                                        'HIGH INDEX 1.67'       => '💎',
-                                        'THIN & LIGHT'          => '✨',
-                                        'LENTICULAR'            => '🔬',
-                                        'ANTI-GLARE'            => '💡',
-                                        'ANTI-REFLECTIVE'       => '💡',
-                                        'SUPER ANTI-REFLECTIVE' => '💡',
-                                        'MULTI COAT'            => '🔵',
-                                        'HARD MULTI COAT'       => '🔵',
-                                        'SUPER HARD MULTI COAT' => '🔵',
-                                        'PROGRESSIVE'           => '📐',
-                                        'BIFOCAL'               => '📖',
-                                        'FLAT TOP'              => '📖',
-                                        'KRYPTOK STYLE'         => '📖',
-                                        'CUSTOM RX'             => '⚙️',
-                                        'CUSTOM ORDER'          => '⚙️',
-                                        'WIDE FIELD'            => '🔭',
-                                        'CR RESIN'              => '⚗️',
-                                        'STANDARD GRADE'        => '📋',
-                                        'PREMIUM GRADE'         => '🏆',
-                                        'HIGH POWER RX'         => '⚡',
+                                        // Coating & protection
+                                        'UV PROTECTION'                  => '🌞',
+                                        'HIGH-INDEX UV400 PROTECTION'    => '🛡️',
+                                        'ANTI-REFLECTIVE (AR) COATING'   => '💡',
+                                        'SCRATCH-RESISTANT COATING'      => '🪨',
+                                        'SMUDGE-RESISTANT'               => '🧼',
+                                        'HYDROPHOBIC'                    => '💧',
+                                        'SUPER HYDROPHOBIC'              => '💦',
+                                        'ANTI-STATIC'                    => '⚡',
+                                        // Blue light & photochromic
+                                        'BLUE LIGHT BLOCKING'            => '💙',
+                                        'PHOTOCHROMIC'                   => '🌅',
+                                        'NIGHT DRIVE COATING'            => '🚗',
+                                        // High-index & high-power
+                                        'HIGH INDEX 1.67'                => '💎',
+                                        'HIGHT INDEX 1.67'               => '💎',
+                                        'HIGH POWER RX'                  => '🔬',
+                                        // Impact
+                                        'IMPACT-RESISTANT'               => '🛡️',
+                                        // Progressive / presbyopia design types
+                                        'FAR & NEAR OPTIMIZED LENS'      => '📐',
+                                        'ALL-DISTANCE PROGRESSIVE'       => '🔭',
+                                        'DYNAMIC DISTANCE LENS'          => '🚀',
+                                        'NEAR-OPTIMIZED LENS'            => '📚',
+                                        'ENHANCED NEAR VISION'           => '🔎',
                                     ];
                                     // Rank palette: top-3 get gold/silver/bronze
                                     $lr_rankStyle = [
