@@ -1317,6 +1317,283 @@
                     "comb_max": -700,
                     "note": ""
                 }
+            },
+            "MINICORD HMC": {
+                "cost": 180000,
+                "selling": 600000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "ENHANCED NEAR VISION"
+                ],
+                "limits": {
+                    "sph_from": 600,
+                    "sph_to": -1000,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -1000,
+                    "note": ""
+                }
+            },
+            "MINICORD SHMC": {
+                "cost": 190000,
+                "selling": 650000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "ENHANCED NEAR VISION"
+                ],
+                "limits": {
+                    "sph_from": 600,
+                    "sph_to": -1000,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -1000,
+                    "note": ""
+                }
+            },
+            "MINICORD SUPERBLOCK": {
+                "cost": 220000,
+                "selling": 800000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING",
+                    "ENHANCED NEAR VISION"
+                ],
+                "limits": {
+                    "sph_from": 650,
+                    "sph_to": -700,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -700,
+                    "note": ""
+                }
+            },
+            "INOCORD PREMIUM": {
+                "cost": 250000,
+                "selling": 1000000,
+                "features": [
+                    "UV PROTECTION",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SCRATCH-RESISTANT COATING",
+                    "SMUDGE-RESISTANT",
+                    "SUPER HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING",
+                    "FAR & NEAR OPTIMIZED LENS"
+                ],
+                "limits": {
+                    "sph_from": 650,
+                    "sph_to": -700,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -700,
+                    "note": ""
+                }
+            },
+            "FLEXI CORD HMC": {
+                "cost": 220000,
+                "selling": 800000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "FAR & NEAR OPTIMIZED LENS"
+                ],
+                "limits": {
+                    "sph_from": 600,
+                    "sph_to": -950,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -950,
+                    "note": ""
+                }
+            },
+            "FLEXI CORD SHMC": {
+                "cost": 240000,
+                "selling": 850000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "HYDROPHOBIC",
+                    "SMUDGE-RESISTANT",
+                    "ANTI-STATIC",
+                    "FAR & NEAR OPTIMIZED LENS"
+                ],
+                "limits": {
+                    "sph_from": 600,
+                    "sph_to": -950,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -950,
+                    "note": ""
+                }
+            },
+            "FLEXI CORD PREMIUM": {
+                "cost": 250000,
+                "selling": 1100000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "SUPER HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING",
+                    "FAR & NEAR OPTIMIZED LENS"
+                ],
+                "limits": {
+                    "sph_from": 650,
+                    "sph_to": -700,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -700,
+                    "note": ""
+                }
+            },
+            "FLEXI CORD SENSIBLE 6 GREY": {
+                "cost": 280000,
+                "selling": 1350000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "PHOTOCHROMIC",
+                    "FAR & NEAR OPTIMIZED LENS"
+                ],
+                "limits": {
+                    "sph_from": 650,
+                    "sph_to": -700,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -700,
+                    "note": ""
+                }
+            },
+            "BALANCE CORD SHMC": {
+                "cost": 200000,
+                "selling": 950000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "ALL-DISTANCE PROGRESSIVE"
+                ],
+                "limits": {
+                    "sph_from": 600,
+                    "sph_to": -800,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -800,
+                    "note": ""
+                }
+            },
+            "BALANCE CORD PREMIUM": {
+                "cost": 330000,
+                "selling": 1250000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "SUPER HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING",
+                    "ALL-DISTANCE PROGRESSIVE"
+                ],
+                "limits": {
+                    "sph_from": 650,
+                    "sph_to": -700,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -700,
+                    "note": ""
+                }
+            },
+            "BALANCE CORD SENSIBLE GREY 6": {
+                "cost": 350000,
+                "selling": 1500000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "PHOTOCHROMIC",
+                    "ALL-DISTANCE PROGRESSIVE"
+                ],
+                "limits": {
+                    "sph_from": 650,
+                    "sph_to": -700,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -700,
+                    "note": ""
+                }
+            },
+            "BALANCE CORD SENSIBLE BROWN 6": {
+                "cost": 380000,
+                "selling": 1600000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "PHOTOCHROMIC",
+                    "ALL-DISTANCE PROGRESSIVE"
+                ],
+                "limits": {
+                    "sph_from": 650,
+                    "sph_to": -700,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -700,
+                    "note": ""
+                }
             }
         }
     }
