@@ -1594,6 +1594,203 @@
                     "comb_max": -700,
                     "note": ""
                 }
+            },
+            "STANDARD CORD HMC (STOCK)": {
+                "cost": 45000,
+                "selling": 300000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "DYNAMIC DISTANCE LENS"
+                ],
+                "limits": {
+                    "sph_from": -200,
+                    "sph_to": 200,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": 0,
+                    "note": ""
+                }
+            },
+            "MINI CORD HMC (STOCK)": {
+                "cost": 60000,
+                "selling": 350000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "ENHANCED NEAR VISION"
+                ],
+                "limits": {
+                    "sph_from": -200,
+                    "sph_to": 200,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": 0,
+                    "note": ""
+                }
+            },
+            "MINI CORD PREMIUM (STOCK)": {
+                "cost": 180000,
+                "selling": 650000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "SUPER HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING"
+                ],
+                "limits": {
+                    "sph_from": 850,
+                    "sph_to": -1100,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": 0,
+                    "note": ""
+                }
+            },
+            "INNOVATIVE HMC (STOCK)": {
+                "cost": 160000,
+                "selling": 400000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "FAR & NEAR OPTIMIZED LENS"
+                ],
+                "limits": {
+                    "sph_from": -200,
+                    "sph_to": 200,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": 0,
+                    "note": ""
+                }
+            },
+            "INOCORD PREMIUM (STOCK)": {
+                "cost": 200000,
+                "selling": 700000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "SUPER HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING",
+                    "FAR & NEAR OPTIMIZED LENS"
+                ],
+                "limits": {
+                    "sph_from": -200,
+                    "sph_to": 200,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": 0,
+                    "note": ""
+                }
+            },
+            "FLEXI CORD HMC (STOCK)": {
+                "cost": 180000,
+                "selling": 450000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "FAR & NEAR OPTIMIZED LENS"
+                ],
+                "limits": {
+                    "sph_from": -200,
+                    "sph_to": 200,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": 0,
+                    "note": ""
+                }
+            },
+            "FLEXI TAFT SHMC (STOCK)": {
+                "cost": 280000,
+                "selling": 750000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "IMPACT-RESISTANT"
+                ],
+                "limits": {
+                    "sph_from": -200,
+                    "sph_to": 200,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": 0,
+                    "note": ""
+                }
+            },
+            "FLEXI BLUTAFT (STOCK)": {
+                "cost": 330000,
+                "selling": 1100000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "SUPER HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING",
+                    "IMPACT-RESISTANT",
+                    "FAR & NEAR OPTIMIZED LENS"
+                ],
+                "limits": {
+                    "sph_from": -200,
+                    "sph_to": 200,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": 0,
+                    "note": ""
+                }
+            },
+            "BALANCE CORD SHMC (STOCK)": {
+                "cost": 220000,
+                "selling": 700000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC"
+                ],
+                "limits": {
+                    "sph_from": -200,
+                    "sph_to": 200,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": 0,
+                    "note": ""
+                }
             }
         }
     }
