@@ -695,28 +695,6 @@
                 }
             }
         },
-        "BIFOCAL": {
-            "KRYPTOK HMC": {
-                "cost": 124000,
-                "selling": 0,
-                "features": [
-                    "KRYPTOK STYLE",
-                    "HARD MULTI COAT",
-                    "BIFOCAL",
-                    "CUSTOM RX"
-                ],
-                "limits": {
-                    "sph_from": 0,
-                    "sph_to": -700,
-                    "cyl_from": 0,
-                    "cyl_to": 0,
-                    "add_from": 0,
-                    "add_to": 0,
-                    "comb_max": -1100,
-                    "note": ""
-                }
-            }
-        },
         "KRYPTOK": {
             "LENTICULAR HMC": {
                 "cost": 220000,
