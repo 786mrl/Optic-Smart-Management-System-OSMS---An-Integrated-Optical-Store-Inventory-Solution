@@ -1830,6 +1830,63 @@
                         </div>
 
                         <!-- ============================================================
+                             FRAME BARCODE SCANNER — separate card, outside mp-scan-card
+                             so it is never pulled into fullscreen camera mode.
+                             Hidden until customer toggles YES on the frame purchase toggle.
+                             ============================================================ -->
+                        <div class="full" id="fbs-card" style="display:none;">
+                            <div class="prescription-container" style="text-align:center;">
+
+                                <label>FRAME BARCODE SCAN</label>
+
+                                <!-- Camera viewfinder — hidden until START SCANNER is pressed -->
+                                <div id="fbs-viewfinder" style="display:none; margin-top:14px;">
+                                    <div style="position:relative; width:300px; height:220px; margin:0 auto; border-radius:16px; overflow:hidden; background:#000;">
+                                        <video id="fbs-video" autoplay muted playsinline style="width:100%; height:100%; object-fit:cover;"></video>
+                                        <div id="fbs-scanline" style="position:absolute;left:10%;width:80%;height:2px;background:rgba(0,255,136,0.7);box-shadow:0 0 8px rgba(0,255,136,0.6);top:50%;animation:fbs-slide 2s linear infinite;pointer-events:none;"></div>
+                                        <div style="position:absolute;top:12px;left:12px;width:28px;height:28px;border-top:2px solid #00ff88;border-left:2px solid #00ff88;border-radius:3px 0 0 0;pointer-events:none;"></div>
+                                        <div style="position:absolute;top:12px;right:12px;width:28px;height:28px;border-top:2px solid #00ff88;border-right:2px solid #00ff88;border-radius:0 3px 0 0;pointer-events:none;"></div>
+                                        <div style="position:absolute;bottom:12px;left:12px;width:28px;height:28px;border-bottom:2px solid #00ff88;border-left:2px solid #00ff88;border-radius:0 0 0 3px;pointer-events:none;"></div>
+                                        <div style="position:absolute;bottom:12px;right:12px;width:28px;height:28px;border-bottom:2px solid #00ff88;border-right:2px solid #00ff88;border-radius:0 0 3px 0;pointer-events:none;"></div>
+                                        <div id="fbs-cam-status" style="position:absolute;bottom:10px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.65);color:#00ff88;font-size:9px;padding:3px 10px;border-radius:20px;letter-spacing:1px;white-space:nowrap;">&#9679; SCANNING…</div>
+                                        <canvas id="fbs-canvas" style="display:none;"></canvas>
+                                    </div>
+                                </div>
+
+                                <!-- Manual UFC fallback input -->
+                                <div style="margin:12px auto 0; max-width:300px; position:relative;">
+                                    <input type="text" id="fbs-manual-input" placeholder="Or type UFC manually…"
+                                           style="width:100%; box-sizing:border-box; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); border-radius:10px; color:#ccc; font-size:11px; padding:9px 36px 9px 12px; letter-spacing:0.5px; outline:none;">
+                                    <button type="button" onclick="fbsLookupManual()" title="Search"
+                                            style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:#00ff88;font-size:14px;cursor:pointer;padding:0;">&#128269;</button>
+                                </div>
+
+                                <!-- Result card -->
+                                <div id="fbs-result" style="margin:12px auto 0; max-width:300px; min-height:54px; display:flex; align-items:center; justify-content:center; border:1px solid rgba(0,255,136,0.18); border-radius:12px; padding:12px 14px; background:rgba(0,255,136,0.03);">
+                                    <span style="font-size:10px; color:#444; letter-spacing:0.5px;">Press START SCANNER or type a UFC to begin</span>
+                                </div>
+
+                                <!-- Button row -->
+                                <div class="selection-wrapper" style="margin-top:14px; flex-wrap:wrap; gap:8px;">
+                                    <button type="button" class="neu-btn" id="fbs-start-btn" onclick="fbsStartCamera()">
+                                        <div class="led"></div> START SCANNER
+                                    </button>
+                                    <button type="button" class="neu-btn" id="fbs-stop-btn" style="display:none;" onclick="fbsStopCamera()">
+                                        <div class="led" style="background:#ff4d4d;box-shadow:0 0 6px #ff4d4d;"></div> STOP SCANNER
+                                    </button>
+                                    <button type="button" class="neu-btn" id="fbs-clear-btn" style="display:none;" onclick="fbsClearResult()">
+                                        <div class="led"></div> CLEAR
+                                    </button>
+                                </div>
+
+                                <style>
+                                    @keyframes fbs-slide { 0% { top:15%; } 50% { top:80%; } 100% { top:15%; } }
+                                </style>
+
+                            </div>
+                        </div>
+
+                        <!-- ============================================================
                              LENS RECOMMENDED — appears AFTER Face Shape Analysis
                              ============================================================ -->
                         <div class="full" id="lens-rec-wrap">
@@ -2336,17 +2393,22 @@
             // FRAME PURCHASE TOGGLE
             // ============================================================
             function setFramePurchase(val) {
-                const btnYes     = document.getElementById('frame-purchase-yes');
-                const btnNo      = document.getElementById('frame-purchase-no');
+                const btnYes      = document.getElementById('frame-purchase-yes');
+                const btnNo       = document.getElementById('frame-purchase-no');
                 const faceSection = document.getElementById('mp-face-section');
+                const fbsCard     = document.getElementById('fbs-card');
                 if (val === 1) {
                     btnYes.classList.add('active');
                     btnNo.classList.remove('active');
                     faceSection.style.display = 'block';
+                    if (fbsCard) fbsCard.style.display = 'block';
                 } else {
                     btnNo.classList.add('active');
                     btnYes.classList.remove('active');
                     faceSection.style.display = 'none';
+                    if (fbsCard) fbsCard.style.display = 'none';
+                    // Stop the barcode scanner if it was running
+                    if (typeof fbsStopCamera === 'function') fbsStopCamera();
                 }
             }
             window.setFramePurchase = setFramePurchase;
@@ -3700,6 +3762,285 @@
 
             })(); // end IIFE
 
+        </script>
+
+        <!-- ============================================================
+             FRAME BARCODE SCANNER — JS
+             Library: jsQR 1.4.0 (MIT) — decodes QR codes from camera frames.
+             Endpoint: frame_lookup.php (POST, returns JSON).
+             Throttled to one decode attempt every 300 ms to avoid CPU overload.
+             Camera viewfinder is revealed only after START SCANNER is pressed.
+             ============================================================ -->
+        <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+        <script>
+        (function () {
+            'use strict';
+
+            /* ── DOM refs ──────────────────────────────────────────────── */
+            const fbsCard      = document.getElementById('fbs-card');
+            const fbsViewfinder = document.getElementById('fbs-viewfinder');
+            const fbsVideo     = document.getElementById('fbs-video');
+            const fbsCanvas    = document.getElementById('fbs-canvas');
+            const fbsResult    = document.getElementById('fbs-result');
+            const fbsStartBtn  = document.getElementById('fbs-start-btn');
+            const fbsStopBtn   = document.getElementById('fbs-stop-btn');
+            const fbsClearBtn  = document.getElementById('fbs-clear-btn');
+            const fbsCamStatus = document.getElementById('fbs-cam-status');
+            const fbsManual    = document.getElementById('fbs-manual-input');
+
+            let fbsStream     = null;
+            let fbsRafId      = null;
+            let fbsLocked     = false;   // true once a code is successfully decoded
+            let fbsCtx        = null;
+            let fbsLastScan   = 0;       // timestamp of last decode attempt (throttle)
+            const FBS_THROTTLE = 300;    // ms between decode attempts
+
+            /* ── Start camera ───────────────────────────────────────────── */
+            window.fbsStartCamera = function () {
+                if (fbsStream) return;
+
+                // Reveal viewfinder now that the user asked for it
+                fbsViewfinder.style.display = 'block';
+
+                const constraints = {
+                    video: {
+                        facingMode: { ideal: 'environment' },
+                        width:  { ideal: 1280 },
+                        height: { ideal: 720  }
+                    }
+                };
+
+                navigator.mediaDevices.getUserMedia(constraints)
+                    .then(function (stream) {
+                        fbsStream = stream;
+                        fbsVideo.srcObject = stream;
+                        fbsVideo.play();
+                        fbsVideo.onloadedmetadata = function () {
+                            fbsCanvas.width  = fbsVideo.videoWidth  || 640;
+                            fbsCanvas.height = fbsVideo.videoHeight || 480;
+                            fbsCtx   = fbsCanvas.getContext('2d');
+                            fbsLocked = false;
+                            fbsLastScan = 0;
+                            fbsStartBtn.style.display = 'none';
+                            fbsStopBtn.style.display  = 'inline-flex';
+                            fbsCamStatus.textContent  = '\u25cf SCANNING\u2026';
+                            fbsCamStatus.style.color  = '#00ff88';
+                            fbsRafId = requestAnimationFrame(fbsScanLoop);
+                        };
+                    })
+                    .catch(function (err) {
+                        fbsViewfinder.style.display = 'none';
+                        fbsShowError('Camera access denied. Use manual input below.');
+                        console.error('FBS camera error:', err);
+                    });
+            };
+
+            /* ── Stop camera ────────────────────────────────────────────── */
+            window.fbsStopCamera = function () {
+                if (fbsRafId)  { cancelAnimationFrame(fbsRafId); fbsRafId = null; }
+                if (fbsStream) { fbsStream.getTracks().forEach(function (t) { t.stop(); }); fbsStream = null; }
+                fbsVideo.srcObject = null;
+                fbsViewfinder.style.display = 'none';
+                fbsStartBtn.style.display   = 'inline-flex';
+                fbsStopBtn.style.display    = 'none';
+            };
+
+            /* ── Scan loop — throttled to FBS_THROTTLE ms ───────────────── */
+            // Each tick tries up to 3 decode passes on the same frame:
+            //   Pass 1 — full frame, normal orientation   (fast, catches most codes)
+            //   Pass 2 — centre-crop 60 %, upscaled 2×    (helps small / distant QR)
+            //   Pass 3 — full frame, attempt both orientations (catches light-on-dark QR)
+            function fbsScanLoop(timestamp) {
+                if (!fbsStream || fbsLocked) return;
+
+                if (timestamp - fbsLastScan >= FBS_THROTTLE) {
+                    fbsLastScan = timestamp;
+
+                    if (fbsVideo.readyState >= fbsVideo.HAVE_ENOUGH_DATA) {
+                        var W = fbsCanvas.width;
+                        var H = fbsCanvas.height;
+
+                        // Draw full frame
+                        fbsCtx.drawImage(fbsVideo, 0, 0, W, H);
+
+                        // ── Pass 1: full frame, fast ─────────────────────────
+                        var img1 = fbsCtx.getImageData(0, 0, W, H);
+                        var decoded = jsQR(img1.data, W, H, { inversionAttempts: 'dontInvert' });
+                        if (decoded && decoded.data && decoded.data.trim() !== '') {
+                            return fbsHandleDecoded(decoded.data.trim());
+                        }
+
+                        // ── Pass 2: centre-crop 60 %, drawn onto a 640×640 canvas ──
+                        // This effectively zooms in — great for small QR codes.
+                        var cropW  = Math.floor(W * 0.6);
+                        var cropH  = Math.floor(H * 0.6);
+                        var cropX  = Math.floor((W - cropW) / 2);
+                        var cropY  = Math.floor((H - cropH) / 2);
+                        var zoomSz = 640;
+                        var zoomCv = document.createElement('canvas');
+                        zoomCv.width  = zoomSz;
+                        zoomCv.height = zoomSz;
+                        var zCtx = zoomCv.getContext('2d');
+                        zCtx.drawImage(fbsCanvas, cropX, cropY, cropW, cropH, 0, 0, zoomSz, zoomSz);
+                        var img2 = zCtx.getImageData(0, 0, zoomSz, zoomSz);
+                        decoded = jsQR(img2.data, zoomSz, zoomSz, { inversionAttempts: 'dontInvert' });
+                        if (decoded && decoded.data && decoded.data.trim() !== '') {
+                            return fbsHandleDecoded(decoded.data.trim());
+                        }
+
+                        // ── Pass 3: full frame, handle inverted QR (light on dark) ──
+                        decoded = jsQR(img1.data, W, H, { inversionAttempts: 'attemptBoth' });
+                        if (decoded && decoded.data && decoded.data.trim() !== '') {
+                            return fbsHandleDecoded(decoded.data.trim());
+                        }
+                    }
+                }
+
+                fbsRafId = requestAnimationFrame(fbsScanLoop);
+            }
+
+            function fbsHandleDecoded(value) {
+                fbsLocked = true;
+                fbsCamStatus.textContent = '\u2713 CODE DETECTED';
+                fbsCamStatus.style.color = '#00cfff';
+                // Stop camera immediately after detection
+                if (fbsRafId) { cancelAnimationFrame(fbsRafId); fbsRafId = null; }
+                if (fbsStream) { fbsStream.getTracks().forEach(function(t) { t.stop(); }); fbsStream = null; }
+                fbsVideo.srcObject = null;
+                fbsViewfinder.style.display = 'none';
+                fbsStartBtn.style.display   = 'inline-flex';
+                fbsStopBtn.style.display    = 'none';
+                fbsLookup(value);
+            }
+
+            /* ── Manual input lookup ────────────────────────────────────── */
+            window.fbsLookupManual = function () {
+                var val = (fbsManual.value || '').trim();
+                if (!val) { fbsShowError('Please enter a UFC code.'); return; }
+                fbsLookup(val);
+            };
+            fbsManual.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter') window.fbsLookupManual();
+            });
+
+            /* ── AJAX lookup ────────────────────────────────────────────── */
+            function fbsLookup(ufc) {
+                fbsShowLoading(ufc);
+                var fd = new FormData();
+                fd.append('ufc', ufc);
+                fetch('frame_lookup.php', { method: 'POST', body: fd })
+                    .then(function (r) { return r.json(); })
+                    .then(function (data) {
+                        if (data.found) {
+                            fbsShowFound(data);
+                            // Stop camera after successful find — no need to keep scanning
+                            if (fbsRafId) { cancelAnimationFrame(fbsRafId); fbsRafId = null; }
+                        } else {
+                            fbsShowNotFound(ufc, data.message || 'Frame not found in any database.');
+                        }
+                        fbsClearBtn.style.display = 'inline-flex';
+                    })
+                    .catch(function () {
+                        fbsShowError('Connection error. Check server.');
+                        // On network error, allow re-scan
+                        fbsLocked = false;
+                        if (fbsStream) fbsRafId = requestAnimationFrame(fbsScanLoop);
+                    });
+            }
+
+            /* ── Renderers ──────────────────────────────────────────────── */
+            function fbsShowLoading(ufc) {
+                fbsResult.innerHTML =
+                    '<div style="display:flex;align-items:center;gap:10px;">' +
+                    '<div style="width:14px;height:14px;border:2px solid #00ff88;border-top-color:transparent;border-radius:50%;animation:fbs-spin 0.7s linear infinite;flex-shrink:0;"></div>' +
+                    '<span style="font-size:10px;color:#00ff88;letter-spacing:1px;">Looking up <b style="color:#fff;">' + esc(ufc) + '</b>\u2026</span>' +
+                    '</div>';
+            }
+
+            function fbsShowFound(d) {
+                var srcBadge = (d.source === 'main')
+                    ? '<span style="background:rgba(0,255,136,0.15);color:#00ff88;border:1px solid rgba(0,255,136,0.35);font-size:8px;padding:2px 8px;border-radius:20px;letter-spacing:1px;">\u2713 MAIN DATABASE</span>'
+                    : '<span style="background:rgba(0,207,255,0.12);color:#00cfff;border:1px solid rgba(0,207,255,0.3);font-size:8px;padding:2px 8px;border-radius:20px;letter-spacing:1px;">\u25ce STAGING</span>';
+
+                var stock      = parseInt(d.stock) || 0;
+                var stockColor = stock > 5 ? '#00ff88' : (stock > 0 ? '#ffaa00' : '#ff4d4d');
+                var stockLabel = stock > 0 ? stock + ' pcs' : 'OUT OF STOCK';
+                var priceStr   = (parseFloat(d.sell_price) > 0)
+                    ? 'Rp\u00a0' + parseInt(d.sell_price).toLocaleString('id-ID')
+                    : '<span style="color:#555;font-style:italic;">Contact Staff</span>';
+
+                fbsResult.innerHTML =
+                    '<div style="width:100%;text-align:left;">' +
+                      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:6px;">' +
+                        '<span style="font-size:0.6rem;color:#ccc;letter-spacing:1.5px;font-weight:700;">\u2746 FRAME FOUND</span>' +
+                        srcBadge +
+                      '</div>' +
+                      '<div style="font-size:10px;color:#888;letter-spacing:0.5px;margin-bottom:4px;word-break:break-all;">' + esc(d.ufc) + '</div>' +
+                      '<div style="font-size:1rem;font-weight:800;color:#fff;letter-spacing:1px;margin-bottom:10px;">' + esc(d.brand) + '</div>' +
+                      '<div style="display:flex;gap:10px;flex-wrap:wrap;">' +
+                        '<div style="flex:1;min-width:100px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:10px;padding:10px 12px;text-align:center;">' +
+                          '<div style="font-size:7.5px;color:#555;letter-spacing:1px;margin-bottom:4px;">SELLING PRICE</div>' +
+                          '<div style="font-size:12px;font-weight:700;color:#ffaa00;">' + priceStr + '</div>' +
+                        '</div>' +
+                        '<div style="flex:1;min-width:80px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:10px;padding:10px 12px;text-align:center;">' +
+                          '<div style="font-size:7.5px;color:#555;letter-spacing:1px;margin-bottom:4px;">STOCK</div>' +
+                          '<div style="font-size:12px;font-weight:700;color:' + stockColor + ';">' + stockLabel + '</div>' +
+                        '</div>' +
+                      '</div>' +
+                    '</div>';
+            }
+
+            function fbsShowNotFound(ufc, msg) {
+                fbsResult.innerHTML =
+                    '<div style="text-align:center;">' +
+                      '<div style="font-size:1.1rem;margin-bottom:6px;">&#9888;&#65039;</div>' +
+                      '<div style="font-size:10px;color:#ff4d4d;font-weight:700;margin-bottom:4px;">FRAME NOT FOUND</div>' +
+                      '<div style="font-size:9px;color:#888;word-break:break-all;margin-bottom:4px;">' + esc(ufc) + '</div>' +
+                      '<div style="font-size:9px;color:#666;">' + esc(msg) + '</div>' +
+                    '</div>';
+                // Resume scanning after not-found
+                fbsLocked = false;
+                if (fbsStream) {
+                    fbsCamStatus.textContent = '\u25cf SCANNING\u2026';
+                    fbsCamStatus.style.color = '#00ff88';
+                    fbsLastScan = 0;
+                    fbsRafId = requestAnimationFrame(fbsScanLoop);
+                }
+            }
+
+            function fbsShowError(msg) {
+                fbsResult.innerHTML =
+                    '<span style="font-size:10px;color:#ff4d4d;">\u2715 ' + esc(msg) + '</span>';
+            }
+
+            /* ── Clear result and resume scan ───────────────────────────── */
+            window.fbsClearResult = function () {
+                fbsResult.innerHTML =
+                    '<span style="font-size:10px;color:#444;letter-spacing:0.5px;">Press START SCANNER or type a UFC to begin</span>';
+                fbsClearBtn.style.display = 'none';
+                fbsManual.value = '';
+                fbsLocked  = false;
+                fbsLastScan = 0;
+                if (fbsStream) {
+                    fbsCamStatus.textContent = '\u25cf SCANNING\u2026';
+                    fbsCamStatus.style.color = '#00ff88';
+                    fbsRafId = requestAnimationFrame(fbsScanLoop);
+                }
+            };
+
+            /* ── Utility ────────────────────────────────────────────────── */
+            function esc(str) {
+                var d = document.createElement('div');
+                d.appendChild(document.createTextNode(String(str)));
+                return d.innerHTML;
+            }
+
+            // Inject keyframes for spinner
+            var s = document.createElement('style');
+            s.textContent = '@keyframes fbs-spin { to { transform: rotate(360deg); } }';
+            document.head.appendChild(s);
+
+        }());
         </script>
     </body>
 </html>
