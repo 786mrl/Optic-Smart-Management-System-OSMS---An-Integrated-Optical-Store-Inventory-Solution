@@ -66,22 +66,24 @@
     }
 
     // ============================================================
-    // LENS RECOMMENDATION ENGINE v3
-    // (Fixed: feature names aligned with lense_prices.json,
-    //  full scoring for all 19 lens features, ADD-aware limit
-    //  check, corrected presbyopia design gate)
+    // LENS RECOMMENDATION ENGINE v4
+    // Step 1 — check Rx fits limits (HARD FILTER)
+    // Step 2 — score by habits / digital / symptoms / design
+    // Step 3 — sort: stock first (within same score tier), then lab
+    // Step 4 — show top 5, expand button for rest
     // ============================================================
 
-    // Active prescription: use modified values when modification is saved
+    // ── Active prescription ───────────────────────────────────
     $lr_rMod = ($data['lens_modification'] == 1);
+
+    // lrVal: DB may store as "-900" (shorthand) or "-9.00" (full)
+    // If |value| >= 10 it's shorthand × 100 → divide back to diopters
     function lrVal($data, $modKey, $origKey) {
         $raw = ($data['lens_modification'] == 1 && isset($data[$modKey]) && $data[$modKey] !== '')
                ? $data[$modKey] : $data[$origKey];
         $val = floatval(str_replace('+', '', $raw ?? '0'));
-        // Shorthand input: -50 means -0.50, -225 means -2.25, -100 means -1.00
-        // Any |value| >= 10 is treated as already-multiplied-by-100 format
-        if (abs($val) >= 10) $val = $val / 100;
-        return $val;
+        if (abs($val) >= 10) $val /= 100.0;
+        return round($val, 2);
     }
     $lr_r_sph = lrVal($data, 'mod_r_sph', 'new_r_sph');
     $lr_r_cyl = lrVal($data, 'mod_r_cyl', 'new_r_cyl');
@@ -90,308 +92,275 @@
     $lr_l_cyl = lrVal($data, 'mod_l_cyl', 'new_l_cyl');
     $lr_l_add = lrVal($data, 'mod_l_add', 'new_l_add');
 
+    // ── Patient context ───────────────────────────────────────
     $lr_age     = (int)($data['age']           ?? 0);
     $lr_habit   = (int)($data['visual_habit']  ?? 1); // 1=indoor 2=outdoor 3=both
     $lr_digital = (int)($data['digital_usage'] ?? 1); // 1=low 2=moderate 3=high
     $lr_txt     = strtolower(($data['symptoms'] ?? '') . ' ' . ($data['exam_notes'] ?? ''));
 
-    // ── Derived power metrics ─────────────────────────────────
-    $lr_seR    = abs($lr_r_sph) + abs($lr_r_cyl) / 2;
-    $lr_seL    = abs($lr_l_sph) + abs($lr_l_cyl) / 2;
-    $lr_maxSE  = max($lr_seR, $lr_seL);
+    // Vision need (only populated when age >= 39)
+    $lr_needDist  = (int)($data['need_distance']     ?? 0);
+    $lr_needInter = (int)($data['need_intermediate'] ?? 0);
+    $lr_needNear  = (int)($data['need_near']         ?? 0);
+
+    // ── Derived Rx metrics ────────────────────────────────────
     $lr_maxSph = max(abs($lr_r_sph), abs($lr_l_sph));
     $lr_maxCyl = max(abs($lr_r_cyl), abs($lr_l_cyl));
     $lr_maxAdd = max(abs($lr_r_add), abs($lr_l_add));
+    $lr_seR    = abs($lr_r_sph) + abs($lr_r_cyl) / 2.0;
+    $lr_seL    = abs($lr_l_sph) + abs($lr_l_cyl) / 2.0;
+    $lr_maxSE  = max($lr_seR, $lr_seL);
 
-    // ── Profile flags ─────────────────────────────────────────
-    // Presbyopia: ADD ≥ 0.75 and age ≥ 39
-    $lr_isPresbyopia  = ($lr_maxAdd >= 0.75 && $lr_age >= 39);
+    // ── Power flags ───────────────────────────────────────────
     $lr_isHighPow     = ($lr_maxSE >= 4.0 || $lr_maxCyl >= 2.0);
     $lr_isVeryHighPow = ($lr_maxSE >= 6.0 || $lr_maxCyl >= 3.0);
 
-    // ── Symptom / notes flags ─────────────────────────────────
+    // Presbyopia: ADD present AND age ≥ 39
+    $lr_isPresbyopia = ($lr_maxAdd >= 0.75 && $lr_age >= 39);
+
+    // ── Symptom flags ─────────────────────────────────────────
     $lr_hasGlare     = (bool)preg_match('/glare|silau/', $lr_txt);
     $lr_hasEyeStrain = (bool)preg_match('/eye.?strain|mata.?lelah|\blelah\b/', $lr_txt);
     $lr_hasHeadache  = (bool)preg_match('/headache|sakit.?kepala/', $lr_txt);
-    $lr_hasDM        = (strpos($lr_txt, 'diabetes') !== false);
+    $lr_hasDM        = (strpos($lr_txt, 'diabetes')     !== false);
     $lr_hasHT        = (strpos($lr_txt, 'hypertension') !== false);
     $lr_hasDryEye    = (bool)preg_match('/dry.?eye|mata.?kering/', $lr_txt);
     $lr_hasDriving   = (bool)preg_match('/bawa.?mobil|mengemudi|driving|berkendara/', $lr_txt);
     $lr_hasImpact    = (bool)preg_match('/olahraga|sport|bentur|impact/', $lr_txt);
 
-    // ── Load lens catalog ─────────────────────────────────────
-    $lr_catalog = [];
+    // ── Load catalog ──────────────────────────────────────────
+    $lr_catalog  = [];
     $lr_jsonPath = __DIR__ . '/data_json/lense_prices.json';
     if (is_readable($lr_jsonPath)) {
         $raw = @file_get_contents($lr_jsonPath);
         if ($raw !== false) $lr_catalog = json_decode($raw, true) ?? [];
     }
 
-    // ── Prescription-fit check (includes ADD for presbyopia lenses) ──
-    // Returns true if BOTH eyes fall within the lens power limits
-    function lr_fits_limits($r_sph, $r_cyl, $l_sph, $l_cyl, $r_add, $l_add, $lim) {
+    // ── Presbyopia design type ────────────────────────────────
+    // Priority: explicit vision_need > symptom keywords > habits
+    // Returns: 'all_distance' | 'dynamic' | 'far_near' | 'near' | 'far_only'
+    function lr_presbyDesign($needDist, $needInter, $needNear, $habit, $digital, $txt) {
+        $anySet = ($needDist || $needInter || $needNear);
+        if ($anySet) {
+            if ( $needDist &&  $needInter &&  $needNear) return 'all_distance';
+            if ( $needDist &&  $needInter && !$needNear) return 'dynamic';
+            if ( $needDist && !$needInter &&  $needNear) return 'far_near';
+            if (!$needDist &&  $needInter &&  $needNear) return 'near';
+            if (!$needDist && !$needInter &&  $needNear) return 'near';
+            if ( $needDist && !$needInter && !$needNear) return 'far_only'; // SV only
+            if (!$needDist &&  $needInter && !$needNear) return 'dynamic';
+        }
+        if (preg_match('/baca|membaca|jahit|sewing|close.?work|near.?work/', $txt)) return 'near';
+        if (preg_match('/mengemudi|bawa.?mobil|driving|berkendara/', $txt))          return 'far_near';
+        if ($habit == 3 || ($digital >= 2 && $habit >= 2)) return 'all_distance';
+        if ($habit == 2) return 'far_near';
+        return 'far_near';
+    }
+    $lr_presbyType  = $lr_isPresbyopia
+        ? lr_presbyDesign($lr_needDist, $lr_needInter, $lr_needNear, $lr_habit, $lr_digital, $lr_txt)
+        : '';
+    $lr_farOnlySV   = ($lr_isPresbyopia && $lr_presbyType === 'far_only');
+
+    // ============================================================
+    // STEP 1 — Rx fit check
+    // JSON limits are in 1/100 D integers (e.g. -800 = -8.00 D).
+    // Prescription values are floats in diopters (e.g. -9.00 D).
+    //
+    // Special cases for CYL:
+    //   cyl_from=0, cyl_to=0  → lens accepts NO cylinder (plano-only)
+    //   cyl_from=-25, cyl_to=-200 → lens accepts CYL -0.25 to -2.00
+    // ============================================================
+    function lr_rxFits($r_sph, $r_cyl, $l_sph, $l_cyl, $r_add, $l_add, $lim) {
         $maxS   = max(abs($r_sph), abs($l_sph));
         $maxC   = max(abs($r_cyl), abs($l_cyl));
         $maxAdd = max(abs($r_add), abs($l_add));
 
-        // Sphere check (sph_to = max magnitude; 0 = no restriction)
-        if ($lim['sph_to'] != 0 && $maxS > abs($lim['sph_to'])) return false;
-        // Cylinder check (cyl_to = max magnitude; 0 = no restriction)
-        if ($lim['cyl_to'] != 0 && $maxC > abs($lim['cyl_to'])) return false;
-        // Combined check (comb_max; 0 = no restriction)
-        if ($lim['comb_max'] != 0 && ($maxS + $maxC) > abs($lim['comb_max'])) return false;
-        // ADD range check (only when lens has ADD limits)
+        // ── Sphere check ─────────────────────────────────────
+        // sph_to=0 means no restriction
+        $limSph = ($lim['sph_to'] != 0) ? abs($lim['sph_to']) / 100.0 : 0.0;
+        if ($limSph > 0.0 && $maxS > $limSph) return false;
+
+        // ── Cylinder check ────────────────────────────────────
+        // cyl_from=0 AND cyl_to=0 → lens only accepts plano (no CYL at all)
+        // cyl_to != 0              → lens accepts CYL up to abs(cyl_to)/100
+        if ($lim['cyl_from'] == 0 && $lim['cyl_to'] == 0) {
+            // Plano-only lens: reject any cylinder
+            if ($maxC > 0.0) return false;
+        } elseif ($lim['cyl_to'] != 0) {
+            $limCyl = abs($lim['cyl_to']) / 100.0;
+            if ($maxC > $limCyl) return false;
+        }
+
+        // ── Combined SPH+CYL check ────────────────────────────
+        // comb_max=0 means no restriction
+        $limComb = ($lim['comb_max'] != 0) ? abs($lim['comb_max']) / 100.0 : 0.0;
+        if ($limComb > 0.0 && ($maxS + $maxC) > $limComb) return false;
+
+        // ── ADD range check ───────────────────────────────────
+        // add_to=0 means this lens has no ADD requirement
         if ($lim['add_to'] != 0) {
-            $addMin = abs($lim['add_from']);
-            $addMax = abs($lim['add_to']);
-            if ($maxAdd < $addMin || $maxAdd > $addMax) return false;
+            $limAddMin = abs($lim['add_from']) / 100.0;
+            $limAddMax = abs($lim['add_to'])   / 100.0;
+            if ($maxAdd < $limAddMin || $maxAdd > $limAddMax) return false;
         }
         return true;
     }
 
-    // ── Determine presbyopia design type needed ───────────────
-    // Based on visual habits and notes to pick the right lens design
-    function lr_presbyopia_design($habit, $digital, $lr_txt) {
-        // near-dominant: reading / close work emphasis
-        $nearDominant = (bool)preg_match('/baca|membaca|jahit|sewing|close.?work|near.?work/', $lr_txt);
-        // driving / outdoor intermediate distance
-        $drivingFocus = (bool)preg_match('/mengemudi|bawa.?mobil|driving|berkendara/', $lr_txt);
-
-        if ($nearDominant) return 'near'; // SHORT CORD / MINICORD / ENHANCED NEAR VISION
-        if ($drivingFocus) return 'far_near'; // FLEXI CORD / FAR & NEAR OPTIMIZED
-        if ($habit == 3 || ($digital >= 2 && $habit >= 2)) return 'all_distance'; // BALANCE CORD
-        if ($habit == 2) return 'far_near'; // outdoor = far & near
-        return 'far_near'; // default
-    }
-    $lr_presbyDesign = $lr_isPresbyopia
-        ? lr_presbyopia_design($lr_habit, $lr_digital, $lr_txt)
-        : '';
-
-    // ── Relevance scoring ─────────────────────────────────────
-    // Returns a score for how well a lens matches this customer's profile.
-    // -9999 = hard exclusion (wrong design category).
-    function lr_score($features, $source, $category, $isPresby, $presbyDesign,
-                      $habit, $digital, $maxSE, $maxCyl, $maxAdd, $age,
-                      $hasGlare, $hasEyeStrain, $hasHeadache, $hasDryEye,
-                      $hasDriving, $hasImpact) {
-
-        $cat    = strtoupper($category);
+    // ── Lens category gate ────────────────────────────────────
+    // Returns true when the lens category is allowed for this patient.
+    function lr_catAllowed($category, $isPresby, $farOnlySV) {
+        $cat    = strtoupper(trim($category));
         $isSV   = ($cat === 'SINGLE VISION');
         $isProg = in_array($cat, ['PROGRESSIVE', 'KRYPTOK', 'FLATTOP']);
+        if ($farOnlySV) return $isSV;          // presbyopia but only needs far → SV
+        if ($isPresby)  return $isProg;         // presbyopia → progressive only
+        return $isSV;                           // normal → SV only
+    }
 
-        // Hard gate: keep only the right design type for this patient
-        if ($isPresby  && $isSV)   return -9999;
-        if (!$isPresby && $isProg) return -9999;
+    // ============================================================
+    // STEP 2 — Relevance score (lifestyle + symptoms + design)
+    // Higher = better match. Stock/lab weighting done in step 3.
+    // ============================================================
+    function lr_score($features, $category, $isPresby, $presbyType, $farOnlySV,
+                      $habit, $digital, $maxSE, $maxCyl, $age,
+                      $hasGlare, $hasEyeStrain, $hasHeadache, $hasDryEye,
+                      $hasDriving, $hasImpact) {
+        $s   = 0;
+        $cat = strtoupper(trim($category));
 
-        $s = 0;
+        // ── Progressive design match ─────────────────────────
+        if ($isPresby && !$farOnlySV) {
+            $hasAllDist = in_array('ALL-DISTANCE PROGRESSIVE', $features);
+            $hasFarNear = in_array('FAR & NEAR OPTIMIZED LENS', $features);
+            $hasDynamic = in_array('DYNAMIC DISTANCE LENS',     $features);
+            $hasNearOpt = in_array('NEAR-OPTIMIZED LENS',       $features);
+            $hasEnhNear = in_array('ENHANCED NEAR VISION',      $features);
 
-        // ── Presbyopia: score lens design features ───────────────
-        // The feature names in the JSON determine the design type.
-        if ($isPresby) {
-            $hasAllDist    = in_array('ALL-DISTANCE PROGRESSIVE', $features);
-            $hasFarNear    = in_array('FAR & NEAR OPTIMIZED LENS', $features);
-            $hasDynamic    = in_array('DYNAMIC DISTANCE LENS', $features);
-            $hasNearOpt    = in_array('NEAR-OPTIMIZED LENS', $features);
-            $hasEnhNear    = in_array('ENHANCED NEAR VISION', $features);
-
-            // Score based on design match
-            if ($presbyDesign === 'all_distance') {
-                if ($hasAllDist)  $s += 40;
-                elseif ($hasFarNear) $s += 25;
-                elseif ($hasDynamic) $s += 15;
-                elseif ($hasNearOpt || $hasEnhNear) $s += 5;
-            } elseif ($presbyDesign === 'far_near') {
-                if ($hasFarNear)  $s += 40;
-                elseif ($hasAllDist) $s += 28;
-                elseif ($hasDynamic) $s += 15;
-                elseif ($hasNearOpt || $hasEnhNear) $s += 5;
-            } elseif ($presbyDesign === 'near') {
-                if ($hasEnhNear)  $s += 40;
-                elseif ($hasNearOpt) $s += 35;
-                elseif ($hasFarNear) $s += 15;
-                elseif ($hasAllDist) $s += 10;
+            $designScores = [
+                'all_distance' => [$hasAllDist=>40, $hasFarNear=>25, $hasDynamic=>15,
+                                   ($hasNearOpt||$hasEnhNear)=>5],
+                'dynamic'      => [$hasDynamic=>40, $hasAllDist=>30, $hasFarNear=>20,
+                                   ($hasNearOpt||$hasEnhNear)=>5],
+                'far_near'     => [$hasFarNear=>40, $hasAllDist=>28, $hasDynamic=>15,
+                                   ($hasNearOpt||$hasEnhNear)=>5],
+                'near'         => [$hasEnhNear=>40, $hasNearOpt=>35, $hasFarNear=>15,
+                                   $hasAllDist=>10],
+            ];
+            if (isset($designScores[$presbyType])) {
+                foreach ($designScores[$presbyType] as $matches => $pts) {
+                    if ($matches) { $s += $pts; break; }
+                }
             } else {
-                // Default fallback: ALL-DISTANCE > FAR_NEAR > rest
                 if ($hasAllDist)  $s += 30;
                 elseif ($hasFarNear) $s += 25;
             }
-
-            // Flat-top / kryptok style: older patients may prefer simplicity
-            if ($cat === 'KRYPTOK' || $cat === 'FLATTOP') {
-                $s += ($age >= 65) ? 10 : 2;
-            }
+            if ($cat === 'KRYPTOK' || $cat === 'FLATTOP') $s += ($age >= 65) ? 10 : 2;
         }
 
-        // ── Feature × lifestyle scoring ─────────────────────────
+        // ── Feature × lifestyle ──────────────────────────────
         foreach ($features as $feat) {
             switch (strtoupper(trim($feat))) {
-
-                // ── Blue light blocking ──────────────────────────
                 case 'BLUE LIGHT BLOCKING':
                     if ($digital == 3)     $s += 28;
                     elseif ($digital == 2) $s += 15;
                     if (($hasEyeStrain || $hasHeadache) && $digital >= 2) $s += 8;
                     if ($hasDryEye && $digital >= 2) $s += 4;
                     break;
-
-                // ── Photochromic ─────────────────────────────────
                 case 'PHOTOCHROMIC':
-                    if ($habit == 2)      $s += 22;
-                    elseif ($habit == 3)  $s += 14;
-                    else                  $s -= 12;   // indoor: penalty
+                    if ($habit == 2)     $s += 22;
+                    elseif ($habit == 3) $s += 14;
+                    else                 $s -= 12;
                     if ($hasGlare && $habit >= 2) $s += 10;
                     break;
-
-                // ── Night drive coating ──────────────────────────
                 case 'NIGHT DRIVE COATING':
                     if ($hasDriving)     $s += 20;
                     elseif ($habit >= 2) $s += 8;
-                    else                 $s -= 10;   // indoor: penalty
+                    else                 $s -= 10;
                     break;
-
-                // ── High index 1.67 ──────────────────────────────
                 case 'HIGH INDEX 1.67':
-                case 'HIGHT INDEX 1.67':  // typo variant in JSON
+                case 'HIGHT INDEX 1.67':
                     if ($maxSE >= 6.0)     $s += 35;
                     elseif ($maxSE >= 4.0) $s += 22;
                     elseif ($maxSE >= 2.0) $s += 10;
                     break;
-
-                // ── High-index UV400 (premium coating tier) ──────
                 case 'HIGH-INDEX UV400 PROTECTION':
-                    $s += 4; // base coating bonus
-                    if ($habit >= 2) $s += 5; // outdoor UV bonus
+                    $s += 4;
+                    if ($habit >= 2) $s += 5;
                     break;
-
-                // ── High power Rx (lenticular) ───────────────────
                 case 'HIGH POWER RX':
                     if ($maxSE >= 8.0)     $s += 35;
                     elseif ($maxSE >= 6.0) $s += 22;
                     elseif ($maxSE >= 4.0) $s += 8;
                     break;
-
-                // ── Impact resistant ─────────────────────────────
                 case 'IMPACT-RESISTANT':
                     if ($hasImpact)      $s += 20;
                     elseif ($habit >= 2) $s += 6;
                     break;
-
-                // ── Super hydrophobic / hydrophobic ──────────────
-                case 'SUPER HYDROPHOBIC':
-                    $s += ($habit >= 2) ? 8 : 2;
-                    break;
-                case 'HYDROPHOBIC':
-                    $s += ($habit >= 2) ? 5 : 1;
-                    break;
-
-                // ── Smudge-resistant ─────────────────────────────
-                case 'SMUDGE-RESISTANT':
-                    $s += 3;
-                    break;
-
-                // ── Anti-static ──────────────────────────────────
-                case 'ANTI-STATIC':
-                    $s += 2;
-                    break;
-
-                // ── Scratch-resistant ────────────────────────────
-                case 'SCRATCH-RESISTANT COATING':
-                    $s += ($habit >= 2) ? 4 : 1;
-                    break;
-
-                // ── Anti-reflective ──────────────────────────────
+                case 'SUPER HYDROPHOBIC': $s += ($habit >= 2) ? 8 : 2;  break;
+                case 'HYDROPHOBIC':       $s += ($habit >= 2) ? 5 : 1;  break;
+                case 'SMUDGE-RESISTANT':  $s += 3;  break;
+                case 'ANTI-STATIC':       $s += 2;  break;
+                case 'SCRATCH-RESISTANT COATING': $s += ($habit >= 2) ? 4 : 1; break;
                 case 'ANTI-REFLECTIVE (AR) COATING':
-                    // Bonus when glare / eye strain / screen use is present
-                    if ($hasGlare)       $s += 12;
+                    if ($hasGlare)                          $s += 12;
                     elseif ($hasEyeStrain || $digital >= 2) $s += 6;
-                    else                 $s += 2;
+                    else                                    $s += 2;
                     break;
-
-                // ── UV protection ────────────────────────────────
-                case 'UV PROTECTION':
-                    $s += ($habit >= 2) ? 5 : 0;
-                    break;
-
-                // ── Lens design features — already scored above ──
-                // These cases prevent double-counting; we just break silently.
+                case 'UV PROTECTION': $s += ($habit >= 2) ? 5 : 0; break;
+                // progressive design features scored above — skip here
                 case 'ALL-DISTANCE PROGRESSIVE':
                 case 'FAR & NEAR OPTIMIZED LENS':
                 case 'DYNAMIC DISTANCE LENS':
                 case 'NEAR-OPTIMIZED LENS':
                 case 'ENHANCED NEAR VISION':
-                    // Handled in presbyopia design block above
                     break;
             }
         }
-
-        // ── Source bonus ─────────────────────────────────────────
-        if ($source === 'stock' && $maxSE < 4.0 && $maxCyl < 2.0) $s += 5;
-        if ($source === 'lab'   && ($maxSE >= 5.0 || $maxCyl >= 3.0)) $s += 8;
-
         return $s;
     }
 
-    // ── Build sorted candidate list ───────────────────────────
-
-    // First pass: check if prescription fits within ANY stock lens limits.
-    // If yes → lab lenses are redundant and should not be shown.
-    $lr_anyStockFits = false;
-    foreach (($lr_catalog['stock'] ?? []) as $category => $types) {
-        foreach ($types as $type => $lens) {
-            $lim = $lens['limits'] ?? [];
-            if (!empty($lim) && lr_fits_limits(
-                    $lr_r_sph, $lr_r_cyl, $lr_l_sph, $lr_l_cyl,
-                    $lr_r_add, $lr_l_add, $lim)) {
-                $lr_anyStockFits = true;
-                break 2;
-            }
-        }
-    }
-
-    // Threshold for High-Index to be relevant
-    $lr_hiIndexThreshold = 3.0;
-
+    // ============================================================
+    // STEP 3 — Build candidate list: fit → score → sort
+    // Sort key: stock before lab (within same score band),
+    //           then descending score, then ascending price.
+    // ============================================================
     $lr_candidates = [];
+
     foreach ($lr_catalog as $source => $categories) {
-        $readiness = ($source === 'stock') ? 'Siap 1-2 Hari' : 'Gosok Lab, Siap 7-10 Hari';
+        $readiness = ($source === 'stock') ? 'Ready in 2 Days' : 'Lab Order, Ready 7-10 Days';
         foreach ($categories as $category => $types) {
+
+            // Gate: skip categories not allowed for this patient type
+            if (!lr_catAllowed($category, $lr_isPresbyopia, $lr_farOnlySV)) continue;
+
             foreach ($types as $type => $lens) {
                 $lim      = $lens['limits']   ?? [];
                 $features = $lens['features'] ?? [];
                 $selling  = (int)($lens['selling'] ?? 0);
-                $lensNote = $lim['note'] ?? '';
+                $lensNote = $lens['limits']['note'] ?? '';
 
-                // Skip lab lenses entirely when stock already covers this prescription
-                if ($source === 'lab' && $lr_anyStockFits) continue;
-
-                // Skip HIGH INDEX lenses when power is too low to benefit
-                $isHighIndex = in_array('HIGH INDEX 1.67', $features)
-                            || in_array('HIGHT INDEX 1.67', $features)  // typo in JSON
-                            || in_array('HIGH POWER RX', $features);
-                if ($isHighIndex && $lr_maxSE < $lr_hiIndexThreshold && $lr_maxCyl < $lr_hiIndexThreshold) continue;
-
-                // Skip if prescription out of range for this lens (includes ADD check)
-                if (!empty($lim) && !lr_fits_limits(
+                // HARD FILTER 1: Rx must fit limits
+                if (!empty($lim) && !lr_rxFits(
                         $lr_r_sph, $lr_r_cyl, $lr_l_sph, $lr_l_cyl,
                         $lr_r_add, $lr_l_add, $lim)) continue;
 
+                // HARD FILTER 2: skip high-index/lenticular if power too low to benefit
+                $isHiIdx = in_array('HIGH INDEX 1.67', $features)
+                        || in_array('HIGHT INDEX 1.67', $features)
+                        || in_array('HIGH POWER RX',    $features);
+                if ($isHiIdx && $lr_maxSE < 3.0 && $lr_maxCyl < 3.0) continue;
+
                 $score = lr_score(
-                    $features, $source, $category,
-                    $lr_isPresbyopia, $lr_presbyDesign,
+                    $features, $category,
+                    $lr_isPresbyopia, $lr_presbyType, $lr_farOnlySV,
                     $lr_habit, $lr_digital,
-                    $lr_maxSE, $lr_maxCyl, $lr_maxAdd, $lr_age,
+                    $lr_maxSE, $lr_maxCyl, $lr_age,
                     $lr_hasGlare, $lr_hasEyeStrain, $lr_hasHeadache,
                     $lr_hasDryEye, $lr_hasDriving, $lr_hasImpact
                 );
 
-                if ($score <= -9999) continue;
-
-                // Price tiebreaker: cheaper wins among equal scores.
-                // Scale: 2M lens → -3.3 impact; 90k → -0.15 impact.
-                if ($selling > 0) $score -= ($selling / 600000.0);
-
                 $lr_candidates[] = [
-                    'source'    => $source,
+                    'source'    => $source,         // 'stock' | 'lab'
                     'category'  => $category,
                     'type'      => $type,
                     'selling'   => $selling,
@@ -403,35 +372,132 @@
             }
         }
     }
+
+    // Sort: stock first within same score band, then score desc, then price asc
     usort($lr_candidates, function($a, $b) {
-        return ($b['score'] > $a['score']) ? 1 : (($b['score'] < $a['score']) ? -1 : 0);
+        // Primary: score descending
+        if ($b['score'] !== $a['score']) return ($b['score'] > $a['score']) ? 1 : -1;
+        // Secondary: stock beats lab
+        $aStock = ($a['source'] === 'stock') ? 0 : 1;
+        $bStock = ($b['source'] === 'stock') ? 0 : 1;
+        if ($aStock !== $bStock) return $aStock - $bStock;
+        // Tertiary: price ascending
+        return $a['selling'] - $b['selling'];
     });
 
     // ── Special warning notes ─────────────────────────────────
     $lr_specialNotes = [];
     if ($lr_hasDM)
-        $lr_specialNotes[] = ['🩸', 'DIABETES — Risiko katarak lebih tinggi. Disarankan lensa dengan UV protection & anti-blue.'];
+        $lr_specialNotes[] = ['🩸', 'DIABETES — Higher cataract risk. UV protection & blue light blocking lens recommended.'];
     if ($lr_hasHT)
-        $lr_specialNotes[] = ['❤️', 'HYPERTENSION — Pantau perubahan visus secara berkala.'];
+        $lr_specialNotes[] = ['❤️', 'HYPERTENSION — Monitor vision changes regularly.'];
     if ($lr_isVeryHighPow)
-        $lr_specialNotes[] = ['⚡', 'Ukuran sangat tinggi (SE ≥ 6.00D) — Lensa High Index 1.67 atau Lenticular sangat dianjurkan.'];
-    if ($lr_isPresbyopia && $lr_presbyDesign === 'all_distance')
-        $lr_specialNotes[] = ['👁️', 'Presbiopi: butuh semua jarak — Progressive ALL-DISTANCE paling sesuai.'];
-    elseif ($lr_isPresbyopia && $lr_presbyDesign === 'far_near')
-        $lr_specialNotes[] = ['👓', 'Presbiopi: dominan jauh & dekat — Lensa FAR & NEAR OPTIMIZED direkomendasikan.'];
-    elseif ($lr_isPresbyopia && $lr_presbyDesign === 'near')
-        $lr_specialNotes[] = ['📚', 'Presbiopi: dominan dekat — Lensa ENHANCED NEAR VISION / SHORT CORD paling sesuai.'];
+        $lr_specialNotes[] = ['⚡', 'Very high prescription (SE ≥ 6.00D) — High Index 1.67 or Lenticular lens strongly advised.'];
+    if ($lr_isPresbyopia && $lr_farOnlySV)
+        $lr_specialNotes[] = ['👓', 'Distance only needed — SINGLE VISION lens recommended.'];
+    elseif ($lr_isPresbyopia && $lr_presbyType === 'all_distance')
+        $lr_specialNotes[] = ['👁️', 'Presbyopia: all distances needed — ALL-DISTANCE PROGRESSIVE is the best fit.'];
+    elseif ($lr_isPresbyopia && $lr_presbyType === 'dynamic')
+        $lr_specialNotes[] = ['🚀', 'Presbyopia: dominant far & intermediate — DYNAMIC DISTANCE LENS is the best fit.'];
+    elseif ($lr_isPresbyopia && $lr_presbyType === 'far_near')
+        $lr_specialNotes[] = ['👓', 'Presbyopia: dominant far & near — FAR & NEAR OPTIMIZED lens recommended.'];
+    elseif ($lr_isPresbyopia && $lr_presbyType === 'near')
+        $lr_specialNotes[] = ['📚', 'Presbyopia: dominant near — ENHANCED NEAR VISION / SHORT CORD lens is the best fit.'];
     if ($lr_hasEyeStrain || $lr_hasHeadache)
-        $lr_specialNotes[] = ['😣', 'Keluhan mata lelah / sakit kepala — Lensa Blue Light Blocking dapat membantu.'];
+        $lr_specialNotes[] = ['😣', 'Eye strain / headache complaints — Blue Light Blocking lens may help.'];
     if ($lr_hasDryEye)
-        $lr_specialNotes[] = ['💧', 'Dry Eye — Lensa Blue Light Blocking & Super Hydrophobic mengurangi iritasi layar.'];
+        $lr_specialNotes[] = ['💧', 'Dry Eye — Blue Light Blocking & Super Hydrophobic lens reduces screen irritation.'];
     if ($lr_hasDriving)
-        $lr_specialNotes[] = ['🚗', 'Sering berkendara — Lensa dengan Night Drive Coating & Photochromic sangat dianjurkan.'];
+        $lr_specialNotes[] = ['🚗', 'Frequent driving — Night Drive Coating & Photochromic lens strongly advised.'];
 
     // Helper: format price
     function lr_fmt_price($v) {
-        if ((int)$v <= 0) return '<span style="color:#555;font-size:9.5px;font-style:italic;">Hubungi Staff</span>';
+        if ((int)$v <= 0) return '<span style="color:#555;font-size:9.5px;font-style:italic;">Contact Staff</span>';
         return 'Rp&nbsp;' . number_format((int)$v, 0, ',', '.');
+    }
+
+    // ── Helper: bucket a list into 4 price tabs ───────────────
+    function lr_priceBuckets($list) {
+        return [
+            'rekomendasi' => ['label'=>'★ REKOMENDASI', 'data'=>$list,  'color'=>'#ffaa00', 'limit'=>5],
+            'normal'      => ['label'=>'NORMAL', 'data'=>array_values(array_filter($list, function($c){ return $c['selling'] > 0      && $c['selling'] <= 600000;  })), 'color'=>'#00ff88', 'limit'=>999],
+            'sedang'      => ['label'=>'SEDANG', 'data'=>array_values(array_filter($list, function($c){ return $c['selling'] > 600000  && $c['selling'] <= 1000000; })), 'color'=>'#00cfff', 'limit'=>999],
+            'tinggi'      => ['label'=>'TINGGI', 'data'=>array_values(array_filter($list, function($c){ return $c['selling'] > 1000000; })),                           'color'=>'#ff8a4d', 'limit'=>999],
+        ];
+    }
+
+    // ── Design-need match ─────────────────────────────────────
+    // Returns true when $cand satisfies the patient's vision need.
+    // Kryptok & Flattop are bifocals — they implicitly cover far+near needs.
+    function lr_meetsDesign($cand, $wantedFeats, $presbyType) {
+        if (empty($wantedFeats) && $presbyType !== 'far_only') return false;
+        $cat    = strtoupper(trim($cand['category']));
+        $isProg = in_array($cat, array('PROGRESSIVE','KRYPTOK','FLATTOP'));
+        if (!$isProg) return false;
+        if ($cat === 'KRYPTOK' || $cat === 'FLATTOP') {
+            return in_array($presbyType, array('far_near','far_only','all_distance','dynamic'));
+        }
+        foreach ($wantedFeats as $wf) {
+            if (in_array($wf, $cand['features'])) return true;
+        }
+        return false;
+    }
+
+    // ── Vision-need design features ───────────────────────────
+    $lr_designFeatureMap = [
+        'all_distance' => ['ALL-DISTANCE PROGRESSIVE'],
+        'dynamic'      => ['DYNAMIC DISTANCE LENS','ALL-DISTANCE PROGRESSIVE'],
+        'far_near'     => ['FAR & NEAR OPTIMIZED LENS','ALL-DISTANCE PROGRESSIVE'],
+        'near'         => ['ENHANCED NEAR VISION','NEAR-OPTIMIZED LENS','ALL-DISTANCE PROGRESSIVE'],
+        'far_only'     => [],
+    ];
+    $lr_wantedDesignFeats = ($lr_isPresbyopia && isset($lr_designFeatureMap[$lr_presbyType]))
+        ? $lr_designFeatureMap[$lr_presbyType] : [];
+
+    // ── Lens type config ──────────────────────────────────────
+    $lr_typeConfig = [
+        'sv'          => ['label'=>'SINGLE VISION', 'icon'=>'👓', 'color'=>'#00ff88'],
+        'kryptok'     => ['label'=>'KRYPTOK',       'icon'=>'🔵', 'color'=>'#00cfff'],
+        'progressive' => ['label'=>'PROGRESSIVE',   'icon'=>'🔭', 'color'=>'#aa88ff'],
+        'flattop'     => ['label'=>'FLAT TOP',      'icon'=>'📐', 'color'=>'#ff8a4d'],
+    ];
+
+    // ── Split candidates by lens type ─────────────────────────
+    $lr_byType = [];
+    foreach ($lr_candidates as $c) {
+        $cat = strtoupper(trim($c['category']));
+        if      ($cat === 'SINGLE VISION') $key = 'sv';
+        elseif  ($cat === 'KRYPTOK')       $key = 'kryptok';
+        elseif  ($cat === 'PROGRESSIVE')   $key = 'progressive';
+        elseif  ($cat === 'FLATTOP')       $key = 'flattop';
+        else                               $key = 'sv';
+        $lr_byType[$key][] = $c;
+    }
+
+    // First active type
+    $lr_firstType = '';
+    foreach ($lr_typeConfig as $tk => $tc) {
+        if (!empty($lr_byType[$tk])) { $lr_firstType = $tk; break; }
+    }
+
+    // ── Pre-compute design match per type+price ───────────────
+    $lr_hasDesign = array();
+    foreach ($lr_typeConfig as $tk => $tc) {
+        $lr_hasDesign[$tk] = array();
+        $tList = isset($lr_byType[$tk]) ? $lr_byType[$tk] : [];
+        $typeHas = false;
+        foreach ($tList as $c) {
+            if (lr_meetsDesign($c, $lr_wantedDesignFeats, $lr_presbyType)) { $typeHas = true; break; }
+        }
+        $lr_hasDesign[$tk]['_type'] = $typeHas;
+        $buckets = lr_priceBuckets($tList);
+        foreach ($buckets as $pk => $pb) {
+            $has = false;
+            foreach ($pb['data'] as $c) {
+                if (lr_meetsDesign($c, $lr_wantedDesignFeats, $lr_presbyType)) { $has = true; break; }
+            }
+            $lr_hasDesign[$tk][$pk] = $has;
+        }
     }
 
 
@@ -1541,7 +1607,19 @@
                                     </div>
                                     <div style="display:flex;align-items:center;gap:8px;">
                                         <span style="font-size:8px;background:rgba(255,170,0,0.1);color:#ffaa00;border:1px solid rgba(255,170,0,0.28);border-radius:20px;padding:3px 9px;letter-spacing:0.5px;">
-                                            <?php echo $lr_isPresbyopia ? 'PRESBYOPIA' : 'SINGLE VISION'; ?>
+                                            <?php
+                                            if (!$lr_isPresbyopia) {
+                                                echo 'SINGLE VISION';
+                                            } elseif ($lr_farOnlySV) {
+                                                echo 'PRESBYOPIA → SV (DISTANCE)';
+                                            } else {
+                                                $lblMap = ['all_distance'=>'ALL-DISTANCE','dynamic'=>'DYNAMIC','far_near'=>'FAR & NEAR','near'=>'NEAR-OPTIMIZED'];
+                                                echo 'PRESBYOPIA → ' . ($lblMap[$lr_presbyType] ?? strtoupper($lr_presbyType));
+                                            }
+                                            ?>
+                                        </span>
+                                        <span style="font-size:8px;background:rgba(0,255,136,0.07);color:#00ff88;border:1px solid rgba(0,255,136,0.2);border-radius:20px;padding:3px 9px;letter-spacing:0.5px;">
+                                            <?php echo count($lr_candidates); ?> lens matched
                                         </span>
                                         <span id="lr-chev" style="color:#ffaa00;font-size:11px;display:inline-block;transition:transform 0.3s;">▼</span>
                                     </div>
@@ -1554,19 +1632,42 @@
                                     <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:14px;">
                                         <?php
                                         $lr_habitLbl  = ['','INDOOR','OUTDOOR','INDOOR & OUTDOOR'][$lr_habit] ?? 'INDOOR';
-                                        $lr_digitalLbl = ['','SCREEN RENDAH','SCREEN SEDANG (2-5 JAM)','SCREEN TINGGI (>5 JAM)'][$lr_digital] ?? '';
-                                        $lr_ctx = [
-                                            ['🎂', 'USIA '.$lr_age.' TH',          '#00cfff'],
-                                            ['👁️', $lr_habitLbl,                   '#00ff88'],
-                                            ['💻', $lr_digitalLbl,                  '#aa88ff'],
+                                        $lr_digitalLbl = ['','LOW SCREEN USE','MODERATE SCREEN (2-5 HRS)','HIGH SCREEN USE (>5 HRS)'][$lr_digital] ?? '';
+
+                                        // Vision need label
+                                        $lr_vnParts = [];
+                                        if ($lr_needDist)  $lr_vnParts[] = 'DISTANCE';
+                                        if ($lr_needInter) $lr_vnParts[] = 'INTERMEDIATE';
+                                        if ($lr_needNear)  $lr_vnParts[] = 'NEAR';
+                                        $lr_vnLabel = !empty($lr_vnParts) ? implode(' + ', $lr_vnParts) : '';
+
+                                        // Presbyopia design label
+                                        $lr_presbyLabelMap = [
+                                            'all_distance' => 'ALL-DISTANCE PROG',
+                                            'dynamic'      => 'DYNAMIC (FAR+INTER)',
+                                            'far_near'     => 'FAR & NEAR PROG',
+                                            'near'         => 'NEAR-OPTIMIZED',
+                                            'far_only'     => 'DISTANCE ONLY (SV)',
                                         ];
-                                        if ($lr_isVeryHighPow) $lr_ctx[] = ['⚡', 'UKURAN SANGAT TINGGI', '#ff4d4d'];
-                                        elseif ($lr_isHighPow) $lr_ctx[] = ['📈', 'UKURAN TINGGI',        '#ff8a4d'];
-                                        if ($lr_isPresbyopia)  $lr_ctx[] = ['📖', 'PRESBYOPIA (ADD)',     '#ffcc00'];
-                                        if ($lr_hasGlare)      $lr_ctx[] = ['☀️', 'SENSITIF CAHAYA',      '#ffaa00'];
-                                        if ($lr_hasEyeStrain || $lr_hasHeadache) $lr_ctx[] = ['😣','MATA LELAH / SAKIT KEPALA','#ff6699'];
+
+                                        $lr_ctx = [
+                                            ['🎂', 'AGE '.$lr_age.' YRS',  '#00cfff'],
+                                            ['👁️', $lr_habitLbl,           '#00ff88'],
+                                            ['💻', $lr_digitalLbl,          '#aa88ff'],
+                                        ];
+                                        if ($lr_vnLabel) $lr_ctx[] = ['📏', 'NEEDS: '.$lr_vnLabel, '#00ccff'];
+                                        if ($lr_isVeryHighPow) $lr_ctx[] = ['⚡', 'VERY HIGH POWER', '#ff4d4d'];
+                                        elseif ($lr_isHighPow) $lr_ctx[] = ['📈', 'HIGH POWER',      '#ff8a4d'];
+                                        if ($lr_isPresbyopia) {
+                                            $presbyLbl = $lr_farOnlySV
+                                                ? 'SINGLE VISION (DISTANCE)'
+                                                : ('PRESBYOPIA → ' . ($lr_presbyLabelMap[$lr_presbyType] ?? strtoupper($lr_presbyType)));
+                                            $lr_ctx[] = ['📖', $presbyLbl, '#ffcc00'];
+                                        }
+                                        if ($lr_hasGlare)      $lr_ctx[] = ['☀️', 'LIGHT SENSITIVE',      '#ffaa00'];
+                                        if ($lr_hasEyeStrain || $lr_hasHeadache) $lr_ctx[] = ['😣','EYE STRAIN / HEADACHE','#ff6699'];
                                         if ($lr_hasDM)         $lr_ctx[] = ['🩸', 'DIABETES',             '#ff6655'];
-                                        if ($lr_hasHT)         $lr_ctx[] = ['❤️', 'HIPERTENSI',           '#ff6655'];
+                                        if ($lr_hasHT)         $lr_ctx[] = ['❤️', 'HYPERTENSION',         '#ff6655'];
                                         if ($lr_hasDryEye)     $lr_ctx[] = ['💧', 'DRY EYE',              '#66ccff'];
                                         foreach ($lr_ctx as $c):
                                         ?>
@@ -1578,7 +1679,7 @@
 
                                     <!-- Power summary bar -->
                                     <div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.05);border-radius:12px;padding:10px 14px;margin-bottom:14px;">
-                                        <div style="font-size:7.5px;color:#444;letter-spacing:1px;margin-bottom:8px;">RESEP AKTIF <?php echo $lr_rMod ? '(MODIFIKASI)' : '(ORIGINAL)'; ?></div>
+                                        <div style="font-size:7.5px;color:#444;letter-spacing:1px;margin-bottom:8px;">ACTIVE RX <?php echo $lr_rMod ? '(MODIFIED)' : '(ORIGINAL)'; ?></div>
                                         <div style="display:flex;flex-wrap:wrap;gap:14px;justify-content:space-around;">
                                         <?php
                                         $lr_pw = [
@@ -1606,20 +1707,9 @@
                                     </div>
                                     <?php endforeach; ?>
 
-                                    <!-- ── Ranked lens cards ──────────────────────────── -->
-                                    <div style="font-size:0.6rem;color:var(--text-muted);letter-spacing:1px;margin-bottom:10px;">
-                                        ✦ URUTAN LENSA TERBAIK UNTUK CUSTOMER INI
-                                    </div>
-
-                                    <?php if (empty($lr_candidates)): ?>
-                                    <div style="font-size:11px;color:#555;text-align:center;padding:20px;">
-                                        Tidak ada lensa yang cocok ditemukan dalam katalog.
-                                    </div>
-                                    <?php else: ?>
-                                    <div style="display:flex;flex-direction:column;gap:7px;" id="lr-list">
+                                    <!-- ── 2-LEVEL TAB SYSTEM ────────────────────────── -->
                                     <?php
                                     $lr_featureIcons = [
-                                        // Coating & protection
                                         'UV PROTECTION'                  => '🌞',
                                         'HIGH-INDEX UV400 PROTECTION'    => '🛡️',
                                         'ANTI-REFLECTIVE (AR) COATING'   => '💡',
@@ -1628,113 +1718,240 @@
                                         'HYDROPHOBIC'                    => '💧',
                                         'SUPER HYDROPHOBIC'              => '💦',
                                         'ANTI-STATIC'                    => '⚡',
-                                        // Blue light & photochromic
                                         'BLUE LIGHT BLOCKING'            => '💙',
                                         'PHOTOCHROMIC'                   => '🌅',
                                         'NIGHT DRIVE COATING'            => '🚗',
-                                        // High-index & high-power
                                         'HIGH INDEX 1.67'                => '💎',
                                         'HIGHT INDEX 1.67'               => '💎',
                                         'HIGH POWER RX'                  => '🔬',
-                                        // Impact
                                         'IMPACT-RESISTANT'               => '🛡️',
-                                        // Progressive / presbyopia design types
                                         'FAR & NEAR OPTIMIZED LENS'      => '📐',
                                         'ALL-DISTANCE PROGRESSIVE'       => '🔭',
                                         'DYNAMIC DISTANCE LENS'          => '🚀',
                                         'NEAR-OPTIMIZED LENS'            => '📚',
                                         'ENHANCED NEAR VISION'           => '🔎',
                                     ];
-                                    // Rank palette: top-3 get gold/silver/bronze
                                     $lr_rankStyle = [
                                         0 => ['★ #1', '#ffaa00', 'rgba(255,170,0,0.12)', 'rgba(255,170,0,0.40)'],
                                         1 => ['★ #2', '#c0c0c0', 'rgba(180,180,180,0.08)', 'rgba(180,180,180,0.28)'],
                                         2 => ['★ #3', '#cd7f32', 'rgba(180,120,60,0.08)',  'rgba(180,120,60,0.28)'],
                                     ];
-                                    foreach ($lr_candidates as $i => $cand):
-                                        $rs   = $lr_rankStyle[$i] ?? ['#'.($i+1), '#00ff88', 'rgba(0,255,136,0.05)', 'rgba(0,255,136,0.15)'];
-                                        [$rankLbl, $rankColor, $bg, $bd] = $rs;
-                                        $srcBadgeColor = ($cand['source'] === 'stock') ? '#00ff88' : '#ff8a4d';
-                                        $srcBadgeBg    = ($cand['source'] === 'stock') ? 'rgba(0,255,136,0.10)' : 'rgba(255,138,77,0.10)';
-                                        $srcBadgeBd    = ($cand['source'] === 'stock') ? 'rgba(0,255,136,0.25)' : 'rgba(255,138,77,0.25)';
-                                        $srcLabel      = ($cand['source'] === 'stock') ? 'STOCK' : 'LAB';
-                                        $cardId        = 'lr-card-' . $i;
-                                        $detailId      = 'lr-detail-' . $i;
-                                        $chevId        = 'lr-chev-' . $i;
                                     ?>
-                                    <div id="<?php echo $cardId; ?>"
-                                         style="border:1px solid <?php echo $bd; ?>;border-radius:12px;overflow:hidden;background:<?php echo $bg; ?>;">
 
-                                        <!-- Collapsed row: rank + name + source badge + price + chevron -->
-                                        <div onclick="lrCardToggle(<?php echo $i; ?>)"
-                                             style="display:flex;align-items:center;gap:10px;padding:11px 13px;cursor:pointer;">
+                                    <?php if (empty($lr_candidates)): ?>
+                                    <div style="font-size:11px;color:#555;text-align:center;padding:20px;">
+                                        No matching lenses found in the catalog.
+                                    </div>
+                                    <?php else: ?>
 
-                                            <!-- Rank badge -->
-                                            <span style="display:inline-flex;align-items:center;justify-content:center;min-width:30px;height:24px;background:<?php echo $bd; ?>;border-radius:20px;font-size:9px;font-weight:800;color:<?php echo $rankColor; ?>;letter-spacing:0.5px;flex-shrink:0;"><?php echo $rankLbl; ?></span>
+                                    <!-- ── LEVEL 1: Lens-type tabs ──────────────────── -->
+                                    <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px;">
+                                    <?php foreach ($lr_typeConfig as $typeKey => $typeCfg):
+                                        $typeList = isset($lr_byType[$typeKey]) ? $lr_byType[$typeKey] : [];
+                                        if (empty($typeList)) continue;
+                                        $isFirstType  = ($typeKey === $lr_firstType);
+                                        $tColor       = $typeCfg['color'];
+                                        $typeHasDot   = !empty($lr_wantedDesignFeats) && !empty($lr_hasDesign[$typeKey]['_type']);
+                                    ?>
+                                    <button type="button"
+                                            id="lr-type-btn-<?php echo $typeKey; ?>"
+                                            onclick="lrTypeSwitch('<?php echo $typeKey; ?>')"
+                                            style="flex:1;min-width:0;padding:8px 5px;border-radius:12px;
+                                                   border:1px solid <?php echo $isFirstType ? $tColor : 'rgba(255,255,255,0.08)'; ?>;
+                                                   background:<?php echo $isFirstType ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.02)'; ?>;
+                                                   color:<?php echo $tColor; ?>;font-size:9px;font-weight:700;
+                                                   letter-spacing:0.5px;cursor:pointer;font-family:inherit;
+                                                   transition:all 0.2s;line-height:1.4;text-align:center;position:relative;">
+                                        <?php if ($typeHasDot): ?>
+                                        <span style="position:absolute;top:4px;right:5px;width:7px;height:7px;border-radius:50%;background:#00ff88;box-shadow:0 0 5px #00ff88;display:inline-block;" title="Has lens matching vision need"></span>
+                                        <?php endif; ?>
+                                        <?php echo $typeCfg['icon'].' '.$typeCfg['label']; ?><br>
+                                        <span style="font-size:8px;opacity:0.65;"><?php echo count($typeList); ?> lens</span>
+                                    </button>
+                                    <?php endforeach; ?>
+                                    </div>
 
-                                            <!-- Name block -->
-                                            <div style="flex:1;min-width:0;">
-                                                <div style="font-size:11px;font-weight:700;color:<?php echo $rankColor; ?>;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-                                                    <?php echo htmlspecialchars($cand['category']); ?> — <?php echo htmlspecialchars($cand['type']); ?>
-                                                </div>
-                                                <!-- Source badge + readiness (shown in row) -->
-                                                <div style="display:flex;align-items:center;gap:5px;margin-top:3px;">
-                                                    <span style="font-size:7.5px;font-weight:700;color:<?php echo $srcBadgeColor; ?>;background:<?php echo $srcBadgeBg; ?>;border:1px solid <?php echo $srcBadgeBd; ?>;border-radius:20px;padding:1px 7px;letter-spacing:0.5px;"><?php echo $srcLabel; ?></span>
-                                                    <span style="font-size:8px;color:#555;">⏱ <?php echo htmlspecialchars($cand['readiness']); ?></span>
-                                                </div>
-                                            </div>
+                                    <!-- ── LEVEL 2: Per-type price panes ────────────── -->
+                                    <?php foreach ($lr_typeConfig as $typeKey => $typeCfg):
+                                        $typeList = isset($lr_byType[$typeKey]) ? $lr_byType[$typeKey] : [];
+                                        if (empty($typeList)) continue;
+                                        $isFirstType  = ($typeKey === $lr_firstType);
+                                        $tColor       = $typeCfg['color'];
+                                        $priceBuckets = lr_priceBuckets($typeList);
+                                        // Default active price tab for this type
+                                        $defPriceTab  = 'rekomendasi';
+                                    ?>
+                                    <div id="lr-type-pane-<?php echo $typeKey; ?>"
+                                         style="display:<?php echo $isFirstType ? 'block' : 'none'; ?>;">
 
-                                            <!-- Price -->
-                                            <div style="font-size:11px;font-weight:700;color:<?php echo $rankColor; ?>;font-family:monospace;text-align:right;flex-shrink:0;">
-                                                <?php echo lr_fmt_price($cand['selling']); ?>
-                                            </div>
-
-                                            <!-- Expand chevron -->
-                                            <span id="<?php echo $chevId; ?>" style="color:#555;font-size:11px;flex-shrink:0;transition:transform 0.25s;display:inline-block;">▼</span>
+                                        <!-- Price tab bar -->
+                                        <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px;padding:8px;background:rgba(255,255,255,0.02);border-radius:12px;border:1px solid rgba(255,255,255,0.05);">
+                                        <?php foreach ($priceBuckets as $priceKey => $priceBucket):
+                                            $isActivePrice = ($priceKey === $defPriceTab);
+                                            $pColor = $priceBucket['color'];
+                                            $pCount = count($priceBucket['data']);
+                                            $pHint  = ['normal'=>'≤600rb','sedang'=>'600rb–1jt','tinggi'=>'>1jt'][$priceKey] ?? '';
+                                            $priceDot = !empty($lr_wantedDesignFeats)
+                                                && isset($lr_hasDesign[$typeKey][$priceKey])
+                                                && $lr_hasDesign[$typeKey][$priceKey];
+                                        ?>
+                                        <button type="button"
+                                                id="lr-price-btn-<?php echo $typeKey; ?>-<?php echo $priceKey; ?>"
+                                                onclick="lrPriceSwitch('<?php echo $typeKey; ?>','<?php echo $priceKey; ?>')"
+                                                style="flex:1;min-width:0;padding:6px 4px;border-radius:10px;
+                                                       border:1px solid <?php echo $isActivePrice ? $pColor : 'rgba(255,255,255,0.07)'; ?>;
+                                                       background:<?php echo $isActivePrice ? 'rgba(255,255,255,0.06)' : 'transparent'; ?>;
+                                                       color:<?php echo $pColor; ?>;font-size:8.5px;font-weight:700;
+                                                       letter-spacing:0.4px;cursor:pointer;font-family:inherit;
+                                                       transition:all 0.2s;line-height:1.3;text-align:center;position:relative;">
+                                            <?php if ($priceDot): ?>
+                                            <span style="position:absolute;top:3px;right:4px;width:6px;height:6px;border-radius:50%;background:#00ff88;box-shadow:0 0 4px #00ff88;display:inline-block;" title="Has lens matching vision need"></span>
+                                            <?php endif; ?>
+                                            <?php echo $priceBucket['label']; ?><br>
+                                            <span style="font-size:7.5px;opacity:0.65;"><?php echo $pCount; ?> lens<?php echo $pHint ? ' · '.$pHint : ''; ?></span>
+                                        </button>
+                                        <?php endforeach; ?>
                                         </div>
 
-                                        <!-- Expandable detail panel -->
-                                        <div id="<?php echo $detailId; ?>" style="display:none;padding:0 13px 13px 13px;border-top:1px solid <?php echo $bd; ?>;">
+                                        <!-- Price tab panes -->
+                                        <?php foreach ($priceBuckets as $priceKey => $priceBucket):
+                                            $isActivePrice = ($priceKey === $defPriceTab);
+                                            $list     = $priceBucket['data'];
+                                            $limit    = $priceBucket['limit'];
+                                            $total    = count($list);
+                                            $showExp  = ($total > $limit);
+                                            $pColor   = $priceBucket['color'];
+                                            $paneId   = 'lr-ppane-'.$typeKey.'-'.$priceKey;
+                                        ?>
+                                        <div id="<?php echo $paneId; ?>"
+                                             style="display:<?php echo $isActivePrice ? 'block' : 'none'; ?>;">
 
-                                            <!-- Feature chips -->
-                                            <div style="font-size:7.5px;color:#444;letter-spacing:1px;margin:10px 0 7px;">FITUR LENSA</div>
-                                            <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px;">
-                                                <?php foreach ($cand['features'] as $feat):
-                                                    $ficon = $lr_featureIcons[strtoupper(trim($feat))] ?? '•';
+                                            <?php if (empty($list)): ?>
+                                            <div style="font-size:11px;color:#444;text-align:center;padding:16px 10px;background:rgba(255,255,255,0.02);border-radius:10px;border:1px dashed rgba(255,255,255,0.05);">
+                                                <?php
+                                                $emptyMsg = [
+                                                    'normal' => 'No lenses in this price range (≤ Rp 600,000)',
+                                                    'sedang' => 'No lenses in this price range (Rp 600,000 – Rp 1,000,000)',
+                                                    'tinggi' => 'No lenses in this price range (> Rp 1,000,000)',
+                                                ];
+                                                echo isset($emptyMsg[$priceKey]) ? $emptyMsg[$priceKey] : 'No lenses available.';
                                                 ?>
-                                                <span style="display:inline-flex;align-items:center;gap:4px;font-size:9px;color:#ddd;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.10);border-radius:20px;padding:4px 10px;letter-spacing:0.3px;">
-                                                    <?php echo $ficon; ?> <?php echo htmlspecialchars($feat); ?>
-                                                </span>
-                                                <?php endforeach; ?>
                                             </div>
+                                            <?php else: ?>
 
-                                            <!-- Readiness banner -->
-                                            <div style="display:flex;align-items:center;gap:8px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:10px;padding:8px 12px;">
-                                                <span style="font-size:1rem;"><?php echo ($cand['source'] === 'stock') ? '🏪' : '🔧'; ?></span>
-                                                <div>
-                                                    <div style="font-size:10px;font-weight:700;color:<?php echo $srcBadgeColor; ?>;">
-                                                        <?php echo ($cand['source'] === 'stock') ? 'Stok Tersedia' : 'Gosok Lab (Custom Order)'; ?>
+                                            <div style="display:flex;flex-direction:column;gap:7px;">
+                                            <?php foreach ($list as $i => $cand):
+                                                if ($priceKey === 'rekomendasi') {
+                                                    $rs = isset($lr_rankStyle[$i]) ? $lr_rankStyle[$i] : ['#'.($i+1), '#00ff88', 'rgba(0,255,136,0.05)', 'rgba(0,255,136,0.15)'];
+                                                    list($rankLbl, $rankColor, $bg, $bd) = $rs;
+                                                } else {
+                                                    $rankLbl   = '#'.($i+1);
+                                                    $rankColor = $pColor;
+                                                    $bg        = 'rgba(255,255,255,0.02)';
+                                                    $bd        = 'rgba(255,255,255,0.07)';
+                                                }
+                                                $srcColor  = ($cand['source'] === 'stock') ? '#00ff88' : '#ff8a4d';
+                                                $srcBg     = ($cand['source'] === 'stock') ? 'rgba(0,255,136,0.10)' : 'rgba(255,138,77,0.10)';
+                                                $srcBd     = ($cand['source'] === 'stock') ? 'rgba(0,255,136,0.25)' : 'rgba(255,138,77,0.25)';
+                                                $srcLabel  = ($cand['source'] === 'stock') ? 'STOCK' : 'LAB';
+                                                $uid       = $typeKey.'-'.$priceKey.'-'.$i;
+                                                $hidden    = ($i >= $limit) ? 'display:none;' : '';
+                                            ?>
+                                            <div id="lr-card-<?php echo $uid; ?>"
+                                                 style="<?php echo $hidden; ?>border:1px solid <?php echo $bd; ?>;border-radius:12px;overflow:hidden;background:<?php echo $bg; ?>;">
+
+                                                <!-- Collapsed row -->
+                                                <div onclick="lrCardToggle('<?php echo $uid; ?>')"
+                                                     style="display:flex;align-items:center;gap:10px;padding:11px 13px;cursor:pointer;">
+                                                    <span style="display:inline-flex;align-items:center;justify-content:center;min-width:30px;height:24px;background:<?php echo $bd; ?>;border-radius:20px;font-size:9px;font-weight:800;color:<?php echo $rankColor; ?>;letter-spacing:0.5px;flex-shrink:0;"><?php echo $rankLbl; ?></span>
+                                                    <div style="flex:1;min-width:0;">
+                                                        <div style="font-size:11px;font-weight:700;color:<?php echo $rankColor; ?>;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+                                                            <?php echo htmlspecialchars($cand['category']); ?> — <?php echo htmlspecialchars($cand['type']); ?>
+                                                            <?php
+                                                            // Inline design match — no function call
+                                                            $_cat = strtoupper(trim($cand['category']));
+                                                            $_isProg = in_array($_cat, array('PROGRESSIVE','KRYPTOK','FLATTOP'));
+                                                            $_match = false;
+                                                            if ($_isProg && $lr_isPresbyopia) {
+                                                                if ($_cat === 'KRYPTOK' || $_cat === 'FLATTOP') {
+                                                                    $_match = in_array($lr_presbyType, array('far_near','far_only','all_distance','dynamic'));
+                                                                } else {
+                                                                    foreach ($lr_wantedDesignFeats as $_wf) {
+                                                                        if (in_array($_wf, $cand['features'])) { $_match = true; break; }
+                                                                    }
+                                                                }
+                                                            }
+                                                            if ($_match):
+                                                            ?>
+                                                            <span style="display:inline-block;font-size:7.5px;font-weight:800;background:rgba(0,255,136,0.15);color:#00ff88;border:1px solid rgba(0,255,136,0.4);border-radius:20px;padding:1px 6px;margin-left:5px;letter-spacing:0.5px;vertical-align:middle;">✓ MATCHES NEED</span>
+                                                            <?php endif; ?>
+                                                        </div>
+                                                        <div style="display:flex;align-items:center;gap:5px;margin-top:3px;">
+                                                            <span style="font-size:7.5px;font-weight:700;color:<?php echo $srcColor; ?>;background:<?php echo $srcBg; ?>;border:1px solid <?php echo $srcBd; ?>;border-radius:20px;padding:1px 7px;letter-spacing:0.5px;"><?php echo $srcLabel; ?></span>
+                                                            <span style="font-size:8px;color:#555;">⏱ <?php echo htmlspecialchars($cand['readiness']); ?></span>
+                                                        </div>
                                                     </div>
-                                                    <div style="font-size:9px;color:#555;margin-top:1px;"><?php echo htmlspecialchars($cand['readiness']); ?></div>
+                                                    <div style="font-size:11px;font-weight:700;color:<?php echo $rankColor; ?>;font-family:monospace;text-align:right;flex-shrink:0;">
+                                                        <?php echo lr_fmt_price($cand['selling']); ?>
+                                                    </div>
+                                                    <span id="lr-chev-<?php echo $uid; ?>" style="color:#555;font-size:11px;flex-shrink:0;transition:transform 0.25s;display:inline-block;">▼</span>
                                                 </div>
-                                            </div>
 
-                                            <!-- Optional lens note -->
-                                            <?php if (!empty($cand['note'])): ?>
-                                            <div style="margin-top:8px;font-size:9px;color:#666;font-style:italic;padding-left:4px;">
-                                                📋 <?php echo htmlspecialchars($cand['note']); ?>
+                                                <!-- Detail panel -->
+                                                <div id="lr-detail-<?php echo $uid; ?>" style="display:none;padding:0 13px 13px 13px;border-top:1px solid <?php echo $bd; ?>;">
+                                                    <div style="font-size:7.5px;color:#444;letter-spacing:1px;margin:10px 0 7px;">LENS FEATURES</div>
+                                                    <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px;">
+                                                        <?php foreach ($cand['features'] as $feat):
+                                                            $ficon = isset($lr_featureIcons[strtoupper(trim($feat))]) ? $lr_featureIcons[strtoupper(trim($feat))] : '•';
+                                                        ?>
+                                                        <span style="display:inline-flex;align-items:center;gap:4px;font-size:9px;color:#ddd;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.10);border-radius:20px;padding:4px 10px;letter-spacing:0.3px;">
+                                                            <?php echo $ficon; ?> <?php echo htmlspecialchars($feat); ?>
+                                                        </span>
+                                                        <?php endforeach; ?>
+                                                    </div>
+                                                    <div style="display:flex;align-items:center;gap:8px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:10px;padding:8px 12px;">
+                                                        <span style="font-size:1rem;"><?php echo ($cand['source'] === 'stock') ? '🏪' : '🔧'; ?></span>
+                                                        <div>
+                                                            <div style="font-size:10px;font-weight:700;color:<?php echo $srcColor; ?>;">
+                                                                <?php echo ($cand['source'] === 'stock') ? 'In Stock' : 'Lab Order (Custom)'; ?>
+                                                            </div>
+                                                            <div style="font-size:9px;color:#555;margin-top:1px;"><?php echo htmlspecialchars($cand['readiness']); ?></div>
+                                                        </div>
+                                                    </div>
+                                                    <?php if (!empty($cand['note'])): ?>
+                                                    <div style="margin-top:8px;font-size:9px;color:#666;font-style:italic;padding-left:4px;">
+                                                        📋 <?php echo htmlspecialchars($cand['note']); ?>
+                                                    </div>
+                                                    <?php endif; ?>
+                                                </div>
+
+                                            </div><!-- /card -->
+                                            <?php endforeach; ?>
+                                            </div><!-- /card-list -->
+
+                                            <?php if ($showExp): ?>
+                                            <div style="text-align:center;margin-top:10px;">
+                                                <button type="button"
+                                                        id="lr-expand-<?php echo $typeKey.'-'.$priceKey; ?>"
+                                                        onclick="lrExpandAll('<?php echo $typeKey; ?>','<?php echo $priceKey; ?>',<?php echo $limit; ?>,<?php echo $total; ?>)"
+                                                        style="background:rgba(255,170,0,0.07);border:1px solid rgba(255,170,0,0.25);color:#ffaa00;font-size:10px;font-weight:700;letter-spacing:1px;padding:8px 22px;border-radius:20px;cursor:pointer;font-family:inherit;transition:all 0.2s;">
+                                                    ▼ SHOW ALL <?php echo $total; ?> LENSES
+                                                </button>
                                             </div>
                                             <?php endif; ?>
-                                        </div>
 
-                                    </div><!-- /card -->
-                                    <?php endforeach; ?>
-                                    </div><!-- /lr-list -->
-                                    <?php endif; ?>
+                                            <?php endif; // empty list ?>
+                                        </div><!-- /price-pane -->
+                                        <?php endforeach; // price buckets ?>
+
+                                    </div><!-- /type-pane -->
+                                    <?php endforeach; // type tabs ?>
+
+                                    <?php endif; // empty candidates ?>
 
                                     <!-- Disclaimer -->
                                     <div style="margin-top:12px;font-size:8px;color:#2e2e2e;font-style:italic;border-top:1px solid rgba(255,255,255,0.04);padding-top:10px;">
-                                        * Urutan berdasarkan kesesuaian ukuran, kebiasaan, dan keluhan. Pilihan akhir menyesuaikan preferensi dan budget customer.
+                                        * Order based on prescription fit, lifestyle habits, and symptoms. Final choice subject to customer preference and budget.
                                     </div>
 
                                 </div><!-- /lr-body -->
@@ -1815,16 +2032,67 @@
                 body.style.display = open ? 'block' : 'none';
                 if (chev) chev.style.transform = open ? 'rotate(180deg)' : 'rotate(0deg)';
             }
-            function lrCardToggle(i) {
-                const detail = document.getElementById('lr-detail-' + i);
-                const chev   = document.getElementById('lr-chev-' + i);
+
+            // Toggle detail panel inside a card
+            function lrCardToggle(uid) {
+                const detail = document.getElementById('lr-detail-' + uid);
+                const chev   = document.getElementById('lr-chev-'   + uid);
                 if (!detail) return;
                 const open = detail.style.display === 'none' || detail.style.display === '';
                 detail.style.display = open ? 'block' : 'none';
                 if (chev) chev.style.transform = open ? 'rotate(180deg)' : 'rotate(0deg)';
             }
-            window.lrToggle     = lrToggle;
-            window.lrCardToggle = lrCardToggle;
+
+            // Switch lens-type tab (level 1)
+            function lrTypeSwitch(typeKey) {
+                const types  = ['sv','kryptok','progressive','flattop'];
+                const colors = { sv:'#00ff88', kryptok:'#00cfff', progressive:'#aa88ff', flattop:'#ff8a4d' };
+                types.forEach(function(t) {
+                    var pane = document.getElementById('lr-type-pane-' + t);
+                    var btn  = document.getElementById('lr-type-btn-'  + t);
+                    if (!pane || !btn) return;
+                    var active = (t === typeKey);
+                    pane.style.display    = active ? 'block' : 'none';
+                    btn.style.borderColor = active ? colors[t] : 'rgba(255,255,255,0.08)';
+                    btn.style.background  = active ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.02)';
+                });
+            }
+
+            // Switch price tab within a type (level 2)
+            function lrPriceSwitch(typeKey, priceKey) {
+                var priceTabs = ['rekomendasi','normal','sedang','tinggi'];
+                var colors    = { rekomendasi:'#ffaa00', normal:'#00ff88', sedang:'#00cfff', tinggi:'#ff8a4d' };
+                priceTabs.forEach(function(p) {
+                    var pane = document.getElementById('lr-ppane-' + typeKey + '-' + p);
+                    var btn  = document.getElementById('lr-price-btn-' + typeKey + '-' + p);
+                    if (!pane || !btn) return;
+                    var active = (p === priceKey);
+                    pane.style.display    = active ? 'block' : 'none';
+                    btn.style.borderColor = active ? colors[p] : 'rgba(255,255,255,0.07)';
+                    btn.style.background  = active ? 'rgba(255,255,255,0.06)' : 'transparent';
+                });
+            }
+
+            // Expand hidden cards
+            function lrExpandAll(typeKey, priceKey, limit, total) {
+                var btnId = 'lr-expand-' + typeKey + '-' + priceKey;
+                var btn   = document.getElementById(btnId);
+                var expanded = btn && btn.dataset.expanded === '1';
+                for (var i = limit; i < total; i++) {
+                    var card = document.getElementById('lr-card-' + typeKey + '-' + priceKey + '-' + i);
+                    if (card) card.style.display = expanded ? 'none' : 'block';
+                }
+                if (btn) {
+                    btn.dataset.expanded = expanded ? '0' : '1';
+                    btn.innerHTML = expanded ? '▼ SHOW ALL ' + total + ' LENSES' : '▲ COLLAPSE';
+                }
+            }
+
+            window.lrToggle      = lrToggle;
+            window.lrCardToggle  = lrCardToggle;
+            window.lrTypeSwitch  = lrTypeSwitch;
+            window.lrPriceSwitch = lrPriceSwitch;
+            window.lrExpandAll   = lrExpandAll;
 
 
             window.onload = () => {
