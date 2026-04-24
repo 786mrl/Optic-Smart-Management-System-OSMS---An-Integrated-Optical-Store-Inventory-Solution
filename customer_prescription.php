@@ -152,6 +152,19 @@
         // UCVA Data
         $ucva_r = cleanPres($conn, $_POST['ucva_r'], "20/20");
         $ucva_l = cleanPres($conn, $_POST['ucva_l'], "20/20");
+
+        // 7. Vision Need (Distance / Intermediate / Near) — auto-shown if age >= 39
+        // Each field: 1 = YES, 0 = NO
+        if ($age_to_save >= 39) {
+            $need_distance     = isset($_POST['need_distance'])     ? 1 : 0;
+            $need_intermediate = isset($_POST['need_intermediate']) ? 1 : 0;
+            $need_near         = isset($_POST['need_near'])         ? 1 : 0;
+        } else {
+            // Under 39: always 0
+            $need_distance     = 0;
+            $need_intermediate = 0;
+            $need_near         = 0;
+        }
         
         // 6. Insert Query using Prepared Statement
         $stmt = $conn->prepare("INSERT INTO customer_examinations (
@@ -161,11 +174,12 @@
             new_r_sph, new_r_cyl, new_r_ax, new_r_add, new_r_visus,
             new_l_sph, new_l_cyl, new_l_ax, new_l_add, new_l_visus,
             pd_dist, invoice_number,
-            visual_habit, digital_usage, ucva_r, ucva_l, exam_notes
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            visual_habit, digital_usage, ucva_r, ucva_l, exam_notes,
+            need_distance, need_intermediate, need_near
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
 
         // Define data types: 
-        $types = "ssssi" . str_repeat("s", 21) . "iisss"; 
+        $types = "ssssi" . str_repeat("s", 21) . "iisss" . "iii"; 
 
         $stmt->bind_param($types, 
             $exam_date, $exam_code, $customer_name, $gender, $age_to_save, $symptoms_to_save,
@@ -174,7 +188,8 @@
             $new_r_sph, $new_r_cyl, $new_r_ax, $new_r_add, $new_r_va,
             $new_l_sph, $new_l_cyl, $new_l_ax, $new_l_add, $new_l_va,
             $pd_dist_val, $invoice_val,
-            $visual_habit, $digital_usage, $ucva_r, $ucva_l, $exam_notes
+            $visual_habit, $digital_usage, $ucva_r, $ucva_l, $exam_notes,
+            $need_distance, $need_intermediate, $need_near
         );
 
         if ($stmt->execute()) {
@@ -531,6 +546,93 @@
                 box-shadow: 0 0 20px rgba(0, 255, 136, 0.2) !important;
             }
 
+            /* --- VISION NEED SECTION --- */
+            #vision_need_section {
+                display: none;
+                flex: 0 0 100%;
+                max-width: 100%;
+                grid-column: 1 / -1;
+                width: 100% !important;
+            }
+            .vision-need-label {
+                width: 100%;
+                text-align: center;
+                margin-bottom: 8px;
+                font-size: 0.75em;
+                color: #888;
+                text-transform: uppercase;
+                letter-spacing: 1px;
+                font-weight: bold;
+            }
+            .vision-need-wrapper {
+                display: flex;
+                gap: 12px;
+                justify-content: center;
+                flex-wrap: wrap;
+            }
+            .vision-need-btn {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 6px;
+                background: #25282a;
+                border: 1px solid #444;
+                border-radius: 14px;
+                padding: 14px 20px;
+                cursor: pointer;
+                transition: all 0.2s ease;
+                min-width: 110px;
+                color: #aaa;
+                font-size: 0.8em;
+                font-weight: bold;
+                letter-spacing: 1px;
+                box-shadow: inset 2px 2px 5px #1a1c1d;
+                position: relative;
+            }
+            .vision-need-btn .vn-icon {
+                font-size: 1.6em;
+                line-height: 1;
+            }
+            .vision-need-btn .vn-led {
+                width: 8px;
+                height: 8px;
+                border-radius: 50%;
+                background: #333;
+                transition: all 0.2s ease;
+            }
+            .vision-need-btn.active {
+                border-color: #00ff88;
+                color: #00ff88;
+                box-shadow: inset 2px 2px 5px #000, 0 0 12px rgba(0,255,136,0.2);
+            }
+            .vision-need-btn.active .vn-led {
+                background: #00ff88;
+                box-shadow: 0 0 8px #00ff88;
+            }
+            .vision-need-header-row {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 8px;
+                margin-bottom: 12px;
+            }
+            .vision-need-title {
+                color: #ffcc00;
+                font-size: 0.78em;
+                font-weight: bold;
+                letter-spacing: 2px;
+                text-align: center;
+            }
+            .vision-need-badge {
+                background: #3a3200;
+                border: 1px solid #ffcc0066;
+                color: #ffcc00;
+                font-size: 0.65em;
+                padding: 2px 8px;
+                border-radius: 20px;
+                letter-spacing: 1px;
+            }
+
             .prescription-table::-webkit-scrollbar {
                 height: 6px;
             }
@@ -760,6 +862,53 @@
                                         <div class="led"></div>
                                     </button>
                                 </div>
+                            </div>
+                            
+                            <!-- VISION NEED (muncul otomatis jika umur >= 39) -->
+                            <div id="vision_need_section" class="input-group">
+                                <div style="background: #25282a; padding: 18px; border-radius: 14px; border: 1px solid #ffcc0033; box-shadow: inset 2px 2px 5px #1a1c1d; width: 100%;">
+                                    <div class="vision-need-header-row">
+                                        <div class="vision-need-title">⚑ VISION NEED</div>
+                                        <span class="vision-need-badge">AGE ≥ 39</span>
+                                    </div>
+                                    <p style="text-align:center; font-size:0.72em; color:#888; margin: 0 0 14px 0; letter-spacing:0.5px;">Pilih kebutuhan penglihatan yang dibutuhkan (boleh lebih dari satu)</p>
+                                    <div class="vision-need-wrapper">
+                                        <!-- DISTANCE -->
+                                        <button type="button" 
+                                            id="btn_need_distance"
+                                            class="vision-need-btn" 
+                                            onclick="toggleVisionNeed(this, 'need_distance')">
+                                            <div class="vn-icon">🔭</div>
+                                            <span>DISTANCE</span>
+                                            <small style="font-size:0.75em; color: inherit; opacity:0.7;">Jarak Jauh</small>
+                                            <div class="vn-led"></div>
+                                        </button>
+                                        <!-- INTERMEDIATE -->
+                                        <button type="button" 
+                                            id="btn_need_intermediate"
+                                            class="vision-need-btn" 
+                                            onclick="toggleVisionNeed(this, 'need_intermediate')">
+                                            <div class="vn-icon">🖥️</div>
+                                            <span>INTERMEDIATE</span>
+                                            <small style="font-size:0.75em; color: inherit; opacity:0.7;">Jarak Menengah</small>
+                                            <div class="vn-led"></div>
+                                        </button>
+                                        <!-- NEAR -->
+                                        <button type="button" 
+                                            id="btn_need_near"
+                                            class="vision-need-btn" 
+                                            onclick="toggleVisionNeed(this, 'need_near')">
+                                            <div class="vn-icon">📖</div>
+                                            <span>NEAR</span>
+                                            <small style="font-size:0.75em; color: inherit; opacity:0.7;">Jarak Dekat</small>
+                                            <div class="vn-led"></div>
+                                        </button>
+                                    </div>
+                                </div>
+                                <!-- Hidden checkboxes untuk POST (1=yes, 0=no) -->
+                                <input type="checkbox" name="need_distance"     id="chk_need_distance"     style="display:none;" value="1">
+                                <input type="checkbox" name="need_intermediate" id="chk_need_intermediate" style="display:none;" value="1">
+                                <input type="checkbox" name="need_near"         id="chk_need_near"         style="display:none;" value="1">
                             </div>
             
                             <!-- SYMPTOMS -->
@@ -1027,7 +1176,34 @@
                     console.log("Input " + hiddenInputId + " updated to: " + val); // Cek di console (F12)
                 }
 
-                // Specific logic to display the old prescription form
+            // ================================================================
+            // === VISION NEED TOGGLE (multi-select, 1=yes 0=no) =============
+            // ================================================================
+            function toggleVisionNeed(btn, checkboxId) {
+                btn.classList.toggle('active');
+                const chk = document.getElementById('chk_' + checkboxId);
+                if (chk) {
+                    chk.checked = btn.classList.contains('active');
+                }
+            }
+
+            // Show / hide vision need section based on calculated age
+            function updateVisionNeedVisibility(calculatedAge) {
+                const section = document.getElementById('vision_need_section');
+                if (calculatedAge >= 39) {
+                    section.style.display = 'block';
+                } else {
+                    section.style.display = 'none';
+                    // Reset all buttons & checkboxes when hidden
+                    document.querySelectorAll('.vision-need-btn').forEach(b => b.classList.remove('active'));
+                    ['chk_need_distance','chk_need_intermediate','chk_need_near'].forEach(id => {
+                        const el = document.getElementById(id);
+                        if (el) el.checked = false;
+                    });
+                }
+            }
+
+            // Specific logic to display the old prescription form
                 if (isOldPrescription) {
                     const oldBox = document.getElementById('old_prescript');
                     oldBox.style.display = (val === 'yes') ? 'block' : 'none'; // Use flex for aligned inputs
@@ -1754,6 +1930,9 @@
                         lAdd.value = suggestedAdd;
                     }
                 }
+
+                // Show / hide Vision Need section
+                updateVisionNeedVisibility(calculatedAge);
             });
         </script>
     </body>

@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Apr 08, 2026 at 01:04 PM
+-- Generation Time: Apr 24, 2026 at 02:06 AM
 -- Server version: 10.1.38-MariaDB
 -- PHP Version: 7.3.2
 
@@ -62,7 +62,10 @@ CREATE TABLE `customer_examinations` (
   `digital_usage` tinyint(1) DEFAULT '1' COMMENT '1:Low, 2:Moderate, 3:High',
   `ucva_r` varchar(10) DEFAULT '20/20',
   `ucva_l` varchar(10) DEFAULT '20/20',
-  `lens_modification` tinyint(1) DEFAULT '0'
+  `lens_modification` tinyint(1) DEFAULT '0',
+  `need_distance` tinyint(1) NOT NULL DEFAULT '0' COMMENT '1=Yes, 0=No — Kebutuhan jarak jauh',
+  `need_intermediate` tinyint(1) NOT NULL DEFAULT '0' COMMENT '1=Yes, 0=No — Kebutuhan jarak menengah',
+  `need_near` tinyint(1) NOT NULL DEFAULT '0' COMMENT '1=Yes, 0=No — Kebutuhan jarak dekat'
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 -- --------------------------------------------------------
@@ -313,7 +316,7 @@ ALTER TABLE `users`
 -- AUTO_INCREMENT for table `customer_examinations`
 --
 ALTER TABLE `customer_examinations`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT for table `frame_sales`
