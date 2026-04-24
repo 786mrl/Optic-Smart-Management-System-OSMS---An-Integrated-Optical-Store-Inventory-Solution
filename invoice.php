@@ -809,7 +809,7 @@
             @keyframes spin { to { transform: rotate(360deg); } }
 
             @media (max-width: 600px) {
-                .mp-wrapper { width: 100%; height: 350px; }
+                .mp-wrapper { width: 100%; height: 460px; }
             }
             .invoice-body { padding: 20px; max-width: 800px; margin: auto; }
             .neumorph-card {
@@ -1313,7 +1313,7 @@
                 .btn-group { width: 100%; padding: 0; }
 
                 /* Face-scan card: keep the video inside the card */
-                .mp-wrapper { width: 100%; height: 340px; }
+                .mp-wrapper { width: 100%; height: 460px; }
 
                 /* IOC preset buttons — wrap nicely on small screens */
                 .ioc-preset { font-size: 8px; padding: 3px 7px; }
@@ -1341,6 +1341,161 @@
                 .input-table-neu { font-size: 0.7rem; padding: 6px 1px; }
                 .eye-indicator { width: 26px; height: 26px; font-size: 0.7rem; }
                 .neu-btn { flex: 1 1 100%; }
+            }
+
+            /* ================================================================
+               MOBILE POLISH — tambahan perbaikan tampilan di HP
+               ================================================================ */
+
+            /* Pastikan konten tidak overflow ke kiri/kanan */
+            * { box-sizing: border-box; }
+            html, body { overflow-x: hidden; max-width: 100%; }
+
+            @media (max-width: 768px) {
+
+                /* --- Header / Brand --- */
+                .header-container {
+                    padding: 12px 10px !important;
+                    flex-direction: column;
+                    align-items: center;
+                    text-align: center;
+                    gap: 8px;
+                }
+                .brand-section {
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    gap: 4px;
+                }
+                .company-name { font-size: 1rem !important; }
+                .company-address { font-size: 0.68rem !important; }
+                .logout-btn {
+                    position: static !important;
+                    align-self: flex-end;
+                    padding: 6px 14px !important;
+                    font-size: 0.7rem !important;
+                }
+
+                /* --- Main card wrapper --- */
+                .invoice-body { padding: 8px !important; }
+                .main-card, .neumorph-card {
+                    padding: 14px !important;
+                    border-radius: 16px !important;
+                }
+
+                /* --- Info grid: 2 kolom → 1 kolom --- */
+                .info-grid {
+                    grid-template-columns: 1fr !important;
+                    gap: 12px !important;
+                }
+                .info-grid .full { grid-column: span 1 !important; }
+
+                /* --- Read-only boxes --- */
+                .read-only-box {
+                    font-size: 0.85rem;
+                    padding: 10px 12px !important;
+                    min-height: 40px !important;
+                    word-break: break-word;
+                    overflow-wrap: anywhere;
+                }
+
+                /* --- Labels --- */
+                label { font-size: 0.72rem !important; margin-bottom: 4px !important; }
+
+                /* --- Prescription container --- */
+                .prescription-container {
+                    padding: 12px !important;
+                    border-radius: 14px !important;
+                }
+
+                /* --- Prescription table: compact & scrollable --- */
+                .table-responsive { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+                .prescription-table { border-spacing: 4px 6px !important; min-width: 300px; }
+                .prescription-table th { font-size: 0.55rem !important; letter-spacing: 0.5px !important; padding-bottom: 6px !important; }
+                .input-table-neu {
+                    padding: 8px 3px !important;
+                    font-size: 0.78rem !important;
+                    border-radius: 10px !important;
+                }
+                .eye-indicator { width: 30px !important; height: 30px !important; font-size: 0.8rem !important; }
+
+                /* --- Buttons --- */
+                .neu-btn {
+                    padding: 10px 8px !important;
+                    font-size: 0.72rem !important;
+                    flex: 1 1 calc(50% - 8px) !important;
+                    min-width: 0 !important;
+                    white-space: nowrap;
+                }
+                .selection-wrapper {
+                    flex-wrap: wrap !important;
+                    gap: 8px !important;
+                }
+                .btn-action {
+                    width: 100% !important;
+                    padding: 14px !important;
+                    font-size: 0.82rem !important;
+                }
+                .btn-group { padding: 10px !important; }
+                .back-main { width: 100% !important; font-size: 0.8rem !important; }
+
+                /* --- Lens recommendation header: bungkus badge kecil --- */
+                #lens-rec-wrap .prescription-container > div:first-child {
+                    flex-wrap: wrap !important;
+                    gap: 8px !important;
+                }
+                #lens-rec-wrap .prescription-container > div:first-child > div:last-child {
+                    flex-wrap: wrap !important;
+                    gap: 5px !important;
+                }
+
+                /* Badge lens type & count — ukurankan agar tidak overflow */
+                #lens-rec-wrap span[style*="letter-spacing"] {
+                    font-size: 7.5px !important;
+                    padding: 3px 7px !important;
+                    max-width: 100%;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                }
+
+                /* --- Power summary bar dalam lens rec --- */
+                #lr-body > div[style*="flex-wrap:wrap"] > div {
+                    min-width: 44px;
+                }
+
+                /* --- PD Calibration IOC input --- */
+                #cal-ioc-ref { width: 58px !important; font-size: 14px !important; }
+                #cal-header { flex-wrap: nowrap; gap: 6px; }
+
+                /* --- MediaPipe scan card --- */
+                .mp-wrapper { width: 100% !important; height: 460px !important; }
+
+                /* --- Footer --- */
+                .footer-container { padding: 10px !important; text-align: center; }
+                .footer-text { font-size: 0.65rem !important; }
+
+                /* --- Print button area --- */
+                div[style*="margin-top: 40px"] { margin-top: 20px !important; }
+
+                /* --- H2 Invoice title --- */
+                .main-card h2 {
+                    font-size: 1.1rem;
+                    margin-bottom: 10px;
+                }
+
+                /* Pose check chips: wrap & smaller */
+                #pose-checks { flex-wrap: wrap !important; gap: 5px !important; }
+                .pose-check { font-size: 9px !important; padding: 2px 7px !important; }
+            }
+
+            /* Sangat sempit (≤ 360px) */
+            @media (max-width: 360px) {
+                .neu-btn { flex: 1 1 100% !important; }
+                .prescription-table th { font-size: 0.48rem !important; }
+                .input-table-neu { font-size: 0.68rem !important; padding: 5px 1px !important; }
+                .eye-indicator { width: 24px !important; height: 24px !important; font-size: 0.68rem !important; }
+                .read-only-box { font-size: 0.78rem !important; }
             }
         </style>
     </head>
@@ -1640,6 +1795,10 @@
                                 <div class="selection-wrapper" style="margin-top: 15px; flex-wrap:wrap; gap:8px;">
                                     <button type="button" class="neu-btn" id="mp-start-btn">
                                         <div class="led"></div> START CAMERA
+                                    </button>
+                                    <button type="button" class="neu-btn" id="mp-result-toggle-btn" onclick="toggleFaceResult()" style="display:none; border-color:rgba(0,207,255,0.4); color:#00cfff;">
+                                        <div class="led" style="background:#00cfff; box-shadow:0 0 6px #00cfff;"></div>
+                                        <span id="mp-result-toggle-label">👁 VIEW RESULT</span>
                                     </button>
                                     <button type="button" class="neu-btn" id="mp-switch-btn" style="display:none;">
                                         <div class="led"></div> SWITCH CAM
@@ -2447,9 +2606,13 @@
                     startBtn.disabled        = false;
 
                     if (hasResult) {
-                        // Analysis is done — KEEP the result + frame-rec visible on the summary view
-                        resultBox.style.display   = 'flex';
-                        // (frameRecBox visibility was already set by showFrameRecommendation)
+                        // Analysis is done — hide result, show toggle button
+                        resultBox.style.display   = 'none';
+                        frameRecBox.style.display = 'none';
+                        const toggleBtn2 = document.getElementById('mp-result-toggle-btn');
+                        if (toggleBtn2) toggleBtn2.style.display = 'inline-flex';
+                        const toggleLabel = document.getElementById('mp-result-toggle-label');
+                        if (toggleLabel) toggleLabel.textContent = '👁 VIEW RESULT';
                         startBtn.style.display    = 'inline-block';
                         startBtn.innerHTML        = '<div class="led"></div> RESCAN';
                     } else {
@@ -3408,7 +3571,7 @@
                         </div>
                         ${avoidHtml}
                     `;
-                    frameRecBox.style.display = 'block';
+                    frameRecBox.style.display = 'none'; // controlled by toggle button
                 }
 
                 // Generic collapsible toggle used by the legend + avoid sections.
@@ -3424,11 +3587,32 @@
                 window.toggleCollapsible = toggleCollapsible;
 
                 // ============================================================
+                // TOGGLE FACE RESULT
+                // ============================================================
+                function toggleFaceResult() {
+                    const isHidden = resultBox.style.display === 'none' || resultBox.style.display === '';
+                    const toggleLabel = document.getElementById('mp-result-toggle-label');
+                    if (isHidden) {
+                        resultBox.style.display   = 'flex';
+                        frameRecBox.style.display = 'block';
+                        if (toggleLabel) toggleLabel.textContent = '👁 HIDE RESULT';
+                    } else {
+                        resultBox.style.display   = 'none';
+                        frameRecBox.style.display = 'none';
+                        if (toggleLabel) toggleLabel.textContent = '👁 VIEW RESULT';
+                    }
+                }
+                window.toggleFaceResult = toggleFaceResult;
+
+                // ============================================================
                 // RESET
                 // ============================================================
                 function resetScan() {
                     isCaptured = false; capturedLM = null; pdBuffer = []; shapeBuffer = []; lastPD = null;
                     guide.classList.remove('locked');
+                    // Hide the toggle button when rescan
+                    const toggleBtn2 = document.getElementById('mp-result-toggle-btn');
+                    if (toggleBtn2) toggleBtn2.style.display = 'none';
                     liveView.style.display      = 'block';
                     capturedView.style.display  = 'none';
                     captureBtn.style.display    = 'inline-block';
