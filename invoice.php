@@ -1658,7 +1658,22 @@
                             <!-- Back button (only visible in fullscreen scan mode) -->
                             <button type="button" id="mp-back-btn" onclick="exitFullscreenCam()">← BACK</button>
                             <div class="prescription-container" style="text-align: center;">
-                                <label>FACE SHAPE ANALYSIS</label>
+
+                                <!-- PURCHASE FRAME TOGGLE -->
+                                <label>CUSTOMER PURCHASE FRAME?</label>
+                                <div class="selection-wrapper" style="margin-top: 10px;">
+                                    <button type="button" class="neu-btn active" id="frame-purchase-no" onclick="setFramePurchase(0)">
+                                        <div class="led"></div> NO
+                                    </button>
+                                    <button type="button" class="neu-btn" id="frame-purchase-yes" onclick="setFramePurchase(1)">
+                                        <div class="led"></div> YES
+                                    </button>
+                                </div>
+
+                                <!-- Face Shape section, shown only when YES -->
+                                <div id="mp-face-section" style="display:none;">
+                                    <hr style="border:none; border-top:1px solid rgba(255,255,255,0.07); margin:18px 0 14px;">
+                                    <label>FACE SHAPE ANALYSIS</label>
 
                                 <!-- STEP INDICATOR (hidden initially — only shown inside fullscreen scan) -->
                                 <div id="mp-steps" style="display:none;justify-content:center;gap:6px;margin-bottom:14px;">
@@ -1810,6 +1825,7 @@
                                         <div class="led"></div> RESTART SCAN
                                     </button>
                                 </div>
+                                </div><!-- /mp-face-section -->
                             </div>
                         </div>
 
@@ -2315,6 +2331,25 @@
             window.lrTypeSwitch  = lrTypeSwitch;
             window.lrPriceSwitch = lrPriceSwitch;
             window.lrExpandAll   = lrExpandAll;
+
+            // ============================================================
+            // FRAME PURCHASE TOGGLE
+            // ============================================================
+            function setFramePurchase(val) {
+                const btnYes     = document.getElementById('frame-purchase-yes');
+                const btnNo      = document.getElementById('frame-purchase-no');
+                const faceSection = document.getElementById('mp-face-section');
+                if (val === 1) {
+                    btnYes.classList.add('active');
+                    btnNo.classList.remove('active');
+                    faceSection.style.display = 'block';
+                } else {
+                    btnNo.classList.add('active');
+                    btnYes.classList.remove('active');
+                    faceSection.style.display = 'none';
+                }
+            }
+            window.setFramePurchase = setFramePurchase;
 
 
             window.onload = () => {
