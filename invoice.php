@@ -1868,7 +1868,6 @@
                                                         <div style="font-size:11px;font-weight:700;color:<?php echo $rankColor; ?>;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
                                                             <?php echo htmlspecialchars($cand['category']); ?> — <?php echo htmlspecialchars($cand['type']); ?>
                                                             <?php
-                                                            // Inline design match — no function call
                                                             $_cat = strtoupper(trim($cand['category']));
                                                             $_isProg = in_array($_cat, array('PROGRESSIVE','KRYPTOK','FLATTOP'));
                                                             $_match = false;
