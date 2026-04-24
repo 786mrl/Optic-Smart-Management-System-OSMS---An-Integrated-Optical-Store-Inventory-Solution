@@ -1176,6 +1176,14 @@
                     console.log("Input " + hiddenInputId + " updated to: " + val); // Cek di console (F12)
                 }
 
+                // Specific logic to display the old prescription form
+                if (isOldPrescription) {
+                    const oldBox = document.getElementById('old_prescript');
+                    oldBox.style.display = (val === 'yes') ? 'block' : 'none';
+                    oldBox.style.flexWrap = 'wrap';
+                }
+            }
+
             // ================================================================
             // === VISION NEED TOGGLE (multi-select, 1=yes 0=no) =============
             // ================================================================
@@ -1194,20 +1202,11 @@
                     section.style.display = 'block';
                 } else {
                     section.style.display = 'none';
-                    // Reset all buttons & checkboxes when hidden
                     document.querySelectorAll('.vision-need-btn').forEach(b => b.classList.remove('active'));
                     ['chk_need_distance','chk_need_intermediate','chk_need_near'].forEach(id => {
                         const el = document.getElementById(id);
                         if (el) el.checked = false;
                     });
-                }
-            }
-
-            // Specific logic to display the old prescription form
-                if (isOldPrescription) {
-                    const oldBox = document.getElementById('old_prescript');
-                    oldBox.style.display = (val === 'yes') ? 'block' : 'none'; // Use flex for aligned inputs
-                    oldBox.style.flexWrap = 'wrap';
                 }
             }
 
