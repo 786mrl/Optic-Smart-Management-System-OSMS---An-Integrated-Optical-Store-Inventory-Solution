@@ -871,41 +871,41 @@
                                         <div class="vision-need-title">⚑ VISION NEED</div>
                                         <span class="vision-need-badge">AGE ≥ 39</span>
                                     </div>
-                                    <p style="text-align:center; font-size:0.72em; color:#888; margin: 0 0 14px 0; letter-spacing:0.5px;">Pilih kebutuhan penglihatan yang dibutuhkan (boleh lebih dari satu)</p>
+                                    <p style="text-align:center; font-size:0.72em; color:#888; margin: 0 0 14px 0; letter-spacing:0.5px;">Select required vision needs (multiple selection allowed)</p>
+                                    
                                     <div class="vision-need-wrapper">
-                                        <!-- DISTANCE -->
                                         <button type="button" 
                                             id="btn_need_distance"
                                             class="vision-need-btn" 
                                             onclick="toggleVisionNeed(this, 'need_distance')">
                                             <div class="vn-icon">🔭</div>
                                             <span>DISTANCE</span>
-                                            <small style="font-size:0.75em; color: inherit; opacity:0.7;">Jarak Jauh</small>
+                                            <small style="font-size:0.75em; color: inherit; opacity:0.7;">Far Vision</small>
                                             <div class="vn-led"></div>
                                         </button>
-                                        <!-- INTERMEDIATE -->
+
                                         <button type="button" 
                                             id="btn_need_intermediate"
                                             class="vision-need-btn" 
                                             onclick="toggleVisionNeed(this, 'need_intermediate')">
                                             <div class="vn-icon">🖥️</div>
                                             <span>INTERMEDIATE</span>
-                                            <small style="font-size:0.75em; color: inherit; opacity:0.7;">Jarak Menengah</small>
+                                            <small style="font-size:0.75em; color: inherit; opacity:0.7;">Mid Range</small>
                                             <div class="vn-led"></div>
                                         </button>
-                                        <!-- NEAR -->
+
                                         <button type="button" 
                                             id="btn_need_near"
                                             class="vision-need-btn" 
                                             onclick="toggleVisionNeed(this, 'need_near')">
                                             <div class="vn-icon">📖</div>
                                             <span>NEAR</span>
-                                            <small style="font-size:0.75em; color: inherit; opacity:0.7;">Jarak Dekat</small>
+                                            <small style="font-size:0.75em; color: inherit; opacity:0.7;">Reading/Close-up</small>
                                             <div class="vn-led"></div>
                                         </button>
                                     </div>
                                 </div>
-                                <!-- Hidden checkboxes untuk POST (1=yes, 0=no) -->
+
                                 <input type="checkbox" name="need_distance"     id="chk_need_distance"     style="display:none;" value="1">
                                 <input type="checkbox" name="need_intermediate" id="chk_need_intermediate" style="display:none;" value="1">
                                 <input type="checkbox" name="need_near"         id="chk_need_near"         style="display:none;" value="1">
@@ -1913,6 +1913,11 @@
                     calculatedAge = currentYear - fullYear;
                 } else {
                     calculatedAge = parseInt(ageVal);
+                }
+
+                // Replace input value with calculated age (e.g., .96 → 30)
+                if (!isNaN(calculatedAge) && calculatedAge > 0) {
+                    this.value = calculatedAge;
                 }
 
                 // Auto-fill ADD if age is valid
