@@ -385,6 +385,70 @@
         return $a['selling'] - $b['selling'];
     });
 
+    // ── Deduplication: if a (STOCK) variant exists, suppress the non-STOCK twin ──
+    // e.g. "BLUGARD (STOCK)" in lab → suppress "BLUGARD" from the same category.
+    // Build a set of base names that already have a (STOCK) version present.
+    $lr_stockBaseNames = [];
+    foreach ($lr_candidates as $c) {
+        if (preg_match('/^(.+?)\s*\(STOCK\)\s*$/i', $c['type'], $m)) {
+            $baseKey = strtoupper(trim($c['category'])) . '||' . strtoupper(trim($m[1]));
+            $lr_stockBaseNames[$baseKey] = true;
+        }
+    }
+    // Filter out any non-STOCK entry whose base name is already covered by a (STOCK) entry
+    if (!empty($lr_stockBaseNames)) {
+        $lr_candidates = array_values(array_filter($lr_candidates, function($c) use ($lr_stockBaseNames) {
+            // Keep all (STOCK) entries as-is
+            if (preg_match('/\(STOCK\)\s*$/i', $c['type'])) return true;
+            // Suppress non-STOCK entry if its category+type matches a known (STOCK) base name
+            $baseKey = strtoupper(trim($c['category'])) . '||' . strtoupper(trim($c['type']));
+            return !isset($lr_stockBaseNames[$baseKey]);
+        }));
+    }
+
+    // ── Deduplication pass 2: suppress lab entry if identical category+type exists in stock ──
+    // e.g. stock→"SINGLE VISION / HMC" and lab→"SINGLE VISION / HMC" → keep only stock.
+    $lr_stockExactKeys = [];
+    foreach ($lr_candidates as $c) {
+        if ($c['source'] === 'stock') {
+            $key = strtoupper(trim($c['category'])) . '||' . strtoupper(trim($c['type']));
+            $lr_stockExactKeys[$key] = true;
+        }
+    }
+    if (!empty($lr_stockExactKeys)) {
+        $lr_candidates = array_values(array_filter($lr_candidates, function($c) use ($lr_stockExactKeys) {
+            if ($c['source'] !== 'lab') return true; // keep stock & any other source
+            $key = strtoupper(trim($c['category'])) . '||' . strtoupper(trim($c['type']));
+            return !isset($lr_stockExactKeys[$key]); // drop lab if stock twin exists
+        }));
+    }
+
+    // ── Deduplication pass 3: same lens name with variant suffix e.g. "(2)", "(3)" ──
+    // "BLUGARD (STOCK) (2)" and "BLUGARD (STOCK) (3)" share the same base name.
+    // Strip trailing " (N)" suffix, then keep only the cheapest entry per
+    // source + category + base-name group.
+    function lr_stripVariantSuffix($type) {
+        return trim(preg_replace('/\s*\(\d+\)\s*$/', '', $type));
+    }
+    $lr_cheapestByBase = [];
+    foreach ($lr_candidates as $c) {
+        $base = lr_stripVariantSuffix($c['type']);
+        $key  = strtoupper(trim($c['source'])) . '||' . strtoupper(trim($c['category'])) . '||' . strtoupper($base);
+        if (!isset($lr_cheapestByBase[$key]) || $c['selling'] < $lr_cheapestByBase[$key]) {
+            $lr_cheapestByBase[$key] = $c['selling'];
+        }
+    }
+    $lr_usedBase = [];
+    $lr_candidates = array_values(array_filter($lr_candidates, function($c) use ($lr_cheapestByBase, &$lr_usedBase) {
+        $base = lr_stripVariantSuffix($c['type']);
+        $key  = strtoupper(trim($c['source'])) . '||' . strtoupper(trim($c['category'])) . '||' . strtoupper($base);
+        if ($c['selling'] === $lr_cheapestByBase[$key] && !isset($lr_usedBase[$key])) {
+            $lr_usedBase[$key] = true;
+            return true;
+        }
+        return false;
+    }));
+
     // ── Special warning notes ─────────────────────────────────
     $lr_specialNotes = [];
     if ($lr_hasDM)
@@ -419,10 +483,10 @@
     // ── Helper: bucket a list into 4 price tabs ───────────────
     function lr_priceBuckets($list) {
         return [
-            'rekomendasi' => ['label'=>'★ REKOMENDASI', 'data'=>$list,  'color'=>'#ffaa00', 'limit'=>5],
-            'normal'      => ['label'=>'NORMAL', 'data'=>array_values(array_filter($list, function($c){ return $c['selling'] > 0      && $c['selling'] <= 600000;  })), 'color'=>'#00ff88', 'limit'=>999],
-            'sedang'      => ['label'=>'SEDANG', 'data'=>array_values(array_filter($list, function($c){ return $c['selling'] > 600000  && $c['selling'] <= 1000000; })), 'color'=>'#00cfff', 'limit'=>999],
-            'tinggi'      => ['label'=>'TINGGI', 'data'=>array_values(array_filter($list, function($c){ return $c['selling'] > 1000000; })),                           'color'=>'#ff8a4d', 'limit'=>999],
+            'recommended' => ['label'=>'★ RECOMMENDED', 'data'=>$list,  'color'=>'#ffaa00', 'limit'=>5],
+            'budget'      => ['label'=>'BUDGET',         'data'=>array_values(array_filter($list, function($c){ return $c['selling'] > 0      && $c['selling'] <= 600000;  })), 'color'=>'#00ff88', 'limit'=>999],
+            'midrange'      => ['label'=>'MID-RANGE',      'data'=>array_values(array_filter($list, function($c){ return $c['selling'] > 600000  && $c['selling'] <= 1000000; })), 'color'=>'#00cfff', 'limit'=>999],
+            'premium'      => ['label'=>'PREMIUM',        'data'=>array_values(array_filter($list, function($c){ return $c['selling'] > 1000000; })),                           'color'=>'#ff8a4d', 'limit'=>999],
         ];
     }
 
@@ -1602,7 +1666,7 @@
                                         <span style="font-size:1.25rem;">🔬</span>
                                         <div>
                                             <div style="font-size:0.7rem;letter-spacing:2px;color:#ffaa00;font-weight:700;">LENS RECOMMENDED</div>
-                                            <div style="font-size:8.5px;color:#555;margin-top:1px;letter-spacing:0.5px;">Berdasarkan ukuran · kebiasaan · keluhan</div>
+                                            <div style="font-size:8.5px;color:#555;margin-top:1px;letter-spacing:0.5px;">Based on size · habit · symptoms</div>
                                         </div>
                                     </div>
                                     <div style="display:flex;align-items:center;gap:8px;">
@@ -1779,7 +1843,7 @@
                                         $tColor       = $typeCfg['color'];
                                         $priceBuckets = lr_priceBuckets($typeList);
                                         // Default active price tab for this type
-                                        $defPriceTab  = 'rekomendasi';
+                                        $defPriceTab  = 'recommended';
                                     ?>
                                     <div id="lr-type-pane-<?php echo $typeKey; ?>"
                                          style="display:<?php echo $isFirstType ? 'block' : 'none'; ?>;">
@@ -1790,7 +1854,7 @@
                                             $isActivePrice = ($priceKey === $defPriceTab);
                                             $pColor = $priceBucket['color'];
                                             $pCount = count($priceBucket['data']);
-                                            $pHint  = ['normal'=>'≤600rb','sedang'=>'600rb–1jt','tinggi'=>'>1jt'][$priceKey] ?? '';
+                                            $pHint  = ['budget'=>'≤600K','midrange'=>'600K–1M','premium'=>'>1M'][$priceKey] ?? '';
                                             $priceDot = !empty($lr_wantedDesignFeats)
                                                 && isset($lr_hasDesign[$typeKey][$priceKey])
                                                 && $lr_hasDesign[$typeKey][$priceKey];
@@ -1830,9 +1894,9 @@
                                             <div style="font-size:11px;color:#444;text-align:center;padding:16px 10px;background:rgba(255,255,255,0.02);border-radius:10px;border:1px dashed rgba(255,255,255,0.05);">
                                                 <?php
                                                 $emptyMsg = [
-                                                    'normal' => 'No lenses in this price range (≤ Rp 600,000)',
-                                                    'sedang' => 'No lenses in this price range (Rp 600,000 – Rp 1,000,000)',
-                                                    'tinggi' => 'No lenses in this price range (> Rp 1,000,000)',
+                                                    'budget' => 'No lenses in this price range (≤ Rp 600,000)',
+                                                    'midrange' => 'No lenses in this price range (Rp 600,000 – Rp 1,000,000)',
+                                                    'premium' => 'No lenses in this price range (> Rp 1,000,000)',
                                                 ];
                                                 echo isset($emptyMsg[$priceKey]) ? $emptyMsg[$priceKey] : 'No lenses available.';
                                                 ?>
@@ -1841,7 +1905,7 @@
 
                                             <div style="display:flex;flex-direction:column;gap:7px;">
                                             <?php foreach ($list as $i => $cand):
-                                                if ($priceKey === 'rekomendasi') {
+                                                if ($priceKey === 'recommended') {
                                                     $rs = isset($lr_rankStyle[$i]) ? $lr_rankStyle[$i] : ['#'.($i+1), '#00ff88', 'rgba(0,255,136,0.05)', 'rgba(0,255,136,0.15)'];
                                                     list($rankLbl, $rankColor, $bg, $bd) = $rs;
                                                 } else {
@@ -2059,8 +2123,8 @@
 
             // Switch price tab within a type (level 2)
             function lrPriceSwitch(typeKey, priceKey) {
-                var priceTabs = ['rekomendasi','normal','sedang','tinggi'];
-                var colors    = { rekomendasi:'#ffaa00', normal:'#00ff88', sedang:'#00cfff', tinggi:'#ff8a4d' };
+                var priceTabs = ['recommended','budget','midrange','premium'];
+                var colors    = { recommended:'#ffaa00', budget:'#00ff88', midrange:'#00cfff', premium:'#ff8a4d' };
                 priceTabs.forEach(function(p) {
                     var pane = document.getElementById('lr-ppane-' + typeKey + '-' + p);
                     var btn  = document.getElementById('lr-price-btn-' + typeKey + '-' + p);
