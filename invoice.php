@@ -1200,6 +1200,14 @@
                 padding-bottom: 8px;
             }
 
+            /* In fullscreen scan mode: hide FACE SHAPE ANALYSIS header & SELECT FACE SHAPE button */
+            body.fullscreen-cam-active #mp-face-section > .prescription-container > div:first-child {
+                display: none !important;
+            }
+            body.fullscreen-cam-active #mp-manual-shape-btn {
+                display: none !important;
+            }
+
             /* Back button overlay — only visible in fullscreen */
             #mp-back-btn {
                 display: none;
