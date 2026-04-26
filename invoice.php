@@ -629,8 +629,8 @@
                 background: rgba(0,0,0,0.35);
                 backdrop-filter: blur(6px);
                 -webkit-backdrop-filter: blur(6px);
-                -webkit-mask-image: radial-gradient(ellipse 30% 45% at 50% 50%, transparent 95%, black 100%);
-                mask-image: radial-gradient(ellipse 30% 45% at 50% 50%, transparent 95%, black 100%);
+                -webkit-mask-image: radial-gradient(ellipse 42% 52% at 50% 50%, transparent 95%, black 100%);
+                mask-image: radial-gradient(ellipse 42% 52% at 50% 50%, transparent 95%, black 100%);
                 transition: opacity 0.4s;
             }
 
@@ -639,8 +639,8 @@
                 position: absolute;
                 top: 50%; left: 50%;
                 transform: translate(-50%, -50%);
-                width: 60%;
-                height: 90%;
+                width: 76%;
+                height: 82%;
                 border: 2px solid #00ff88;
                 border-radius: 50% 50% 50% 50% / 45% 45% 55% 55%;
                 box-shadow: 0 0 15px rgba(0,255,136,0.5), inset 0 0 10px rgba(0,255,136,0.2);
@@ -1968,7 +1968,7 @@
 
                                 <!-- Camera viewfinder — hidden until START SCANNER is pressed -->
                                 <div id="fbs-viewfinder" style="display:none; margin-top:14px;">
-                                    <div style="position:relative; width:300px; height:220px; margin:0 auto; border-radius:16px; overflow:hidden; background:#000;">
+                                    <div style="position:relative; width:100%; max-width:300px; height:220px; margin:0 auto; border-radius:16px; overflow:hidden; background:#000; box-sizing:border-box;">
                                         <video id="fbs-video" autoplay muted playsinline style="width:100%; height:100%; object-fit:cover;"></video>
                                         <div id="fbs-scanline" style="position:absolute;left:10%;width:80%;height:2px;background:rgba(0,255,136,0.7);box-shadow:0 0 8px rgba(0,255,136,0.6);top:50%;animation:fbs-slide 2s linear infinite;pointer-events:none;"></div>
                                         <div style="position:absolute;top:12px;left:12px;width:28px;height:28px;border-top:2px solid #00ff88;border-left:2px solid #00ff88;border-radius:3px 0 0 0;pointer-events:none;"></div>
@@ -4085,7 +4085,7 @@
                         + `</div>`;
                 }
 
-                function showFrameRecommendation(shape) {
+                function showFrameRecommendation(shape, forceShow) {
                     const rec = frameRec[shape]; if (!rec) return;
                     const gender = normalizeGender(patientGender);
 
@@ -4170,7 +4170,7 @@
                         </div>
                         ${avoidHtml}
                     `;
-                    frameRecBox.style.display = 'none'; // controlled by toggle button
+                    frameRecBox.style.display = forceShow ? 'block' : 'none'; // forceShow=true skips toggle
                 }
 
                 // Generic collapsible toggle used by the legend + avoid sections.
@@ -4783,10 +4783,9 @@
     function selectManualShape(shape) {
         closeManualFaceShape();
 
-        // Show result in the same result box used by camera scan
+        // Populate result box content (but keep it hidden — shown via toggle button)
         var resultBox = document.getElementById('mp-result');
         if (resultBox) {
-            resultBox.style.display = 'flex';
             var shapeEmojis = {OVAL:'◉',ROUND:'●',SQUARE:'■',OBLONG:'▬',HEART:'♥',DIAMOND:'◆',TRIANGLE:'▼'};
             var shapeDesc = {
                 OVAL:'Symmetrical face, slightly longer than wide, with soft lines.',
@@ -4802,34 +4801,25 @@
                 '<div class="shape-badge" style="font-size:1.6rem;">' + shape + '</div>' +
                 '<div style="margin-top:8px;font-size:10px;color:#888;text-align:center;">' + (shapeDesc[shape]||'') + '</div>' +
                 '<div style="margin-top:8px;font-size:9px;color:#aa88ff;letter-spacing:0.5px;">✋ Manually selected (no camera scan)</div>';
+            resultBox.style.display = 'none'; // hidden until VIEW RESULT is pressed
         }
 
-        // Show VIEW RESULT toggle button
+        // Pre-build frame recommendation data (hidden until VIEW RESULT is pressed)
+        if (typeof window.showFrameRecommendation === 'function') {
+            window.showFrameRecommendation(shape, false);
+        }
+
+        // Show VIEW RESULT toggle button (same behaviour as camera flow)
         var toggleBtn = document.getElementById('mp-result-toggle-btn');
         if (toggleBtn) {
             toggleBtn.style.display = 'inline-flex';
             var lbl = document.getElementById('mp-result-toggle-label');
-            if (lbl) lbl.textContent = '🖼 VIEW FRAME REC';
+            if (lbl) lbl.textContent = '👁 VIEW RESULT';
         }
 
-        // Build frame recommendation using existing showFrameRecommendation function
-        // showFrameRecommendation() sets frameRecBox.style.display = 'none' at the end,
-        // so we force it visible immediately after.
-        if (typeof window.showFrameRecommendation === 'function') {
-            window.showFrameRecommendation(shape);
-        }
-
-        // Force show: showFrameRecommendation hides the box (camera flow uses toggle btn),
-        // but for manual selection we want it always visible right away.
-        var frameRecBox = document.getElementById('mp-frame-rec');
-        if (frameRecBox) frameRecBox.style.display = 'block';
-
-        // Show the result box
-        if (resultBox) resultBox.style.display = 'flex';
-
-        // Scroll to result
+        // Scroll to toggle button so user sees it
         setTimeout(function() {
-            if (resultBox) resultBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            if (toggleBtn) toggleBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }, 100);
     }
 
