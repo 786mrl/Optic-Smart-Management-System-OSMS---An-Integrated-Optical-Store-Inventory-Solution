@@ -5601,13 +5601,9 @@
                     window.lrSelectedFrame = priceInt > 0 ? { name: frameName, price: priceInt } : null;
                 }
 
-                // Ensure bar body is open after frame selection
+                // Make bar visible but keep body collapsed (user must click to expand)
                 var bar  = document.getElementById('lr-selection-bar');
-                var body = document.getElementById('lr-selection-bar-body');
-                var chev = document.getElementById('lr-selection-bar-chev');
                 if (bar)  bar.style.display  = 'block';
-                if (body) body.style.display = 'block';
-                if (chev) chev.style.transform = 'rotate(180deg)';
 
                 document.getElementById('fbs-clear-btn').style.display = 'inline-flex';
                 setTimeout(function () {
