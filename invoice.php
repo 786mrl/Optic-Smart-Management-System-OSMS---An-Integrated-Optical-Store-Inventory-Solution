@@ -1571,6 +1571,21 @@
                             <div class="read-only-box" style="height: auto; min-height: 80px;"><?php echo $data['exam_notes'] ?: '-'; ?></div>
                         </div>
 
+                        <!-- ============================================================
+                             ORDER DETAILS GROUP
+                             Prescription Modification · Frame Purchase · Lens Recommended
+                             ============================================================ -->
+                        <div class="full" id="order-details-group" style="background:rgba(255,255,255,0.01);border:1px solid rgba(255,255,255,0.06);border-radius:20px;padding:16px;display:flex;flex-direction:column;gap:12px;">
+                            <!-- Group header label (clickable toggle) -->
+                            <div onclick="toggleOrderDetails()" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;padding-bottom:10px;border-bottom:1px solid rgba(255,255,255,0.05);">
+                                <div style="display:flex;align-items:center;gap:8px;">
+                                    <span style="font-size:0.85rem;">📋</span>
+                                    <span style="font-size:0.6rem;letter-spacing:2.5px;font-weight:800;color:#666;">ORDER DETAILS</span>
+                                </div>
+                                <span id="order-details-chev" style="font-size:11px;color:#666;transition:transform 0.25s;display:inline-block;">▼</span>
+                            </div>
+                            <div id="order-details-body" style="display:flex;flex-direction:column;gap:12px;">
+
                         <div class="full">
                             <div class="prescription-container">
                                 <label id="mod-toggle-label" onclick="toggleModSection()" style="cursor:pointer; user-select:none; display:flex; align-items:center; justify-content:space-between;">
@@ -2174,7 +2189,7 @@
                                             <div id="lr-card-<?php echo $uid; ?>"
                                                  style="<?php echo $hidden; ?>border:1px solid <?php echo $bd; ?>;border-radius:12px;overflow:hidden;background:<?php echo $bg; ?>;">
 
-                                                <!-- Collapsed row -->
+                                                <!-- Collapsed row (click to expand detail) -->
                                                 <div onclick="lrCardToggle('<?php echo $uid; ?>')"
                                                      style="display:flex;align-items:center;gap:10px;padding:11px 13px;cursor:pointer;">
                                                     <span style="display:inline-flex;align-items:center;justify-content:center;min-width:30px;height:24px;background:<?php echo $bd; ?>;border-radius:20px;font-size:9px;font-weight:800;color:<?php echo $rankColor; ?>;letter-spacing:0.5px;flex-shrink:0;"><?php echo $rankLbl; ?></span>
@@ -2238,6 +2253,20 @@
                                                         📋 <?php echo htmlspecialchars($cand['note']); ?>
                                                     </div>
                                                     <?php endif; ?>
+
+                                                    <!-- SELECT LENS BUTTON -->
+                                                    <div style="margin-top:12px;text-align:center;">
+                                                        <button type="button"
+                                                                id="lr-sel-btn-<?php echo $uid; ?>"
+                                                                class="lr-sel-btn"
+                                                                data-uid="<?php echo htmlspecialchars($uid, ENT_QUOTES); ?>"
+                                                                data-name="<?php echo htmlspecialchars($cand['category'].' — '.$cand['type'], ENT_QUOTES); ?>"
+                                                                data-price="<?php echo (int)$cand['selling']; ?>"
+                                                                data-source="<?php echo htmlspecialchars($cand['source'], ENT_QUOTES); ?>"
+                                                                style="width:100%;padding:9px 16px;border-radius:20px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.04);color:#888;font-size:9.5px;font-weight:700;letter-spacing:1px;cursor:pointer;font-family:inherit;transition:all 0.25s;">
+                                                            ○ SELECT THIS LENS
+                                                        </button>
+                                                    </div>
                                                 </div>
 
                                             </div><!-- /card -->
@@ -2273,6 +2302,38 @@
                             </div>
                         </div>
                         <!-- END LENS RECOMMENDATION -->
+
+                        </div><!-- /order-details-body -->
+                        </div><!-- /order-details-group -->
+                        <!-- END ORDER DETAILS GROUP -->
+
+                        <!-- ============================================================
+                             SELECTED FRAME & LENS DISPLAY BAR
+                             Muncul jika ada frame atau lensa yang dipilih.
+                             Klik header untuk buka/tutup (accordion dengan group atas).
+                             ============================================================ -->
+                        <div class="full" id="lr-selection-bar" style="display:none;margin-top:12px;">
+                            <div class="prescription-container" style="border:1px solid rgba(0,207,255,0.25);padding:0;overflow:hidden;">
+                                <!-- Header (clickable accordion) -->
+                                <div onclick="lrSelectionBarToggle()" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;padding:14px 16px;background:rgba(0,207,255,0.04);">
+                                    <div style="display:flex;align-items:center;gap:8px;">
+                                        <span style="font-size:0.95rem;">🛒</span>
+                                        <div>
+                                            <div style="font-size:0.65rem;letter-spacing:2px;color:#00cfff;font-weight:700;">CUSTOMER SELECTION</div>
+                                            <div style="font-size:8px;color:#555;margin-top:1px;">Tap to view selected items</div>
+                                        </div>
+                                    </div>
+                                    <span id="lr-selection-bar-chev" style="color:#00cfff;font-size:11px;display:inline-block;transition:transform 0.3s;">▼</span>
+                                </div>
+                                <!-- Body (collapsible) -->
+                                <div id="lr-selection-bar-body" style="display:none;padding:14px 16px;border-top:1px solid rgba(0,207,255,0.12);">
+                                    <div id="lr-selection-bar-inner" style="display:flex;flex-direction:column;gap:8px;">
+                                        <!-- filled by JS -->
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- END SELECTION BAR -->
 
                     </div>
 
@@ -2410,6 +2471,217 @@
             window.lrExpandAll   = lrExpandAll;
 
             // ============================================================
+            // LENS SELECTION — click a lens card to select / deselect it
+            // ============================================================
+            var lrSelectedLens = null; // { uid, name, price, source }
+
+            function lrSelectLens(uid, name, price, source) {
+                // Deselect if clicking the same card again
+                if (lrSelectedLens && lrSelectedLens.uid === uid) {
+                    lrSelectedLens = null;
+                    lrHighlightSelected(null);
+                    lrUpdateSelectionDisplay(false);
+                    return;
+                }
+                lrSelectedLens = { uid: uid, name: name, price: price, source: source };
+                lrHighlightSelected(uid);
+                lrUpdateSelectionDisplay(false); // just show the bar, stay in place
+            }
+
+            function lrHighlightSelected(uid) {
+                // Update each card border and its select button
+                document.querySelectorAll('[id^="lr-card-"]').forEach(function(card) {
+                    var isSelected = (uid && card.id === 'lr-card-' + uid);
+                    card.style.outline    = isSelected ? '2px solid #ffaa00' : '';
+                    card.style.boxShadow  = isSelected ? '0 0 14px rgba(255,170,0,0.35)' : '';
+                });
+                // Update every SELECT button state
+                document.querySelectorAll('[id^="lr-sel-btn-"]').forEach(function(btn) {
+                    var btnUid = btn.id.replace('lr-sel-btn-', '');
+                    var isSelected = (uid && btnUid === uid);
+                    if (isSelected) {
+                        btn.textContent      = '✓ SELECTED';
+                        btn.style.color      = '#ffaa00';
+                        btn.style.borderColor= 'rgba(255,170,0,0.50)';
+                        btn.style.background = 'rgba(255,170,0,0.12)';
+                        btn.style.boxShadow  = '0 0 8px rgba(255,170,0,0.25)';
+                    } else {
+                        btn.textContent      = '○ SELECT THIS LENS';
+                        btn.style.color      = '#888';
+                        btn.style.borderColor= 'rgba(255,255,255,0.12)';
+                        btn.style.background = 'rgba(255,255,255,0.04)';
+                        btn.style.boxShadow  = '';
+                    }
+                });
+            }
+
+            window.lrSelectLens = lrSelectLens;
+
+            // Delegated listener for SELECT THIS LENS buttons
+            // Uses data-* attributes to avoid quote-escaping issues in PHP-generated onclick.
+            document.addEventListener('click', function(e) {
+                var btn = e.target.closest('.lr-sel-btn');
+                if (!btn) return;
+                var uid    = btn.getAttribute('data-uid');
+                var name   = btn.getAttribute('data-name');
+                var price  = parseInt(btn.getAttribute('data-price'), 10) || 0;
+                var source = btn.getAttribute('data-source');
+                lrSelectLens(uid, name, price, source);
+            });
+
+            // ============================================================
+            // SELECTION DISPLAY — shows selected frame + lens summary bar.
+            // Appears automatically when a frame is scanned OR a lens is
+            // selected. Scanning a frame does NOT auto-open or scroll to
+            // the bar — it just makes it visible.
+            // Opening the bar closes the main group sections, and vice versa.
+            // ============================================================
+
+            // Selected frame state (populated by frame barcode scanner)
+            var lrSelectedFrame = null; // { name, price }
+
+            // Called by the barcode scanner when a frame is successfully found
+            function lrSetSelectedFrame(name, price) {
+                lrSelectedFrame = (name && price > 0) ? { name: name, price: price } : null;
+                lrUpdateSelectionDisplay(false); // do NOT auto-open bar
+            }
+
+            // Called when the barcode scanner result is cleared
+            function lrClearSelectedFrame() {
+                lrSelectedFrame = null;
+                lrUpdateSelectionDisplay(false);
+            }
+
+            // Rebuild and show/hide the selection bar.
+            // autoOpen = true: open the bar body and collapse the main group (used on lens select).
+            // autoOpen = false: only update content and visibility, no scroll/open side-effects.
+            function lrUpdateSelectionDisplay(autoOpen) {
+                var bar = document.getElementById('lr-selection-bar');
+                if (!bar) return;
+
+                var hasFrame = !!lrSelectedFrame;
+                var hasLens  = !!lrSelectedLens;
+
+                if (!hasFrame && !hasLens) {
+                    bar.style.display = 'none';
+                    return;
+                }
+
+                // Build inner HTML
+                var html = '';
+
+                if (hasFrame) {
+                    html += '<div style="display:flex;align-items:center;gap:8px;width:100%;">' +
+                        '<span style="font-size:1.2rem;flex-shrink:0;" title="Frame kacamata">🕶️</span>' +
+                        '<div style="min-width:0;flex:1;">' +
+                            '<div style="font-size:7.5px;color:#555;letter-spacing:1px;margin-bottom:1px;">FRAME</div>' +
+                            '<div style="font-size:10px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escHtml(lrSelectedFrame.name) + '</div>' +
+                            '<div style="font-size:10px;color:#ffaa00;font-family:monospace;font-weight:700;">Rp\u00a0' + lrSelectedFrame.price.toLocaleString('id-ID') + '</div>' +
+                        '</div>' +
+                    '</div>';
+                }
+
+                if (hasFrame && hasLens) {
+                    html += '<div style="height:1px;background:rgba(255,255,255,0.08);width:100%;flex-shrink:0;margin:2px 0;"></div>';
+                }
+
+                if (hasLens) {
+                    html += '<div style="display:flex;align-items:center;gap:8px;width:100%;">' +
+                        '<span style="font-size:1rem;flex-shrink:0;">🔬</span>' +
+                        '<div style="min-width:0;flex:1;">' +
+                            '<div style="font-size:7.5px;color:#555;letter-spacing:1px;margin-bottom:1px;">LENS</div>' +
+                            '<div style="font-size:10px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escHtml(lrSelectedLens.name) + '</div>' +
+                            '<div style="font-size:10px;color:#00ff88;font-family:monospace;font-weight:700;">' +
+                                (lrSelectedLens.price > 0
+                                    ? 'Rp\u00a0' + lrSelectedLens.price.toLocaleString('id-ID')
+                                    : '<span style="color:#555;font-style:italic;font-size:9px;">Contact Staff</span>') +
+                            '</div>' +
+                        '</div>' +
+                    '</div>';
+                }
+
+                // Total chip (only when both have a numeric price)
+                if (hasFrame && hasLens && lrSelectedFrame.price > 0 && lrSelectedLens.price > 0) {
+                    var total = lrSelectedFrame.price + lrSelectedLens.price;
+                    html += '<div style="background:rgba(255,170,0,0.10);border:1px solid rgba(255,170,0,0.30);border-radius:10px;padding:6px 12px;text-align:center;width:100%;">' +
+                        '<div style="font-size:7px;color:#888;letter-spacing:1px;margin-bottom:2px;">TOTAL</div>' +
+                        '<div style="font-size:11px;font-weight:800;color:#ffaa00;font-family:monospace;">Rp\u00a0' + total.toLocaleString('id-ID') + '</div>' +
+                    '</div>';
+                }
+
+                var inner = document.getElementById('lr-selection-bar-inner');
+                if (inner) inner.innerHTML = html;
+                bar.style.display = 'block';
+
+                // Auto-open: expand bar and collapse main group (only on lens select)
+                if (autoOpen) {
+                    var barBody = document.getElementById('lr-selection-bar-body');
+                    var barChev = document.getElementById('lr-selection-bar-chev');
+                    if (barBody && barBody.style.display === 'none') {
+                        barBody.style.display = 'block';
+                        if (barChev) barChev.style.transform = 'rotate(180deg)';
+                    }
+                    lrMainGroupClose();
+                }
+            }
+
+            // Collapse all three main group sections
+            function lrMainGroupClose() {
+                // Collapse order-details-body
+                var odBody = document.getElementById('order-details-body');
+                var odChev = document.getElementById('order-details-chev');
+                if (odBody && odBody.style.display !== 'none') {
+                    odBody.style.display = 'none';
+                    if (odChev) odChev.style.transform = 'rotate(0deg)';
+                }
+                var modPanel = document.getElementById('mod-collapsible');
+                var modChev  = document.getElementById('mod-toggle-chev');
+                if (modPanel && modPanel.style.display !== 'none') {
+                    modPanel.style.display = 'none';
+                    if (modChev) modChev.style.transform = 'rotate(0deg)';
+                }
+                var fpPanel     = document.getElementById('fp-collapsible');
+                var fpChev      = document.getElementById('fp-toggle-chev');
+                var faceSection = document.getElementById('mp-face-section');
+                var fbsCard     = document.getElementById('fbs-card');
+                if (fpPanel && fpPanel.style.display !== 'none') {
+                    fpPanel.style.display = 'none';
+                    if (fpChev) fpChev.style.transform = 'rotate(0deg)';
+                    if (faceSection) faceSection.style.display = 'none';
+                    if (fbsCard)     fbsCard.style.display     = 'none';
+                }
+                var lrBody = document.getElementById('lr-body');
+                var lrChev = document.getElementById('lr-chev');
+                if (lrBody && lrBody.style.display !== 'none') {
+                    lrBody.style.display = 'none';
+                    if (lrChev) lrChev.style.transform = 'rotate(0deg)';
+                }
+            }
+
+            // Toggle the selection bar open/close (accordion header click)
+            function lrSelectionBarToggle() {
+                var barBody = document.getElementById('lr-selection-bar-body');
+                var barChev = document.getElementById('lr-selection-bar-chev');
+                if (!barBody) return;
+                var isOpen = barBody.style.display !== 'none';
+                barBody.style.display = isOpen ? 'none' : 'block';
+                if (barChev) barChev.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(180deg)';
+                // Opening the bar → collapse the main group sections
+                if (!isOpen) lrMainGroupClose();
+            }
+
+            // Safe HTML escape (separate from barcode scanner's esc() which lives in its own IIFE)
+            function escHtml(str) {
+                var d = document.createElement('div');
+                d.appendChild(document.createTextNode(String(str || '')));
+                return d.innerHTML;
+            }
+
+            window.lrSelectionBarToggle = lrSelectionBarToggle;
+            window.lrSetSelectedFrame   = lrSetSelectedFrame;
+            window.lrClearSelectedFrame = lrClearSelectedFrame;
+
+            // ============================================================
             // FRAME PURCHASE TOGGLE
             // ============================================================
             function setFramePurchase(val) {
@@ -2432,6 +2704,28 @@
                 }
             }
             window.setFramePurchase = setFramePurchase;
+
+            // ============================================================
+            // ORDER DETAILS GROUP — collapsible toggle
+            // ============================================================
+            function toggleOrderDetails() {
+                const body = document.getElementById('order-details-body');
+                const chev = document.getElementById('order-details-chev');
+                if (!body) return;
+                const open = body.style.display === 'none' || body.style.display === '';
+                body.style.display = open ? 'flex' : 'none';
+                if (chev) chev.style.transform = open ? 'rotate(180deg)' : 'rotate(0deg)';
+                // Opening Order Details → collapse Customer Selection bar
+                if (open) {
+                    var barBody = document.getElementById('lr-selection-bar-body');
+                    var barChev = document.getElementById('lr-selection-bar-chev');
+                    if (barBody && barBody.style.display !== 'none') {
+                        barBody.style.display = 'none';
+                        if (barChev) barChev.style.transform = 'rotate(0deg)';
+                    }
+                }
+            }
+            window.toggleOrderDetails = toggleOrderDetails;
 
             // ============================================================
             // PRESCRIPTION MODIFICATION — collapsible toggle
@@ -4095,6 +4389,10 @@
                 if (typeof window.lrSetFramePrice === 'function') {
                     window.lrSetFramePrice(frameSellPrice);
                 }
+                // Update selection display bar
+                if (typeof window.lrSetSelectedFrame === 'function') {
+                    window.lrSetSelectedFrame(esc(d.brand), frameSellPrice);
+                }
 
                 fbsResult.innerHTML =
                     '<div style="width:100%;text-align:left;">' +
@@ -4149,6 +4447,10 @@
                 // Remove frame price from lens totals
                 if (typeof window.lrSetFramePrice === 'function') {
                     window.lrSetFramePrice(0);
+                }
+                // Clear selected frame from display bar
+                if (typeof window.lrClearSelectedFrame === 'function') {
+                    window.lrClearSelectedFrame();
                 }
                 fbsLocked  = false;
                 fbsLastScan = 0;
