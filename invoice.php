@@ -3206,6 +3206,8 @@
                 if (origBody) origBody.style.display = 'none';
                 if (modBody)  modBody.style.display  = 'block';
                 lrUpdateHeader('mod');
+                lrPrescriptionIsModified = true;
+                lrUpdateSelectionDisplay(false);
             };
 
             modNo.onclick = () => {
@@ -3228,6 +3230,8 @@
                 if (origBody) origBody.style.display = 'block';
                 if (modBody)  modBody.style.display  = 'none';
                 lrUpdateHeader('orig');
+                lrPrescriptionIsModified = false;
+                lrUpdateSelectionDisplay(false);
             };
 
             // ============================================================
@@ -3337,6 +3341,8 @@
             // LENS SELECTION — click a lens card to select / deselect it
             // ============================================================
             var lrSelectedLens = null; // { uid, name, price, source }
+            // Tracks current prescription modification state (YES = modified, NO = original)
+            var lrPrescriptionIsModified = <?php echo $data['lens_modification'] == 1 ? 'true' : 'false'; ?>;
 
             function lrSelectLens(uid, name, price, source) {
                 // Deselect if clicking the same card again
@@ -3449,12 +3455,30 @@
                 }
 
                 if (hasLens) {
+                    // Prescription badge: ORIGINAL or MODIFIED
+                    var rxLabel  = lrPrescriptionIsModified ? 'MODIFIED' : 'ORIGINAL';
+                    var rxColor  = lrPrescriptionIsModified ? '#ffaa00' : '#00cfff';
+                    var rxBg     = lrPrescriptionIsModified ? 'rgba(255,170,0,0.12)' : 'rgba(0,207,255,0.10)';
+                    var rxBd     = lrPrescriptionIsModified ? 'rgba(255,170,0,0.35)' : 'rgba(0,207,255,0.30)';
+                    var rxIcon   = lrPrescriptionIsModified ? '✏️' : '📋';
+                    // Source badge: STOCK or LAB
+                    var srcIsStock = (lrSelectedLens.source === 'stock');
+                    var srcLabel = srcIsStock ? 'STOCK' : 'LAB';
+                    var srcColor = srcIsStock ? '#00ff88' : '#ff8a4d';
+                    var srcBg    = srcIsStock ? 'rgba(0,255,136,0.10)' : 'rgba(255,138,77,0.10)';
+                    var srcBd    = srcIsStock ? 'rgba(0,255,136,0.28)' : 'rgba(255,138,77,0.28)';
+                    var srcIcon  = srcIsStock ? '🏪' : '🔧';
+
                     html += '<div style="display:flex;align-items:center;gap:8px;width:100%;">' +
                         '<span style="font-size:1rem;flex-shrink:0;">🔬</span>' +
                         '<div style="min-width:0;flex:1;">' +
                             '<div style="font-size:7.5px;color:#555;letter-spacing:1px;margin-bottom:1px;">LENS</div>' +
                             '<div style="font-size:10px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escHtml(lrSelectedLens.name) + '</div>' +
-                            '<div style="font-size:10px;color:#00ff88;font-family:monospace;font-weight:700;">' +
+                            '<div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-top:4px;">' +
+                                '<span style="font-size:7.5px;font-weight:700;letter-spacing:0.8px;color:' + rxColor + ';background:' + rxBg + ';border:1px solid ' + rxBd + ';border-radius:20px;padding:2px 7px;">' + rxIcon + ' ' + rxLabel + '</span>' +
+                                '<span style="font-size:7.5px;font-weight:700;letter-spacing:0.8px;color:' + srcColor + ';background:' + srcBg + ';border:1px solid ' + srcBd + ';border-radius:20px;padding:2px 7px;">' + srcIcon + ' ' + srcLabel + '</span>' +
+                            '</div>' +
+                            '<div style="font-size:10px;color:#00ff88;font-family:monospace;font-weight:700;margin-top:3px;">' +
                                 (lrSelectedLens.price > 0
                                     ? 'Rp\u00a0' + lrSelectedLens.price.toLocaleString('id-ID')
                                     : '<span style="color:#555;font-style:italic;font-size:9px;">Contact Staff</span>') +
