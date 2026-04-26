@@ -1888,6 +1888,9 @@
                                     <button type="button" class="neu-btn" id="mp-start-btn">
                                         <div class="led"></div> START CAMERA
                                     </button>
+                                    <button type="button" class="neu-btn" id="mp-manual-shape-btn" onclick="openManualFaceShape()" style="border-color:rgba(170,136,255,0.4); color:#aa88ff;">
+                                        <div class="led" style="background:#aa88ff; box-shadow:0 0 6px #aa88ff;"></div> ✋ SELECT FACE SHAPE
+                                    </button>
                                     <button type="button" class="neu-btn" id="mp-switch-btn" style="display:none;">
                                         <div class="led"></div> SWITCH CAM
                                     </button>
@@ -4163,6 +4166,7 @@
                 }
                 window.toggleFaceResult = toggleFaceResult;
                 window.resetScan = resetScan;
+                window.showFrameRecommendation = showFrameRecommendation;
 
                 // ============================================================
                 // RESET
@@ -4576,5 +4580,225 @@
 
         }());
         </script>
+
+    <!-- ══════════════════════════════════════════════════════════════
+         MANUAL FACE SHAPE PICKER MODAL
+         ══════════════════════════════════════════════════════════════ -->
+    <div id="mfs-overlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.82); z-index:9999; overflow-y:auto; padding:20px 12px 40px;">
+        <div style="max-width:520px; margin:0 auto; background:#1a1c1d; border:1px solid rgba(170,136,255,0.3); border-radius:22px; padding:22px 18px; position:relative;">
+            <!-- Header -->
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:18px;">
+                <div>
+                    <div style="font-size:0.7rem; letter-spacing:2px; color:#aa88ff; font-weight:700;">✋ SELECT FACE SHAPE</div>
+                    <div style="font-size:9px; color:#555; margin-top:3px;">Tap the shape that best matches the customer's face</div>
+                </div>
+                <button type="button" onclick="closeManualFaceShape()" style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1); border-radius:50%; width:32px; height:32px; color:#aaa; font-size:16px; cursor:pointer; line-height:1; display:flex; align-items:center; justify-content:center;">✕</button>
+            </div>
+
+            <!-- Shape grid -->
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap:10px;" id="mfs-grid">
+
+                <!-- OVAL -->
+                <button type="button" class="mfs-card" onclick="selectManualShape('OVAL')">
+                    <svg viewBox="0 0 80 90" xmlns="http://www.w3.org/2000/svg" class="mfs-svg">
+                        <ellipse cx="40" cy="45" rx="27" ry="38" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+                        <line x1="20" y1="22" x2="60" y2="22" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
+                        <line x1="13" y1="45" x2="67" y2="45" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.3"/>
+                        <line x1="22" y1="68" x2="58" y2="68" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
+                    </svg>
+                    <span class="mfs-label">OVAL</span>
+                    <span class="mfs-sub">Balanced &amp; symmetrical</span>
+                </button>
+
+                <!-- ROUND -->
+                <button type="button" class="mfs-card" onclick="selectManualShape('ROUND')">
+                    <svg viewBox="0 0 80 90" xmlns="http://www.w3.org/2000/svg" class="mfs-svg">
+                        <ellipse cx="40" cy="45" rx="32" ry="33" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+                        <line x1="14" y1="27" x2="66" y2="27" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
+                        <line x1="8" y1="45" x2="72" y2="45" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.3"/>
+                        <line x1="14" y1="63" x2="66" y2="63" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
+                    </svg>
+                    <span class="mfs-label">ROUND</span>
+                    <span class="mfs-sub">Equal width &amp; height</span>
+                </button>
+
+                <!-- SQUARE -->
+                <button type="button" class="mfs-card" onclick="selectManualShape('SQUARE')">
+                    <svg viewBox="0 0 80 90" xmlns="http://www.w3.org/2000/svg" class="mfs-svg">
+                        <path d="M15 20 Q40 14 65 20 L68 45 Q64 74 40 78 Q16 74 12 45 Z" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/>
+                        <line x1="15" y1="20" x2="65" y2="20" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
+                        <line x1="12" y1="45" x2="68" y2="45" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.3"/>
+                        <line x1="18" y1="68" x2="62" y2="68" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
+                    </svg>
+                    <span class="mfs-label">SQUARE</span>
+                    <span class="mfs-sub">Strong wide jaw</span>
+                </button>
+
+                <!-- OBLONG -->
+                <button type="button" class="mfs-card" onclick="selectManualShape('OBLONG')">
+                    <svg viewBox="0 0 80 100" xmlns="http://www.w3.org/2000/svg" class="mfs-svg">
+                        <ellipse cx="40" cy="50" rx="22" ry="44" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+                        <line x1="22" y1="18" x2="58" y2="18" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
+                        <line x1="18" y1="50" x2="62" y2="50" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.3"/>
+                        <line x1="22" y1="82" x2="58" y2="82" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
+                    </svg>
+                    <span class="mfs-label">OBLONG</span>
+                    <span class="mfs-sub">Long &amp; narrow face</span>
+                </button>
+
+                <!-- HEART -->
+                <button type="button" class="mfs-card" onclick="selectManualShape('HEART')">
+                    <svg viewBox="0 0 80 90" xmlns="http://www.w3.org/2000/svg" class="mfs-svg">
+                        <path d="M12 18 Q40 12 68 18 Q72 36 66 52 Q56 70 40 80 Q24 70 14 52 Q8 36 12 18 Z" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/>
+                        <line x1="12" y1="18" x2="68" y2="18" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
+                        <line x1="11" y1="42" x2="69" y2="42" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.3"/>
+                        <line x1="24" y1="66" x2="56" y2="66" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
+                    </svg>
+                    <span class="mfs-label">HEART</span>
+                    <span class="mfs-sub">Wide forehead, pointed chin</span>
+                </button>
+
+                <!-- DIAMOND -->
+                <button type="button" class="mfs-card" onclick="selectManualShape('DIAMOND')">
+                    <svg viewBox="0 0 80 100" xmlns="http://www.w3.org/2000/svg" class="mfs-svg">
+                        <path d="M40 8 Q56 18 68 38 Q72 50 62 65 Q52 78 40 88 Q28 78 18 65 Q8 50 12 38 Q24 18 40 8 Z" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/>
+                        <line x1="24" y1="22" x2="56" y2="22" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
+                        <line x1="10" y1="50" x2="70" y2="50" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.3"/>
+                        <line x1="22" y1="72" x2="58" y2="72" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
+                    </svg>
+                    <span class="mfs-label">DIAMOND</span>
+                    <span class="mfs-sub">Prominent cheekbones</span>
+                </button>
+
+                <!-- TRIANGLE -->
+                <button type="button" class="mfs-card" onclick="selectManualShape('TRIANGLE')">
+                    <svg viewBox="0 0 80 90" xmlns="http://www.w3.org/2000/svg" class="mfs-svg">
+                        <path d="M28 12 Q40 10 52 12 Q64 22 70 44 Q72 60 62 72 Q50 82 40 84 Q30 82 18 72 Q8 60 10 44 Q16 22 28 12 Z" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/>
+                        <line x1="28" y1="12" x2="52" y2="12" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
+                        <line x1="14" y1="48" x2="66" y2="48" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.3"/>
+                        <line x1="18" y1="70" x2="62" y2="70" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
+                    </svg>
+                    <span class="mfs-label">TRIANGLE</span>
+                    <span class="mfs-sub">Jaw wider than forehead</span>
+                </button>
+
+            </div><!-- /mfs-grid -->
+
+            <!-- Cancel note -->
+            <div style="text-align:center; margin-top:18px; font-size:9px; color:#444; letter-spacing:0.5px;">
+                Tap a shape to apply · This will show eyeglass frame recommendations
+            </div>
+        </div>
+    </div>
+
+    <style>
+    .mfs-card {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+        padding: 14px 10px 12px;
+        background: rgba(255,255,255,0.025);
+        border: 1.5px solid rgba(170,136,255,0.18);
+        border-radius: 16px;
+        cursor: pointer;
+        transition: background 0.18s, border-color 0.18s, transform 0.12s;
+        font-family: inherit;
+        text-align: center;
+        color: #aa88ff;
+    }
+    .mfs-card:hover {
+        background: rgba(170,136,255,0.10);
+        border-color: rgba(170,136,255,0.55);
+        transform: translateY(-2px);
+    }
+    .mfs-card:active {
+        transform: scale(0.96);
+    }
+    .mfs-svg {
+        width: 64px;
+        height: 72px;
+        color: #aa88ff;
+        filter: drop-shadow(0 0 6px rgba(170,136,255,0.35));
+    }
+    .mfs-label {
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 1.5px;
+        color: #aa88ff;
+    }
+    .mfs-sub {
+        font-size: 8.5px;
+        color: #666;
+        letter-spacing: 0.3px;
+        line-height: 1.3;
+    }
+    </style>
+
+    <script>
+    function openManualFaceShape() {
+        document.getElementById('mfs-overlay').style.display = 'block';
+    }
+    function closeManualFaceShape() {
+        document.getElementById('mfs-overlay').style.display = 'none';
+    }
+
+    function selectManualShape(shape) {
+        closeManualFaceShape();
+
+        // Show result in the same result box used by camera scan
+        var resultBox = document.getElementById('mp-result');
+        if (resultBox) {
+            resultBox.style.display = 'flex';
+            var shapeEmojis = {OVAL:'◉',ROUND:'●',SQUARE:'■',OBLONG:'▬',HEART:'♥',DIAMOND:'◆',TRIANGLE:'▼'};
+            var shapeDesc = {
+                OVAL:'Symmetrical face, slightly longer than wide, with soft lines.',
+                ROUND:'Rounded face, width and height nearly equal, blunt chin.',
+                SQUARE:'Strong wide jaw, square chin, balanced proportions.',
+                OBLONG:'Long and narrow face, forehead and jaw parallel.',
+                HEART:'Wide forehead tapering to a pointed chin.',
+                DIAMOND:'Prominent cheekbones, narrower forehead and jaw.',
+                TRIANGLE:'Jaw wider than forehead, face widens toward the bottom.'
+            };
+            resultBox.innerHTML =
+                '<div style="font-size:0.65rem;color:var(--text-muted);letter-spacing:1px;margin-bottom:6px;">MANUAL SELECTION</div>' +
+                '<div class="shape-badge" style="font-size:1.6rem;">' + shape + '</div>' +
+                '<div style="margin-top:8px;font-size:10px;color:#888;text-align:center;">' + (shapeDesc[shape]||'') + '</div>' +
+                '<div style="margin-top:8px;font-size:9px;color:#aa88ff;letter-spacing:0.5px;">✋ Manually selected (no camera scan)</div>';
+        }
+
+        // Show VIEW RESULT toggle button
+        var toggleBtn = document.getElementById('mp-result-toggle-btn');
+        if (toggleBtn) {
+            toggleBtn.style.display = 'inline-flex';
+            var lbl = document.getElementById('mp-result-toggle-label');
+            if (lbl) lbl.textContent = '🖼 VIEW FRAME REC';
+        }
+
+        // Build frame recommendation using existing showFrameRecommendation function
+        // showFrameRecommendation() sets frameRecBox.style.display = 'none' at the end,
+        // so we force it visible immediately after.
+        if (typeof window.showFrameRecommendation === 'function') {
+            window.showFrameRecommendation(shape);
+        }
+
+        // Force show: showFrameRecommendation hides the box (camera flow uses toggle btn),
+        // but for manual selection we want it always visible right away.
+        var frameRecBox = document.getElementById('mp-frame-rec');
+        if (frameRecBox) frameRecBox.style.display = 'block';
+
+        // Show the result box
+        if (resultBox) resultBox.style.display = 'flex';
+
+        // Scroll to result
+        setTimeout(function() {
+            if (resultBox) resultBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }, 100);
+    }
+
+    // Make showFrameRecommendation accessible from outside its IIFE
+    // It is defined inside the IIFE — expose it via a global wrapper set after IIFE runs
+    // We use a deferred approach: the IIFE assigns window.showFrameRecommendation internally.
+    </script>
     </body>
 </html>
