@@ -2,22 +2,27 @@
 /**
  * frame_lookup.php
  * ─────────────────────────────────────────────────────────────────────────────
- * AJAX endpoint — Frame Barcode / QR Code lookup.
+ * AJAX endpoint — Frame Barcode / QR Code lookup + Attribute Search.
  *
- * POST params:
- *   ufc  (string) — the UFC value decoded from the QR / typed manually.
+ * POST params (UFC mode):
+ *   ufc    (string) — the UFC value decoded from the QR / typed manually.
  *
- * Logic:
- *   1. Validate the UFC against the QR image file in ./main_qrcodes/{ufc}.png
- *      If found → query frames_main table.
- *   2. If not in main → check ./qrcodes/{ufc}.png
- *      If found → query frame_staging table.
- *   3. If neither file exists → still try both tables as a fallback
- *      (handles edge cases where the image file was deleted/moved).
+ * POST params (Attribute Search mode):
+ *   action (string) = 'search_attr'
+ *   brand  (string) — partial brand name
+ *   code   (string) — partial frame code / ufc
+ *   size   (string) — partial frame size
  *
- * Response (JSON):
- *   { found: true,  source: 'main'|'staging', ufc, brand, sell_price, stock }
+ * Response UFC mode (JSON):
+ *   { found: true,  source: 'main'|'staging', ufc, brand, frame_code,
+ *                   frame_size, color_code, material, lens_shape, structure,
+ *                   size_range, gender_category, sell_price, stock, stock_age }
  *   { found: false, message: '...' }
+ *
+ * Response Attribute Search mode (JSON):
+ *   { rows: [ { source, ufc, brand, frame_code, frame_size, color_code,
+ *               material, lens_shape, structure, size_range, gender_category,
+ *               sell_price, stock, stock_age }, ... ] }
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -27,6 +32,7 @@ include 'db_config.php';
 // ── Auth check ────────────────────────────────────────────────────────────────
 if (!isset($_SESSION['user_id'])) {
     http_response_code(401);
+    header('Content-Type: application/json');
     echo json_encode(['found' => false, 'message' => 'Unauthorized.']);
     exit();
 }
@@ -34,11 +40,133 @@ if (!isset($_SESSION['user_id'])) {
 // ── Only accept POST ───────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
+    header('Content-Type: application/json');
     echo json_encode(['found' => false, 'message' => 'Method not allowed.']);
     exit();
 }
 
-// ── Sanitize input ─────────────────────────────────────────────────────────────
+header('Content-Type: application/json');
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ACTION: search_attr
+// Cari frame berdasarkan brand / frame_code / frame_size (partial match)
+// ══════════════════════════════════════════════════════════════════════════════
+$action = trim($_POST['action'] ?? '');
+
+if ($action === 'search_attr') {
+
+    $brand = trim($_POST['brand'] ?? '');
+    $code  = trim($_POST['code']  ?? '');
+    $size  = trim($_POST['size']  ?? '');
+
+    if ($brand === '' && $code === '' && $size === '') {
+        echo json_encode(['rows' => [], 'message' => 'No search parameters provided.']);
+        exit();
+    }
+
+    $conditions = [];
+    $bindParams = [];
+    $bindTypes  = '';
+
+    if ($brand !== '') {
+        $conditions[] = 'brand LIKE ?';
+        $bindParams[]  = '%' . $brand . '%';
+        $bindTypes    .= 's';
+    }
+    if ($code !== '') {
+        $conditions[] = '(frame_code LIKE ? OR ufc LIKE ?)';
+        $bindParams[]  = '%' . $code . '%';
+        $bindParams[]  = '%' . $code . '%';
+        $bindTypes    .= 'ss';
+    }
+    if ($size !== '') {
+        $conditions[] = 'frame_size LIKE ?';
+        $bindParams[]  = '%' . $size . '%';
+        $bindTypes    .= 's';
+    }
+
+    $whereClause = implode(' AND ', $conditions);
+    $selectCols  = "ufc, brand, frame_code, frame_size, color_code, material,
+                    lens_shape, structure, size_range, gender_category,
+                    sell_price, stock, stock_age";
+
+    $allRows = [];
+
+    // ── Query frames_main ─────────────────────────────────────────────────────
+    $sqlMain  = "SELECT $selectCols, 'main' AS source
+                 FROM frames_main
+                 WHERE $whereClause
+                 ORDER BY brand ASC, frame_code ASC
+                 LIMIT 60";
+    $stmtMain = $conn->prepare($sqlMain);
+    if ($stmtMain) {
+        $stmtMain->bind_param($bindTypes, ...$bindParams);
+        $stmtMain->execute();
+        $resMain = $stmtMain->get_result();
+        while ($row = $resMain->fetch_assoc()) {
+            $allRows[] = $row;
+        }
+        $stmtMain->close();
+    }
+
+    // ── Query frame_staging ───────────────────────────────────────────────────
+    $sqlStaging = "SELECT $selectCols, 'staging' AS source
+                   FROM frame_staging
+                   WHERE $whereClause
+                   ORDER BY brand ASC, frame_code ASC
+                   LIMIT 60";
+    $stmtStg = $conn->prepare($sqlStaging);
+    if ($stmtStg) {
+        $stmtStg->bind_param($bindTypes, ...$bindParams);
+        $stmtStg->execute();
+        $resStg   = $stmtStg->get_result();
+        $mainUfcs = array_column($allRows, 'ufc');
+        while ($row = $resStg->fetch_assoc()) {
+            if (!in_array($row['ufc'], $mainUfcs)) {
+                $allRows[] = $row;
+            }
+        }
+        $stmtStg->close();
+    }
+
+    // ── Sort: main dulu, stock > 0 dulu, lalu brand A-Z ─────────────────────
+    usort($allRows, function ($a, $b) {
+        $srcA = ($a['source'] === 'main') ? 0 : 1;
+        $srcB = ($b['source'] === 'main') ? 0 : 1;
+        if ($srcA !== $srcB) return $srcA - $srcB;
+        $stA = ((int)$a['stock'] > 0) ? 0 : 1;
+        $stB = ((int)$b['stock'] > 0) ? 0 : 1;
+        if ($stA !== $stB) return $stA - $stB;
+        return strcasecmp($a['brand'] ?? '', $b['brand'] ?? '');
+    });
+
+    $output = array_map(function ($r) {
+        return [
+            'source'          => $r['source'],
+            'ufc'             => $r['ufc']             ?? '',
+            'brand'           => $r['brand']           ?? '',
+            'frame_code'      => $r['frame_code']      ?? '',
+            'frame_size'      => $r['frame_size']      ?? '',
+            'color_code'      => $r['color_code']      ?? '',
+            'material'        => $r['material']        ?? '',
+            'lens_shape'      => $r['lens_shape']      ?? '',
+            'structure'       => $r['structure']       ?? '',
+            'size_range'      => $r['size_range']      ?? '',
+            'gender_category' => $r['gender_category'] ?? '',
+            'sell_price'      => (float) ($r['sell_price'] ?? 0),
+            'stock'           => (int)   ($r['stock']      ?? 0),
+            'stock_age'       => $r['stock_age']       ?? '',
+        ];
+    }, $allRows);
+
+    echo json_encode(['rows' => $output]);
+    exit();
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// DEFAULT: UFC / QR Code lookup (logika asli)
+// ══════════════════════════════════════════════════════════════════════════════
+
 $rawUfc = trim($_POST['ufc'] ?? '');
 if ($rawUfc === '') {
     echo json_encode(['found' => false, 'message' => 'No UFC provided.']);
@@ -46,17 +174,18 @@ if ($rawUfc === '') {
 }
 $ufc = mysqli_real_escape_string($conn, $rawUfc);
 
-// ── Path constants ─────────────────────────────────────────────────────────────
 $mainQrPath    = __DIR__ . '/main_qrcodes/' . $rawUfc . '.png';
 $stagingQrPath = __DIR__ . '/qrcodes/'      . $rawUfc . '.png';
+$inMain        = file_exists($mainQrPath);
+$inStaging     = file_exists($stagingQrPath);
 
-// ── Determine search order based on QR file location ──────────────────────────
-$inMain    = file_exists($mainQrPath);
-$inStaging = file_exists($stagingQrPath);
-
-// Helper: query a table and return the row or null
 function lookupFrame($conn, $table, $ufc) {
-    $sql = "SELECT ufc, brand, sell_price, stock FROM `$table` WHERE ufc = '$ufc' LIMIT 1";
+    $sql = "SELECT ufc, brand, frame_code, frame_size, color_code, material,
+                   lens_shape, structure, size_range, gender_category,
+                   sell_price, stock, stock_age
+            FROM `$table`
+            WHERE ufc = '$ufc'
+            LIMIT 1";
     $res = mysqli_query($conn, $sql);
     if (!$res) return null;
     return mysqli_fetch_assoc($res);
@@ -66,54 +195,49 @@ $row    = null;
 $source = null;
 
 if ($inMain) {
-    // QR image is in main_qrcodes → look in frames_main first
     $row = lookupFrame($conn, 'frames_main', $ufc);
-    if ($row) {
-        $source = 'main';
-    } else {
-        // File exists but not in DB yet (edge case) — try staging
+    if ($row) { $source = 'main'; }
+    else {
         $row = lookupFrame($conn, 'frame_staging', $ufc);
         if ($row) $source = 'staging';
     }
 } elseif ($inStaging) {
-    // QR image is in staging qrcodes → look in frame_staging first
     $row = lookupFrame($conn, 'frame_staging', $ufc);
-    if ($row) {
-        $source = 'staging';
-    } else {
-        // Try main as fallback
+    if ($row) { $source = 'staging'; }
+    else {
         $row = lookupFrame($conn, 'frames_main', $ufc);
         if ($row) $source = 'main';
     }
 } else {
-    // No QR file found in either folder — try both tables directly
     $row = lookupFrame($conn, 'frames_main', $ufc);
-    if ($row) {
-        $source = 'main';
-    } else {
+    if ($row) { $source = 'main'; }
+    else {
         $row = lookupFrame($conn, 'frame_staging', $ufc);
         if ($row) $source = 'staging';
     }
 }
 
-// ── Build response ─────────────────────────────────────────────────────────────
-header('Content-Type: application/json');
-
 if ($row && $source) {
     echo json_encode([
-        'found'      => true,
-        'source'     => $source,
-        'ufc'        => $row['ufc'],
-        'brand'      => $row['brand'],
-        'sell_price' => (float) $row['sell_price'],
-        'stock'      => (int)   $row['stock'],
+        'found'           => true,
+        'source'          => $source,
+        'ufc'             => $row['ufc']             ?? '',
+        'brand'           => $row['brand']           ?? '',
+        'frame_code'      => $row['frame_code']      ?? '',
+        'frame_size'      => $row['frame_size']      ?? '',
+        'color_code'      => $row['color_code']      ?? '',
+        'material'        => $row['material']        ?? '',
+        'lens_shape'      => $row['lens_shape']      ?? '',
+        'structure'       => $row['structure']       ?? '',
+        'size_range'      => $row['size_range']      ?? '',
+        'gender_category' => $row['gender_category'] ?? '',
+        'sell_price'      => (float) ($row['sell_price'] ?? 0),
+        'stock'           => (int)   ($row['stock']      ?? 0),
+        'stock_age'       => $row['stock_age']       ?? '',
     ]);
 } else {
     $hint = (!$inMain && !$inStaging)
         ? 'QR code image not found in main_qrcodes/ or qrcodes/.'
         : 'Frame record not found in the database.';
-    echo json_encode([
-        'found'   => false,
-        'message' => $hint,
-    ]);
+    echo json_encode(['found' => false, 'message' => $hint]);
 }

@@ -1966,6 +1966,21 @@
                                     <!-- Collapsible body -->
                                     <div id="fbs-body" style="display:none; margin-top:14px;">
 
+                                <!-- ── MODE TABS: UFC / ATTRIBUTE SEARCH ─────── -->
+                                <div style="display:flex;gap:6px;margin-bottom:14px;">
+                                    <button type="button" id="fbs-tab-ufc" onclick="fbsSwitchTab('ufc')"
+                                        style="flex:1;padding:7px 4px;border-radius:10px;border:1px solid rgba(0,255,136,0.45);background:rgba(0,255,136,0.08);color:#00ff88;font-size:9px;font-weight:700;letter-spacing:0.8px;cursor:pointer;font-family:inherit;transition:all 0.2s;">
+                                        📷 SCAN / UFC
+                                    </button>
+                                    <button type="button" id="fbs-tab-attr" onclick="fbsSwitchTab('attr')"
+                                        style="flex:1;padding:7px 4px;border-radius:10px;border:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.02);color:#888;font-size:9px;font-weight:700;letter-spacing:0.8px;cursor:pointer;font-family:inherit;transition:all 0.2s;">
+                                        🔍 BRAND / CODE / SIZE
+                                    </button>
+                                </div>
+
+                                <!-- ── PANEL A: SCAN / UFC ───────────────────── -->
+                                <div id="fbs-panel-ufc">
+
                                 <!-- Camera viewfinder — hidden until START SCANNER is pressed -->
                                 <div id="fbs-viewfinder" style="display:none; margin-top:14px;">
                                     <div style="position:relative; width:100%; max-width:300px; height:220px; margin:0 auto; border-radius:16px; overflow:hidden; background:#000; box-sizing:border-box;">
@@ -1988,7 +2003,7 @@
                                             style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:#00ff88;font-size:14px;cursor:pointer;padding:0;">&#128269;</button>
                                 </div>
 
-                                <!-- Result card -->
+                                <!-- Result card (UFC mode) -->
                                 <div id="fbs-result" style="margin:12px auto 0; max-width:300px; min-height:54px; display:flex; align-items:center; justify-content:center; border:1px solid rgba(0,255,136,0.18); border-radius:12px; padding:12px 14px; background:rgba(0,255,136,0.03);">
                                     <span style="font-size:10px; color:#444; letter-spacing:0.5px;">Press START SCANNER or type a UFC to begin</span>
                                 </div>
@@ -2006,8 +2021,84 @@
                                     </button>
                                 </div>
 
+                                </div><!-- /fbs-panel-ufc -->
+
+                                <!-- ── PANEL B: BRAND / CODE / SIZE SEARCH ───── -->
+                                <div id="fbs-panel-attr" style="display:none;">
+
+                                    <!-- Input fields -->
+                                    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px;">
+
+                                        <!-- Brand Name -->
+                                        <div>
+                                            <label style="font-size:8px;color:#555;letter-spacing:1px;display:block;margin-bottom:3px;">BRAND NAME</label>
+                                            <input type="text" id="fbs-attr-brand" placeholder="e.g. Oakley, Ray-Ban…"
+                                                   oninput="fbsAttrAutoSearch()"
+                                                   style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:#ccc;font-size:11px;padding:9px 12px;letter-spacing:0.5px;outline:none;">
+                                        </div>
+
+                                        <!-- Frame Code -->
+                                        <div>
+                                            <label style="font-size:8px;color:#555;letter-spacing:1px;display:block;margin-bottom:3px;">FRAME CODE</label>
+                                            <input type="text" id="fbs-attr-code" placeholder="e.g. OX8156, RB3025…"
+                                                   oninput="fbsAttrAutoSearch()"
+                                                   style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:#ccc;font-size:11px;padding:9px 12px;letter-spacing:0.5px;outline:none;">
+                                        </div>
+
+                                        <!-- Frame Size -->
+                                        <div>
+                                            <label style="font-size:8px;color:#555;letter-spacing:1px;display:block;margin-bottom:3px;">FRAME SIZE</label>
+                                            <input type="text" id="fbs-attr-size" placeholder="e.g. 52-18-140, 54□17…"
+                                                   oninput="fbsAttrAutoSearch()"
+                                                   style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:#ccc;font-size:11px;padding:9px 12px;letter-spacing:0.5px;outline:none;">
+                                        </div>
+                                    </div>
+
+                                    <!-- Search button -->
+                                    <button type="button" onclick="fbsAttrSearch()"
+                                            style="width:100%;padding:10px;border-radius:10px;background:rgba(0,255,136,0.08);border:1px solid rgba(0,255,136,0.35);color:#00ff88;font-size:10px;font-weight:700;letter-spacing:1px;cursor:pointer;font-family:inherit;margin-bottom:12px;">
+                                        🔍 SEARCH FRAMES
+                                    </button>
+
+                                    <!-- Loading indicator -->
+                                    <div id="fbs-attr-loading" style="display:none;text-align:center;padding:8px;">
+                                        <div style="display:inline-flex;align-items:center;gap:8px;">
+                                            <div style="width:12px;height:12px;border:2px solid #00ff88;border-top-color:transparent;border-radius:50%;animation:fbs-spin 0.7s linear infinite;"></div>
+                                            <span style="font-size:10px;color:#00ff88;letter-spacing:1px;">SEARCHING…</span>
+                                        </div>
+                                    </div>
+
+                                    <!-- Results list -->
+                                    <div id="fbs-attr-results" style="display:none;">
+                                        <div style="font-size:8px;color:#555;letter-spacing:1px;margin-bottom:8px;" id="fbs-attr-count">0 RESULTS</div>
+                                        <div id="fbs-attr-list" style="display:flex;flex-direction:column;gap:7px;max-height:340px;overflow-y:auto;padding-right:2px;"></div>
+                                    </div>
+
+                                    <!-- No results message -->
+                                    <div id="fbs-attr-none" style="display:none;text-align:center;padding:12px;font-size:10px;color:#666;border:1px solid rgba(255,255,255,0.06);border-radius:10px;">
+                                        ⊘ No frames matched your search.<br>
+                                        <span style="font-size:9px;color:#444;">Try fewer filters or different keywords.</span>
+                                    </div>
+
+                                    <!-- Attr clear button -->
+                                    <button type="button" id="fbs-attr-clear-btn" style="display:none;width:100%;margin-top:8px;padding:8px;border-radius:10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);color:#666;font-size:9px;font-weight:700;letter-spacing:1px;cursor:pointer;font-family:inherit;" onclick="fbsAttrClear()">
+                                        ✕ CLEAR SEARCH
+                                    </button>
+
+                                </div><!-- /fbs-panel-attr -->
+
                                 <style>
                                     @keyframes fbs-slide { 0% { top:15%; } 50% { top:80%; } 100% { top:15%; } }
+                                    @keyframes fbs-spin  { to { transform: rotate(360deg); } }
+                                    .fbs-frame-row {
+                                        display:flex;align-items:flex-start;gap:10px;padding:10px 12px;
+                                        background:rgba(255,255,255,0.025);border:1.5px solid rgba(255,255,255,0.07);
+                                        border-radius:12px;cursor:pointer;transition:background 0.18s,border-color 0.18s;
+                                        text-align:left;width:100%;box-sizing:border-box;font-family:inherit;
+                                        color:inherit;
+                                    }
+                                    .fbs-frame-row:hover  { background:rgba(0,255,136,0.07);border-color:rgba(0,255,136,0.35); }
+                                    .fbs-frame-row.selected { background:rgba(0,255,136,0.13);border-color:rgba(0,255,136,0.70);box-shadow:0 0 0 1px rgba(0,255,136,0.25); }
                                 </style>
 
                                     </div><!-- /fbs-body -->
@@ -4527,30 +4618,61 @@
                     ? 'Rp\u00a0' + frameSellPrice.toLocaleString('id-ID')
                     : '<span style="color:#555;font-style:italic;">Contact Staff</span>';
 
+                // Stock age badge
+                var ageColor = { 'new':'#00ff88', 'old':'#ffaa00', 'very old':'#ff4d4d' };
+                var stockAgeBadge = d.stock_age
+                    ? '<span style="font-size:8px;padding:1px 7px;border-radius:20px;border:1px solid rgba(255,255,255,0.12);color:' +
+                      (ageColor[d.stock_age] || '#888') + ';">' + esc(d.stock_age.toUpperCase()) + '</span>'
+                    : '';
+
+                // Detail chips (frame_code, frame_size, color_code, material, lens_shape, structure, gender)
+                var chips = [];
+                if (d.frame_code)      chips.push(['CODE',   d.frame_code,      '#00cfff']);
+                if (d.frame_size)      chips.push(['SIZE',   d.frame_size,      '#aa88ff']);
+                if (d.color_code)      chips.push(['COLOR',  d.color_code,      '#ffaa00']);
+                if (d.material)        chips.push(['MAT',    d.material,        '#00ff88']);
+                if (d.lens_shape)      chips.push(['SHAPE',  d.lens_shape,      '#ff8a4d']);
+                if (d.structure)       chips.push(['STRUCT', d.structure,       '#ccc']);
+                if (d.size_range)      chips.push(['FIT',    d.size_range,      '#888']);
+                if (d.gender_category) chips.push(['GENDER', d.gender_category, '#ff88cc']);
+
+                var chipsHtml = chips.length
+                    ? '<div style="display:flex;flex-wrap:wrap;gap:5px;margin:10px 0 6px;">' +
+                      chips.map(function(c) {
+                          return '<span style="display:inline-flex;flex-direction:column;align-items:center;gap:1px;padding:4px 8px;background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.07);border-radius:8px;">' +
+                              '<span style="font-size:7px;color:#555;letter-spacing:0.8px;">' + c[0] + '</span>' +
+                              '<span style="font-size:9.5px;font-weight:700;color:' + c[2] + ';">' + esc(c[1]) + '</span>' +
+                          '</span>';
+                      }).join('') +
+                      '</div>'
+                    : '';
+
                 // Update lens recommendation totals
                 if (typeof window.lrSetFramePrice === 'function') {
                     window.lrSetFramePrice(frameSellPrice);
                 }
                 // Update selection display bar
                 if (typeof window.lrSetSelectedFrame === 'function') {
-                    window.lrSetSelectedFrame(esc(d.brand), frameSellPrice);
+                    var frameName = d.brand + (d.frame_code ? ' — ' + d.frame_code : '') + (d.frame_size ? ' (' + d.frame_size + ')' : '');
+                    window.lrSetSelectedFrame(frameName, frameSellPrice);
                 }
 
                 fbsResult.innerHTML =
                     '<div style="width:100%;text-align:left;">' +
-                      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:6px;">' +
+                      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px;">' +
                         '<span style="font-size:0.6rem;color:#ccc;letter-spacing:1.5px;font-weight:700;">\u2746 FRAME FOUND</span>' +
                         srcBadge +
                       '</div>' +
-                      '<div style="font-size:10px;color:#888;letter-spacing:0.5px;margin-bottom:4px;word-break:break-all;">' + esc(d.ufc) + '</div>' +
-                      '<div style="font-size:1rem;font-weight:800;color:#fff;letter-spacing:1px;margin-bottom:10px;">' + esc(d.brand) + '</div>' +
-                      '<div style="display:flex;gap:10px;flex-wrap:wrap;">' +
-                        '<div style="flex:1;min-width:100px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:10px;padding:10px 12px;text-align:center;">' +
+                      '<div style="font-size:9px;color:#555;letter-spacing:0.5px;margin-bottom:3px;word-break:break-all;">UFC: ' + esc(d.ufc) + '</div>' +
+                      '<div style="font-size:1rem;font-weight:800;color:#fff;letter-spacing:1px;">' + esc(d.brand) + '</div>' +
+                      chipsHtml +
+                      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;">' +
+                        '<div style="flex:1;min-width:100px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:10px;padding:9px 12px;text-align:center;">' +
                           '<div style="font-size:7.5px;color:#555;letter-spacing:1px;margin-bottom:4px;">SELLING PRICE</div>' +
                           '<div style="font-size:12px;font-weight:700;color:#ffaa00;">' + priceStr + '</div>' +
                         '</div>' +
-                        '<div style="flex:1;min-width:80px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:10px;padding:10px 12px;text-align:center;">' +
-                          '<div style="font-size:7.5px;color:#555;letter-spacing:1px;margin-bottom:4px;">STOCK</div>' +
+                        '<div style="flex:1;min-width:80px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:10px;padding:9px 12px;text-align:center;">' +
+                          '<div style="display:flex;align-items:center;justify-content:center;gap:5px;font-size:7.5px;color:#555;letter-spacing:1px;margin-bottom:4px;">STOCK ' + stockAgeBadge + '</div>' +
                           '<div style="font-size:12px;font-weight:700;color:' + stockColor + ';">' + stockLabel + '</div>' +
                         '</div>' +
                       '</div>' +
@@ -4610,10 +4732,199 @@
                 return d.innerHTML;
             }
 
-            // Inject keyframes for spinner
-            var s = document.createElement('style');
-            s.textContent = '@keyframes fbs-spin { to { transform: rotate(360deg); } }';
-            document.head.appendChild(s);
+            /* ── TAB SWITCHER ───────────────────────────────────────────── */
+            var fbsCurrentTab = 'ufc';
+            window.fbsSwitchTab = function (tab) {
+                fbsCurrentTab = tab;
+                var panelUfc  = document.getElementById('fbs-panel-ufc');
+                var panelAttr = document.getElementById('fbs-panel-attr');
+                var tabUfc    = document.getElementById('fbs-tab-ufc');
+                var tabAttr   = document.getElementById('fbs-tab-attr');
+                if (tab === 'ufc') {
+                    if (panelUfc)  panelUfc.style.display  = 'block';
+                    if (panelAttr) panelAttr.style.display = 'none';
+                    if (tabUfc)  { tabUfc.style.borderColor  = 'rgba(0,255,136,0.45)'; tabUfc.style.background  = 'rgba(0,255,136,0.08)';  tabUfc.style.color  = '#00ff88'; }
+                    if (tabAttr) { tabAttr.style.borderColor = 'rgba(255,255,255,0.08)'; tabAttr.style.background = 'rgba(255,255,255,0.02)'; tabAttr.style.color = '#888'; }
+                } else {
+                    if (panelUfc)  panelUfc.style.display  = 'none';
+                    if (panelAttr) panelAttr.style.display = 'block';
+                    if (tabAttr) { tabAttr.style.borderColor = 'rgba(0,255,136,0.45)'; tabAttr.style.background  = 'rgba(0,255,136,0.08)';  tabAttr.style.color  = '#00ff88'; }
+                    if (tabUfc)  { tabUfc.style.borderColor  = 'rgba(255,255,255,0.08)'; tabUfc.style.background   = 'rgba(255,255,255,0.02)'; tabUfc.style.color   = '#888'; }
+                    // Stop camera if still running
+                    if (typeof window.fbsStopCamera === 'function') window.fbsStopCamera();
+                }
+            };
+
+            /* ── ATTRIBUTE SEARCH — debounced auto-trigger ──────────────── */
+            var fbsAttrDebounce = null;
+            var fbsAttrSelectedUfc = null; // UFC of currently selected row
+
+            window.fbsAttrAutoSearch = function () {
+                clearTimeout(fbsAttrDebounce);
+                var brand = (document.getElementById('fbs-attr-brand').value || '').trim();
+                var code  = (document.getElementById('fbs-attr-code').value  || '').trim();
+                var size  = (document.getElementById('fbs-attr-size').value  || '').trim();
+                // Auto-search only when at least 2 chars in any field
+                if (brand.length < 2 && code.length < 2 && size.length < 2) return;
+                fbsAttrDebounce = setTimeout(function () { window.fbsAttrSearch(); }, 500);
+            };
+
+            window.fbsAttrSearch = function () {
+                var brand = (document.getElementById('fbs-attr-brand').value || '').trim();
+                var code  = (document.getElementById('fbs-attr-code').value  || '').trim();
+                var size  = (document.getElementById('fbs-attr-size').value  || '').trim();
+                if (!brand && !code && !size) {
+                    fbsAttrSetStatus('none', 'Please enter at least one search field.');
+                    return;
+                }
+
+                // Show loading
+                var loadEl   = document.getElementById('fbs-attr-loading');
+                var resEl    = document.getElementById('fbs-attr-results');
+                var noneEl   = document.getElementById('fbs-attr-none');
+                var clearBtn = document.getElementById('fbs-attr-clear-btn');
+                if (loadEl)   loadEl.style.display   = 'block';
+                if (resEl)    resEl.style.display     = 'none';
+                if (noneEl)   noneEl.style.display    = 'none';
+                if (clearBtn) clearBtn.style.display  = 'none';
+
+                var fd = new FormData();
+                fd.append('action', 'search_attr');
+                fd.append('brand',  brand);
+                fd.append('code',   code);
+                fd.append('size',   size);
+
+                fetch('frame_lookup.php', { method: 'POST', body: fd })
+                    .then(function (r) { return r.json(); })
+                    .then(function (data) {
+                        if (loadEl) loadEl.style.display = 'none';
+                        if (clearBtn) clearBtn.style.display = 'block';
+
+                        var rows = data.rows || [];
+                        if (rows.length === 0) {
+                            if (noneEl) noneEl.style.display = 'block';
+                            return;
+                        }
+
+                        // Render result list
+                        var countEl = document.getElementById('fbs-attr-count');
+                        var listEl  = document.getElementById('fbs-attr-list');
+                        if (countEl) countEl.textContent = rows.length + ' RESULT' + (rows.length > 1 ? 'S' : '') + ' FOUND';
+                        if (listEl)  listEl.innerHTML = rows.map(function (row) {
+                            var stock      = parseInt(row.stock) || 0;
+                            var stockColor = stock > 5 ? '#00ff88' : (stock > 0 ? '#ffaa00' : '#ff4d4d');
+                            var stockLabel = stock > 0 ? stock + ' pcs' : 'OUT OF STOCK';
+                            var priceInt   = parseInt(row.sell_price) || 0;
+                            var priceStr   = priceInt > 0 ? 'Rp\u00a0' + priceInt.toLocaleString('id-ID') : 'Contact Staff';
+                            var srcColor   = (row.source === 'main') ? '#00ff88' : '#00cfff';
+                            var srcLabel   = (row.source === 'main') ? 'MAIN DB' : 'STAGING';
+                            var ufcSafe    = esc(row.ufc || '');
+
+                            // Age badge
+                            var ageColor = { 'new':'#00ff88', 'old':'#ffaa00', 'very old':'#ff4d4d' };
+                            var ageBadge = row.stock_age
+                                ? '<span style="font-size:7.5px;padding:1px 6px;border-radius:20px;border:1px solid rgba(255,255,255,0.1);color:' + (ageColor[row.stock_age] || '#888') + ';margin-left:4px;">' + esc(row.stock_age.toUpperCase()) + '</span>'
+                                : '';
+
+                            // Detail mini-chips
+                            var detailParts = [];
+                            if (row.frame_code)      detailParts.push('<span style="color:#00cfff;">' + esc(row.frame_code) + '</span>');
+                            if (row.frame_size)      detailParts.push('<span style="color:#aa88ff;">' + esc(row.frame_size) + '</span>');
+                            if (row.color_code)      detailParts.push('<span style="color:#ffaa00;">' + esc(row.color_code) + '</span>');
+                            if (row.material)        detailParts.push('<span style="color:#00ff88;">' + esc(row.material) + '</span>');
+                            if (row.lens_shape)      detailParts.push('<span style="color:#ff8a4d;">' + esc(row.lens_shape) + '</span>');
+                            if (row.gender_category) detailParts.push('<span style="color:#ff88cc;">' + esc(row.gender_category) + '</span>');
+                            var detailHtml = detailParts.length
+                                ? '<div style="font-size:9px;color:#555;margin:4px 0 2px;display:flex;flex-wrap:wrap;gap:4px;">' + detailParts.join('<span style="color:#333;">·</span>') + '</div>'
+                                : '';
+
+                            return '<button type="button" class="fbs-frame-row" id="fbs-row-' + ufcSafe + '" onclick="fbsAttrSelectRow(' + JSON.stringify(row) + ')">' +
+                                '<div style="flex:1;min-width:0;">' +
+                                    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px;flex-wrap:wrap;gap:4px;">' +
+                                        '<span style="font-size:11px;font-weight:800;color:#fff;letter-spacing:0.5px;">' + esc(row.brand || '') + '</span>' +
+                                        '<span style="font-size:8px;color:' + srcColor + ';border:1px solid ' + srcColor + '33;border-radius:20px;padding:1px 7px;letter-spacing:0.5px;">' + srcLabel + '</span>' +
+                                    '</div>' +
+                                    detailHtml +
+                                    '<div style="font-size:8px;color:#444;margin-bottom:5px;word-break:break-all;">UFC: ' + ufcSafe + '</div>' +
+                                    '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">' +
+                                        '<span style="font-size:10px;font-weight:700;color:#ffaa00;">' + priceStr + '</span>' +
+                                        '<span style="font-size:10px;font-weight:700;color:' + stockColor + ';">' + stockLabel + ageBadge + '</span>' +
+                                    '</div>' +
+                                '</div>' +
+                                '<div style="font-size:18px;color:#555;flex-shrink:0;line-height:1;align-self:center;">›</div>' +
+                            '</button>';
+                        }).join('');
+
+                        if (resEl) resEl.style.display = 'block';
+                    })
+                    .catch(function (err) {
+                        if (loadEl) loadEl.style.display = 'none';
+                        if (noneEl) {
+                            noneEl.style.display = 'block';
+                            noneEl.innerHTML = '⚠ Connection error. Check server.';
+                        }
+                        console.error('FBS attr search error:', err);
+                    });
+            };
+
+            /* ── SELECT a row from attr list ────────────────────────────── */
+            window.fbsAttrSelectRow = function (row) {
+                var ufc = row.ufc || '';
+                // Highlight selected row
+                document.querySelectorAll('.fbs-frame-row').forEach(function (el) {
+                    el.classList.remove('selected');
+                });
+                var rowEl = document.getElementById('fbs-row-' + esc(ufc));
+                if (rowEl) rowEl.classList.add('selected');
+                fbsAttrSelectedUfc = ufc;
+
+                // Build display name: Brand — Code (Size)
+                var nameParts = [row.brand || ''];
+                if (row.frame_code) nameParts.push('— ' + row.frame_code);
+                if (row.frame_size) nameParts.push('(' + row.frame_size + ')');
+                var frameName = nameParts.join(' ');
+
+                var priceInt = parseInt(row.sell_price) || 0;
+                if (typeof window.lrSetFramePrice === 'function') {
+                    window.lrSetFramePrice(priceInt);
+                }
+                if (typeof window.lrSetSelectedFrame === 'function') {
+                    window.lrSetSelectedFrame(frameName, priceInt);
+                }
+
+                // Switch to UFC tab and show confirmation card
+                window.fbsSwitchTab('ufc');
+                fbsShowFound(row);
+                document.getElementById('fbs-clear-btn').style.display = 'inline-flex';
+                setTimeout(function () {
+                    var res = document.getElementById('fbs-result');
+                    if (res) res.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }, 80);
+            };
+
+            /* ── Clear attr search ──────────────────────────────────────── */
+            window.fbsAttrClear = function () {
+                document.getElementById('fbs-attr-brand').value = '';
+                document.getElementById('fbs-attr-code').value  = '';
+                document.getElementById('fbs-attr-size').value  = '';
+                var resEl    = document.getElementById('fbs-attr-results');
+                var noneEl   = document.getElementById('fbs-attr-none');
+                var clearBtn = document.getElementById('fbs-attr-clear-btn');
+                var listEl   = document.getElementById('fbs-attr-list');
+                if (resEl)    resEl.style.display    = 'none';
+                if (noneEl)   noneEl.style.display   = 'none';
+                if (clearBtn) clearBtn.style.display = 'none';
+                if (listEl)   listEl.innerHTML        = '';
+                fbsAttrSelectedUfc = null;
+                // Also remove selected frame
+                if (typeof window.lrSetFramePrice === 'function')    window.lrSetFramePrice(0);
+                if (typeof window.lrClearSelectedFrame === 'function') window.lrClearSelectedFrame();
+            };
+
+            function fbsAttrSetStatus(type, msg) {
+                var noneEl = document.getElementById('fbs-attr-none');
+                if (noneEl) { noneEl.style.display = 'block'; noneEl.innerHTML = msg; }
+            }
 
         }());
         </script>
