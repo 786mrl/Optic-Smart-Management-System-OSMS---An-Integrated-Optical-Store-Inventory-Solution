@@ -3120,6 +3120,38 @@
                                         <!-- filled by JS -->
                                     </div>
 
+                                    <!-- ── CUSTOMER INFORMATION GROUP ── -->
+                                    <div id="lr-customer-info-group" style="margin-top:14px;border-top:1px solid rgba(0,207,255,0.12);padding-top:14px;">
+                                        <div style="font-size:7.5px;letter-spacing:2px;color:#00cfff;font-weight:700;margin-bottom:10px;">👤 CUSTOMER INFORMATION</div>
+
+                                        <div style="display:flex;flex-direction:column;gap:8px;">
+
+                                            <!-- Phone Number -->
+                                            <div>
+                                                <div style="font-size:7px;color:#555;letter-spacing:1px;margin-bottom:3px;">PHONE NUMBER</div>
+                                                <input type="tel" id="lr-customer-phone"
+                                                    inputmode="numeric"
+                                                    style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.04);border:1px solid rgba(0,207,255,0.25);border-radius:6px;padding:5px 8px;color:#ccc;font-size:10px;font-family:monospace;outline:none;"
+                                                    onfocus="this.style.borderColor='rgba(0,207,255,0.6)'"
+                                                    onblur="this.style.borderColor='rgba(0,207,255,0.25)'"
+                                                    oninput="lrFormatPhone(this)">
+                                            </div>
+
+                                            <!-- Address -->
+                                            <div>
+                                                <div style="font-size:7px;color:#555;letter-spacing:1px;margin-bottom:3px;">ADDRESS</div>
+                                                <textarea id="lr-customer-address" placeholder="CUSTOMER DELIVERY ADDRESS..."
+                                                    rows="3"
+                                                    style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.04);border:1px solid rgba(0,207,255,0.25);border-radius:6px;padding:5px 8px;color:#ccc;font-size:10px;font-family:monospace;outline:none;resize:vertical;text-transform:uppercase;"
+                                                    onfocus="this.style.borderColor='rgba(0,207,255,0.6)'"
+                                                    onblur="this.style.borderColor='rgba(0,207,255,0.25)'"
+                                                    oninput="this.value=this.value.toUpperCase()"></textarea>
+                                            </div>
+
+                                        </div>
+                                    </div>
+                                    <!-- ── END CUSTOMER INFORMATION GROUP ── -->
+
                                     <!-- ── PAYMENT & ORDER DETAILS GROUP ── -->
                                     <div id="lr-payment-group" style="margin-top:14px;border-top:1px solid rgba(0,207,255,0.12);padding-top:14px;">
                                         <div style="font-size:7.5px;letter-spacing:2px;color:#00cfff;font-weight:700;margin-bottom:10px;">💳 PAYMENT &amp; ORDER DETAILS</div>
@@ -3691,6 +3723,46 @@
             window.lrPaymentFocus   = lrPaymentFocus;
             window.lrPaymentBlur    = lrPaymentBlur;
             window.lrPaymentInput   = lrPaymentInput;
+
+            // ── PHONE NUMBER FORMATTER ────────────────────────────────
+            function lrFormatPhone(el) {
+                var MIN_PREFIX = '+62 8';
+                var raw = el.value.replace(/\D/g, ''); // digits only
+                // Normalize: always starts with 628
+                if (raw.startsWith('0')) raw = '62' + raw.slice(1);
+                if (!raw.startsWith('62')) raw = '62' + raw;
+                if (!raw.startsWith('628')) raw = '628' + raw.slice(3);
+
+                var local = raw.slice(2); // '8XXXXXXXXX'
+                var formatted = '+62 ';
+                if (local.length > 0) formatted += local.slice(0, 3);        // 8XX
+                if (local.length > 3) formatted += ' ' + local.slice(3, 7);  // XXXX
+                if (local.length > 7) formatted += ' ' + local.slice(7, 11); // XXXX
+                if (local.length > 11) formatted += ' ' + local.slice(11, 12); // X
+
+                el.value = formatted;
+                var len = el.value.length;
+                el.setSelectionRange(len, len);
+            }
+            window.lrFormatPhone = lrFormatPhone;
+
+            // Init phone field prefix on load
+            (function() {
+                var ph = document.getElementById('lr-customer-phone');
+                if (!ph) return;
+                ph.value = '+62 8';
+                ph.addEventListener('keydown', function(e) {
+                    if ((e.key === 'Backspace' || e.key === 'Delete') && this.value.length <= 5) {
+                        e.preventDefault();
+                    }
+                });
+                ph.addEventListener('focus', function() {
+                    if (this.value.length < 5) this.value = '+62 8';
+                    var len = this.value.length;
+                    setTimeout(function(){ ph.setSelectionRange(len, len); }, 0);
+                });
+            })();
+            // ── END PHONE FORMATTER ──────────────────────────────────
 
             // Safe HTML escape (separate from barcode scanner's esc() which lives in its own IIFE)
             function escHtml(str) {
