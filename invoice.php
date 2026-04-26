@@ -5569,28 +5569,21 @@
                 // Update lens price totals
                 if (typeof window.lrSetFramePrice === 'function') window.lrSetFramePrice(priceInt);
 
-                // === DIRECTLY update Customer Selection bar — no helper functions ===
-                var bar   = document.getElementById('lr-selection-bar');
-                var body  = document.getElementById('lr-selection-bar-body');
-                var chev  = document.getElementById('lr-selection-bar-chev');
-                var inner = document.getElementById('lr-selection-bar-inner');
-                if (bar && inner) {
-                    inner.innerHTML =
-                        '<div style="display:flex;align-items:center;gap:8px;width:100%;">' +
-                            '<span style="font-size:1.2rem;">🕶️</span>' +
-                            '<div style="min-width:0;flex:1;">' +
-                                '<div style="font-size:7.5px;color:#555;letter-spacing:1px;margin-bottom:1px;">FRAME</div>' +
-                                '<div style="font-size:10px;font-weight:700;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(frameName) + '</div>' +
-                                (priceInt > 0 ? '<div style="font-size:10px;color:#ffaa00;font-family:monospace;font-weight:700;">Rp\u00a0' + priceInt.toLocaleString('id-ID') + '</div>' : '') +
-                            '</div>' +
-                        '</div>';
-                    bar.style.display  = 'block';
-                    body.style.display = 'block';
-                    if (chev) chev.style.transform = 'rotate(180deg)';
+                // === Update Customer Selection bar via helper so lens selection is preserved ===
+                if (typeof window.lrSetSelectedFrame === 'function') {
+                    window.lrSetSelectedFrame(frameName, priceInt);
+                } else {
+                    // Fallback: keep lrSelectedFrame in sync for total calculation
+                    window.lrSelectedFrame = priceInt > 0 ? { name: frameName, price: priceInt } : null;
                 }
 
-                // Also keep lrSelectedFrame in sync for total calculation
-                window.lrSelectedFrame = priceInt > 0 ? { name: frameName, price: priceInt } : null;
+                // Ensure bar body is open after frame selection
+                var bar  = document.getElementById('lr-selection-bar');
+                var body = document.getElementById('lr-selection-bar-body');
+                var chev = document.getElementById('lr-selection-bar-chev');
+                if (bar)  bar.style.display  = 'block';
+                if (body) body.style.display = 'block';
+                if (chev) chev.style.transform = 'rotate(180deg)';
 
                 document.getElementById('fbs-clear-btn').style.display = 'inline-flex';
                 setTimeout(function () {
