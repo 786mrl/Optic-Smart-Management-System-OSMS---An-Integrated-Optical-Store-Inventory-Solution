@@ -1706,6 +1706,33 @@
                             <button type="button" id="mp-back-btn" onclick="exitFullscreenCam()">← BACK</button>
 
                                 <!-- ══════════════════════════════════════════════════
+                                     GROUP CONTAINER — Frame Selection Hub
+                                     (wraps Card 1, Card 2, Card 3)
+                                     ══════════════════════════════════════════════════ -->
+                                <div id="frame-selection-group" style="
+                                    border: 1px solid rgba(255,255,255,0.10);
+                                    border-radius: 20px;
+                                    padding: 6px 6px 10px;
+                                    background: rgba(255,255,255,0.015);
+                                    position: relative;
+                                    margin-top: 4px;
+                                ">
+                                    <!-- Group label -->
+                                    <div style="
+                                        position: absolute;
+                                        top: -10px;
+                                        left: 50%;
+                                        transform: translateX(-50%);
+                                        background: var(--bg-color, #1a1c1d);
+                                        padding: 0 10px;
+                                        font-size: 8px;
+                                        letter-spacing: 2px;
+                                        color: #444;
+                                        white-space: nowrap;
+                                        font-weight: 700;
+                                    ">▸ FRAME SELECTION</div>
+
+                                <!-- ══════════════════════════════════════════════════
                                      CARD 1 — CUSTOMER PURCHASE FRAME?
                                      ══════════════════════════════════════════════════ -->
                                 <div id="frame-purchase-toggle-wrap" class="prescription-container" style="text-align:center; border:1px solid rgba(255,255,255,0.09);">
@@ -1986,6 +2013,8 @@
                                     </div><!-- /fbs-body -->
                                 </div><!-- /prescription-container card-3 -->
                                 </div><!-- /fbs-card -->
+
+                                </div><!-- /frame-selection-group -->
 
                         </div><!-- /mp-scan-card -->
 
