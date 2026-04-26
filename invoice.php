@@ -1700,34 +1700,12 @@
                                     </button>
                                 </div>
                                 </div><!-- /#fp-collapsible -->
-                                </div><!-- /frame-purchase-toggle-wrap -->
+                                </div>
 
-                            </div>
-                        </div><!-- /mp-scan-card -->
-
-                        <!-- ============================================================
-                             FACE SHAPE ANALYSIS — separate collapsible card
-                             Hidden until customer toggles YES on the frame purchase toggle.
-                             ============================================================ -->
-                        <div class="full" id="mp-face-section" style="display:none;">
-                            <div class="prescription-container" style="text-align: center; border:1px solid rgba(0,207,255,0.28); background: linear-gradient(135deg, rgba(0,207,255,0.04) 0%, transparent 60%);">
-
-                                <!-- FACE SHAPE HEADER (collapsible) -->
-                                <label id="fsa-toggle-label" onclick="toggleFsaSection()" style="cursor:pointer; user-select:none; display:flex; align-items:center; justify-content:space-between; margin-bottom:0;">
-                                    <div style="display:flex; align-items:center; gap:10px;">
-                                        <span style="font-size:1.25rem;">🧬</span>
-                                        <div style="text-align:left;">
-                                            <div style="font-size:0.7rem; letter-spacing:2px; color:#00cfff; font-weight:700;">FACE SHAPE ANALYSIS</div>
-                                            <div style="font-size:8.5px; color:#555; margin-top:1px; letter-spacing:0.5px;">AI · Camera · Frame matching</div>
-                                        </div>
-                                    </div>
-                                    <div style="display:flex; align-items:center; gap:8px;">
-                                        <span style="font-size:8px; background:rgba(0,207,255,0.1); color:#00cfff; border:1px solid rgba(0,207,255,0.3); border-radius:20px; padding:3px 9px; letter-spacing:0.5px;">SCAN FACE</span>
-                                        <span id="fsa-toggle-chev" style="font-size:11px; color:#00cfff; transition:transform 0.25s; display:inline-block;">▼</span>
-                                    </div>
-                                </label>
-
-                                <div id="fsa-collapsible" style="display:none; margin-top:10px;">
+                                <!-- Face Shape section, shown only when YES -->
+                                <div id="mp-face-section" style="display:none;">
+                                    <hr style="border:none; border-top:1px solid rgba(255,255,255,0.07); margin:18px 0 14px;">
+                                    <label>FACE SHAPE ANALYSIS</label>
 
                                 <!-- STEP INDICATOR (hidden initially — only shown inside fullscreen scan) -->
                                 <div id="mp-steps" style="display:none;justify-content:center;gap:6px;margin-bottom:14px;">
@@ -1879,33 +1857,19 @@
                                         <div class="led"></div> RESTART SCAN
                                     </button>
                                 </div>
-                                </div><!-- /fsa-collapsible -->
+                                </div><!-- /mp-face-section -->
                             </div>
-                        </div><!-- /mp-face-section card -->
+                        </div>
 
                         <!-- ============================================================
-                             FRAME BARCODE SCANNER — separate collapsible card
+                             FRAME BARCODE SCANNER — separate card, outside mp-scan-card
+                             so it is never pulled into fullscreen camera mode.
                              Hidden until customer toggles YES on the frame purchase toggle.
                              ============================================================ -->
                         <div class="full" id="fbs-card" style="display:none;">
-                            <div class="prescription-container" style="text-align:center; border:1px solid rgba(0,255,136,0.28); background: linear-gradient(135deg, rgba(0,255,136,0.04) 0%, transparent 60%);">
+                            <div class="prescription-container" style="text-align:center;">
 
-                                <!-- BARCODE HEADER (collapsible) -->
-                                <label id="fbs-toggle-label" onclick="toggleFbsSection()" style="cursor:pointer; user-select:none; display:flex; align-items:center; justify-content:space-between; margin-bottom:0;">
-                                    <div style="display:flex; align-items:center; gap:10px;">
-                                        <span style="font-size:1.25rem;">📦</span>
-                                        <div style="text-align:left;">
-                                            <div style="font-size:0.7rem; letter-spacing:2px; color:#00ff88; font-weight:700;">FRAME BARCODE SCAN</div>
-                                            <div style="font-size:8.5px; color:#555; margin-top:1px; letter-spacing:0.5px;">Scan UFC · Stock · Price lookup</div>
-                                        </div>
-                                    </div>
-                                    <div style="display:flex; align-items:center; gap:8px;">
-                                        <span style="font-size:8px; background:rgba(0,255,136,0.1); color:#00ff88; border:1px solid rgba(0,255,136,0.3); border-radius:20px; padding:3px 9px; letter-spacing:0.5px;">SCAN BARCODE</span>
-                                        <span id="fbs-toggle-chev" style="font-size:11px; color:#00ff88; transition:transform 0.25s; display:inline-block;">▼</span>
-                                    </div>
-                                </label>
-
-                                <div id="fbs-collapsible" style="display:none; margin-top:10px;">
+                                <label>FRAME BARCODE SCAN</label>
 
                                 <!-- Camera viewfinder — hidden until START SCANNER is pressed -->
                                 <div id="fbs-viewfinder" style="display:none; margin-top:14px;">
@@ -1951,7 +1915,6 @@
                                     @keyframes fbs-slide { 0% { top:15%; } 50% { top:80%; } 100% { top:15%; } }
                                 </style>
 
-                                </div><!-- /fbs-collapsible -->
                             </div>
                         </div>
 
@@ -2803,34 +2766,6 @@
                 }
             }
             window.toggleFpSection = toggleFpSection;
-
-            // ============================================================
-            // FACE SHAPE ANALYSIS — collapsible toggle
-            // ============================================================
-            function toggleFsaSection() {
-                const panel = document.getElementById('fsa-collapsible');
-                const chev  = document.getElementById('fsa-toggle-chev');
-                if (!panel) return;
-                const open = panel.style.display === 'none' || panel.style.display === '';
-                panel.style.display = open ? 'block' : 'none';
-                if (chev) chev.style.transform = open ? 'rotate(180deg)' : 'rotate(0deg)';
-            }
-            window.toggleFsaSection = toggleFsaSection;
-
-            // ============================================================
-            // FRAME BARCODE SCAN — collapsible toggle
-            // ============================================================
-            function toggleFbsSection() {
-                const panel = document.getElementById('fbs-collapsible');
-                const chev  = document.getElementById('fbs-toggle-chev');
-                if (!panel) return;
-                const open = panel.style.display === 'none' || panel.style.display === '';
-                panel.style.display = open ? 'block' : 'none';
-                if (chev) chev.style.transform = open ? 'rotate(180deg)' : 'rotate(0deg)';
-                // Stop scanner when collapsing
-                if (!open && typeof fbsStopCamera === 'function') fbsStopCamera();
-            }
-            window.toggleFbsSection = toggleFbsSection;
 
 
             window.onload = () => {
