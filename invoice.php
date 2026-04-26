@@ -76,21 +76,41 @@
     // ── Active prescription ───────────────────────────────────
     $lr_rMod = ($data['lens_modification'] == 1);
 
-    // lrVal: DB may store as "-900" (shorthand) or "-9.00" (full)
-    // If |value| >= 10 it's shorthand × 100 → divide back to diopters
-    function lrVal($data, $modKey, $origKey) {
-        $raw = ($data['lens_modification'] == 1 && isset($data[$modKey]) && $data[$modKey] !== '')
-               ? $data[$modKey] : $data[$origKey];
+    // lrValRaw: convert a single raw DB value to diopters float
+    // DB may store as "-900" (shorthand) or "-9.00" (full)
+    function lrValRaw($raw) {
         $val = floatval(str_replace('+', '', $raw ?? '0'));
         if (abs($val) >= 10) $val /= 100.0;
         return round($val, 2);
     }
-    $lr_r_sph = lrVal($data, 'mod_r_sph', 'new_r_sph');
-    $lr_r_cyl = lrVal($data, 'mod_r_cyl', 'new_r_cyl');
-    $lr_r_add = lrVal($data, 'mod_r_add', 'new_r_add');
-    $lr_l_sph = lrVal($data, 'mod_l_sph', 'new_l_sph');
-    $lr_l_cyl = lrVal($data, 'mod_l_cyl', 'new_l_cyl');
-    $lr_l_add = lrVal($data, 'mod_l_add', 'new_l_add');
+
+    // ── ORIGINAL Rx (always from customer_examinations) ──────
+    $lr_orig_r_sph = lrValRaw($data['new_r_sph'] ?? '0');
+    $lr_orig_r_cyl = lrValRaw($data['new_r_cyl'] ?? '0');
+    $lr_orig_r_add = lrValRaw($data['new_r_add'] ?? '0');
+    $lr_orig_l_sph = lrValRaw($data['new_l_sph'] ?? '0');
+    $lr_orig_l_cyl = lrValRaw($data['new_l_cyl'] ?? '0');
+    $lr_orig_l_add = lrValRaw($data['new_l_add'] ?? '0');
+
+    // ── MODIFIED Rx (from prescription_modifications if exists) ──
+    $lr_hasModData  = ($data['lens_modification'] == 1
+                       && isset($data['mod_r_sph']) && $data['mod_r_sph'] !== '');
+    $lr_mod_r_sph  = $lr_hasModData ? lrValRaw($data['mod_r_sph']) : $lr_orig_r_sph;
+    $lr_mod_r_cyl  = $lr_hasModData ? lrValRaw($data['mod_r_cyl']) : $lr_orig_r_cyl;
+    $lr_mod_r_add  = $lr_hasModData ? lrValRaw($data['mod_r_add']) : $lr_orig_r_add;
+    $lr_mod_l_sph  = $lr_hasModData ? lrValRaw($data['mod_l_sph']) : $lr_orig_l_sph;
+    $lr_mod_l_cyl  = $lr_hasModData ? lrValRaw($data['mod_l_cyl']) : $lr_orig_l_cyl;
+    $lr_mod_l_add  = $lr_hasModData ? lrValRaw($data['mod_l_add']) : $lr_orig_l_add;
+
+    // ── Active Rx (used by legacy code below — determined by toggle state at page load) ──
+    // For initial render: if lens_modification==1 show modified, else show original.
+    // Both sets are rendered and the JS toggle swaps visibility.
+    $lr_r_sph = $lr_rMod ? $lr_mod_r_sph : $lr_orig_r_sph;
+    $lr_r_cyl = $lr_rMod ? $lr_mod_r_cyl : $lr_orig_r_cyl;
+    $lr_r_add = $lr_rMod ? $lr_mod_r_add : $lr_orig_r_add;
+    $lr_l_sph = $lr_rMod ? $lr_mod_l_sph : $lr_orig_l_sph;
+    $lr_l_cyl = $lr_rMod ? $lr_mod_l_cyl : $lr_orig_l_cyl;
+    $lr_l_add = $lr_rMod ? $lr_mod_l_add : $lr_orig_l_add;
 
     // ── Patient context ───────────────────────────────────────
     $lr_age     = (int)($data['age']           ?? 0);
@@ -563,6 +583,194 @@
             $lr_hasDesign[$tk][$pk] = $has;
         }
     }
+
+    // ============================================================
+    // BUILD BOTH Rx SETS for dynamic toggle (ORIGINAL & MODIFIED)
+    // So that switching YES/NO in the UI instantly swaps lens cards
+    // without a page reload.
+    // ============================================================
+    function lr_buildSet($r_sph, $r_cyl, $r_add, $l_sph, $l_cyl, $l_add,
+                         $age, $habit, $digital, $txt,
+                         $needDist, $needInter, $needNear,
+                         $catalog, $typeConfig) {
+
+        $maxSph = max(abs($r_sph), abs($l_sph));
+        $maxCyl = max(abs($r_cyl), abs($l_cyl));
+        $maxAdd = max(abs($r_add), abs($l_add));
+        $seR    = abs($r_sph) + abs($r_cyl) / 2.0;
+        $seL    = abs($l_sph) + abs($l_cyl) / 2.0;
+        $maxSE  = max($seR, $seL);
+
+        $isHighPow     = ($maxSE >= 4.0 || $maxCyl >= 2.0);
+        $isVeryHighPow = ($maxSE >= 6.0 || $maxCyl >= 3.0);
+        $isPresbyopia  = ($maxAdd >= 0.75 && $age >= 39);
+
+        $hasGlare     = (bool)preg_match('/glare|silau/', $txt);
+        $hasEyeStrain = (bool)preg_match('/eye.?strain|mata.?lelah|\blelah\b/', $txt);
+        $hasHeadache  = (bool)preg_match('/headache|sakit.?kepala/', $txt);
+        $hasDM        = (strpos($txt, 'diabetes')     !== false);
+        $hasHT        = (strpos($txt, 'hypertension') !== false);
+        $hasDryEye    = (bool)preg_match('/dry.?eye|mata.?kering/', $txt);
+        $hasDriving   = (bool)preg_match('/bawa.?mobil|mengemudi|driving|berkendara/', $txt);
+        $hasImpact    = (bool)preg_match('/olahraga|sport|bentur|impact/', $txt);
+
+        $presbyType = $isPresbyopia
+            ? lr_presbyDesign($needDist, $needInter, $needNear, $habit, $digital, $txt)
+            : '';
+        $farOnlySV  = ($isPresbyopia && $presbyType === 'far_only');
+
+        $candidates = [];
+        foreach ($catalog as $source => $categories) {
+            $readiness = ($source === 'stock') ? 'Ready in 2 Days' : 'Lab Order, Ready 7-10 Days';
+            foreach ($categories as $category => $types) {
+                if (!lr_catAllowed($category, $isPresbyopia, $farOnlySV)) continue;
+                foreach ($types as $type => $lens) {
+                    $lim      = $lens['limits']   ?? [];
+                    $features = $lens['features'] ?? [];
+                    $selling  = (int)($lens['selling'] ?? 0);
+                    $lensNote = $lens['limits']['note'] ?? '';
+                    if (!empty($lim) && !lr_rxFits($r_sph,$r_cyl,$l_sph,$l_cyl,$r_add,$l_add,$lim)) continue;
+                    $isHiIdx = in_array('HIGH INDEX 1.67', $features)
+                            || in_array('HIGHT INDEX 1.67', $features)
+                            || in_array('HIGH POWER RX',    $features);
+                    if ($isHiIdx && $maxSE < 3.0 && $maxCyl < 3.0) continue;
+                    $score = lr_score($features, $category,
+                        $isPresbyopia, $presbyType, $farOnlySV,
+                        $habit, $digital, $maxSE, $maxCyl, $age,
+                        $hasGlare, $hasEyeStrain, $hasHeadache,
+                        $hasDryEye, $hasDriving, $hasImpact);
+                    $candidates[] = [
+                        'source'=>$source,'category'=>$category,'type'=>$type,
+                        'selling'=>$selling,'features'=>$features,'note'=>$lensNote,
+                        'score'=>$score,'readiness'=>$readiness,
+                    ];
+                }
+            }
+        }
+
+        usort($candidates, function($a,$b){
+            if ($b['score'] !== $a['score']) return ($b['score']>$a['score'])?1:-1;
+            $aS = ($a['source']==='stock')?0:1; $bS = ($b['source']==='stock')?0:1;
+            if ($aS !== $bS) return $aS-$bS;
+            return $a['selling']-$b['selling'];
+        });
+
+        // Dedup pass 1 — (STOCK) suppresses non-stock twin
+        $stockBase = [];
+        foreach ($candidates as $c) {
+            if (preg_match('/^(.+?)\s*\(STOCK\)\s*$/i', $c['type'], $m)) {
+                $stockBase[strtoupper(trim($c['category'])).'||'.strtoupper(trim($m[1]))] = true;
+            }
+        }
+        if (!empty($stockBase)) {
+            $candidates = array_values(array_filter($candidates, function($c) use ($stockBase){
+                if (preg_match('/\(STOCK\)\s*$/i', $c['type'])) return true;
+                return !isset($stockBase[strtoupper(trim($c['category'])).'||'.strtoupper(trim($c['type']))]);
+            }));
+        }
+        // Dedup pass 2 — lab suppressed if exact stock twin
+        $stockExact = [];
+        foreach ($candidates as $c) {
+            if ($c['source']==='stock')
+                $stockExact[strtoupper(trim($c['category'])).'||'.strtoupper(trim($c['type']))] = true;
+        }
+        if (!empty($stockExact)) {
+            $candidates = array_values(array_filter($candidates, function($c) use ($stockExact){
+                if ($c['source']!=='lab') return true;
+                return !isset($stockExact[strtoupper(trim($c['category'])).'||'.strtoupper(trim($c['type']))]);
+            }));
+        }
+        // Dedup pass 3 — cheapest per base name
+        $cheapest=[]; $usedBase=[];
+        foreach ($candidates as $c) {
+            $base = trim(preg_replace('/\s*\(\d+\)\s*$/','',$c['type']));
+            $key  = strtoupper(trim($c['source'])).'||'.strtoupper(trim($c['category'])).'||'.strtoupper($base);
+            if (!isset($cheapest[$key]) || $c['selling']<$cheapest[$key]) $cheapest[$key]=$c['selling'];
+        }
+        $candidates = array_values(array_filter($candidates, function($c) use ($cheapest,&$usedBase){
+            $base = trim(preg_replace('/\s*\(\d+\)\s*$/','',$c['type']));
+            $key  = strtoupper(trim($c['source'])).'||'.strtoupper(trim($c['category'])).'||'.strtoupper($base);
+            if ($c['selling']===$cheapest[$key] && !isset($usedBase[$key])) { $usedBase[$key]=true; return true; }
+            return false;
+        }));
+
+        // Special notes
+        $specialNotes = [];
+        if ($hasDM)  $specialNotes[]=['🩸','DIABETES — Higher cataract risk. UV protection & blue light blocking lens recommended.'];
+        if ($hasHT)  $specialNotes[]=['❤️','HYPERTENSION — Monitor vision changes regularly.'];
+        if ($isVeryHighPow) $specialNotes[]=['⚡','Very high prescription (SE ≥ 6.00D) — High Index 1.67 or Lenticular lens strongly advised.'];
+        if ($isPresbyopia && $farOnlySV)              $specialNotes[]=['👓','Distance only needed — SINGLE VISION lens recommended.'];
+        elseif ($isPresbyopia && $presbyType==='all_distance') $specialNotes[]=['👁️','Presbyopia: all distances needed — ALL-DISTANCE PROGRESSIVE is the best fit.'];
+        elseif ($isPresbyopia && $presbyType==='dynamic')      $specialNotes[]=['🚀','Presbyopia: dominant far & intermediate — DYNAMIC DISTANCE LENS is the best fit.'];
+        elseif ($isPresbyopia && $presbyType==='far_near')     $specialNotes[]=['👓','Presbyopia: dominant far & near — FAR & NEAR OPTIMIZED lens recommended.'];
+        elseif ($isPresbyopia && $presbyType==='near')         $specialNotes[]=['📚','Presbyopia: dominant near — ENHANCED NEAR VISION / SHORT CORD lens is the best fit.'];
+        if ($hasEyeStrain||$hasHeadache) $specialNotes[]=['😣','Eye strain / headache complaints — Blue Light Blocking lens may help.'];
+        if ($hasDryEye)   $specialNotes[]=['💧','Dry Eye — Blue Light Blocking & Super Hydrophobic lens reduces screen irritation.'];
+        if ($hasDriving)  $specialNotes[]=['🚗','Frequent driving — Night Drive Coating & Photochromic lens strongly advised.'];
+
+        // Split by type
+        $byType=[];
+        foreach ($candidates as $c) {
+            $cat=strtoupper(trim($c['category']));
+            if      ($cat==='SINGLE VISION') $key='sv';
+            elseif  ($cat==='KRYPTOK')       $key='kryptok';
+            elseif  ($cat==='PROGRESSIVE')   $key='progressive';
+            elseif  ($cat==='FLATTOP')       $key='flattop';
+            else                             $key='sv';
+            $byType[$key][]=$c;
+        }
+
+        $designFeatureMap = [
+            'all_distance'=>['ALL-DISTANCE PROGRESSIVE'],
+            'dynamic'=>['DYNAMIC DISTANCE LENS','ALL-DISTANCE PROGRESSIVE'],
+            'far_near'=>['FAR & NEAR OPTIMIZED LENS','ALL-DISTANCE PROGRESSIVE'],
+            'near'=>['ENHANCED NEAR VISION','NEAR-OPTIMIZED LENS','ALL-DISTANCE PROGRESSIVE'],
+            'far_only'=>[],
+        ];
+        $wantedDesignFeats = ($isPresbyopia && isset($designFeatureMap[$presbyType]))
+            ? $designFeatureMap[$presbyType] : [];
+
+        $hasDesign=[];
+        foreach ($typeConfig as $tk=>$tc) {
+            $hasDesign[$tk]=[];
+            $tList=isset($byType[$tk])?$byType[$tk]:[];
+            $typeHas=false;
+            foreach($tList as $c){if(lr_meetsDesign($c,$wantedDesignFeats,$presbyType)){$typeHas=true;break;}}
+            $hasDesign[$tk]['_type']=$typeHas;
+            $bkts=lr_priceBuckets($tList);
+            foreach($bkts as $pk=>$pb){
+                $has=false;
+                foreach($pb['data'] as $c){if(lr_meetsDesign($c,$wantedDesignFeats,$presbyType)){$has=true;break;}}
+                $hasDesign[$tk][$pk]=$has;
+            }
+        }
+
+        $firstType='';
+        foreach($typeConfig as $tk=>$tc){if(!empty($byType[$tk])){$firstType=$tk;break;}}
+
+        return compact('candidates','specialNotes','byType','hasDesign','firstType',
+                       'isPresbyopia','farOnlySV','presbyType','isHighPow','isVeryHighPow',
+                       'maxSph','maxCyl','maxAdd','maxSE','r_sph','r_cyl','r_add','l_sph','l_cyl','l_add',
+                       'wantedDesignFeats');
+    }
+
+    // Build ORIGINAL set
+    $lr_SET_ORIG = lr_buildSet(
+        $lr_orig_r_sph, $lr_orig_r_cyl, $lr_orig_r_add,
+        $lr_orig_l_sph, $lr_orig_l_cyl, $lr_orig_l_add,
+        $lr_age, $lr_habit, $lr_digital, $lr_txt,
+        $lr_needDist, $lr_needInter, $lr_needNear,
+        $lr_catalog, $lr_typeConfig
+    );
+
+    // Build MODIFIED set (only meaningful if mod data exists; otherwise identical to orig)
+    $lr_SET_MOD = $lr_hasModData ? lr_buildSet(
+        $lr_mod_r_sph, $lr_mod_r_cyl, $lr_mod_r_add,
+        $lr_mod_l_sph, $lr_mod_l_cyl, $lr_mod_l_add,
+        $lr_age, $lr_habit, $lr_digital, $lr_txt,
+        $lr_needDist, $lr_needInter, $lr_needNear,
+        $lr_catalog, $lr_typeConfig
+    ) : $lr_SET_ORIG;
 
 
     // Load frame-shape color mapping (optional — fails silently if missing/invalid)
@@ -2125,27 +2333,55 @@
                                         </div>
                                     </div>
                                     <div style="display:flex;align-items:center;gap:8px;">
-                                        <span style="font-size:8px;background:rgba(255,170,0,0.1);color:#ffaa00;border:1px solid rgba(255,170,0,0.28);border-radius:20px;padding:3px 9px;letter-spacing:0.5px;">
+                                        <span id="lr-header-badge" style="font-size:8px;background:rgba(255,170,0,0.1);color:#ffaa00;border:1px solid rgba(255,170,0,0.28);border-radius:20px;padding:3px 9px;letter-spacing:0.5px;">
                                             <?php
-                                            if (!$lr_isPresbyopia) {
+                                            // Use ORIG set for initial header (will be updated by JS on toggle)
+                                            $lr__init = $lr_SET_ORIG;
+                                            if (!$lr__init['isPresbyopia']) {
                                                 echo 'SINGLE VISION';
-                                            } elseif ($lr_farOnlySV) {
+                                            } elseif ($lr__init['farOnlySV']) {
                                                 echo 'PRESBYOPIA → SV (DISTANCE)';
                                             } else {
                                                 $lblMap = ['all_distance'=>'ALL-DISTANCE','dynamic'=>'DYNAMIC','far_near'=>'FAR & NEAR','near'=>'NEAR-OPTIMIZED'];
-                                                echo 'PRESBYOPIA → ' . ($lblMap[$lr_presbyType] ?? strtoupper($lr_presbyType));
+                                                echo 'PRESBYOPIA → ' . ($lblMap[$lr__init['presbyType']] ?? strtoupper($lr__init['presbyType']));
                                             }
                                             ?>
                                         </span>
-                                        <span style="font-size:8px;background:rgba(0,255,136,0.07);color:#00ff88;border:1px solid rgba(0,255,136,0.2);border-radius:20px;padding:3px 9px;letter-spacing:0.5px;">
-                                            <?php echo count($lr_candidates); ?> lens matched
+                                        <span id="lr-header-count" style="font-size:8px;background:rgba(0,255,136,0.07);color:#00ff88;border:1px solid rgba(0,255,136,0.2);border-radius:20px;padding:3px 9px;letter-spacing:0.5px;">
+                                            <?php echo count($lr_SET_ORIG['candidates']); ?> lens matched
                                         </span>
                                         <span id="lr-chev" style="color:#ffaa00;font-size:11px;display:inline-block;transition:transform 0.3s;">▼</span>
                                     </div>
                                 </div>
 
-                                <!-- ── COLLAPSIBLE BODY ──────────────────────────────── -->
+                                <!-- ── COLLAPSIBLE BODY (container for both orig + mod) ── -->
                                 <div id="lr-body" style="display:none;margin-top:16px;">
+
+                                <!-- ── ORIGINAL RX BODY ──────────────────────────── -->
+                                <?php
+                                // Assign lr_ vars from ORIGINAL set
+                                $lr_candidates       = $lr_SET_ORIG['candidates'];
+                                $lr_specialNotes     = $lr_SET_ORIG['specialNotes'];
+                                $lr_byType           = $lr_SET_ORIG['byType'];
+                                $lr_hasDesign        = $lr_SET_ORIG['hasDesign'];
+                                $lr_firstType        = $lr_SET_ORIG['firstType'];
+                                $lr_isPresbyopia     = $lr_SET_ORIG['isPresbyopia'];
+                                $lr_farOnlySV        = $lr_SET_ORIG['farOnlySV'];
+                                $lr_presbyType       = $lr_SET_ORIG['presbyType'];
+                                $lr_isHighPow        = $lr_SET_ORIG['isHighPow'];
+                                $lr_isVeryHighPow    = $lr_SET_ORIG['isVeryHighPow'];
+                                $lr_maxSE            = $lr_SET_ORIG['maxSE'];
+                                $lr_r_sph            = $lr_SET_ORIG['r_sph'];
+                                $lr_r_cyl            = $lr_SET_ORIG['r_cyl'];
+                                $lr_r_add            = $lr_SET_ORIG['r_add'];
+                                $lr_l_sph            = $lr_SET_ORIG['l_sph'];
+                                $lr_l_cyl            = $lr_SET_ORIG['l_cyl'];
+                                $lr_l_add            = $lr_SET_ORIG['l_add'];
+                                $lr_wantedDesignFeats= $lr_SET_ORIG['wantedDesignFeats'];
+                                // Show orig body: visible when mod=NO (or no mod data)
+                                $lr_origInitDisplay  = (!$lr_rMod) ? 'block' : 'none';
+                                ?>
+                                <div id="lr-body-orig" style="display:<?php echo $lr_origInitDisplay; ?>;">
 
                                     <!-- Context chips -->
                                     <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:14px;">
@@ -2198,7 +2434,7 @@
 
                                     <!-- Power summary bar -->
                                     <div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.05);border-radius:12px;padding:10px 14px;margin-bottom:14px;">
-                                        <div style="font-size:7.5px;color:#444;letter-spacing:1px;margin-bottom:8px;">ACTIVE RX <?php echo $lr_rMod ? '(MODIFIED)' : '(ORIGINAL)'; ?></div>
+                                        <div style="font-size:7.5px;color:#444;letter-spacing:1px;margin-bottom:8px;">ACTIVE RX (ORIGINAL)</div>
                                         <div style="display:flex;flex-wrap:wrap;gap:14px;justify-content:space-around;">
                                         <?php
                                         $lr_pw = [
@@ -2489,6 +2725,367 @@
                                         * Order based on prescription fit, lifestyle habits, and symptoms. Final choice subject to customer preference and budget.
                                     </div>
 
+                                </div><!-- /lr-body-orig -->
+
+                                <?php if ($lr_hasModData): ?>
+                                <!-- ── MODIFIED RX BODY ───────────────────────────── -->
+                                <?php
+                                // Assign lr_ vars from MODIFIED set
+                                $lr_candidates       = $lr_SET_MOD['candidates'];
+                                $lr_specialNotes     = $lr_SET_MOD['specialNotes'];
+                                $lr_byType           = $lr_SET_MOD['byType'];
+                                $lr_hasDesign        = $lr_SET_MOD['hasDesign'];
+                                $lr_firstType        = $lr_SET_MOD['firstType'];
+                                $lr_isPresbyopia     = $lr_SET_MOD['isPresbyopia'];
+                                $lr_farOnlySV        = $lr_SET_MOD['farOnlySV'];
+                                $lr_presbyType       = $lr_SET_MOD['presbyType'];
+                                $lr_isHighPow        = $lr_SET_MOD['isHighPow'];
+                                $lr_isVeryHighPow    = $lr_SET_MOD['isVeryHighPow'];
+                                $lr_maxSE            = $lr_SET_MOD['maxSE'];
+                                $lr_r_sph            = $lr_SET_MOD['r_sph'];
+                                $lr_r_cyl            = $lr_SET_MOD['r_cyl'];
+                                $lr_r_add            = $lr_SET_MOD['r_add'];
+                                $lr_l_sph            = $lr_SET_MOD['l_sph'];
+                                $lr_l_cyl            = $lr_SET_MOD['l_cyl'];
+                                $lr_l_add            = $lr_SET_MOD['l_add'];
+                                $lr_wantedDesignFeats= $lr_SET_MOD['wantedDesignFeats'];
+                                // Show mod body: visible when mod=YES
+                                $lr_modInitDisplay   = $lr_rMod ? 'block' : 'none';
+                                ?>
+                                <div id="lr-body-mod" style="display:<?php echo $lr_modInitDisplay; ?>;">
+
+                                    <!-- Context chips (mod) -->
+                                    <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:14px;">
+                                        <?php
+                                        $lr_habitLbl   = ['','INDOOR','OUTDOOR','INDOOR & OUTDOOR'][$lr_habit] ?? 'INDOOR';
+                                        $lr_digitalLbl = ['','LOW SCREEN USE','MODERATE SCREEN (2-5 HRS)','HIGH SCREEN USE (>5 HRS)'][$lr_digital] ?? '';
+                                        $lr_vnParts = [];
+                                        if ($lr_needDist)  $lr_vnParts[] = 'DISTANCE';
+                                        if ($lr_needInter) $lr_vnParts[] = 'INTERMEDIATE';
+                                        if ($lr_needNear)  $lr_vnParts[] = 'NEAR';
+                                        $lr_vnLabel = !empty($lr_vnParts) ? implode(' + ', $lr_vnParts) : '';
+                                        $lr_presbyLabelMap = [
+                                            'all_distance' => 'ALL-DISTANCE PROG',
+                                            'dynamic'      => 'DYNAMIC (FAR+INTER)',
+                                            'far_near'     => 'FAR & NEAR PROG',
+                                            'near'         => 'NEAR-OPTIMIZED',
+                                            'far_only'     => 'DISTANCE ONLY (SV)',
+                                        ];
+                                        $lr_ctx = [
+                                            ['🎂', 'AGE '.$lr_age.' YRS',  '#00cfff'],
+                                            ['👁️', $lr_habitLbl,           '#00ff88'],
+                                            ['💻', $lr_digitalLbl,          '#aa88ff'],
+                                        ];
+                                        if ($lr_vnLabel) $lr_ctx[] = ['📏', 'NEEDS: '.$lr_vnLabel, '#00ccff'];
+                                        if ($lr_isVeryHighPow) $lr_ctx[] = ['⚡', 'VERY HIGH POWER', '#ff4d4d'];
+                                        elseif ($lr_isHighPow) $lr_ctx[] = ['📈', 'HIGH POWER',      '#ff8a4d'];
+                                        if ($lr_isPresbyopia) {
+                                            $presbyLbl = $lr_farOnlySV
+                                                ? 'SINGLE VISION (DISTANCE)'
+                                                : ('PRESBYOPIA → ' . ($lr_presbyLabelMap[$lr_presbyType] ?? strtoupper($lr_presbyType)));
+                                            $lr_ctx[] = ['📖', $presbyLbl, '#ffcc00'];
+                                        }
+                                        if ($lr_hasGlare)      $lr_ctx[] = ['☀️', 'LIGHT SENSITIVE',      '#ffaa00'];
+                                        if ($lr_hasEyeStrain || $lr_hasHeadache) $lr_ctx[] = ['😣','EYE STRAIN / HEADACHE','#ff6699'];
+                                        if ($lr_hasDM)         $lr_ctx[] = ['🩸', 'DIABETES',             '#ff6655'];
+                                        if ($lr_hasHT)         $lr_ctx[] = ['❤️', 'HYPERTENSION',         '#ff6655'];
+                                        if ($lr_hasDryEye)     $lr_ctx[] = ['💧', 'DRY EYE',              '#66ccff'];
+                                        foreach ($lr_ctx as $c):
+                                        ?>
+                                        <span style="display:inline-flex;align-items:center;gap:3px;font-size:8px;color:<?php echo $c[2]; ?>;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.07);border-radius:20px;padding:3px 8px;letter-spacing:0.4px;">
+                                            <?php echo $c[0]; ?> <?php echo $c[1]; ?>
+                                        </span>
+                                        <?php endforeach; ?>
+                                    </div>
+
+                                    <!-- Power summary bar (mod) -->
+                                    <div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.05);border-radius:12px;padding:10px 14px;margin-bottom:14px;">
+                                        <div style="font-size:7.5px;color:#ffaa00;letter-spacing:1px;margin-bottom:8px;">ACTIVE RX (MODIFIED) ✏️</div>
+                                        <div style="display:flex;flex-wrap:wrap;gap:14px;justify-content:space-around;">
+                                        <?php
+                                        $lr_pw = [
+                                            ['R SPH', $lr_r_sph], ['R CYL', $lr_r_cyl], ['R ADD', $lr_r_add],
+                                            ['L SPH', $lr_l_sph], ['L CYL', $lr_l_cyl], ['L ADD', $lr_l_add],
+                                            ['MAX SE', $lr_maxSE],
+                                        ];
+                                        foreach ($lr_pw as $pw):
+                                            $val  = number_format($pw[1], 2, '.', '');
+                                            $zero = abs($pw[1]) < 0.01;
+                                        ?>
+                                        <div style="text-align:center;">
+                                            <div style="font-size:7px;color:#444;letter-spacing:0.5px;margin-bottom:2px;"><?php echo $pw[0]; ?></div>
+                                            <div style="font-size:10px;font-weight:700;color:<?php echo $zero ? '#2e2e2e' : '#ffaa00'; ?>;font-family:monospace;"><?php echo $val; ?></div>
+                                        </div>
+                                        <?php endforeach; ?>
+                                        </div>
+                                    </div>
+
+                                    <!-- Special warning notes (mod) -->
+                                    <?php foreach ($lr_specialNotes as $sn): ?>
+                                    <div style="display:flex;align-items:flex-start;gap:8px;font-size:9.5px;color:#ffcc00;background:rgba(255,204,0,0.05);border:1px solid rgba(255,204,0,0.15);border-radius:10px;padding:8px 11px;margin-bottom:8px;">
+                                        <span><?php echo $sn[0]; ?></span>
+                                        <span><?php echo htmlspecialchars($sn[1]); ?></span>
+                                    </div>
+                                    <?php endforeach; ?>
+
+                                    <!-- ── 2-LEVEL TAB SYSTEM (mod) ─────────────────── -->
+                                    <?php
+                                    $lr_featureIcons = [
+                                        'UV PROTECTION'                  => '🌞',
+                                        'HIGH-INDEX UV400 PROTECTION'    => '🛡️',
+                                        'ANTI-REFLECTIVE (AR) COATING'   => '💡',
+                                        'SCRATCH-RESISTANT COATING'      => '🪨',
+                                        'SMUDGE-RESISTANT'               => '🧼',
+                                        'HYDROPHOBIC'                    => '💧',
+                                        'SUPER HYDROPHOBIC'              => '💦',
+                                        'ANTI-STATIC'                    => '⚡',
+                                        'BLUE LIGHT BLOCKING'            => '💙',
+                                        'PHOTOCHROMIC'                   => '🌅',
+                                        'NIGHT DRIVE COATING'            => '🚗',
+                                        'HIGH INDEX 1.67'                => '💎',
+                                        'HIGHT INDEX 1.67'               => '💎',
+                                        'HIGH POWER RX'                  => '🔬',
+                                        'IMPACT-RESISTANT'               => '🛡️',
+                                        'FAR & NEAR OPTIMIZED LENS'      => '📐',
+                                        'ALL-DISTANCE PROGRESSIVE'       => '🔭',
+                                        'DYNAMIC DISTANCE LENS'          => '🚀',
+                                        'NEAR-OPTIMIZED LENS'            => '📚',
+                                        'ENHANCED NEAR VISION'           => '🔎',
+                                    ];
+                                    $lr_rankStyle = [
+                                        0 => ['★ #1', '#ffaa00', 'rgba(255,170,0,0.12)', 'rgba(255,170,0,0.40)'],
+                                        1 => ['★ #2', '#c0c0c0', 'rgba(180,180,180,0.08)', 'rgba(180,180,180,0.28)'],
+                                        2 => ['★ #3', '#cd7f32', 'rgba(180,120,60,0.08)',  'rgba(180,120,60,0.28)'],
+                                    ];
+                                    ?>
+
+                                    <?php if (empty($lr_candidates)): ?>
+                                    <div style="font-size:11px;color:#555;text-align:center;padding:20px;">
+                                        No matching lenses found in the catalog.
+                                    </div>
+                                    <?php else: ?>
+
+                                    <!-- ── LEVEL 1: Lens-type tabs (mod) ──────────── -->
+                                    <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px;">
+                                    <?php foreach ($lr_typeConfig as $typeKey => $typeCfg):
+                                        $typeList = isset($lr_byType[$typeKey]) ? $lr_byType[$typeKey] : [];
+                                        if (empty($typeList)) continue;
+                                        $isFirstType  = ($typeKey === $lr_firstType);
+                                        $tColor       = $typeCfg['color'];
+                                        $typeHasDot   = !empty($lr_wantedDesignFeats) && !empty($lr_hasDesign[$typeKey]['_type']);
+                                    ?>
+                                    <button type="button"
+                                            id="lrm-type-btn-<?php echo $typeKey; ?>"
+                                            onclick="lrmTypeSwitch('<?php echo $typeKey; ?>')"
+                                            style="flex:1;min-width:0;padding:8px 5px;border-radius:12px;
+                                                   border:1px solid <?php echo $isFirstType ? $tColor : 'rgba(255,255,255,0.08)'; ?>;
+                                                   background:<?php echo $isFirstType ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.02)'; ?>;
+                                                   color:<?php echo $tColor; ?>;font-size:9px;font-weight:700;
+                                                   letter-spacing:0.5px;cursor:pointer;font-family:inherit;
+                                                   transition:all 0.2s;line-height:1.4;text-align:center;position:relative;">
+                                        <?php if ($typeHasDot): ?>
+                                        <span style="position:absolute;top:4px;right:5px;width:7px;height:7px;border-radius:50%;background:#00ff88;box-shadow:0 0 5px #00ff88;display:inline-block;" title="Has lens matching vision need"></span>
+                                        <?php endif; ?>
+                                        <?php echo $typeCfg['icon'].' '.$typeCfg['label']; ?><br>
+                                        <span style="font-size:8px;opacity:0.65;"><?php echo count($typeList); ?> lens</span>
+                                    </button>
+                                    <?php endforeach; ?>
+                                    </div>
+
+                                    <!-- ── LEVEL 2: Per-type price panes (mod) ──────── -->
+                                    <?php foreach ($lr_typeConfig as $typeKey => $typeCfg):
+                                        $typeList = isset($lr_byType[$typeKey]) ? $lr_byType[$typeKey] : [];
+                                        if (empty($typeList)) continue;
+                                        $isFirstType  = ($typeKey === $lr_firstType);
+                                        $tColor       = $typeCfg['color'];
+                                        $priceBuckets = lr_priceBuckets($typeList);
+                                        $defPriceTab  = 'recommended';
+                                    ?>
+                                    <div id="lrm-type-pane-<?php echo $typeKey; ?>"
+                                         style="display:<?php echo $isFirstType ? 'block' : 'none'; ?>;">
+
+                                        <div style="display:flex;gap:4px;flex-wrap:nowrap;margin-bottom:10px;padding:6px;background:rgba(255,255,255,0.02);border-radius:12px;border:1px solid rgba(255,255,255,0.05);overflow:hidden;">
+                                        <?php foreach ($priceBuckets as $priceKey => $priceBucket):
+                                            $isActivePrice = ($priceKey === $defPriceTab);
+                                            $pColor = $priceBucket['color'];
+                                            $pCount = count($priceBucket['data']);
+                                            $pHint  = ['budget'=>'≤600K','midrange'=>'600K–1M','premium'=>'>1M'][$priceKey] ?? '';
+                                            $priceDot = !empty($lr_wantedDesignFeats)
+                                                && isset($lr_hasDesign[$typeKey][$priceKey])
+                                                && $lr_hasDesign[$typeKey][$priceKey];
+                                        ?>
+                                        <button type="button"
+                                                id="lrm-price-btn-<?php echo $typeKey; ?>-<?php echo $priceKey; ?>"
+                                                onclick="lrmPriceSwitch('<?php echo $typeKey; ?>','<?php echo $priceKey; ?>')"
+                                                style="flex:1;min-width:0;padding:6px 2px;border-radius:10px;
+                                                       border:1px solid <?php echo $isActivePrice ? $pColor : 'rgba(255,255,255,0.07)'; ?>;
+                                                       background:<?php echo $isActivePrice ? 'rgba(255,255,255,0.06)' : 'transparent'; ?>;
+                                                       color:<?php echo $pColor; ?>;font-size:7.5px;font-weight:700;
+                                                       letter-spacing:0;cursor:pointer;font-family:inherit;
+                                                       transition:all 0.2s;line-height:1.3;text-align:center;position:relative;
+                                                       white-space:normal;overflow:hidden;text-overflow:ellipsis;">
+                                            <?php if ($priceDot): ?>
+                                            <span style="position:absolute;top:3px;right:4px;width:6px;height:6px;border-radius:50%;background:#00ff88;box-shadow:0 0 4px #00ff88;display:inline-block;" title="Has lens matching vision need"></span>
+                                            <?php endif; ?>
+                                            <?php echo $priceBucket['label']; ?><br>
+                                            <span style="font-size:7px;opacity:0.65;"><?php echo $pCount; ?> lens<?php echo $pHint ? ' · '.$pHint : ''; ?></span>
+                                        </button>
+                                        <?php endforeach; ?>
+                                        </div>
+
+                                        <?php foreach ($priceBuckets as $priceKey => $priceBucket):
+                                            $isActivePrice = ($priceKey === $defPriceTab);
+                                            $list     = $priceBucket['data'];
+                                            $limit    = $priceBucket['limit'];
+                                            $total    = count($list);
+                                            $showExp  = ($total > $limit);
+                                            $pColor   = $priceBucket['color'];
+                                            $paneId   = 'lrm-ppane-'.$typeKey.'-'.$priceKey;
+                                        ?>
+                                        <div id="<?php echo $paneId; ?>"
+                                             style="display:<?php echo $isActivePrice ? 'block' : 'none'; ?>;">
+
+                                            <?php if (empty($list)): ?>
+                                            <div style="font-size:11px;color:#444;text-align:center;padding:16px 10px;background:rgba(255,255,255,0.02);border-radius:10px;border:1px dashed rgba(255,255,255,0.05);">
+                                                <?php
+                                                $emptyMsg = [
+                                                    'budget'   => 'No lenses in this price range (≤ Rp 600,000)',
+                                                    'midrange' => 'No lenses in this price range (Rp 600,000 – Rp 1,000,000)',
+                                                    'premium'  => 'No lenses in this price range (> Rp 1,000,000)',
+                                                ];
+                                                echo isset($emptyMsg[$priceKey]) ? $emptyMsg[$priceKey] : 'No lenses available.';
+                                                ?>
+                                            </div>
+                                            <?php else: ?>
+
+                                            <div style="display:flex;flex-direction:column;gap:7px;">
+                                            <?php foreach ($list as $i => $cand):
+                                                if ($priceKey === 'recommended') {
+                                                    $rs = isset($lr_rankStyle[$i]) ? $lr_rankStyle[$i] : ['#'.($i+1), '#00ff88', 'rgba(0,255,136,0.05)', 'rgba(0,255,136,0.15)'];
+                                                    list($rankLbl, $rankColor, $bg, $bd) = $rs;
+                                                } else {
+                                                    $rankLbl   = '#'.($i+1);
+                                                    $rankColor = $pColor;
+                                                    $bg        = 'rgba(255,255,255,0.02)';
+                                                    $bd        = 'rgba(255,255,255,0.07)';
+                                                }
+                                                $srcColor  = ($cand['source'] === 'stock') ? '#00ff88' : '#ff8a4d';
+                                                $srcBg     = ($cand['source'] === 'stock') ? 'rgba(0,255,136,0.10)' : 'rgba(255,138,77,0.10)';
+                                                $srcBd     = ($cand['source'] === 'stock') ? 'rgba(0,255,136,0.25)' : 'rgba(255,138,77,0.25)';
+                                                $srcLabel  = ($cand['source'] === 'stock') ? 'STOCK' : 'LAB';
+                                                $uid       = 'mod-'.$typeKey.'-'.$priceKey.'-'.$i;
+                                                $hidden    = ($i >= $limit) ? 'display:none;' : '';
+                                            ?>
+                                            <div id="lr-card-<?php echo $uid; ?>"
+                                                 style="<?php echo $hidden; ?>border:1px solid <?php echo $bd; ?>;border-radius:12px;overflow:hidden;background:<?php echo $bg; ?>;">
+
+                                                <div onclick="lrCardToggle('<?php echo $uid; ?>')"
+                                                     style="display:flex;align-items:center;gap:10px;padding:11px 13px;cursor:pointer;">
+                                                    <span style="display:inline-flex;align-items:center;justify-content:center;min-width:30px;height:24px;background:<?php echo $bd; ?>;border-radius:20px;font-size:9px;font-weight:800;color:<?php echo $rankColor; ?>;letter-spacing:0.5px;flex-shrink:0;"><?php echo $rankLbl; ?></span>
+                                                    <div style="flex:1;min-width:0;">
+                                                        <div style="font-size:11px;font-weight:700;color:<?php echo $rankColor; ?>;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+                                                            <?php echo htmlspecialchars($cand['category']); ?> — <?php echo htmlspecialchars($cand['type']); ?>
+                                                            <?php
+                                                            $_cat = strtoupper(trim($cand['category']));
+                                                            $_isProg = in_array($_cat, array('PROGRESSIVE','KRYPTOK','FLATTOP'));
+                                                            $_match = false;
+                                                            if ($_isProg && $lr_isPresbyopia) {
+                                                                if ($_cat === 'KRYPTOK' || $_cat === 'FLATTOP') {
+                                                                    $_match = in_array($lr_presbyType, array('far_near','far_only','all_distance','dynamic'));
+                                                                } else {
+                                                                    foreach ($lr_wantedDesignFeats as $_wf) {
+                                                                        if (in_array($_wf, $cand['features'])) { $_match = true; break; }
+                                                                    }
+                                                                }
+                                                            }
+                                                            if ($_match): ?>
+                                                            <span style="display:inline-block;font-size:7.5px;font-weight:800;background:rgba(0,255,136,0.15);color:#00ff88;border:1px solid rgba(0,255,136,0.4);border-radius:20px;padding:1px 6px;margin-left:5px;letter-spacing:0.5px;vertical-align:middle;">✓ MATCHES NEED</span>
+                                                            <?php endif; ?>
+                                                        </div>
+                                                        <div style="display:flex;align-items:center;gap:5px;margin-top:3px;">
+                                                            <span style="font-size:7.5px;font-weight:700;color:<?php echo $srcColor; ?>;background:<?php echo $srcBg; ?>;border:1px solid <?php echo $srcBd; ?>;border-radius:20px;padding:1px 7px;letter-spacing:0.5px;"><?php echo $srcLabel; ?></span>
+                                                            <span style="font-size:8px;color:#555;">⏱ <?php echo htmlspecialchars($cand['readiness']); ?></span>
+                                                        </div>
+                                                    </div>
+                                                    <div style="font-size:11px;font-weight:700;color:<?php echo $rankColor; ?>;font-family:monospace;text-align:right;flex-shrink:0;"
+                                                         data-lens-price="<?php echo (int)$cand['selling']; ?>">
+                                                        <?php echo lr_fmt_price($cand['selling']); ?>
+                                                        <span class="lr-frame-total" style="display:none;font-size:8.5px;font-weight:600;color:#ffaa00;font-family:monospace;white-space:nowrap;"></span>
+                                                    </div>
+                                                    <span id="lr-chev-<?php echo $uid; ?>" style="color:#555;font-size:11px;flex-shrink:0;transition:transform 0.25s;display:inline-block;">▼</span>
+                                                </div>
+
+                                                <div id="lr-detail-<?php echo $uid; ?>" style="display:none;padding:0 13px 13px 13px;border-top:1px solid <?php echo $bd; ?>;">
+                                                    <div style="font-size:7.5px;color:#444;letter-spacing:1px;margin:10px 0 7px;">LENS FEATURES</div>
+                                                    <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px;">
+                                                        <?php foreach ($cand['features'] as $feat):
+                                                            $ficon = isset($lr_featureIcons[strtoupper(trim($feat))]) ? $lr_featureIcons[strtoupper(trim($feat))] : '•';
+                                                        ?>
+                                                        <span style="display:inline-flex;align-items:center;gap:4px;font-size:9px;color:#ddd;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.10);border-radius:20px;padding:4px 10px;letter-spacing:0.3px;">
+                                                            <?php echo $ficon; ?> <?php echo htmlspecialchars($feat); ?>
+                                                        </span>
+                                                        <?php endforeach; ?>
+                                                    </div>
+                                                    <div style="display:flex;align-items:center;gap:8px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:10px;padding:8px 12px;">
+                                                        <span style="font-size:1rem;"><?php echo ($cand['source'] === 'stock') ? '🏪' : '🔧'; ?></span>
+                                                        <div>
+                                                            <div style="font-size:10px;font-weight:700;color:<?php echo $srcColor; ?>;">
+                                                                <?php echo ($cand['source'] === 'stock') ? 'In Stock' : 'Lab Order (Custom)'; ?>
+                                                            </div>
+                                                            <div style="font-size:9px;color:#555;margin-top:1px;"><?php echo htmlspecialchars($cand['readiness']); ?></div>
+                                                        </div>
+                                                    </div>
+                                                    <?php if (!empty($cand['note'])): ?>
+                                                    <div style="margin-top:8px;font-size:9px;color:#666;font-style:italic;padding-left:4px;">
+                                                        📋 <?php echo htmlspecialchars($cand['note']); ?>
+                                                    </div>
+                                                    <?php endif; ?>
+                                                    <div style="margin-top:12px;text-align:center;">
+                                                        <button type="button"
+                                                                id="lr-sel-btn-<?php echo $uid; ?>"
+                                                                class="lr-sel-btn"
+                                                                data-uid="<?php echo htmlspecialchars($uid, ENT_QUOTES); ?>"
+                                                                data-name="<?php echo htmlspecialchars($cand['category'].' — '.$cand['type'], ENT_QUOTES); ?>"
+                                                                data-price="<?php echo (int)$cand['selling']; ?>"
+                                                                data-source="<?php echo htmlspecialchars($cand['source'], ENT_QUOTES); ?>"
+                                                                style="width:100%;padding:9px 16px;border-radius:20px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.04);color:#888;font-size:9.5px;font-weight:700;letter-spacing:1px;cursor:pointer;font-family:inherit;transition:all 0.25s;">
+                                                            ○ SELECT THIS LENS
+                                                        </button>
+                                                    </div>
+                                                </div>
+
+                                            </div><!-- /card mod -->
+                                            <?php endforeach; ?>
+                                            </div><!-- /card-list mod -->
+
+                                            <?php if ($showExp): ?>
+                                            <div style="text-align:center;margin-top:10px;">
+                                                <button type="button"
+                                                        id="lrm-expand-<?php echo $typeKey.'-'.$priceKey; ?>"
+                                                        onclick="lrExpandAll('mod-<?php echo $typeKey; ?>','<?php echo $priceKey; ?>',<?php echo $limit; ?>,<?php echo $total; ?>)"
+                                                        style="background:rgba(255,170,0,0.07);border:1px solid rgba(255,170,0,0.25);color:#ffaa00;font-size:10px;font-weight:700;letter-spacing:1px;padding:8px 22px;border-radius:20px;cursor:pointer;font-family:inherit;transition:all 0.2s;">
+                                                    ▼ SHOW ALL <?php echo $total; ?> LENSES
+                                                </button>
+                                            </div>
+                                            <?php endif; ?>
+
+                                            <?php endif; // empty list mod ?>
+                                        </div><!-- /price-pane mod -->
+                                        <?php endforeach; // price buckets mod ?>
+
+                                    </div><!-- /type-pane mod -->
+                                    <?php endforeach; // type tabs mod ?>
+
+                                    <?php endif; // empty candidates mod ?>
+
+                                    <!-- Disclaimer (mod) -->
+                                    <div style="margin-top:12px;font-size:8px;color:#2e2e2e;font-style:italic;border-top:1px solid rgba(255,255,255,0.04);padding-top:10px;">
+                                        * Order based on prescription fit, lifestyle habits, and symptoms. Final choice subject to customer preference and budget.
+                                    </div>
+
+                                </div><!-- /lr-body-mod -->
+                                <?php endif; // $lr_hasModData ?>
+
                                 </div><!-- /lr-body -->
                             </div>
                         </div>
@@ -2557,6 +3154,37 @@
                 }
             };
 
+            // ── Lens header data for both sets (for dynamic header update) ──
+            var lrHeaderData = {
+                orig: {
+                    count: <?php echo count($lr_SET_ORIG['candidates']); ?>,
+                    badge: <?php
+                        $s = $lr_SET_ORIG;
+                        if (!$s['isPresbyopia'])   echo '"SINGLE VISION"';
+                        elseif ($s['farOnlySV'])   echo '"PRESBYOPIA → SV (DISTANCE)"';
+                        else { $m=['all_distance'=>'ALL-DISTANCE','dynamic'=>'DYNAMIC','far_near'=>'FAR & NEAR','near'=>'NEAR-OPTIMIZED']; echo '"PRESBYOPIA → '.($m[$s['presbyType']]??strtoupper($s['presbyType'])).'"'; }
+                    ?>
+                },
+                mod: {
+                    count: <?php echo count($lr_SET_MOD['candidates']); ?>,
+                    badge: <?php
+                        $s = $lr_SET_MOD;
+                        if (!$s['isPresbyopia'])   echo '"SINGLE VISION"';
+                        elseif ($s['farOnlySV'])   echo '"PRESBYOPIA → SV (DISTANCE)"';
+                        else { $m=['all_distance'=>'ALL-DISTANCE','dynamic'=>'DYNAMIC','far_near'=>'FAR & NEAR','near'=>'NEAR-OPTIMIZED']; echo '"PRESBYOPIA → '.($m[$s['presbyType']]??strtoupper($s['presbyType'])).'"'; }
+                    ?>
+                }
+            };
+
+            function lrUpdateHeader(setKey) {
+                var d = lrHeaderData[setKey];
+                if (!d) return;
+                var badge = document.getElementById('lr-header-badge');
+                var count = document.getElementById('lr-header-count');
+                if (badge) badge.textContent = d.badge;
+                if (count) count.textContent = d.count + ' lens matched';
+            }
+
             modYes.onclick = () => {
                 modYes.classList.add('active');
                 modNo.classList.remove('active');
@@ -2571,6 +3199,13 @@
                     f.addEventListener('focus', () => f.select());
                     f.addEventListener('blur', formatZeroValue);
                 });
+
+                // ── Swap lens recommendation to MODIFIED set ──────────────
+                var origBody = document.getElementById('lr-body-orig');
+                var modBody  = document.getElementById('lr-body-mod');
+                if (origBody) origBody.style.display = 'none';
+                if (modBody)  modBody.style.display  = 'block';
+                lrUpdateHeader('mod');
             };
 
             modNo.onclick = () => {
@@ -2586,6 +3221,13 @@
                     f.style.boxShadow = "inset 5px 5px 10px var(--shadow-dark), inset -5px -5px 10px var(--shadow-light)";
                     f.removeEventListener('blur', formatZeroValue);
                 });
+
+                // ── Swap lens recommendation to ORIGINAL set ──────────────
+                var origBody = document.getElementById('lr-body-orig');
+                var modBody  = document.getElementById('lr-body-mod');
+                if (origBody) origBody.style.display = 'block';
+                if (modBody)  modBody.style.display  = 'none';
+                lrUpdateHeader('orig');
             };
 
             // ============================================================
@@ -2660,6 +3302,36 @@
             window.lrTypeSwitch  = lrTypeSwitch;
             window.lrPriceSwitch = lrPriceSwitch;
             window.lrExpandAll   = lrExpandAll;
+
+            // ── Modified Rx tab switchers (use lrm-* IDs) ──────────────────
+            function lrmTypeSwitch(typeKey) {
+                var types  = ['sv','kryptok','progressive','flattop'];
+                var colors = { sv:'#00ff88', kryptok:'#00cfff', progressive:'#aa88ff', flattop:'#ff8a4d' };
+                types.forEach(function(t) {
+                    var pane = document.getElementById('lrm-type-pane-' + t);
+                    var btn  = document.getElementById('lrm-type-btn-'  + t);
+                    if (!pane || !btn) return;
+                    var active = (t === typeKey);
+                    pane.style.display    = active ? 'block' : 'none';
+                    btn.style.borderColor = active ? colors[t] : 'rgba(255,255,255,0.08)';
+                    btn.style.background  = active ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.02)';
+                });
+            }
+            function lrmPriceSwitch(typeKey, priceKey) {
+                var priceTabs = ['recommended','budget','midrange','premium'];
+                var colors    = { recommended:'#ffaa00', budget:'#00ff88', midrange:'#00cfff', premium:'#ff8a4d' };
+                priceTabs.forEach(function(p) {
+                    var pane = document.getElementById('lrm-ppane-' + typeKey + '-' + p);
+                    var btn  = document.getElementById('lrm-price-btn-' + typeKey + '-' + p);
+                    if (!pane || !btn) return;
+                    var active = (p === priceKey);
+                    pane.style.display    = active ? 'block' : 'none';
+                    btn.style.borderColor = active ? colors[p] : 'rgba(255,255,255,0.07)';
+                    btn.style.background  = active ? 'rgba(255,255,255,0.06)' : 'transparent';
+                });
+            }
+            window.lrmTypeSwitch  = lrmTypeSwitch;
+            window.lrmPriceSwitch = lrmPriceSwitch;
 
             // ============================================================
             // LENS SELECTION — click a lens card to select / deselect it
@@ -3014,6 +3686,9 @@
                         f.readOnly = false; 
                         f.addEventListener('focus', () => f.select());
                     });
+
+                    // Sync lens recommendation header to mod state
+                    lrUpdateHeader('mod');
                 }
             };
 
