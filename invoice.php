@@ -1151,14 +1151,10 @@
                 inset: 0 !important;
                 z-index: 9999 !important;
                 width: 100vw !important;
-                /* Use dynamic viewport height so mobile address bar doesn't cut off bottom content.
-                   Falls back to 100vh on browsers that don't support dvh. */
                 height: 100vh !important;
                 height: 100dvh !important;
                 max-width: none !important;
                 margin: 0 !important;
-                /* Extra bottom padding ensures the RESCAN / button row stays fully visible
-                   even with iOS safe-area / home indicator */
                 padding: 56px 12px calc(32px + env(safe-area-inset-bottom, 0px)) 12px !important;
                 background: #0a0a0a !important;
                 border-radius: 0 !important;
@@ -1170,29 +1166,38 @@
                 flex-direction: column !important;
                 align-items: center !important;
             }
-            body.fullscreen-cam-active #mp-scan-card > .prescription-container {
+            /* In fullscreen, hide card 1 (frame purchase) and card 3 (barcode) — only face scan is shown */
+            body.fullscreen-cam-active #frame-purchase-toggle-wrap {
+                display: none !important;
+            }
+            body.fullscreen-cam-active #fbs-card {
+                display: none !important;
+            }
+            /* Face section card becomes the fullscreen content */
+            body.fullscreen-cam-active #mp-face-section {
+                display: block !important;
+                margin-top: 0 !important;
                 width: 100%;
                 max-width: 520px;
-                background: transparent;
-                box-shadow: none;
+            }
+            body.fullscreen-cam-active #mp-face-section > .prescription-container {
+                background: transparent !important;
+                box-shadow: none !important;
+                border: none !important;
                 padding: 10px;
-                /* Let content determine height; don't let the flex container squeeze the buttons */
                 flex-shrink: 0;
+            }
+            /* Always expand fsa-body in fullscreen */
+            body.fullscreen-cam-active #fsa-body {
+                display: block !important;
             }
             body.fullscreen-cam-active .mp-wrapper {
                 width: min(92vw, 440px);
-                /* Shrink the video frame so there's room for buttons below without scrolling-to-cut */
                 height: min(58vh, 520px);
             }
-            /* Button row inside fullscreen scan: guarantee it keeps natural height and margin */
             body.fullscreen-cam-active .selection-wrapper {
                 flex-shrink: 0;
                 padding-bottom: 8px;
-            }
-
-            /* Hide frame-purchase toggle & its label during fullscreen scan */
-            body.fullscreen-cam-active #frame-purchase-toggle-wrap {
-                display: none !important;
             }
 
             /* Back button overlay — only visible in fullscreen */
@@ -1682,30 +1687,57 @@
                         <div class="full" id="mp-scan-card">
                             <!-- Back button (only visible in fullscreen scan mode) -->
                             <button type="button" id="mp-back-btn" onclick="exitFullscreenCam()">← BACK</button>
-                            <div class="prescription-container" style="text-align: center;">
 
-                                <!-- PURCHASE FRAME TOGGLE -->
-                                <div id="frame-purchase-toggle-wrap">
-                                <label id="fp-toggle-label" onclick="toggleFpSection()" style="cursor:pointer; user-select:none; display:flex; align-items:center; justify-content:space-between;">
-                                    <span>CUSTOMER PURCHASE FRAME?</span>
-                                    <span id="fp-toggle-chev" style="font-size:11px; color:var(--accent-color); transition:transform 0.25s; display:inline-block;">▼</span>
-                                </label>
-                                <div id="fp-collapsible" style="display:none; margin-top:10px;">
-                                <div class="selection-wrapper" style="margin-top: 10px;">
-                                    <button type="button" class="neu-btn active" id="frame-purchase-no" onclick="setFramePurchase(0)">
-                                        <div class="led"></div> NO
-                                    </button>
-                                    <button type="button" class="neu-btn" id="frame-purchase-yes" onclick="setFramePurchase(1)">
-                                        <div class="led"></div> YES
-                                    </button>
-                                </div>
-                                </div><!-- /#fp-collapsible -->
-                                </div>
+                                <!-- ══════════════════════════════════════════════════
+                                     CARD 1 — CUSTOMER PURCHASE FRAME?
+                                     ══════════════════════════════════════════════════ -->
+                                <div id="frame-purchase-toggle-wrap" class="prescription-container" style="text-align:center; border:1px solid rgba(255,255,255,0.09);">
+                                    <label id="fp-toggle-label" onclick="toggleFpSection()" style="cursor:pointer; user-select:none; display:flex; align-items:center; justify-content:space-between; margin-bottom:0;">
+                                        <div style="display:flex; align-items:center; gap:10px;">
+                                            <span style="font-size:1.25rem;">🛍️</span>
+                                            <div style="text-align:left;">
+                                                <div style="font-size:0.7rem; letter-spacing:2px; color:var(--accent-color); font-weight:700;">CUSTOMER PURCHASE FRAME?</div>
+                                                <div style="font-size:8.5px; color:#555; margin-top:1px; letter-spacing:0.5px;">Tap to expand · select YES or NO</div>
+                                            </div>
+                                        </div>
+                                        <span id="fp-toggle-chev" style="font-size:11px; color:var(--accent-color); transition:transform 0.25s; display:inline-block;">▼</span>
+                                    </label>
+                                    <div id="fp-collapsible" style="display:none; margin-top:14px;">
+                                        <div class="selection-wrapper" style="margin-top:6px;">
+                                            <button type="button" class="neu-btn active" id="frame-purchase-no" onclick="setFramePurchase(0)">
+                                                <div class="led"></div> NO
+                                            </button>
+                                            <button type="button" class="neu-btn" id="frame-purchase-yes" onclick="setFramePurchase(1)">
+                                                <div class="led"></div> YES
+                                            </button>
+                                        </div>
+                                    </div><!-- /#fp-collapsible -->
+                                </div><!-- /frame-purchase card -->
 
-                                <!-- Face Shape section, shown only when YES -->
-                                <div id="mp-face-section" style="display:none;">
-                                    <hr style="border:none; border-top:1px solid rgba(255,255,255,0.07); margin:18px 0 14px;">
-                                    <label>FACE SHAPE ANALYSIS</label>
+                                <!-- ══════════════════════════════════════════════════
+                                     CARD 2 — FACE SHAPE ANALYSIS
+                                     Kept inside mp-scan-card so fullscreen works correctly.
+                                     ══════════════════════════════════════════════════ -->
+                                <div id="mp-face-section" style="display:none; margin-top:12px;">
+                                <div class="prescription-container" style="text-align:center; border:1px solid rgba(0,207,255,0.28); background:linear-gradient(135deg,rgba(0,207,255,0.04) 0%,transparent 60%);">
+
+                                    <!-- Header (collapsible) -->
+                                    <div onclick="toggleFsaSection()" style="display:flex; align-items:center; justify-content:space-between; cursor:pointer;">
+                                        <div style="display:flex; align-items:center; gap:10px;">
+                                            <span style="font-size:1.25rem;">🧬</span>
+                                            <div style="text-align:left;">
+                                                <div style="font-size:0.7rem; letter-spacing:2px; color:#00cfff; font-weight:700;">FACE SHAPE ANALYSIS</div>
+                                                <div style="font-size:8.5px; color:#555; margin-top:1px; letter-spacing:0.5px;">AI · Camera · Frame matching</div>
+                                            </div>
+                                        </div>
+                                        <div style="display:flex; align-items:center; gap:8px;">
+                                            <span style="font-size:8px; background:rgba(0,207,255,0.1); color:#00cfff; border:1px solid rgba(0,207,255,0.3); border-radius:20px; padding:3px 9px; letter-spacing:0.5px;">SCAN FACE</span>
+                                            <span id="fsa-chev" style="color:#00cfff; font-size:11px; display:inline-block; transition:transform 0.3s;">▼</span>
+                                        </div>
+                                    </div>
+
+                                    <!-- Collapsible body — contains all camera UI -->
+                                    <div id="fsa-body" style="display:none; margin-top:14px;">
 
                                 <!-- STEP INDICATOR (hidden initially — only shown inside fullscreen scan) -->
                                 <div id="mp-steps" style="display:none;justify-content:center;gap:6px;margin-bottom:14px;">
@@ -1857,19 +1889,35 @@
                                         <div class="led"></div> RESTART SCAN
                                     </button>
                                 </div>
+
+                                    </div><!-- /fsa-body -->
+                                </div><!-- /prescription-container card-2 -->
                                 </div><!-- /mp-face-section -->
-                            </div>
-                        </div>
 
-                        <!-- ============================================================
-                             FRAME BARCODE SCANNER — separate card, outside mp-scan-card
-                             so it is never pulled into fullscreen camera mode.
-                             Hidden until customer toggles YES on the frame purchase toggle.
-                             ============================================================ -->
-                        <div class="full" id="fbs-card" style="display:none;">
-                            <div class="prescription-container" style="text-align:center;">
+                                <!-- ══════════════════════════════════════════════════
+                                     CARD 3 — FRAME BARCODE SCANNER
+                                     Kept inside mp-scan-card (never enters fullscreen).
+                                     ══════════════════════════════════════════════════ -->
+                                <div id="fbs-card" style="display:none; margin-top:12px;">
+                                <div class="prescription-container" style="text-align:center; border:1px solid rgba(0,255,136,0.22); background:linear-gradient(135deg,rgba(0,255,136,0.03) 0%,transparent 60%);">
 
-                                <label>FRAME BARCODE SCAN</label>
+                                    <!-- Header (collapsible) -->
+                                    <div onclick="toggleFbsSection()" style="display:flex; align-items:center; justify-content:space-between; cursor:pointer;">
+                                        <div style="display:flex; align-items:center; gap:10px;">
+                                            <span style="font-size:1.25rem;">📷</span>
+                                            <div style="text-align:left;">
+                                                <div style="font-size:0.7rem; letter-spacing:2px; color:#00ff88; font-weight:700;">FRAME BARCODE SCAN</div>
+                                                <div style="font-size:8.5px; color:#555; margin-top:1px; letter-spacing:0.5px;">Camera · UFC lookup · Stock check</div>
+                                            </div>
+                                        </div>
+                                        <div style="display:flex; align-items:center; gap:8px;">
+                                            <span style="font-size:8px; background:rgba(0,255,136,0.08); color:#00ff88; border:1px solid rgba(0,255,136,0.25); border-radius:20px; padding:3px 9px; letter-spacing:0.5px;">SCAN BARCODE</span>
+                                            <span id="fbs-chev" style="color:#00ff88; font-size:11px; display:inline-block; transition:transform 0.3s;">▼</span>
+                                        </div>
+                                    </div>
+
+                                    <!-- Collapsible body -->
+                                    <div id="fbs-body" style="display:none; margin-top:14px;">
 
                                 <!-- Camera viewfinder — hidden until START SCANNER is pressed -->
                                 <div id="fbs-viewfinder" style="display:none; margin-top:14px;">
@@ -1915,8 +1963,11 @@
                                     @keyframes fbs-slide { 0% { top:15%; } 50% { top:80%; } 100% { top:15%; } }
                                 </style>
 
-                            </div>
-                        </div>
+                                    </div><!-- /fbs-body -->
+                                </div><!-- /prescription-container card-3 -->
+                                </div><!-- /fbs-card -->
+
+                        </div><!-- /mp-scan-card -->
 
                         <!-- ============================================================
                              LENS RECOMMENDED — appears AFTER Face Shape Analysis
@@ -2767,6 +2818,42 @@
             }
             window.toggleFpSection = toggleFpSection;
 
+            // ============================================================
+            // FACE SHAPE ANALYSIS — collapsible toggle
+            // ============================================================
+            function toggleFsaSection() {
+                const body = document.getElementById('fsa-body');
+                const chev = document.getElementById('fsa-chev');
+                if (!body) return;
+                const open = body.style.display === 'none' || body.style.display === '';
+                body.style.display = open ? 'block' : 'none';
+                if (chev) chev.style.transform = open ? 'rotate(180deg)' : 'rotate(0deg)';
+                // Close when collapsing and camera is running
+                if (!open && typeof exitFullscreenCam === 'function') {
+                    const mp = document.getElementById('mp-start-btn');
+                    // only exit if camera is actually running (button says SWITCH CAM / CAPTURE are visible)
+                    const switchBtn = document.getElementById('mp-switch-btn');
+                    if (switchBtn && switchBtn.style.display !== 'none') {
+                        exitFullscreenCam();
+                    }
+                }
+            }
+            window.toggleFsaSection = toggleFsaSection;
+
+            // ============================================================
+            // FRAME BARCODE SCANNER — collapsible toggle
+            // ============================================================
+            function toggleFbsSection() {
+                const body = document.getElementById('fbs-body');
+                const chev = document.getElementById('fbs-chev');
+                if (!body) return;
+                const open = body.style.display === 'none' || body.style.display === '';
+                body.style.display = open ? 'block' : 'none';
+                if (chev) chev.style.transform = open ? 'rotate(180deg)' : 'rotate(0deg)';
+                if (!open && typeof fbsStopCamera === 'function') fbsStopCamera();
+            }
+            window.toggleFbsSection = toggleFbsSection;
+
 
             window.onload = () => {
                 const isModified = <?php echo $data['lens_modification'] == 1 ? 'true' : 'false'; ?>;
@@ -3027,6 +3114,11 @@
                     // Reset the BACK button label each time we enter scan mode
                     const bb = document.getElementById('mp-back-btn');
                     if (bb) bb.innerHTML = '← BACK';
+                    // Ensure fsa-body is expanded in fullscreen (CSS also forces it, belt & braces)
+                    const fsaBody = document.getElementById('fsa-body');
+                    const fsaChev = document.getElementById('fsa-chev');
+                    if (fsaBody) fsaBody.style.display = 'block';
+                    if (fsaChev) fsaChev.style.transform = 'rotate(180deg)';
                     // Scroll the scan card to the top of the fullscreen view
                     const card = document.getElementById('mp-scan-card');
                     if (card) card.scrollTop = 0;
