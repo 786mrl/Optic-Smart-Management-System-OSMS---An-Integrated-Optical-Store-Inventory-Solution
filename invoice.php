@@ -1592,10 +1592,19 @@
                             <div id="order-details-body" style="display:flex;flex-direction:column;gap:12px;">
 
                         <div class="full">
-                            <div class="prescription-container">
-                                <label id="mod-toggle-label" onclick="toggleModSection()" style="cursor:pointer; user-select:none; display:flex; align-items:center; justify-content:space-between;">
-                                    <span>PRESCRIPTION MODIFICATION</span>
-                                    <span id="mod-toggle-chev" style="font-size:11px; color:var(--accent-color); transition:transform 0.25s; display:inline-block;">▼</span>
+                            <div class="prescription-container" style="text-align:center; border:1px solid rgba(255,170,0,0.2); background:linear-gradient(135deg,rgba(255,170,0,0.03) 0%,transparent 60%);">
+                                <label id="mod-toggle-label" onclick="toggleModSection()" style="cursor:pointer; user-select:none; display:flex; align-items:center; justify-content:space-between; margin-bottom:0;">
+                                    <div style="display:flex; align-items:center; gap:10px;">
+                                        <span style="font-size:1.25rem;">✏️</span>
+                                        <div style="text-align:left;">
+                                            <div style="font-size:0.7rem; letter-spacing:2px; color:#ffaa00; font-weight:700;">PRESCRIPTION MODIFICATION</div>
+                                            <div style="font-size:8.5px; color:#555; margin-top:1px; letter-spacing:0.5px;">Tap to expand · select YES or NO</div>
+                                        </div>
+                                    </div>
+                                    <div style="display:flex; align-items:center; gap:8px;">
+                                        <span style="font-size:8px; background:rgba(255,170,0,0.1); color:#ffaa00; border:1px solid rgba(255,170,0,0.3); border-radius:20px; padding:3px 9px; letter-spacing:0.5px;"><?php echo ($data['lens_modification'] == 1) ? '✓ MODIFIED' : 'ORIGINAL'; ?></span>
+                                        <span id="mod-toggle-chev" style="font-size:11px; color:#ffaa00; transition:transform 0.25s; display:inline-block;">▼</span>
+                                    </div>
                                 </label>
 
                                 <div id="mod-collapsible" style="display:none; margin-top:10px;">
