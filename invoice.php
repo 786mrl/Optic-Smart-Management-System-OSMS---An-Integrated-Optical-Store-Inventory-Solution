@@ -4810,6 +4810,10 @@
                         var countEl = document.getElementById('fbs-attr-count');
                         var listEl  = document.getElementById('fbs-attr-list');
                         if (countEl) countEl.textContent = rows.length + ' RESULT' + (rows.length > 1 ? 'S' : '') + ' FOUND';
+                        // Store row data in a map keyed by UFC — no JSON in onclick attributes
+                        window._fbsAttrRowMap = window._fbsAttrRowMap || {};
+                        rows.forEach(function(r) { if (r.ufc) window._fbsAttrRowMap[r.ufc] = r; });
+
                         if (listEl)  listEl.innerHTML = rows.map(function (row) {
                             var stock      = parseInt(row.stock) || 0;
                             var stockColor = stock > 5 ? '#00ff88' : (stock > 0 ? '#ffaa00' : '#ff4d4d');
@@ -4838,7 +4842,7 @@
                                 ? '<div style="font-size:9px;color:#555;margin:4px 0 2px;display:flex;flex-wrap:wrap;gap:4px;">' + detailParts.join('<span style="color:#333;">·</span>') + '</div>'
                                 : '';
 
-                            return '<button type="button" class="fbs-frame-row" id="fbs-row-' + ufcSafe + '" onclick="fbsAttrSelectRow(' + JSON.stringify(row) + ')">' +
+                            return '<button type="button" class="fbs-frame-row" id="fbs-row-' + ufcSafe + '" data-ufc="' + ufcSafe + '" onclick="fbsAttrSelectRow(window._fbsAttrRowMap[this.dataset.ufc])">' +
                                 '<div style="flex:1;min-width:0;">' +
                                     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px;flex-wrap:wrap;gap:4px;">' +
                                         '<span style="font-size:11px;font-weight:800;color:#fff;letter-spacing:0.5px;">' + esc(row.brand || '') + '</span>' +
@@ -4869,7 +4873,9 @@
 
             /* ── SELECT a row from attr list ────────────────────────────── */
             window.fbsAttrSelectRow = function (row) {
+                if (!row) return;
                 var ufc = row.ufc || '';
+
                 // Highlight selected row
                 document.querySelectorAll('.fbs-frame-row').forEach(function (el) {
                     el.classList.remove('selected');
@@ -4878,27 +4884,42 @@
                 if (rowEl) rowEl.classList.add('selected');
                 fbsAttrSelectedUfc = ufc;
 
-                // Build display name: Brand — Code (Size)
+                // Build display name
                 var nameParts = [row.brand || ''];
                 if (row.frame_code) nameParts.push('— ' + row.frame_code);
                 if (row.frame_size) nameParts.push('(' + row.frame_size + ')');
                 var frameName = nameParts.join(' ');
+                var priceInt  = parseInt(row.sell_price) || 0;
 
-                var priceInt = parseInt(row.sell_price) || 0;
-                if (typeof window.lrSetFramePrice === 'function') {
-                    window.lrSetFramePrice(priceInt);
-                }
-                if (typeof window.lrSetSelectedFrame === 'function') {
-                    window.lrSetSelectedFrame(frameName, priceInt);
+                // Update lens price totals
+                if (typeof window.lrSetFramePrice === 'function') window.lrSetFramePrice(priceInt);
+
+                // === DIRECTLY update Customer Selection bar — no helper functions ===
+                var bar   = document.getElementById('lr-selection-bar');
+                var body  = document.getElementById('lr-selection-bar-body');
+                var chev  = document.getElementById('lr-selection-bar-chev');
+                var inner = document.getElementById('lr-selection-bar-inner');
+                if (bar && inner) {
+                    inner.innerHTML =
+                        '<div style="display:flex;align-items:center;gap:8px;width:100%;">' +
+                            '<span style="font-size:1.2rem;">🕶️</span>' +
+                            '<div style="min-width:0;flex:1;">' +
+                                '<div style="font-size:7.5px;color:#555;letter-spacing:1px;margin-bottom:1px;">FRAME</div>' +
+                                '<div style="font-size:10px;font-weight:700;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(frameName) + '</div>' +
+                                (priceInt > 0 ? '<div style="font-size:10px;color:#ffaa00;font-family:monospace;font-weight:700;">Rp\u00a0' + priceInt.toLocaleString('id-ID') + '</div>' : '') +
+                            '</div>' +
+                        '</div>';
+                    bar.style.display  = 'block';
+                    body.style.display = 'block';
+                    if (chev) chev.style.transform = 'rotate(180deg)';
                 }
 
-                // Switch to UFC tab and show confirmation card
-                window.fbsSwitchTab('ufc');
-                fbsShowFound(row);
+                // Also keep lrSelectedFrame in sync for total calculation
+                window.lrSelectedFrame = priceInt > 0 ? { name: frameName, price: priceInt } : null;
+
                 document.getElementById('fbs-clear-btn').style.display = 'inline-flex';
                 setTimeout(function () {
-                    var res = document.getElementById('fbs-result');
-                    if (res) res.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    if (bar) bar.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                 }, 80);
             };
 
