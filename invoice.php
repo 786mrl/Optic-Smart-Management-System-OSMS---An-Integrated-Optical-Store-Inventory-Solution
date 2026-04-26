@@ -1723,6 +1723,7 @@
                 .eye-indicator { width: 24px !important; height: 24px !important; font-size: 0.68rem !important; }
                 .read-only-box { font-size: 0.78rem !important; }
             }
+            /* Hide spinner arrows on payment amount inputs */
         </style>
     </head>
 
@@ -3118,6 +3119,62 @@
                                     <div id="lr-selection-bar-inner" style="display:flex;flex-direction:column;gap:8px;">
                                         <!-- filled by JS -->
                                     </div>
+
+                                    <!-- ── PAYMENT & ORDER DETAILS GROUP ── -->
+                                    <div id="lr-payment-group" style="margin-top:14px;border-top:1px solid rgba(0,207,255,0.12);padding-top:14px;">
+                                        <div style="font-size:7.5px;letter-spacing:2px;color:#00cfff;font-weight:700;margin-bottom:10px;">💳 PAYMENT &amp; ORDER DETAILS</div>
+
+                                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+
+                                            <!-- Total Amount -->
+                                            <div>
+                                                <div style="font-size:7px;color:#555;letter-spacing:1px;margin-bottom:3px;">TOTAL AMOUNT</div>
+                                                <input type="text" id="lr-total-amount" placeholder="IDR 0"
+                                                    inputmode="numeric"
+                                                    onfocus="lrPaymentFocus(this,'total')"
+                                                    onblur="lrPaymentBlur(this,'total')"
+                                                    oninput="lrPaymentInput(this,'total')"
+                                                    style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.04);border:1px solid rgba(0,207,255,0.25);border-radius:6px;padding:5px 8px;color:#ffaa00;font-size:10px;font-family:monospace;font-weight:700;outline:none;">
+                                            </div>
+
+                                            <!-- Amount Paid -->
+                                            <div>
+                                                <div style="font-size:7px;color:#555;letter-spacing:1px;margin-bottom:3px;">AMOUNT PAID</div>
+                                                <input type="text" id="lr-amount-paid" placeholder="IDR 0"
+                                                    inputmode="numeric"
+                                                    onfocus="lrPaymentFocus(this,'paid')"
+                                                    onblur="lrPaymentBlur(this,'paid')"
+                                                    oninput="lrPaymentInput(this,'paid')"
+                                                    style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.04);border:1px solid rgba(0,207,255,0.25);border-radius:6px;padding:5px 8px;color:#00ff88;font-size:10px;font-family:monospace;font-weight:700;outline:none;">
+                                            </div>
+
+                                            <!-- Balance -->
+                                            <div style="grid-column:1/-1;">
+                                                <div style="background:rgba(255,170,0,0.07);border:1px solid rgba(255,170,0,0.22);border-radius:8px;padding:7px 12px;display:flex;align-items:center;justify-content:space-between;">
+                                                    <div style="font-size:7px;color:#888;letter-spacing:1px;">BALANCE</div>
+                                                    <div id="lr-balance-display" style="font-size:11px;font-weight:800;color:#ffaa00;font-family:monospace;">IDR 0</div>
+                                                </div>
+                                            </div>
+
+                                            <!-- Order Date -->
+                                            <div>
+                                                <div style="font-size:7px;color:#555;letter-spacing:1px;margin-bottom:3px;">ORDER DATE</div>
+                                                <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(0,207,255,0.20);border-radius:6px;padding:5px 8px;font-size:10px;color:#ccc;font-family:monospace;">
+                                                    <?php echo date('d/m/Y', strtotime($data['examination_date'])); ?>
+                                                </div>
+                                            </div>
+
+                                            <!-- Due Date -->
+                                            <div>
+                                                <div style="font-size:7px;color:#555;letter-spacing:1px;margin-bottom:3px;">DUE DATE</div>
+                                                <div id="lr-due-date-box" style="background:rgba(255,255,255,0.04);border:1px solid rgba(0,207,255,0.20);border-radius:6px;padding:5px 8px;font-size:10px;color:#ccc;font-family:monospace;">
+                                                    — select a lens
+                                                </div>
+                                            </div>
+
+                                        </div>
+                                    </div>
+                                    <!-- ── END PAYMENT & ORDER DETAILS GROUP ── -->
                                 </div>
                             </div>
                         </div>
@@ -3350,11 +3407,13 @@
                     lrSelectedLens = null;
                     lrHighlightSelected(null);
                     lrUpdateSelectionDisplay(false);
+                    if (typeof lrUpdateDueDate === 'function') lrUpdateDueDate(null);
                     return;
                 }
                 lrSelectedLens = { uid: uid, name: name, price: price, source: source };
                 lrHighlightSelected(uid);
                 lrUpdateSelectionDisplay(false); // just show the bar, stay in place
+                if (typeof lrUpdateDueDate === 'function') lrUpdateDueDate(source);
             }
 
             function lrHighlightSelected(uid) {
@@ -3556,6 +3615,82 @@
                 // Opening the bar → collapse the main group sections
                 if (!isOpen) lrMainGroupClose();
             }
+
+            // ============================================================
+            // PAYMENT & ORDER DETAILS — update balance and due date
+            // ============================================================
+
+            // Order date from PHP (dd/mm/yyyy → JS Date)
+            (function() {
+                var parts = '<?php echo date('d/m/Y', strtotime($data['examination_date'])); ?>'.split('/');
+                window._lrOrderDate = new Date(+parts[2], +parts[1]-1, +parts[0]);
+            })();
+
+            // Internal raw values (multiplied by 1000)
+            var _lrRawTotal = 0;
+            var _lrRawPaid  = 0;
+
+            function lrFormatIDR(n) {
+                return 'IDR\u00a0' + n.toLocaleString('id-ID');
+            }
+
+            function lrFormatDate(d) {
+                var dd   = String(d.getDate()).padStart(2,'0');
+                var mm   = String(d.getMonth()+1).padStart(2,'0');
+                var yyyy = d.getFullYear();
+                return dd + '/' + mm + '/' + yyyy;
+            }
+
+            // While typing: only allow digits, store value, do NOT reformat yet
+            function lrPaymentInput(el, field) {
+                var digits = el.value.replace(/\D/g,'');
+                el.value   = digits; // keep only digits while typing
+                var num    = parseInt(digits, 10) || 0;
+                var val    = num * 1000;
+                if (field === 'total') _lrRawTotal = val;
+                else                  _lrRawPaid  = val;
+                lrUpdateBalance();
+            }
+
+            // On focus: show raw digits so user can edit easily
+            function lrPaymentFocus(el, field) {
+                var raw = (field === 'total') ? _lrRawTotal : _lrRawPaid;
+                el.value = raw > 0 ? String(raw / 1000) : '';
+                el.select();
+            }
+
+            // On blur: format to IDR display
+            function lrPaymentBlur(el, field) {
+                var raw = (field === 'total') ? _lrRawTotal : _lrRawPaid;
+                el.value = raw > 0 ? lrFormatIDR(raw) : '';
+                lrUpdateBalance();
+            }
+
+            function lrUpdateBalance() {
+                var balance = _lrRawTotal - _lrRawPaid;
+                var balEl   = document.getElementById('lr-balance-display');
+                if (balEl) {
+                    balEl.textContent = lrFormatIDR(balance);
+                    balEl.style.color = balance <= 0 ? '#00ff88' : '#ffaa00';
+                }
+            }
+
+            function lrUpdateDueDate(source) {
+                var box = document.getElementById('lr-due-date-box');
+                if (!box || !window._lrOrderDate) return;
+                if (!source) { box.textContent = '— select a lens'; box.style.color = '#ccc'; return; }
+                var days = (source === 'stock') ? 2 : 10;
+                var due  = new Date(window._lrOrderDate.getTime());
+                due.setDate(due.getDate() + days);
+                box.textContent = lrFormatDate(due);
+                box.style.color = (source === 'stock') ? '#00ff88' : '#ff8a4d';
+            }
+
+            // Expose so lrSelectLens can call it
+            window.lrUpdateDueDate  = lrUpdateDueDate;
+            window.lrPaymentFocus   = lrPaymentFocus;
+            window.lrPaymentBlur    = lrPaymentBlur;
+            window.lrPaymentInput   = lrPaymentInput;
 
             // Safe HTML escape (separate from barcode scanner's esc() which lives in its own IIFE)
             function escHtml(str) {
