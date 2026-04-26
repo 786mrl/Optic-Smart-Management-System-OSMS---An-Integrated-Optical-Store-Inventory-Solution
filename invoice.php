@@ -1190,6 +1190,11 @@
                 padding-bottom: 8px;
             }
 
+            /* Hide frame-purchase toggle & its label during fullscreen scan */
+            body.fullscreen-cam-active #frame-purchase-toggle-wrap {
+                display: none !important;
+            }
+
             /* Back button overlay — only visible in fullscreen */
             #mp-back-btn {
                 display: none;
@@ -1568,8 +1573,12 @@
 
                         <div class="full">
                             <div class="prescription-container">
-                                <label>PRESCRIPTION MODIFICATION</label>
+                                <label id="mod-toggle-label" onclick="toggleModSection()" style="cursor:pointer; user-select:none; display:flex; align-items:center; justify-content:space-between;">
+                                    <span>PRESCRIPTION MODIFICATION</span>
+                                    <span id="mod-toggle-chev" style="font-size:11px; color:var(--accent-color); transition:transform 0.25s; display:inline-block;">▼</span>
+                                </label>
 
+                                <div id="mod-collapsible" style="display:none; margin-top:10px;">
                                 <div class="selection-wrapper">
                                     <button type="button" class="neu-btn active" id="mod-no">
                                         <div class="led"></div> NO
@@ -1651,6 +1660,7 @@
                                         </button>
                                     </div>
                                 </form>
+                                </div><!-- /#mod-collapsible -->
                             </div>
                         </div>
 
@@ -1660,7 +1670,12 @@
                             <div class="prescription-container" style="text-align: center;">
 
                                 <!-- PURCHASE FRAME TOGGLE -->
-                                <label>CUSTOMER PURCHASE FRAME?</label>
+                                <div id="frame-purchase-toggle-wrap">
+                                <label id="fp-toggle-label" onclick="toggleFpSection()" style="cursor:pointer; user-select:none; display:flex; align-items:center; justify-content:space-between;">
+                                    <span>CUSTOMER PURCHASE FRAME?</span>
+                                    <span id="fp-toggle-chev" style="font-size:11px; color:var(--accent-color); transition:transform 0.25s; display:inline-block;">▼</span>
+                                </label>
+                                <div id="fp-collapsible" style="display:none; margin-top:10px;">
                                 <div class="selection-wrapper" style="margin-top: 10px;">
                                     <button type="button" class="neu-btn active" id="frame-purchase-no" onclick="setFramePurchase(0)">
                                         <div class="led"></div> NO
@@ -1668,6 +1683,8 @@
                                     <button type="button" class="neu-btn" id="frame-purchase-yes" onclick="setFramePurchase(1)">
                                         <div class="led"></div> YES
                                     </button>
+                                </div>
+                                </div><!-- /#fp-collapsible -->
                                 </div>
 
                                 <!-- Face Shape section, shown only when YES -->
@@ -1808,12 +1825,12 @@
 
                                 <!-- BUTTON ROW -->
                                 <div class="selection-wrapper" style="margin-top: 15px; flex-wrap:wrap; gap:8px;">
-                                    <button type="button" class="neu-btn" id="mp-start-btn">
-                                        <div class="led"></div> START CAMERA
-                                    </button>
                                     <button type="button" class="neu-btn" id="mp-result-toggle-btn" onclick="toggleFaceResult()" style="display:none; border-color:rgba(0,207,255,0.4); color:#00cfff;">
                                         <div class="led" style="background:#00cfff; box-shadow:0 0 6px #00cfff;"></div>
                                         <span id="mp-result-toggle-label">👁 VIEW RESULT</span>
+                                    </button>
+                                    <button type="button" class="neu-btn" id="mp-start-btn">
+                                        <div class="led"></div> START CAMERA
                                     </button>
                                     <button type="button" class="neu-btn" id="mp-switch-btn" style="display:none;">
                                         <div class="led"></div> SWITCH CAM
@@ -2081,7 +2098,7 @@
                                          style="display:<?php echo $isFirstType ? 'block' : 'none'; ?>;">
 
                                         <!-- Price tab bar -->
-                                        <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px;padding:8px;background:rgba(255,255,255,0.02);border-radius:12px;border:1px solid rgba(255,255,255,0.05);">
+                                        <div style="display:flex;gap:4px;flex-wrap:nowrap;margin-bottom:10px;padding:6px;background:rgba(255,255,255,0.02);border-radius:12px;border:1px solid rgba(255,255,255,0.05);overflow:hidden;">
                                         <?php foreach ($priceBuckets as $priceKey => $priceBucket):
                                             $isActivePrice = ($priceKey === $defPriceTab);
                                             $pColor = $priceBucket['color'];
@@ -2094,17 +2111,18 @@
                                         <button type="button"
                                                 id="lr-price-btn-<?php echo $typeKey; ?>-<?php echo $priceKey; ?>"
                                                 onclick="lrPriceSwitch('<?php echo $typeKey; ?>','<?php echo $priceKey; ?>')"
-                                                style="flex:1;min-width:0;padding:6px 4px;border-radius:10px;
+                                                style="flex:1;min-width:0;padding:6px 2px;border-radius:10px;
                                                        border:1px solid <?php echo $isActivePrice ? $pColor : 'rgba(255,255,255,0.07)'; ?>;
                                                        background:<?php echo $isActivePrice ? 'rgba(255,255,255,0.06)' : 'transparent'; ?>;
-                                                       color:<?php echo $pColor; ?>;font-size:8.5px;font-weight:700;
-                                                       letter-spacing:0.4px;cursor:pointer;font-family:inherit;
-                                                       transition:all 0.2s;line-height:1.3;text-align:center;position:relative;">
+                                                       color:<?php echo $pColor; ?>;font-size:7.5px;font-weight:700;
+                                                       letter-spacing:0;cursor:pointer;font-family:inherit;
+                                                       transition:all 0.2s;line-height:1.3;text-align:center;position:relative;
+                                                       overflow:hidden;word-break:break-word;white-space:normal;">
                                             <?php if ($priceDot): ?>
                                             <span style="position:absolute;top:3px;right:4px;width:6px;height:6px;border-radius:50%;background:#00ff88;box-shadow:0 0 4px #00ff88;display:inline-block;" title="Has lens matching vision need"></span>
                                             <?php endif; ?>
                                             <?php echo $priceBucket['label']; ?><br>
-                                            <span style="font-size:7.5px;opacity:0.65;"><?php echo $pCount; ?> lens<?php echo $pHint ? ' · '.$pHint : ''; ?></span>
+                                            <span style="font-size:7px;opacity:0.65;"><?php echo $pCount; ?> lens<?php echo $pHint ? ' · '.$pHint : ''; ?></span>
                                         </button>
                                         <?php endforeach; ?>
                                         </div>
@@ -2186,8 +2204,10 @@
                                                             <span style="font-size:8px;color:#555;">⏱ <?php echo htmlspecialchars($cand['readiness']); ?></span>
                                                         </div>
                                                     </div>
-                                                    <div style="font-size:11px;font-weight:700;color:<?php echo $rankColor; ?>;font-family:monospace;text-align:right;flex-shrink:0;">
+                                                    <div style="font-size:11px;font-weight:700;color:<?php echo $rankColor; ?>;font-family:monospace;text-align:right;flex-shrink:0;"
+                                                         data-lens-price="<?php echo (int)$cand['selling']; ?>">
                                                         <?php echo lr_fmt_price($cand['selling']); ?>
+                                                        <span class="lr-frame-total" style="display:none;font-size:8.5px;font-weight:600;color:#ffaa00;font-family:monospace;white-space:nowrap;"></span>
                                                     </div>
                                                     <span id="lr-chev-<?php echo $uid; ?>" style="color:#555;font-size:11px;flex-shrink:0;transition:transform 0.25s;display:inline-block;">▼</span>
                                                 </div>
@@ -2413,10 +2433,56 @@
             }
             window.setFramePurchase = setFramePurchase;
 
+            // ============================================================
+            // PRESCRIPTION MODIFICATION — collapsible toggle
+            // ============================================================
+            function toggleModSection() {
+                const panel = document.getElementById('mod-collapsible');
+                const chev  = document.getElementById('mod-toggle-chev');
+                if (!panel) return;
+                const open = panel.style.display === 'none' || panel.style.display === '';
+                panel.style.display = open ? 'block' : 'none';
+                if (chev) chev.style.transform = open ? 'rotate(180deg)' : 'rotate(0deg)';
+            }
+            window.toggleModSection = toggleModSection;
+
+            // ============================================================
+            // CUSTOMER PURCHASE FRAME — collapsible toggle
+            // ============================================================
+            function toggleFpSection() {
+                const panel       = document.getElementById('fp-collapsible');
+                const chev        = document.getElementById('fp-toggle-chev');
+                const faceSection = document.getElementById('mp-face-section');
+                const fbsCard     = document.getElementById('fbs-card');
+                if (!panel) return;
+                const open = panel.style.display === 'none' || panel.style.display === '';
+                panel.style.display = open ? 'block' : 'none';
+                if (chev) chev.style.transform = open ? 'rotate(180deg)' : 'rotate(0deg)';
+                // When collapsing, also hide face section and barcode card (but preserve YES/NO state)
+                if (!open) {
+                    if (faceSection) faceSection.style.display = 'none';
+                    if (fbsCard)     fbsCard.style.display     = 'none';
+                    if (typeof fbsStopCamera === 'function') fbsStopCamera();
+                } else {
+                    // Re-opening: restore face section & fbs-card visibility based on current YES/NO state
+                    const btnYes = document.getElementById('frame-purchase-yes');
+                    const isYes  = btnYes && btnYes.classList.contains('active');
+                    if (faceSection) faceSection.style.display = isYes ? 'block' : 'none';
+                    if (fbsCard)     fbsCard.style.display     = isYes ? 'block' : 'none';
+                }
+            }
+            window.toggleFpSection = toggleFpSection;
+
 
             window.onload = () => {
                 const isModified = <?php echo $data['lens_modification'] == 1 ? 'true' : 'false'; ?>;
                 if (isModified) {
+                    // Auto-open the collapsible panel
+                    const modPanel = document.getElementById('mod-collapsible');
+                    const modChev  = document.getElementById('mod-toggle-chev');
+                    if (modPanel) modPanel.style.display = 'block';
+                    if (modChev)  modChev.style.transform = 'rotate(180deg)';
+
                     // Trigger UI as if 'Yes' was clicked
                     modYes.classList.add('active');
                     modNo.classList.remove('active');
@@ -2805,6 +2871,7 @@
                             startBtn.disabled        = false;
                             switchBtn.style.display  = 'inline-block';
                             captureBtn.style.display = 'inline-block';
+                            resetBtn.style.display   = 'none'; // always hide RESTART SCAN during live view
                             // Reveal the scan UI elements that were hidden on initial load
                             const stepsEl = document.getElementById('mp-steps');
                             if (stepsEl) stepsEl.style.display = 'flex';
@@ -3700,6 +3767,7 @@
                     }
                 }
                 window.toggleFaceResult = toggleFaceResult;
+                window.resetScan = resetScan;
 
                 // ============================================================
                 // RESET
@@ -3707,7 +3775,9 @@
                 function resetScan() {
                     isCaptured = false; capturedLM = null; pdBuffer = []; shapeBuffer = []; lastPD = null;
                     guide.classList.remove('locked');
-                    // Hide the toggle button when rescan
+                    // Hide result UI
+                    resultBox.style.display   = 'none';
+                    frameRecBox.style.display = 'none';
                     const toggleBtn2 = document.getElementById('mp-result-toggle-btn');
                     if (toggleBtn2) toggleBtn2.style.display = 'none';
                     liveView.style.display      = 'block';
@@ -3717,7 +3787,6 @@
                     switchBtn.style.display     = 'inline-block';
                     qualityWrap.style.display   = 'block';
                     poseIndicator.style.display = 'block';
-                    frameRecBox.style.display   = 'none';
                     const calEl = document.getElementById('cal-box');
                     if (calEl) calEl.style.display = 'none';
                     // Reset calibration to default
@@ -3762,6 +3831,58 @@
 
             })(); // end IIFE
 
+        </script>
+
+        <!-- ============================================================
+             LENS TOTAL WITH FRAME — Global helper
+             When a frame is scanned via the barcode scanner, lrSetFramePrice()
+             is called with the frame's sell price. All lens recommendation cards
+             then show a "(+ frame = total)" line below the lens price.
+             Call lrSetFramePrice(0) to clear / hide the totals.
+             ============================================================ -->
+        <script>
+        (function () {
+            'use strict';
+
+            // Currently scanned frame price (0 = none scanned)
+            window._lrScannedFramePrice = 0;
+
+            /**
+             * Set the active frame price and refresh all lens total labels.
+             * @param {number} framePrice  Sell price in IDR (0 = no frame scanned)
+             */
+            window.lrSetFramePrice = function (framePrice) {
+                window._lrScannedFramePrice = framePrice || 0;
+                lrRefreshTotals();
+            };
+
+            function fmtRp(v) {
+                return 'Rp\u00a0' + parseInt(v).toLocaleString('id-ID');
+            }
+
+            function lrRefreshTotals() {
+                var fp = window._lrScannedFramePrice;
+                var divs = document.querySelectorAll('[data-lens-price]');
+                divs.forEach(function (div) {
+                    var lp  = parseInt(div.getAttribute('data-lens-price')) || 0;
+                    var span = div.querySelector('.lr-frame-total');
+                    if (!span) return;
+                    if (fp > 0 && lp > 0) {
+                        var total = lp + fp;
+                        span.textContent = '(' + fmtRp(total) + ')';
+                        span.style.display = 'block';
+                    } else if (fp > 0 && lp === 0) {
+                        // lens price is "contact staff" — can't compute total
+                        span.style.display = 'none';
+                    } else {
+                        span.style.display = 'none';
+                    }
+                });
+            }
+
+            // Expose refresh for external callers
+            window.lrRefreshTotals = lrRefreshTotals;
+        }());
         </script>
 
         <!-- ============================================================
@@ -3965,9 +4086,15 @@
                 var stock      = parseInt(d.stock) || 0;
                 var stockColor = stock > 5 ? '#00ff88' : (stock > 0 ? '#ffaa00' : '#ff4d4d');
                 var stockLabel = stock > 0 ? stock + ' pcs' : 'OUT OF STOCK';
-                var priceStr   = (parseFloat(d.sell_price) > 0)
-                    ? 'Rp\u00a0' + parseInt(d.sell_price).toLocaleString('id-ID')
+                var frameSellPrice = parseFloat(d.sell_price) > 0 ? parseInt(d.sell_price) : 0;
+                var priceStr   = frameSellPrice > 0
+                    ? 'Rp\u00a0' + frameSellPrice.toLocaleString('id-ID')
                     : '<span style="color:#555;font-style:italic;">Contact Staff</span>';
+
+                // Update lens recommendation totals
+                if (typeof window.lrSetFramePrice === 'function') {
+                    window.lrSetFramePrice(frameSellPrice);
+                }
 
                 fbsResult.innerHTML =
                     '<div style="width:100%;text-align:left;">' +
@@ -4019,6 +4146,10 @@
                     '<span style="font-size:10px;color:#444;letter-spacing:0.5px;">Press START SCANNER or type a UFC to begin</span>';
                 fbsClearBtn.style.display = 'none';
                 fbsManual.value = '';
+                // Remove frame price from lens totals
+                if (typeof window.lrSetFramePrice === 'function') {
+                    window.lrSetFramePrice(0);
+                }
                 fbsLocked  = false;
                 fbsLastScan = 0;
                 if (fbsStream) {
