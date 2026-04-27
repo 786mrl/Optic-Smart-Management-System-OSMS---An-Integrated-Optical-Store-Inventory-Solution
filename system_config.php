@@ -17,6 +17,18 @@
     $message = '';
     $settings = [];
 
+    // --- Fetch Current Settings FIRST (needed to get old file paths before update) ---
+    $sql_fetch = "SELECT setting_key, setting_value, description FROM settings";
+    $result_pre = $conn->query($sql_fetch);
+    if ($result_pre && $result_pre->num_rows > 0) {
+        while ($row = $result_pre->fetch_assoc()) {
+            $settings[$row['setting_key']] = [
+                'value' => $row['setting_value'],
+                'description' => $row['description']
+            ];
+        }
+    }
+
     // --- Logic to Handle Configuration Update ---
     if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['update_settings'])) {
         $success = true;
@@ -27,7 +39,7 @@
             'copyright_footer', 'currency_code', 'timezone', 'tax_rate_percent', 
             'uom_frame_default', 'uom_lens_default', 'uom_other_default', 
             'low_stock_threshold', 'starting_invoice_number', 'receipt_footer_msg', 
-            'invoice_format_prefix'
+            'invoice_format_prefix', 'barcode_guide_image_location'
         ];
 
         $conn->begin_transaction(); // Use transaction for data consistency
@@ -60,6 +72,31 @@
             }
         }
 
+        // --- Barcode Guide Image Upload Handling Logic ---
+        if (isset($_FILES['barcode_guide_upload']) && $_FILES['barcode_guide_upload']['error'] === 0) {
+            $target_dir = "image/"; 
+            
+            if (!is_dir($target_dir)) mkdir($target_dir, 0777, true);
+
+            $file_extension = pathinfo($_FILES["barcode_guide_upload"]["name"], PATHINFO_EXTENSION);
+            
+            // Generate a unique filename to prevent overwriting existing barcode guide files
+            $new_filename = "barcode_guide_" . time() . "." . $file_extension;
+            $target_file = $target_dir . $new_filename;
+
+            $allowed_types = ['jpg', 'jpeg', 'png', 'webp'];
+            if (in_array(strtolower($file_extension), $allowed_types)) {
+                // Delete the old file if it exists (before uploading the new one)
+                $old_barcode = $settings['barcode_guide_image_location']['value'] ?? '';
+                if (!empty($old_barcode) && file_exists($old_barcode)) {
+                    unlink($old_barcode);
+                }
+                if (move_uploaded_file($_FILES["barcode_guide_upload"]["tmp_name"], $target_file)) {
+                    // Normalize path separators for Windows (XAMPP) compatibility
+                    $_POST['barcode_guide_image_location'] = str_replace('\\', '/', $target_file);
+                }            }
+        }
+
         try {
             foreach ($_POST as $key => $value) {
                 if (in_array($key, $allowed_keys)) {
@@ -81,16 +118,18 @@
         // (Optional: perform a redirect to prevent form resubmission on page refresh)
     }
 
-    // --- Logic to Fetch Current Settings ---
-    $sql_fetch = "SELECT setting_key, setting_value, description FROM settings";
-    $result = $conn->query($sql_fetch);
-
-    if ($result && $result->num_rows > 0) {
-        while ($row = $result->fetch_assoc()) {
-            $settings[$row['setting_key']] = [
-                'value' => $row['setting_value'],
-                'description' => $row['description']
-            ];
+    // --- Re-fetch Settings after update so form shows latest values ---
+    if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['update_settings'])) {
+        $settings = []; // reset
+        $sql_fetch2 = "SELECT setting_key, setting_value, description FROM settings";
+        $result2 = $conn->query($sql_fetch2);
+        if ($result2 && $result2->num_rows > 0) {
+            while ($row = $result2->fetch_assoc()) {
+                $settings[$row['setting_key']] = [
+                    'value' => $row['setting_value'],
+                    'description' => $row['description']
+                ];
+            }
         }
     }
 
@@ -205,7 +244,19 @@
                                     
                                     <input type="hidden" name="brand_image_location" value="<?php echo htmlspecialchars($settings['brand_image_location']['value'] ?? ''); ?>">
                                 </div>
-                
+
+                                <div class="input-group full-width">
+                                    <label>Barcode (Comprehensive Guide Image)</label>
+                                    <div class="upload-wrapper" style="display: flex; gap: 10px; align-items: center;">
+                                        <img src="<?php echo htmlspecialchars(str_replace('\\', '/', $settings['barcode_guide_image_location']['value'] ?? '')); ?>?t=<?php echo time(); ?>" id="previewBarcode" style="height: 40px; border-radius: 5px; box-shadow: 2px 2px 5px var(--shadow-dark);">
+                                        
+                                        <input type="file" name="barcode_guide_upload" id="barcodeInput" class="input-field" accept="image/*" style="padding: 5px;">
+                                    </div>
+                                    <p class="description">Upload the barcode image containing the comprehensive guide (Formats: JPG, PNG, WEBP).</p>
+                                    
+                                    <input type="hidden" name="barcode_guide_image_location" value="<?php echo htmlspecialchars(str_replace('\\', '/', $settings['barcode_guide_image_location']['value'] ?? '')); ?>">
+                                </div>
+
                                 <div class="input-group full-width">
                                     <label>Copyright Footer Message</label>
                                     <input type="text" class="input-field" name="copyright_footer" value="<?php echo htmlspecialchars($settings['copyright_footer']['value'] ?? ''); ?>">
@@ -339,6 +390,15 @@
             if (file) {
                 // Creates a temporary URL to display the image preview before it is uploaded to the server
                 document.getElementById('previewLogo').src = URL.createObjectURL(file);
+            }
+        };
+
+        document.getElementById('barcodeInput').onchange = function (evt) {
+            const [file] = this.files;
+            if (file) {
+                const preview = document.getElementById('previewBarcode');
+                preview.src = URL.createObjectURL(file);
+                preview.style.display = 'inline-block';
             }
         };
     </script>
