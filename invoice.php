@@ -139,7 +139,8 @@
     $lr_isPresbyopia = ($lr_maxAdd >= 0.75 && $lr_age >= 39);
 
     // ── Symptom flags ─────────────────────────────────────────
-    $lr_hasGlare     = (bool)preg_match('/glare|silau/', $lr_txt);
+    $lr_hasGlare        = (bool)preg_match('/glare|silau/', $lr_txt);
+    $lr_hasHeadlightGlare = (bool)preg_match('/headlight.?glare|silau.?lampu/', $lr_txt);
     $lr_hasEyeStrain = (bool)preg_match('/eye.?strain|mata.?lelah|\blelah\b/', $lr_txt);
     $lr_hasHeadache  = (bool)preg_match('/headache|sakit.?kepala/', $lr_txt);
     $lr_hasDM        = (strpos($lr_txt, 'diabetes')     !== false);
@@ -186,19 +187,33 @@
     // JSON limits are in 1/100 D integers (e.g. -800 = -8.00 D).
     // Prescription values are floats in diopters (e.g. -9.00 D).
     //
+    // Special cases for SPH:
+    //   sph_from and sph_to define the accepted sphere range (inclusive).
+    //   The order may be reversed in the JSON (e.g. sph_from=+600, sph_to=-200);
+    //   min/max are derived automatically. Both eyes must fall within the range.
+    //   sph_from=0 AND sph_to=0 → no sphere restriction.
+    //
     // Special cases for CYL:
     //   cyl_from=0, cyl_to=0  → lens accepts NO cylinder (plano-only)
     //   cyl_from=-25, cyl_to=-200 → lens accepts CYL -0.25 to -2.00
+    //
+    // ADD range check applies to PROGRESSIVE, KRYPTOK, and FLATTOP lenses.
     // ============================================================
     function lr_rxFits($r_sph, $r_cyl, $l_sph, $l_cyl, $r_add, $l_add, $lim) {
-        $maxS   = max(abs($r_sph), abs($l_sph));
         $maxC   = max(abs($r_cyl), abs($l_cyl));
         $maxAdd = max(abs($r_add), abs($l_add));
 
-        // ── Sphere check ─────────────────────────────────────
-        // sph_to=0 means no restriction
-        $limSph = ($lim['sph_to'] != 0) ? abs($lim['sph_to']) / 100.0 : 0.0;
-        if ($limSph > 0.0 && $maxS > $limSph) return false;
+        // ── Sphere range check ────────────────────────────────
+        // Both eyes must fall within [sph_from, sph_to] (order may be reversed in JSON).
+        // sph_from=0 AND sph_to=0 → no restriction.
+        $rawFrom = isset($lim['sph_from']) ? (int)$lim['sph_from'] : 0;
+        $rawTo   = isset($lim['sph_to'])   ? (int)$lim['sph_to']   : 0;
+        if ($rawFrom != 0 || $rawTo != 0) {
+            $limSphMin = min($rawFrom, $rawTo) / 100.0;
+            $limSphMax = max($rawFrom, $rawTo) / 100.0;
+            if ($r_sph < $limSphMin || $r_sph > $limSphMax) return false;
+            if ($l_sph < $limSphMin || $l_sph > $limSphMax) return false;
+        }
 
         // ── Cylinder check ────────────────────────────────────
         // cyl_from=0 AND cyl_to=0 → lens only accepts plano (no CYL at all)
@@ -214,10 +229,12 @@
         // ── Combined SPH+CYL check ────────────────────────────
         // comb_max=0 means no restriction
         $limComb = ($lim['comb_max'] != 0) ? abs($lim['comb_max']) / 100.0 : 0.0;
+        $maxS    = max(abs($r_sph), abs($l_sph));
         if ($limComb > 0.0 && ($maxS + $maxC) > $limComb) return false;
 
         // ── ADD range check ───────────────────────────────────
-        // add_to=0 means this lens has no ADD requirement
+        // Applies to PROGRESSIVE, KRYPTOK, and FLATTOP lenses.
+        // add_to=0 means this lens has no ADD requirement.
         if ($lim['add_to'] != 0) {
             $limAddMin = abs($lim['add_from']) / 100.0;
             $limAddMax = abs($lim['add_to'])   / 100.0;
@@ -244,7 +261,7 @@
     function lr_score($features, $category, $isPresby, $presbyType, $farOnlySV,
                       $habit, $digital, $maxSE, $maxCyl, $age,
                       $hasGlare, $hasEyeStrain, $hasHeadache, $hasDryEye,
-                      $hasDriving, $hasImpact) {
+                      $hasDriving, $hasImpact, $hasHeadlightGlare) {
         $s   = 0;
         $cat = strtoupper(trim($category));
 
@@ -263,7 +280,7 @@
                                    ($hasNearOpt||$hasEnhNear)=>5],
                 'far_near'     => [$hasFarNear=>40, $hasAllDist=>28, $hasDynamic=>15,
                                    ($hasNearOpt||$hasEnhNear)=>5],
-                'near'         => [$hasEnhNear=>40, $hasNearOpt=>35, $hasFarNear=>15,
+                'near'         => [$hasNearOpt=>40, $hasEnhNear=>35, $hasFarNear=>15,
                                    $hasAllDist=>10],
             ];
             if (isset($designScores[$presbyType])) {
@@ -293,9 +310,9 @@
                     if ($hasGlare && $habit >= 2) $s += 10;
                     break;
                 case 'NIGHT DRIVE COATING':
-                    if ($hasDriving)     $s += 20;
-                    elseif ($habit >= 2) $s += 8;
-                    else                 $s -= 10;
+                    if ($hasDriving || $hasHeadlightGlare) $s += 20;
+                    elseif ($habit >= 2)                   $s += 8;
+                    else                                   $s -= 10;
                     break;
                 case 'HIGH INDEX 1.67':
                 case 'HIGHT INDEX 1.67':
@@ -376,7 +393,7 @@
                     $lr_habit, $lr_digital,
                     $lr_maxSE, $lr_maxCyl, $lr_age,
                     $lr_hasGlare, $lr_hasEyeStrain, $lr_hasHeadache,
-                    $lr_hasDryEye, $lr_hasDriving, $lr_hasImpact
+                    $lr_hasDryEye, $lr_hasDriving, $lr_hasImpact, $lr_hasHeadlightGlare
                 );
 
                 $lr_candidates[] = [
@@ -611,8 +628,9 @@
         $hasDM        = (strpos($txt, 'diabetes')     !== false);
         $hasHT        = (strpos($txt, 'hypertension') !== false);
         $hasDryEye    = (bool)preg_match('/dry.?eye|mata.?kering/', $txt);
-        $hasDriving   = (bool)preg_match('/bawa.?mobil|mengemudi|driving|berkendara/', $txt);
-        $hasImpact    = (bool)preg_match('/olahraga|sport|bentur|impact/', $txt);
+        $hasDriving        = (bool)preg_match('/bawa.?mobil|mengemudi|driving|berkendara/', $txt);
+        $hasImpact         = (bool)preg_match('/olahraga|sport|bentur|impact/', $txt);
+        $hasHeadlightGlare = (bool)preg_match('/headlight.?glare|silau.?lampu/', $txt);
 
         $presbyType = $isPresbyopia
             ? lr_presbyDesign($needDist, $needInter, $needNear, $habit, $digital, $txt)
@@ -638,7 +656,7 @@
                         $isPresbyopia, $presbyType, $farOnlySV,
                         $habit, $digital, $maxSE, $maxCyl, $age,
                         $hasGlare, $hasEyeStrain, $hasHeadache,
-                        $hasDryEye, $hasDriving, $hasImpact);
+                        $hasDryEye, $hasDriving, $hasImpact, $hasHeadlightGlare);
                     $candidates[] = [
                         'source'=>$source,'category'=>$category,'type'=>$type,
                         'selling'=>$selling,'features'=>$features,'note'=>$lensNote,

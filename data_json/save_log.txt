@@ -230,3 +230,4 @@
 [2026-04-21 11:30:42] save_single_lens by user=LenZa786 — stock / PROGRESSIVE / ANTI-BLUE RAY  [sph -200..200  cyl 0..0  add 100..300  comb 0]
 [2026-04-21 11:31:02] save_single_lens by user=LenZa786 — stock / PROGRESSIVE / BLUECHROMIC  [sph -200..200  cyl 0..0  add 100..200  comb 0]
 [2026-04-21 11:32:36] save_single_lens by user=LenZa786 — stock / PROGRESSIVE / BLUECHROMIC ONE-DRIVE → PROGRESSIVE / FLEXI BLUCHROMIC ONE-DRIVE  [sph -200..200  cyl 0..0  add 100..300  comb 0]
+[2026-04-28 01:54:23] save_single_lens by user=LenZa786 — lab / PROGRESSIVE / MINI CORD PREMIUM (STOCK)  [sph -200..200  cyl 0..0  add 100..300  comb 0]

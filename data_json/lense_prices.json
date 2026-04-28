@@ -1626,8 +1626,8 @@
                     "BLUE LIGHT BLOCKING"
                 ],
                 "limits": {
-                    "sph_from": 850,
-                    "sph_to": -1100,
+                    "sph_from": -200,
+                    "sph_to": 200,
                     "cyl_from": 0,
                     "cyl_to": 0,
                     "add_from": 100,
