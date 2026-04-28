@@ -141,8 +141,13 @@
         $new_l_add = cleanPres($conn, $_POST['new_l_add'], "0.00", true);
         $new_l_va  = cleanPres($conn, $_POST['new_l_va'], "20/20");
 
-        // PD defaults to 62/60 if empty
-        $pd_dist_val = cleanPres($conn, $_POST['pd_dist'], "62/60");
+        // PD: auto-detect default — 62/60 jika ADD bukan 0.00, 62 jika ADD kosong/0.00
+        $r_add_raw = trim($_POST['new_r_add'] ?? '');
+        $l_add_raw = trim($_POST['new_l_add'] ?? '');
+        $has_add = ($r_add_raw !== '' && $r_add_raw !== '0.00')
+                || ($l_add_raw !== '' && $l_add_raw !== '0.00');
+        $pd_default = $has_add ? "62/60" : "62";
+        $pd_dist_val = cleanPres($conn, $_POST['pd_dist'], $pd_default);
 
         // Get Visual Habits & Digital Usage
         $visual_habit = (int)($_POST['visual_habit'] ?? 1);
@@ -258,7 +263,7 @@
             .symptom-btn.active .led { background: #00ff88; box-shadow: 0 0 10px #00ff88; }
             .symptoms-grid {
                 display: grid;
-                grid-template-columns: repeat(3, 1fr);
+                grid-template-columns: repeat(2, 1fr);
                 gap: 15px;
                 justify-items: center; 
                 align-items: center;
@@ -546,6 +551,55 @@
                 box-shadow: 0 0 20px rgba(0, 255, 136, 0.2) !important;
             }
 
+            /* --- TOGGLE PANEL (Gender, Visual Habits, Digital Usage) --- */
+            .toggle-panel-header {
+                background: #25282a;
+                width: 100%;
+                padding: 13px 18px;
+                border-radius: 12px;
+                border: 1px solid #444;
+                cursor: pointer;
+                display: flex;
+                justify-content: flex-start;
+                align-items: center;
+                gap: 10px;
+                box-shadow: inset 2px 2px 5px #1a1c1d;
+                user-select: none;
+                transition: opacity 0.2s ease;
+                box-sizing: border-box;
+            }
+            .toggle-panel-header:hover { opacity: 0.8; }
+            .toggle-panel-header .tph-label {
+                font-size: 0.82em;
+                color: #888;
+                letter-spacing: 1px;
+                text-transform: uppercase;
+            }
+            .toggle-panel-header .tph-value {
+                font-size: 0.85em;
+                color: #00ff88;
+                font-weight: bold;
+                letter-spacing: 0.5px;
+                margin-left: auto;
+            }
+            .toggle-panel-header .tph-arrow {
+                color: #00ff88;
+                font-size: 0.75em;
+                transition: transform 0.25s ease;
+                flex-shrink: 0;
+                margin-left: 8px;
+            }
+            .toggle-panel-header.open .tph-arrow {
+                transform: rotate(180deg);
+            }
+            .toggle-panel-body {
+                display: none;
+                margin-top: 8px;
+            }
+            .toggle-panel-body.open {
+                display: block;
+            }
+
             /* --- VISION NEED SECTION --- */
             #vision_need_section {
                 display: none;
@@ -645,24 +699,20 @@
             }
             /* --- RESPONSIVE FIX --- */
             @media (max-width: 600px) {
-                /* Change grid from 3 columns to 2 columns to prevent buttons from being squashed */
+                /* Grid tetap 2 kolom di mobile */
                 .symptoms-grid {
-                    grid-template-columns: repeat(2, 1fr); 
+                    grid-template-columns: repeat(2, 1fr) !important; 
                     gap: 10px;
                 }
 
-                /* Buttons that were originally full-width remain full-width */
-                .symptoms-grid > div[style*="grid-column: 1 / -1"] {
-                    display: grid !important; /* Change flex to grid for mobile */
-                    grid-template-columns: repeat(1, 1fr);
-                    width: 100%;
+                /* GLAUCOMA full satu baris */
+                .symptoms-grid > button.symptom-btn[style*="grid-column"] {
+                    grid-column: 1 / -1 !important;
                 }
-                
-                /* Specifically for Diabetes & Hypertension rows, set to 1 column on mobile */
-                .symptoms-grid > div[style*="gap: 15px"] {
-                    display: grid !important;
-                    grid-template-columns: 1fr !important;
-                    gap: 10px !important;
+
+                /* DIABETES & HYPERTENSION tetap setengah-setengah */
+                .symptoms-grid > button.symptom-btn:not([style*="grid-column"]) {
+                    grid-column: auto !important;
                 }
 
                 .symptom-btn {
@@ -801,17 +851,23 @@
 
                             <!-- GENDER -->
                             <div class="input-group" style="flex: 0 0 100%; max-width: 100%; grid-column: 1 / -1; width: 100% !important;">
-                                <label style="width: 100%; text-align: center; margin-bottom: 0;">GENDER</label>
                                 <input type="hidden" name="gender" id="gender" value="FEMALE">
-                                <div class="selection-wrapper">
-                                    <button style="min-width: 100px;" value="FEMALE" type="button" class="neu-btn active"onclick="toggleNeu(this, 'gender')">
-                                        <span>FEMALE</span>
-                                        <div class="led"></div>
-                                    </button>
-                                    <button style="min-width: 100px;" value="MALE" type="button" class="neu-btn"onclick="toggleNeu(this, 'gender')">
-                                        <span>MALE</span>
-                                        <div class="led"></div>
-                                    </button>
+                                <div class="toggle-panel-header" id="gender_header" onclick="togglePanel('gender_panel', this, 'gender_display')">
+                                    <span class="tph-label">GENDER</span>
+                                    <span class="tph-value" id="gender_display">FEMALE</span>
+                                    <span class="tph-arrow">▼</span>
+                                </div>
+                                <div class="toggle-panel-body" id="gender_panel">
+                                    <div class="selection-wrapper">
+                                        <button style="min-width: 100px;" value="FEMALE" type="button" class="neu-btn active" onclick="toggleNeuPanel(this, 'gender', 'gender_display', 'gender_panel', 'gender_header')">
+                                            <span>FEMALE</span>
+                                            <div class="led"></div>
+                                        </button>
+                                        <button style="min-width: 100px;" value="MALE" type="button" class="neu-btn" onclick="toggleNeuPanel(this, 'gender', 'gender_display', 'gender_panel', 'gender_header')">
+                                            <span>MALE</span>
+                                            <div class="led"></div>
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
             
@@ -826,41 +882,53 @@
 
                             <!-- VISUAL HABITS -->
                             <div class="input-group" style="flex: 0 0 100%; max-width: 100%; grid-column: 1 / -1; width: 100% !important;">
-                                <label style="width: 100%; text-align: center; margin-bottom: 0;">VISUAL HABITS</label>
                                 <input type="hidden" name="visual_habit" id="visual_habit" value="1">
-                                <div class="selection-wrapper">
-                                    <button style="min-width: 100px;" value="1" type="button" class="neu-btn active"onclick="toggleNeu(this, 'visual_habit')">
-                                        <span>INDOOR</span>
-                                        <div class="led"></div>
-                                    </button>
-                                    <button style="min-width: 100px;" value="2" type="button" class="neu-btn"onclick="toggleNeu(this, 'visual_habit')">
-                                        <span>OUTDOOR</span>
-                                        <div class="led"></div>
-                                    </button>
-                                    <button style="min-width: 100px;" value="3" type="button" class="neu-btn"onclick="toggleNeu(this, 'visual_habit')">
-                                        <span>BOTH</span>
-                                        <div class="led"></div>
-                                    </button>
+                                <div class="toggle-panel-header" id="visual_habit_header" onclick="togglePanel('visual_habit_panel', this, 'visual_habit_display')">
+                                    <span class="tph-label">VISUAL HABITS</span>
+                                    <span class="tph-value" id="visual_habit_display">INDOOR</span>
+                                    <span class="tph-arrow">▼</span>
+                                </div>
+                                <div class="toggle-panel-body" id="visual_habit_panel">
+                                    <div class="selection-wrapper">
+                                        <button style="min-width: 100px;" value="1" type="button" class="neu-btn active" onclick="toggleNeuPanel(this, 'visual_habit', 'visual_habit_display', 'visual_habit_panel', 'visual_habit_header')">
+                                            <span>INDOOR</span>
+                                            <div class="led"></div>
+                                        </button>
+                                        <button style="min-width: 100px;" value="2" type="button" class="neu-btn" onclick="toggleNeuPanel(this, 'visual_habit', 'visual_habit_display', 'visual_habit_panel', 'visual_habit_header')">
+                                            <span>OUTDOOR</span>
+                                            <div class="led"></div>
+                                        </button>
+                                        <button style="min-width: 100px;" value="3" type="button" class="neu-btn" onclick="toggleNeuPanel(this, 'visual_habit', 'visual_habit_display', 'visual_habit_panel', 'visual_habit_header')">
+                                            <span>BOTH</span>
+                                            <div class="led"></div>
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                             
                             <!-- DIGITAL DEVICE USAGE -->
                             <div class="input-group" style="flex: 0 0 100%; max-width: 100%; grid-column: 1 / -1; width: 100% !important;">
-                                <label style="width: 100%; text-align: center; margin-bottom: 0;">DIGITAL DEVICE USAGE</label>
                                 <input type="hidden" name="digital_usage" id="digital_usage" value="1">
-                                <div class="selection-wrapper">
-                                    <button style="min-width: 100px;" value="1" type="button" class="neu-btn active"onclick="toggleNeu(this, 'digital_usage')">
-                                        <span>LOW<br>(< 2H)</span>
-                                        <div class="led"></div>
-                                    </button>
-                                    <button style="min-width: 100px;" value="2" type="button" class="neu-btn"onclick="toggleNeu(this, 'digital_usage')">
-                                        <span>MODERATE<br>(2H - 5H)</span>
-                                        <div class="led"></div>
-                                    </button>
-                                    <button style="min-width: 100px;" value="3" type="button" class="neu-btn"onclick="toggleNeu(this, 'digital_usage')">
-                                        <span>HIGH<br>(> 5H)</span>
-                                        <div class="led"></div>
-                                    </button>
+                                <div class="toggle-panel-header" id="digital_usage_header" onclick="togglePanel('digital_usage_panel', this, 'digital_usage_display')">
+                                    <span class="tph-label">DIGITAL DEVICE USAGE</span>
+                                    <span class="tph-value" id="digital_usage_display">LOW (&lt; 2H)</span>
+                                    <span class="tph-arrow">▼</span>
+                                </div>
+                                <div class="toggle-panel-body" id="digital_usage_panel">
+                                    <div class="selection-wrapper">
+                                        <button style="min-width: 100px;" value="1" type="button" class="neu-btn active" onclick="toggleNeuPanel(this, 'digital_usage', 'digital_usage_display', 'digital_usage_panel', 'digital_usage_header')">
+                                            <span>LOW<br>(&lt; 2H)</span>
+                                            <div class="led"></div>
+                                        </button>
+                                        <button style="min-width: 100px;" value="2" type="button" class="neu-btn" onclick="toggleNeuPanel(this, 'digital_usage', 'digital_usage_display', 'digital_usage_panel', 'digital_usage_header')">
+                                            <span>MODERATE<br>(2H - 5H)</span>
+                                            <div class="led"></div>
+                                        </button>
+                                        <button style="min-width: 100px;" value="3" type="button" class="neu-btn" onclick="toggleNeuPanel(this, 'digital_usage', 'digital_usage_display', 'digital_usage_panel', 'digital_usage_header')">
+                                            <span>HIGH<br>(&gt; 5H)</span>
+                                            <div class="led"></div>
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                             
@@ -933,7 +1001,7 @@
                                 <div id="symptoms_panel" style="display: none; background: #2b2e30; padding: 25px; border-radius: 15px; margin-top: 10px; border: 1px solid #00ff8844; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
                                     <!-- AUTO-DETECTED symptoms (MYOPIA, HYPEROPIA, ASTIGMATISM, PRESBYOPIA) are no longer manual buttons -->
                                     <!-- They are automatically detected from the New Prescription values -->
-                                    <div class="symptoms-grid" style="grid-template-columns: repeat(2, 1fr);">
+                                    <div class="symptoms-grid">
                                         <button type="button" class="neu-btn symptom-btn" onclick="toggleSymptom(this, 'CATARACT')"><span>CATARACT</span><div class="led"></div></button>
                                         <button type="button" class="neu-btn symptom-btn" onclick="toggleSymptom(this, 'HEADACHE')"><span>HEADACHE</span><div class="led"></div></button>
 
@@ -948,17 +1016,17 @@
 
                                     <div id="dm_detail" class="hidden-detail">
                                         <label>DIABETES MILITUS DATA</label>
-                                        <div style="display:flex; gap:10px;">
-                                            <input type="text" name="dm_sugar" placeholder="Sugar Level (mg/dL)" style="flex:2">
-                                            <select name="dm_status" style="flex:1"><option>CONTROLLED</option><option>UNCONTROLLED</option></select>
+                                        <div style="display:flex; flex-wrap:wrap; gap:8px;">
+                                            <input type="text" name="dm_sugar" placeholder="Sugar Level (mg/dL)" style="flex:1 1 120px; min-width:0; font-size:0.85em;">
+                                            <select name="dm_status" style="flex:1 1 110px; min-width:0; font-size:0.82em; padding:8px 4px;"><option>CONTROLLED</option><option>UNCONTROLLED</option></select>
                                         </div>
                                     </div>
 
                                     <div id="ht_detail" class="hidden-detail">
                                         <label>HYPERTENSION DATA</label>
-                                        <div style="display:flex; gap:10px;">
-                                            <input type="text" name="ht_pressure" placeholder="Tension (e.g. 140/90)" style="flex:2">
-                                            <select name="ht_status" style="flex:1"><option>CONTROLLED</option><option>UNCONTROLLED</option></select>
+                                        <div style="display:flex; flex-wrap:wrap; gap:8px;">
+                                            <input type="text" name="ht_pressure" placeholder="Tension (e.g. 140/90)" style="flex:1 1 120px; min-width:0; font-size:0.85em;">
+                                            <select name="ht_status" style="flex:1 1 110px; min-width:0; font-size:0.82em; padding:8px 4px;"><option>CONTROLLED</option><option>UNCONTROLLED</option></select>
                                         </div>
                                     </div>
 
@@ -974,52 +1042,65 @@
                             </div>
                             <input type="hidden" name="symptom_list_json" id="symptom_list_json" value="[]">
             
-                            <!-- HAS OLD PRESCRIPTION? -->
-                            <div class="input-group" style="flex: 0 0 100%; max-width: 100%; grid-column: 1 / -1; width: 100% !important;">
-                                <label style="width: 100%; text-align: center; margin-bottom: 0;">HAS OLD PRESCRIPTION?</label>
+                            <!-- HAS OLD PRESCRIPTION? — Collapsible Toggle -->
+                            <div style="flex: 0 0 100%; max-width: 100%; grid-column: 1 / -1; width: 100% !important;">
                                 <input type="hidden" name="has_old_prescription" id="has_old_prescription_input" value="no">
-                                <div id="old_prescription_option" class="selection-wrapper">
-                                    <button value="no" type="button" class="neu-btn active" onclick="toggleNeu(this, 'has_old_prescription_input', true)">
-                                        <span>NO</span>
-                                        <div class="led"></div>
-                                    </button>
-                                    <button value="yes" type="button" class="neu-btn" onclick="toggleNeu(this, 'has_old_prescription_input', true)">
-                                        <span>YES</span>
-                                        <div class="led"></div>
-                                    </button>
+
+                                <!-- Toggle Header -->
+                                <div id="old_pres_header" class="toggle-panel-header" onclick="toggleOldPresSection()">
+                                    <span class="tph-label">HAS OLD PRESCRIPTION?</span>
+                                    <span id="old_pres_status_label" class="tph-value">NO</span>
+                                    <span id="old_pres_arrow" class="tph-arrow">▼</span>
                                 </div>
-                            </div>    
-            
-                            <!-- CUSTOMER OLD PRESCIPTION -->
-                            <div id="old_prescript" style="display: none; grid-column: 1 / -1; width: 100%; margin-top: 20px;">
-                                <div class="prescription-card">
-                                    <h3 style="color: #00ff88; font-size: 0.9em; text-align: center; margin-bottom: 15px; letter-spacing: 1px;">OLD PRESCRIPTION DATA</h3>
-                                    
-                                    <div class="prescription-table">
-                                        <div class="pres-grid header">
-                                            <div>EYE</div>
-                                            <div>SPH</div>
-                                            <div>CYL</div>
-                                            <div>AXIS</div>
-                                            <div>ADD</div>
-                                        </div>
 
-                                        <div class="pres-grid row">
-                                            <div class="eye-label">RIGHT</div>
-                                            <input type="text" inputmode="tel" name="old_prescript_R_sph" placeholder="0.00">
-                                            <input type="text" inputmode="tel" name="old_prescript_R_cyl" placeholder="0.00">
-                                            <input type="text" inputmode="tel" name="old_prescript_R_ax" placeholder="0">
-                                            <input type="text" inputmode="tel" name="old_prescript_R_add" placeholder="0.00">
-                                        </div>
+                                <!-- Collapsible Body: button opsi + tabel -->
+                                <div id="old_pres_body" style="display: none; margin-top: 10px;">
 
-                                        <div class="pres-grid row">
-                                            <div class="eye-label">LEFT</div>
-                                            <input type="text" inputmode="tel" name="old_prescript_L_sph" placeholder="0.00">
-                                            <input type="text" inputmode="tel" name="old_prescript_L_cyl" placeholder="0.00">
-                                            <input type="text" inputmode="tel" name="old_prescript_L_ax" placeholder="0">
-                                            <input type="text" inputmode="tel" name="old_prescript_L_add" placeholder="0.00">
+                                    <!-- YES / NO Button Group -->
+                                    <div id="old_prescription_option" class="selection-wrapper" style="margin-bottom: 14px;">
+                                        <button value="no" type="button" class="neu-btn active" onclick="toggleNeu(this, 'has_old_prescription_input', true)">
+                                            <span>NO</span>
+                                            <div class="led"></div>
+                                        </button>
+                                        <button value="yes" type="button" class="neu-btn" onclick="toggleNeu(this, 'has_old_prescription_input', true)">
+                                            <span>YES</span>
+                                            <div class="led"></div>
+                                        </button>
+                                    </div>
+
+                                    <!-- CUSTOMER OLD PRESCRIPTION TABLE (muncul hanya jika YES) -->
+                                    <div id="old_prescript" style="display: none; width: 100%;">
+                                        <div class="prescription-card">
+                                            <h3 style="color: #00ff88; font-size: 0.9em; text-align: center; margin-bottom: 15px; letter-spacing: 1px;">OLD PRESCRIPTION DATA</h3>
+                                            
+                                            <div class="prescription-table">
+                                                <div class="pres-grid header">
+                                                    <div>EYE</div>
+                                                    <div>SPH</div>
+                                                    <div>CYL</div>
+                                                    <div>AXIS</div>
+                                                    <div>ADD</div>
+                                                </div>
+
+                                                <div class="pres-grid row">
+                                                    <div class="eye-label">RIGHT</div>
+                                                    <input type="text" inputmode="tel" name="old_prescript_R_sph" placeholder="0.00">
+                                                    <input type="text" inputmode="tel" name="old_prescript_R_cyl" placeholder="0.00">
+                                                    <input type="text" inputmode="tel" name="old_prescript_R_ax" placeholder="0">
+                                                    <input type="text" inputmode="tel" name="old_prescript_R_add" placeholder="0.00">
+                                                </div>
+
+                                                <div class="pres-grid row">
+                                                    <div class="eye-label">LEFT</div>
+                                                    <input type="text" inputmode="tel" name="old_prescript_L_sph" placeholder="0.00">
+                                                    <input type="text" inputmode="tel" name="old_prescript_L_cyl" placeholder="0.00">
+                                                    <input type="text" inputmode="tel" name="old_prescript_L_ax" placeholder="0">
+                                                    <input type="text" inputmode="tel" name="old_prescript_L_add" placeholder="0.00">
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
+
                                 </div>
                             </div>
                             
@@ -1169,7 +1250,7 @@
                 const hiddenInput = document.getElementById(hiddenInputId);
                 if (hiddenInput) {
                     hiddenInput.value = val;
-                    console.log("Input " + hiddenInputId + " updated to: " + val); // Cek di console (F12)
+                    console.log("Input " + hiddenInputId + " updated to: " + val);
                 }
 
                 // Specific logic to display the old prescription form
@@ -1177,7 +1258,65 @@
                     const oldBox = document.getElementById('old_prescript');
                     oldBox.style.display = (val === 'yes') ? 'block' : 'none';
                     oldBox.style.flexWrap = 'wrap';
+
+                    // Update status label di header toggle
+                    const statusLabel = document.getElementById('old_pres_status_label');
+                    if (statusLabel) statusLabel.textContent = val.toUpperCase();
                 }
+            }
+
+            // Toggle show/hide the old prescription collapsible section
+            function toggleOldPresSection() {
+                const body   = document.getElementById('old_pres_body');
+                const arrow  = document.getElementById('old_pres_arrow');
+                const header = document.getElementById('old_pres_header');
+                const isOpen = body.style.display === 'block';
+
+                body.style.display  = isOpen ? 'none' : 'block';
+                arrow.textContent   = isOpen ? '\u25bc' : '\u25b2';
+                header.classList.toggle('open', !isOpen);
+            }
+
+            // ================================================================
+            // === TOGGLE PANEL (Gender, Visual Habits, Digital Usage) ========
+            // ================================================================
+            // Map of display labels for each section
+            const _panelLabels = {
+                'visual_habit': { '1': 'INDOOR', '2': 'OUTDOOR', '3': 'BOTH' },
+                'digital_usage': { '1': 'LOW (< 2H)', '2': 'MODERATE (2H - 5H)', '3': 'HIGH (> 5H)' },
+                'gender': { 'FEMALE': 'FEMALE', 'MALE': 'MALE' }
+            };
+
+            function togglePanel(panelId, headerEl, displayId) {
+                const panel  = document.getElementById(panelId);
+                const isOpen = panel.classList.contains('open');
+                panel.classList.toggle('open', !isOpen);
+                headerEl.classList.toggle('open', !isOpen);
+            }
+
+            function toggleNeuPanel(btn, hiddenInputId, displayId, panelId, headerId) {
+                // 1. Toggle active button
+                const wrapper = btn.closest('.selection-wrapper');
+                wrapper.querySelectorAll('.neu-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+
+                // 2. Update hidden input
+                const val = btn.getAttribute('value');
+                const hiddenInput = document.getElementById(hiddenInputId);
+                if (hiddenInput) hiddenInput.value = val;
+
+                // 3. Update display label in header
+                const displayEl = document.getElementById(displayId);
+                if (displayEl) {
+                    const labels = _panelLabels[hiddenInputId] || {};
+                    displayEl.textContent = labels[val] || btn.querySelector('span').innerText.replace(/\n/g, ' ') || val;
+                }
+
+                // 4. Close the panel
+                const panel  = document.getElementById(panelId);
+                const header = document.getElementById(headerId);
+                if (panel)  panel.classList.remove('open');
+                if (header) header.classList.remove('open');
             }
 
             // ================================================================
@@ -1196,6 +1335,19 @@
                 const section = document.getElementById('vision_need_section');
                 if (calculatedAge >= 39) {
                     section.style.display = 'block';
+                    // Auto-select Distance and Near as default for age >= 39
+                    const distBtn = document.getElementById('btn_need_distance');
+                    const nearBtn = document.getElementById('btn_need_near');
+                    const distChk = document.getElementById('chk_need_distance');
+                    const nearChk = document.getElementById('chk_need_near');
+                    if (distBtn && !distBtn.classList.contains('active')) {
+                        distBtn.classList.add('active');
+                        if (distChk) distChk.checked = true;
+                    }
+                    if (nearBtn && !nearBtn.classList.contains('active')) {
+                        nearBtn.classList.add('active');
+                        if (nearChk) nearChk.checked = true;
+                    }
                 } else {
                     section.style.display = 'none';
                     document.querySelectorAll('.vision-need-btn').forEach(b => b.classList.remove('active'));
@@ -1639,9 +1791,13 @@
 
                 // Update summary display
                 const allForDisplay = combined.length > 0 ? combined : [];
-                summary.innerText = allForDisplay.length > 0
-                    ? allForDisplay.join(', ')
-                    : 'NO SYMPTOMS SELECTED';
+                if (allForDisplay.length > 0) {
+                    summary.innerText = allForDisplay.join(', ');
+                    summary.style.color = '#00ff88';
+                } else {
+                    summary.innerText = 'NO SYMPTOMS SELECTED';
+                    summary.style.color = '#888';
+                }
 
                 document.getElementById('symptom_list_json').value = JSON.stringify(combined);
             }
@@ -1879,6 +2035,26 @@
                 this.select();
             });
 
+            // --- AUTO PD DEFAULT: 62/60 if ADD exists, else 62 ---
+            function updatePdDefault() {
+                const rAdd = document.querySelector('input[name="new_r_add"]').value.trim();
+                const lAdd = document.querySelector('input[name="new_l_add"]').value.trim();
+                const hasAdd = (rAdd !== '' && rAdd !== '0.00')
+                            || (lAdd !== '' && lAdd !== '0.00');
+                const pdInput = document.querySelector('input[name="pd_dist"]');
+                const pdDefault = hasAdd ? '62/60' : '62';
+                pdInput.placeholder = pdDefault;
+                // Only update value if user hasn't typed anything in PD field
+                if (pdInput.value === '' || pdInput.value === '62' || pdInput.value === '62/60') {
+                    pdInput.value = '';
+                    pdInput.placeholder = pdDefault;
+                }
+            }
+            document.querySelector('input[name="new_r_add"]').addEventListener('input', updatePdDefault);
+            document.querySelector('input[name="new_l_add"]').addEventListener('input', updatePdDefault);
+            document.querySelector('input[name="new_r_add"]').addEventListener('blur', updatePdDefault);
+            document.querySelector('input[name="new_l_add"]').addEventListener('blur', updatePdDefault);
+
             // --- SMART VISUAL ACUITY (VA) LOGIC ---
             // If the user types "40", it automatically becomes "20/40"
             document.querySelectorAll('.va-input').forEach(input => {
@@ -1995,12 +2171,16 @@
                     if (suggestedAdd !== "") {
                         rAdd.value = suggestedAdd;
                         lAdd.value = suggestedAdd;
+                        updatePdDefault(); // update PD default setelah ADD diisi otomatis
                     }
                 }
 
                 // Show / hide Vision Need section
                 updateVisionNeedVisibility(calculatedAge);
             });
+
+            // Panggil saat page load agar PD default langsung sesuai kondisi awal ADD
+            updatePdDefault();
         </script>
     </body>
 </html>
