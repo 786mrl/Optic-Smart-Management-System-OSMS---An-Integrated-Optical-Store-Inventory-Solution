@@ -931,17 +931,14 @@
                                 </div>
 
                                 <div id="symptoms_panel" style="display: none; background: #2b2e30; padding: 25px; border-radius: 15px; margin-top: 10px; border: 1px solid #00ff8844; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
-                                    <div class="symptoms-grid">
-                                        <button type="button" class="neu-btn symptom-btn" onclick="toggleSymptom(this, 'MYOPIA')"><span>MYOPIA</span><div class="led"></div></button>
-                                        <button type="button" class="neu-btn symptom-btn" onclick="toggleSymptom(this, 'HYPEROPIA')"><span>HYPEROPIA</span><div class="led"></div></button>
-                                        <button type="button" class="neu-btn symptom-btn" onclick="toggleSymptom(this, 'ASTIGMATISM')"><span>ASTIGMATISM</span><div class="led"></div></button>
-
-                                        <button type="button" class="neu-btn symptom-btn" onclick="toggleSymptom(this, 'PRESBYOPIA')"><span>PRESBYOPIA</span><div class="led"></div></button>
+                                    <!-- AUTO-DETECTED symptoms (MYOPIA, HYPEROPIA, ASTIGMATISM, PRESBYOPIA) are no longer manual buttons -->
+                                    <!-- They are automatically detected from the New Prescription values -->
+                                    <div class="symptoms-grid" style="grid-template-columns: repeat(2, 1fr);">
                                         <button type="button" class="neu-btn symptom-btn" onclick="toggleSymptom(this, 'CATARACT')"><span>CATARACT</span><div class="led"></div></button>
                                         <button type="button" class="neu-btn symptom-btn" onclick="toggleSymptom(this, 'HEADACHE')"><span>HEADACHE</span><div class="led"></div></button>
 
                                         <div style="grid-column: 1 / -1; display: flex; justify-content: center;">
-                                            <button type="button" class="neu-btn symptom-btn" onclick="toggleSymptom(this, 'GLAUCOMA')"><span>GLAUCOMA</span><div class="led"></div></button>
+                                            <button type="button" class="neu-btn symptom-btn" style="width: 50%;" onclick="toggleSymptom(this, 'GLAUCOMA')"><span>GLAUCOMA</span><div class="led"></div></button>
                                         </div>
 
                                         <div style="grid-column: 1 / -1; display: flex; justify-content: center; gap: 15px; width: 100%;">
@@ -1587,14 +1584,81 @@
                     if (detailId) document.getElementById(detailId).style.display = 'none';
                 }
                 
-                // Display in summary with comma separators, all automatically uppercase from the array
-                summary.innerText = selectedSymptoms.length > 0 
-                    ? selectedSymptoms.join(', ') 
-                    : "NO SYMPTOMS SELECTED";
-                
-                // Still save to JSON to be sent to PHP
-                document.getElementById('symptom_list_json').value = JSON.stringify(selectedSymptoms);
+                // Rebuild the full list (auto-detected + manual) and update hidden field + summary
+                updateSymptomListJson();
             }
+
+            // ================================================================
+            // === AUTO-DETECT REFRACTION SYMPTOMS FROM NEW PRESCRIPTION ===
+            // ================================================================
+            // Detects MYOPIA, HYPEROPIA, ASTIGMATISM, PRESBYOPIA automatically
+            // based on the entered SPH, CYL, and ADD values.
+            // Rules:
+            //   MYOPIA      : either eye SPH < 0
+            //   HYPEROPIA   : either eye SPH > 0 (and no myopia in that eye)
+            //   ASTIGMATISM : either eye CYL != 0
+            //   PRESBYOPIA  : ADD value > 0 in either eye
+
+            let autoDetectedSymptoms = []; // Holds the 4 auto conditions (separate from manual)
+
+            function detectRefractionSymptoms() {
+                const rSph = parseFloat(document.querySelector('input[name="new_r_sph"]').value) || 0;
+                const lSph = parseFloat(document.querySelector('input[name="new_l_sph"]').value) || 0;
+                const rCyl = parseFloat(document.querySelector('input[name="new_r_cyl"]').value) || 0;
+                const lCyl = parseFloat(document.querySelector('input[name="new_l_cyl"]').value) || 0;
+                const rAdd = parseFloat(document.querySelector('input[name="new_r_add"]').value) || 0;
+                const lAdd = parseFloat(document.querySelector('input[name="new_l_add"]').value) || 0;
+
+                const detected = [];
+
+                // MYOPIA: at least one eye SPH is negative
+                if (rSph < 0 || lSph < 0) detected.push('MYOPIA');
+
+                // HYPEROPIA: at least one eye SPH is positive (only if not already labelled myopia for that eye)
+                // Simplified: if any SPH > 0 exists among the eyes
+                if (rSph > 0 || lSph > 0) detected.push('HYPEROPIA');
+
+                // ASTIGMATISM: at least one eye CYL is non-zero
+                if (rCyl !== 0 || lCyl !== 0) detected.push('ASTIGMATISM');
+
+                // PRESBYOPIA: ADD value is positive in either eye
+                if (rAdd > 0 || lAdd > 0) detected.push('PRESBYOPIA');
+
+                autoDetectedSymptoms = detected;
+
+                // Rebuild the full symptom list and update the hidden JSON input
+                updateSymptomListJson();
+            }
+
+            // Merges auto-detected + manually selected symptoms into the hidden JSON field
+            function updateSymptomListJson() {
+                // Combine: auto first, then manual (avoid duplicates)
+                const manualOnly = selectedSymptoms.filter(s => 
+                    !['MYOPIA','HYPEROPIA','ASTIGMATISM','PRESBYOPIA'].includes(s)
+                );
+                const combined = [...autoDetectedSymptoms, ...manualOnly];
+
+                // Update summary display
+                const allForDisplay = combined.length > 0 ? combined : [];
+                summary.innerText = allForDisplay.length > 0
+                    ? allForDisplay.join(', ')
+                    : 'NO SYMPTOMS SELECTED';
+
+                document.getElementById('symptom_list_json').value = JSON.stringify(combined);
+            }
+
+            // Attach input listeners to all 6 new prescription fields that affect detection
+            ['new_r_sph','new_l_sph','new_r_cyl','new_l_cyl','new_r_add','new_l_add'].forEach(name => {
+                const el = document.querySelector(`input[name="${name}"]`);
+                if (el) {
+                    el.addEventListener('input', detectRefractionSymptoms);
+                    el.addEventListener('blur',  detectRefractionSymptoms);
+                }
+            });
+
+            // ================================================================
+            // === END AUTO-DETECT REFRACTION SYMPTOMS ========================
+            // ================================================================
 
             async function showSummary(event) {
                 event.preventDefault(); // Prevents the form from being submitted immediately
