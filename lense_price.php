@@ -51,10 +51,12 @@
         $data[$gk] = $new_cats;
     }
 
-    // Format Rx value with sign (integer format, value × 100; e.g. -25 = -0.25)
+    // Format Rx value for HTML input rendering.
+    // Output plain integers (no "+" prefix) so browser type=number inputs accept the
+    // value correctly. JavaScript rxConvertToText() converts inputs to type=text and
+    // adds the "+" prefix for positive values after the DOM is ready.
     function fmtRx($v) {
         $v = (int)round((float)$v);
-        if ($v > 0) return '+'.$v;
         return (string)$v;
     }
 
@@ -187,6 +189,17 @@
         }
 
         if (isset($_POST['save_prices'])) {
+            // ── DISABLED ─────────────────────────────────────────────────────
+            // Bulk "Save All" is permanently disabled to prevent stale-form
+            // overwrites. A form rendered before a per-lens AJAX save would
+            // carry old values and silently revert any recent edits when
+            // submitted. All saves must now go through save_single_lens (AJAX).
+            // ─────────────────────────────────────────────────────────────────
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['ok' => false, 'message' => 'Bulk save (save_prices) telah dinonaktifkan. Gunakan tombol "Save this lens" pada setiap kartu lensa.']);
+            exit;
+
+            // ── Dead code below (kept for reference only) ─────────────────
             // Rebuild entire tree so category + lens-name keys become UPPERCASE.
             $new_data        = [];
             $rename_warnings = []; // collect rename-collision messages for user feedback
@@ -1747,18 +1760,27 @@
             // Normalize stored value to proper "+N / -N / 0" format
             function rxNormalize(input) {
                 if (!input) return;
-                if (input.value === '' && !input.readOnly) return; // keep placeholder
+                // Skip truly empty (unfilled) inputs so we don't replace placeholder text.
+                // But "0" is a valid value and must be normalised — only skip when blank.
+                if (input.value === '' && !input.readOnly && input.type === 'text') return;
                 input.value = rxFormat(rxParse(input.value));
             }
             // Convert rx-input from type=number to type=text so the "+" sign stays visible.
             // Called once on DOM ready — after this, up/down/left/right are handled by our keydown listener below.
+            //
+            // NOTE: browser silently clears type=number inputs whose value doesn't conform
+            // to a plain number (e.g. it clears "200" if PHP had written "+200"). We now
+            // write plain integers from PHP (no "+" prefix) so the browser never clears them,
+            // and we rely on rxNormalize to add the "+" display prefix after switching to text.
             function rxConvertToText() {
                 document.querySelectorAll('input.rx-input').forEach(el => {
                     const step = el.getAttribute('step') || '25';
+                    // 1. Switch to text FIRST — stops the browser sanitising our value
                     if (el.type === 'number') el.type = 'text';
                     el.setAttribute('inputmode', 'numeric');
                     el.setAttribute('autocomplete', 'off');
                     if (!el.dataset.step) el.dataset.step = step;
+                    // 2. Now safe to normalise (adds "+" for positive values, etc.)
                     rxNormalize(el);
                 });
             }
