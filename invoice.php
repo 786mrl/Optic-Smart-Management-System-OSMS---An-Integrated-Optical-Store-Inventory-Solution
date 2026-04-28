@@ -2667,7 +2667,7 @@
                                                      style="display:flex;align-items:center;gap:10px;padding:11px 13px;cursor:pointer;">
                                                     <span style="display:inline-flex;align-items:center;justify-content:center;min-width:30px;height:24px;background:<?php echo $bd; ?>;border-radius:20px;font-size:9px;font-weight:800;color:<?php echo $rankColor; ?>;letter-spacing:0.5px;flex-shrink:0;"><?php echo $rankLbl; ?></span>
                                                     <div style="flex:1;min-width:0;">
-                                                        <div style="font-size:11px;font-weight:700;color:<?php echo $rankColor; ?>;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+                                                        <div style="font-size:11px;font-weight:700;color:<?php echo $rankColor; ?>;white-space:normal;word-break:break-word;">
                                                             <?php echo htmlspecialchars($cand['category']); ?> — <?php echo htmlspecialchars($cand['type']); ?>
                                                             <?php
                                                             $_cat = strtoupper(trim($cand['category']));
@@ -3029,7 +3029,7 @@
                                                      style="display:flex;align-items:center;gap:10px;padding:11px 13px;cursor:pointer;">
                                                     <span style="display:inline-flex;align-items:center;justify-content:center;min-width:30px;height:24px;background:<?php echo $bd; ?>;border-radius:20px;font-size:9px;font-weight:800;color:<?php echo $rankColor; ?>;letter-spacing:0.5px;flex-shrink:0;"><?php echo $rankLbl; ?></span>
                                                     <div style="flex:1;min-width:0;">
-                                                        <div style="font-size:11px;font-weight:700;color:<?php echo $rankColor; ?>;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+                                                        <div style="font-size:11px;font-weight:700;color:<?php echo $rankColor; ?>;white-space:normal;word-break:break-word;">
                                                             <?php echo htmlspecialchars($cand['category']); ?> — <?php echo htmlspecialchars($cand['type']); ?>
                                                             <?php
                                                             $_cat = strtoupper(trim($cand['category']));

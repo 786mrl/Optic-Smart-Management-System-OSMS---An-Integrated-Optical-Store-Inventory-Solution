@@ -1173,7 +1173,7 @@
                 ],
                 "limits": {
                     "sph_from": 600,
-                    "sph_to": -10,
+                    "sph_to": -1000,
                     "cyl_from": -25,
                     "cyl_to": -400,
                     "add_from": 100,
