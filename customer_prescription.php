@@ -937,14 +937,13 @@
                                         <button type="button" class="neu-btn symptom-btn" onclick="toggleSymptom(this, 'CATARACT')"><span>CATARACT</span><div class="led"></div></button>
                                         <button type="button" class="neu-btn symptom-btn" onclick="toggleSymptom(this, 'HEADACHE')"><span>HEADACHE</span><div class="led"></div></button>
 
-                                        <div style="grid-column: 1 / -1; display: flex; justify-content: center;">
-                                            <button type="button" class="neu-btn symptom-btn" style="width: 50%;" onclick="toggleSymptom(this, 'GLAUCOMA')"><span>GLAUCOMA</span><div class="led"></div></button>
-                                        </div>
+                                        <button type="button" class="neu-btn symptom-btn" onclick="toggleSymptom(this, 'HEADLIGHT GLARE')"><span>HEADLIGHT GLARE</span><div class="led"></div></button>
+                                        <button type="button" class="neu-btn symptom-btn" onclick="toggleSymptom(this, 'EYE STRAIN')"><span>EYE STRAIN</span><div class="led"></div></button>
 
-                                        <div style="grid-column: 1 / -1; display: flex; justify-content: center; gap: 15px; width: 100%;">
-                                            <button type="button" class="neu-btn symptom-btn" onclick="toggleSymptom(this, 'Diabetes', 'dm_detail')"><span>DIABETES</span><div class="led"></div></button>
-                                            <button type="button" class="neu-btn symptom-btn" onclick="toggleSymptom(this, 'Hypertension', 'ht_detail')"><span>HYPERTENSION</span><div class="led"></div></button>
-                                        </div>
+                                        <button type="button" class="neu-btn symptom-btn" style="grid-column: 1 / -1;" onclick="toggleSymptom(this, 'GLAUCOMA')"><span>GLAUCOMA</span><div class="led"></div></button>
+
+                                        <button type="button" class="neu-btn symptom-btn" onclick="toggleSymptom(this, 'Diabetes', 'dm_detail')"><span>DIABETES</span><div class="led"></div></button>
+                                        <button type="button" class="neu-btn symptom-btn" onclick="toggleSymptom(this, 'Hypertension', 'ht_detail')"><span>HYPERTENSION</span><div class="led"></div></button>
                                     </div>
 
                                     <div id="dm_detail" class="hidden-detail">
