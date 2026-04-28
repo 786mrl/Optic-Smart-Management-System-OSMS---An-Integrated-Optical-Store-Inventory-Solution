@@ -3630,6 +3630,14 @@
                         '<div style="font-size:7px;color:#888;letter-spacing:1px;margin-bottom:2px;">TOTAL</div>' +
                         '<div style="font-size:11px;font-weight:800;color:#ffaa00;font-family:monospace;">Rp\u00a0' + total.toLocaleString('id-ID') + '</div>' +
                     '</div>';
+
+                    // Auto-fill Total Amount input with the chip total value
+                    _lrRawTotal = total;
+                    var totalInput = document.getElementById('lr-total-amount');
+                    if (totalInput) {
+                        totalInput.value = lrFormatIDR(total);
+                    }
+                    lrUpdateBalance();
                 }
 
                 var inner = document.getElementById('lr-selection-bar-inner');
