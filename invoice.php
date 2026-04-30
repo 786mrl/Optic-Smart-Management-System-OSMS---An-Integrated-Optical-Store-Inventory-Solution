@@ -3235,7 +3235,7 @@
                     </div>
 
                     <div style="margin-top: 40px; text-align: center;">
-                        <button onclick="window.location.href='print_invoice_snippet.php?inv=<?php echo urlencode($invoice_num); ?>'" class="btn-action">PRINT INVOICE</button>
+                        <button onclick="openPrintPage()" class="btn-action">PRINT INVOICE</button>
                     </div>
                 </div>
             </div>
@@ -6076,6 +6076,67 @@
         setTimeout(function() {
             if (toggleBtn) toggleBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }, 100);
+    }
+
+    function openPrintPage() {
+        /* ── Kumpulkan data dari selection bar ── */
+    
+        // Frame
+        var frameName  = '';
+        var framePrice = 0;
+        if (typeof lrSelectedFrame !== 'undefined' && lrSelectedFrame) {
+            frameName  = lrSelectedFrame.name  || '';
+            framePrice = lrSelectedFrame.price || 0;
+        }
+    
+        // Lensa
+        var lensName  = '';
+        var lensPrice = 0;
+        var rxMode    = 'original';
+        if (typeof lrSelectedLens !== 'undefined' && lrSelectedLens) {
+            lensName  = lrSelectedLens.name  || '';
+            lensPrice = lrSelectedLens.price || 0;
+        }
+        if (typeof lrPrescriptionIsModified !== 'undefined' && lrPrescriptionIsModified) {
+            rxMode = 'modified';
+        }
+    
+        // Payment
+        var totalRaw   = (typeof _lrRawTotal !== 'undefined') ? _lrRawTotal : 0;
+        var paidRaw    = (typeof _lrRawPaid  !== 'undefined') ? _lrRawPaid  : 0;
+        var balanceRaw = totalRaw - paidRaw;
+    
+        // Telepon
+        var phone = '';
+        var phoneEl = document.getElementById('lr-customer-phone');
+        if (phoneEl) phone = phoneEl.value || '';
+    
+        // Tanggal siap
+        var dueDate = '';
+        var dueEl = document.getElementById('lr-due-date-box');
+        if (dueEl) {
+            var dt = dueEl.textContent.trim();
+            if (dt && dt !== '— select a lens') dueDate = dt;
+        }
+    
+        /* ── Bangun URL ── */
+        var inv = <?php echo json_encode($invoice_num); ?>;
+        var params = new URLSearchParams({
+            inv:         inv,
+            frame:       frameName,
+            frame_price: framePrice,
+            lens:        lensName,
+            lens_price:  lensPrice,
+            rx_mode:     rxMode,
+            total:       totalRaw,
+            paid:        paidRaw,
+            balance:     balanceRaw,
+            phone:       phone,
+            due_date:    dueDate,
+            auto:        '1'
+        });
+    
+        window.open('print_invoice_snippet.php?' + params.toString(), '_blank');
     }
 
     // Make showFrameRecommendation accessible from outside its IIFE
