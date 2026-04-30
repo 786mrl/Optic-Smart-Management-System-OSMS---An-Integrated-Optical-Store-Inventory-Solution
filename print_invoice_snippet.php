@@ -196,12 +196,12 @@ $waUrl = "https://wa.me/{$waPhone}?text={$waMessageEncoded}";
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
 html,body{background:#E8E8E5;display:flex;justify-content:center;padding:50px 0 40px;font-family:'Segoe UI','Helvetica Neue',Arial,sans-serif;}
 
-/* ── Sheet tepat A5, tidak boleh overflow ── */
+/* ── Sheet lebar A5, tinggi mengikuti konten ── */
 .inv-sheet{
-    width:148mm; height:210mm;          /* TEPAT A5 */
+    width:148mm;
     background:#F5F4F0;
     display:flex;flex-direction:column;
-    overflow:hidden;                    /* potong jika melebihi */
+    overflow:visible;
     box-shadow:0 4px 32px rgba(0,0,0,.18);
 }
 
@@ -237,8 +237,6 @@ html,body{background:#E8E8E5;display:flex;justify-content:center;padding:50px 0 
     flex:1;
     display:flex;flex-direction:column;gap:.7rem;
     background:#F5F4F0;
-    overflow:hidden;
-    min-height:0;
 }
 .sec-lbl{font-size:8px;color:#BA7517;font-weight:700;letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px;}
 
@@ -314,10 +312,26 @@ html,body{background:#E8E8E5;display:flex;justify-content:center;padding:50px 0 
 
 /* NO-PRINT */
 .no-print{display:flex;}
+
+/* ── Scaling untuk layar HP ── */
+@media screen and (max-width:600px){
+    html,body{
+        overflow-x:hidden;
+        padding:60px 0 30px;
+        justify-content:flex-start;
+        align-items:center;
+    }
+    .inv-sheet{
+        transform-origin:top center;
+        transform:scale(var(--sheet-scale,1));
+        margin-left:auto; margin-right:auto;
+    }
+}
+
 @media print{
     html,body{background:#fff!important;padding:0!important;}
     .no-print{display:none!important;}
-    .inv-sheet{box-shadow:none;height:210mm;width:148mm;}
+    .inv-sheet{box-shadow:none;width:148mm;}
     @page{
         size:A5 portrait;
         margin:0;
@@ -602,6 +616,41 @@ html,body{background:#E8E8E5;display:flex;justify-content:center;padding:50px 0 
 <!-- html2canvas untuk screenshot invoice -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script>
+// ── Scale sheet agar tidak terpotong di HP ──
+(function(){
+    function applyScale(){
+        var sheet = document.querySelector('.inv-sheet');
+        if(!sheet) return;
+        if(window.innerWidth < 600){
+            sheet.style.transform = '';
+            sheet.style.marginLeft = '';
+            sheet.style.marginBottom = '';
+            var sheetW = sheet.getBoundingClientRect().width;
+            var vw = window.innerWidth;
+            var scale = Math.min(1, (vw - 16) / sheetW);
+            document.documentElement.style.setProperty('--sheet-scale', scale.toFixed(4));
+            sheet.style.transform = 'scale(' + scale.toFixed(4) + ')';
+            sheet.style.transformOrigin = 'top center';
+            sheet.style.marginLeft = 'auto';
+            sheet.style.marginRight = 'auto';
+            // Kompensasi ruang yang hilang akibat scale (gunakan tinggi aktual)
+            var sheetH = sheet.getBoundingClientRect().height;
+            sheet.style.marginBottom = (sheetH * (scale - 1)) + 'px';
+        } else {
+            document.documentElement.style.setProperty('--sheet-scale', '1');
+            sheet.style.transform = '';
+            sheet.style.transformOrigin = '';
+            sheet.style.marginLeft = '';
+            sheet.style.marginBottom = '';
+        }
+    }
+    if(document.readyState === 'loading'){
+        document.addEventListener('DOMContentLoaded', applyScale);
+    } else {
+        applyScale();
+    }
+    window.addEventListener('resize', applyScale);
+})();
 var waPhone   = "<?php echo addslashes($waPhone); ?>";
 var waMessage = <?php echo json_encode($waMessage, JSON_UNESCAPED_UNICODE); ?>;
 
