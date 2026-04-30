@@ -100,126 +100,162 @@ $orderDateNum = date('d/m/Y', strtotime($data['examination_date']));
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Invoice <?php echo htmlspecialchars($data['invoice_number']); ?> — <?php echo htmlspecialchars($storeName); ?></title>
+<title><?php echo htmlspecialchars($data['invoice_number']); ?></title>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
-html,body{background:#E8E8E5;display:flex;justify-content:center;padding:56px 0 48px;font-family:'Segoe UI','Helvetica Neue',Arial,sans-serif;}
+html,body{background:#E8E8E5;display:flex;justify-content:center;padding:50px 0 40px;font-family:'Segoe UI','Helvetica Neue',Arial,sans-serif;}
 
-.inv-sheet{width:148mm;min-height:210mm;background:#F5F4F0;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 4px 32px rgba(0,0,0,.18);}
+/* ── Sheet tepat A5, tidak boleh overflow ── */
+.inv-sheet{
+    width:148mm; height:210mm;          /* TEPAT A5 */
+    background:#F5F4F0;
+    display:flex;flex-direction:column;
+    overflow:hidden;                    /* potong jika melebihi */
+    box-shadow:0 4px 32px rgba(0,0,0,.18);
+}
 
-/* HEADER */
-.inv-header{background:#2C2C2A;padding:18px 22px 16px;}
-.inv-dots{display:flex;gap:5px;margin-bottom:10px;}
-.inv-dot{width:8px;height:8px;border-radius:50%;}
+/* HEADER — kompak */
+.inv-header{background:#2C2C2A;padding:12px 18px 11px;flex-shrink:0;}
+.inv-dots{display:flex;gap:5px;margin-bottom:7px;}
+.inv-dot{width:7px;height:7px;border-radius:50%;}
 .dot-a{background:#EF9F27;}.dot-b{background:rgba(255,255,255,.3);}.dot-c{background:rgba(255,255,255,.12);}
 .inv-header-top{display:flex;justify-content:space-between;align-items:flex-start;}
-.inv-brand{display:flex;align-items:center;gap:10px;}
-.inv-brand-logo{height:28px;width:auto;object-fit:contain;}
-.inv-brand-name{font-size:18px;font-weight:500;color:#fff;letter-spacing:.5px;}
-.inv-brand-sub{font-size:10px;color:rgba(255,255,255,.45);margin-top:3px;}
+.inv-brand{display:flex;align-items:center;gap:9px;}
+.inv-brand-logo{height:24px;width:auto;object-fit:contain;}
+.inv-brand-name{font-size:15px;font-weight:500;color:#fff;letter-spacing:.4px;}
+.inv-brand-sub{font-size:9px;color:rgba(255,255,255,.45);margin-top:2px;}
 .inv-num-block{text-align:right;}
-.inv-num-lbl{display:inline-block;border:1px solid rgba(239,159,39,.5);border-radius:4px;padding:2px 10px;margin-bottom:5px;}
-.inv-num-lbl span{font-size:9px;color:#FAC775;letter-spacing:.12em;font-weight:600;}
-.inv-num-val{font-size:22px;font-weight:500;color:#EF9F27;line-height:1;}
-.inv-num-date{font-size:10px;color:rgba(255,255,255,.38);margin-top:4px;}
-.inv-meta-row{display:grid;grid-template-columns:repeat(3,1fr);gap:.75rem;margin-top:1.1rem;padding-top:1.1rem;border-top:.5px solid rgba(255,255,255,.1);}
-.mk{font-size:9px;color:rgba(255,255,255,.38);margin-bottom:3px;letter-spacing:.08em;font-weight:600;text-transform:uppercase;}
-.mv{font-size:11.5px;color:#fff;font-weight:500;}
-.ms{font-size:10px;color:rgba(255,255,255,.45);margin-top:1px;}
-.s-badge{display:inline-block;font-size:10px;padding:3px 10px;border-radius:3px;font-weight:500;}
+.inv-num-lbl{display:inline-block;border:1px solid rgba(239,159,39,.5);border-radius:3px;padding:1px 8px;margin-bottom:4px;}
+.inv-num-lbl span{font-size:8px;color:#FAC775;letter-spacing:.12em;font-weight:600;}
+.inv-num-val{font-size:18px;font-weight:500;color:#EF9F27;line-height:1;}
+.inv-num-date{font-size:9px;color:rgba(255,255,255,.38);margin-top:3px;}
+.inv-meta-row{display:grid;grid-template-columns:repeat(3,1fr);gap:.6rem;margin-top:.8rem;padding-top:.8rem;border-top:.5px solid rgba(255,255,255,.1);}
+.mk{font-size:8px;color:rgba(255,255,255,.38);margin-bottom:2px;letter-spacing:.08em;font-weight:600;text-transform:uppercase;}
+.mv{font-size:10.5px;color:#fff;font-weight:500;}
+.ms{font-size:9px;color:rgba(255,255,255,.45);margin-top:1px;}
+.s-badge{display:inline-block;font-size:9px;padding:2px 8px;border-radius:3px;font-weight:500;}
 .s-badge.lunas{background:rgba(0,200,100,.15);color:#4CD98A;border:.5px solid rgba(0,200,100,.3);}
 .s-badge.dp{background:rgba(239,159,39,.18);color:#FAC775;border:.5px solid rgba(239,159,39,.35);}
 
 /* ACCENT */
-.inv-bar{height:3px;background:#EF9F27;}
+.inv-bar{height:3px;background:#EF9F27;flex-shrink:0;}
 
-/* BODY */
-.inv-body{padding:1.25rem 1.5rem;flex:1;display:flex;flex-direction:column;gap:1rem;background:#F5F4F0;}
-.sec-lbl{font-size:9px;color:#BA7517;font-weight:700;letter-spacing:.1em;text-transform:uppercase;margin-bottom:9px;}
+/* BODY — isi sisa tinggi secara proporsional */
+.inv-body{
+    padding:.9rem 1.25rem;
+    flex:1;
+    display:flex;flex-direction:column;gap:.7rem;
+    background:#F5F4F0;
+    overflow:hidden;
+    min-height:0;
+}
+.sec-lbl{font-size:8px;color:#BA7517;font-weight:700;letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px;}
 
 /* RESEP */
-.rx-wrap{background:#EDECEA;border-radius:8px;padding:12px 14px;}
+.rx-wrap{background:#EDECEA;border-radius:6px;padding:9px 11px;}
 .rx-table{width:100%;border-collapse:collapse;}
 .rx-table thead tr{border-bottom:1px solid #EF9F27;}
-.rx-table thead th{padding:5px 8px 5px 0;font-weight:600;font-size:9px;color:#BA7517;letter-spacing:.07em;text-align:center;}
-.rx-table thead th:first-child{text-align:left;width:32px;}
-.rx-table tbody td{text-align:center;padding:8px;font-size:13px;font-weight:500;color:#1a1a1a;}
-.rx-table tbody td:first-child{text-align:left;font-size:9px;color:#777;font-weight:600;letter-spacing:.06em;}
+.rx-table thead th{padding:4px 6px 4px 0;font-weight:600;font-size:8px;color:#BA7517;letter-spacing:.07em;text-align:center;}
+.rx-table thead th:first-child{text-align:left;width:28px;}
+.rx-table tbody td{text-align:center;padding:6px 6px;font-size:12px;font-weight:500;color:#1a1a1a;}
+.rx-table tbody td:first-child{text-align:left;font-size:8.5px;color:#777;font-weight:600;letter-spacing:.06em;}
 .rx-table tbody tr:first-child td{border-bottom:.5px solid #D8D5CF;}
 .rx-dash{color:#C0BDB8;}
-.mod-badge{display:inline-block;font-size:8px;background:#fff3e0;border:1px solid #ffb74d;color:#e65100;border-radius:20px;padding:1px 7px;font-weight:700;vertical-align:middle;margin-left:5px;}
+.mod-badge{display:inline-block;font-size:7.5px;background:#fff3e0;border:1px solid #ffb74d;color:#e65100;border-radius:20px;padding:1px 6px;font-weight:700;vertical-align:middle;margin-left:4px;}
 
-/* SYMPTOMS */
-.sym-wrap{background:#EDECEA;border-radius:8px;padding:12px 14px;}
-.sym-key{font-size:8.5px;color:#BA7517;font-weight:600;letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px;}
-.sym-key.note{color:#888;margin-top:10px;}
-.sym-text{font-size:11px;color:#444;line-height:1.65;white-space:pre-wrap;word-break:break-word;}
+/* SYMPTOMS — compact */
+.sym-wrap{background:#EDECEA;border-radius:6px;padding:8px 11px;}
+.sym-key{font-size:8px;color:#BA7517;font-weight:600;letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px;}
+.sym-key.note{color:#888;margin-top:7px;}
+.sym-text{font-size:10px;color:#444;line-height:1.5;white-space:pre-wrap;word-break:break-word;}
 
 /* ITEMS */
-.items-wrap{border-radius:8px;overflow:hidden;border:.5px solid #D8D5CF;}
-.items-head{display:grid;grid-template-columns:1fr 55px 100px;background:#EDECEA;padding:8px 12px;font-size:9px;font-weight:600;color:#888;letter-spacing:.09em;text-transform:uppercase;}
+.items-wrap{border-radius:6px;overflow:hidden;border:.5px solid #D8D5CF;}
+.items-head{display:grid;grid-template-columns:1fr 50px 90px;background:#EDECEA;padding:6px 10px;font-size:8px;font-weight:600;color:#888;letter-spacing:.09em;text-transform:uppercase;}
 .items-head span:nth-child(2){text-align:center;}.items-head span:nth-child(3){text-align:right;}
-.item-row{display:grid;grid-template-columns:1fr 55px 100px;padding:11px 12px;border-top:.5px solid #D8D5CF;align-items:center;background:#fff;}
-.iname{font-size:12px;font-weight:500;color:#1a1a1a;}
-.isub{font-size:10px;color:#888;margin-top:1px;}
-.iqty{text-align:center;font-size:12px;color:#333;}
-.iprice{text-align:right;font-size:12px;color:#333;}
+.item-row{display:grid;grid-template-columns:1fr 50px 90px;padding:8px 10px;border-top:.5px solid #D8D5CF;align-items:center;background:#fff;}
+.iname{font-size:11px;font-weight:500;color:#1a1a1a;}
+.isub{font-size:9px;color:#888;margin-top:1px;}
+.iqty{text-align:center;font-size:11px;color:#333;}
+.iprice{text-align:right;font-size:11px;color:#333;}
 .iprice.free{color:#BA7517;font-weight:600;}
 
 /* TOTALS */
 .tot-wrap{display:flex;justify-content:flex-end;}
-.tot-inner{min-width:220px;}
-.tot-row{display:flex;justify-content:space-between;font-size:11px;color:#777;padding:4px 0;}
+.tot-inner{min-width:200px;}
+.tot-row{display:flex;justify-content:space-between;font-size:10px;color:#777;padding:3px 0;}
 .tot-row.div{border-bottom:.5px solid #D8D5CF;}
 .v-orange{color:#ff8a4d;font-weight:600;}.v-green{color:#4CD98A;font-weight:600;}
-.tot-box{display:flex;justify-content:space-between;align-items:center;padding:9px 12px;background:#2C2C2A;border-radius:7px;margin-top:9px;}
-.tot-box .lbl{color:#fff;font-size:12px;font-weight:500;}.tot-box .val{color:#EF9F27;font-size:15px;font-weight:600;}
+.tot-box{display:flex;justify-content:space-between;align-items:center;padding:7px 11px;background:#2C2C2A;border-radius:6px;margin-top:7px;}
+.tot-box .lbl{color:#fff;font-size:11px;font-weight:500;}.tot-box .val{color:#EF9F27;font-size:13px;font-weight:600;}
 
-/* FOOTER */
-.inv-footer{border-top:.5px solid #D8D5CF;padding:1rem 1.5rem 1.25rem;display:grid;grid-template-columns:auto 1fr;gap:1.1rem;align-items:start;background:#F5F4F0;}
-.bc-wrap{display:flex;flex-direction:column;align-items:center;gap:5px;}
-.bc-box{background:#EDECEA;border-radius:7px;padding:7px;}
-.bc-box img{width:72px;height:72px;object-fit:contain;display:block;}
-.bc-cap{font-size:8.5px;color:#999;text-align:center;line-height:1.5;}
-.foot-notes{display:flex;flex-direction:column;gap:7px;}
-.wa-box{background:#FAEEDA;border-radius:7px;padding:10px 12px;}
-.wa-inner{display:flex;align-items:flex-start;gap:7px;}
-.wa-title{font-size:9px;color:#633806;font-weight:600;letter-spacing:.05em;text-transform:uppercase;margin-bottom:3px;}
-.wa-body{font-size:10px;color:#854F0B;line-height:1.55;}
+/* FOOTER — kompak */
+.inv-footer{
+    border-top:.5px solid #D8D5CF;
+    padding:.75rem 1.25rem .85rem;
+    display:grid;grid-template-columns:auto 1fr;
+    gap:.9rem;align-items:start;
+    background:#F5F4F0;
+    flex-shrink:0;
+}
+/* Barcode diperbesar jadi 90x90 */
+.bc-wrap{display:flex;flex-direction:column;align-items:center;gap:4px;}
+.bc-box{background:#EDECEA;border-radius:6px;padding:6px;}
+.bc-box img{width:90px;height:90px;object-fit:contain;display:block;}
+.bc-cap{font-size:8px;color:#999;text-align:center;line-height:1.4;}
+.foot-notes{display:flex;flex-direction:column;gap:6px;}
+.wa-box{background:#FAEEDA;border-radius:6px;padding:8px 10px;}
+.wa-inner{display:flex;align-items:flex-start;gap:6px;}
+.wa-title{font-size:8px;color:#633806;font-weight:600;letter-spacing:.05em;text-transform:uppercase;margin-bottom:2px;}
+.wa-body{font-size:9px;color:#854F0B;line-height:1.5;}
 .wa-body strong{color:#633806;}
-.info-box{background:#EDECEA;border-radius:7px;padding:10px 12px;font-size:10px;color:#666;line-height:1.6;}
+.info-box{background:#EDECEA;border-radius:6px;padding:8px 10px;font-size:9px;color:#666;line-height:1.55;}
 .info-box strong{color:#333;}
-.dates-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:2px;}
-.dkey{font-size:8px;color:#999;letter-spacing:.08em;font-weight:600;margin-bottom:3px;text-transform:uppercase;}
-.dval{font-size:11px;color:#333;font-family:monospace;}
+.dates-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:2px;}
+.dkey{font-size:7.5px;color:#999;letter-spacing:.08em;font-weight:600;margin-bottom:2px;text-transform:uppercase;}
+.dval{font-size:10px;color:#333;font-family:monospace;}
 .dval.amber{color:#BA7517;}
 
 /* STORE BAR */
-.store-bar{background:#2C2C2A;padding:8px 1.5rem;display:flex;justify-content:space-between;align-items:center;}
-.sbar-name{font-size:9.5px;color:rgba(255,255,255,.5);letter-spacing:1px;text-transform:uppercase;font-weight:600;}
-.sbar-phone{font-size:9px;color:rgba(255,255,255,.35);font-family:monospace;}
+.store-bar{background:#2C2C2A;padding:6px 1.25rem;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;}
+.sbar-name{font-size:8.5px;color:rgba(255,255,255,.5);letter-spacing:1px;text-transform:uppercase;font-weight:600;}
+.sbar-phone{font-size:8.5px;color:rgba(255,255,255,.35);font-family:monospace;}
 
 /* NO-PRINT */
 .no-print{display:flex;}
 @media print{
     html,body{background:#fff!important;padding:0!important;}
     .no-print{display:none!important;}
-    .inv-sheet{box-shadow:none;}
-    @page{size:A5 portrait;margin:0;}
+    .inv-sheet{box-shadow:none;height:210mm;width:148mm;}
+    @page{
+        size:A5 portrait;
+        margin:0;
+        /* Sembunyikan header/footer browser saat print */
+        margin-top:0;margin-bottom:0;margin-left:0;margin-right:0;
+    }
+    /* Chrome/Edge: paksa hilangkan header footer */
+    html{
+        -webkit-print-color-adjust:exact;
+    }
 }
 </style>
 </head>
 <body>
 
-<div class="no-print" style="position:fixed;top:10px;left:50%;transform:translateX(-50%);gap:10px;z-index:999;">
-    <button onclick="window.history.back()"
-        style="background:#2C2C2A;color:#EF9F27;border:1px solid rgba(239,159,39,.4);border-radius:6px;padding:8px 18px;font-size:12px;cursor:pointer;font-family:inherit;">
-        ← Kembali
-    </button>
-    <button onclick="window.print()"
-        style="background:#EF9F27;color:#fff;border:none;border-radius:6px;padding:8px 18px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">
-        🖨 Cetak
-    </button>
+<div class="no-print" style="position:fixed;top:10px;left:50%;transform:translateX(-50%);flex-direction:column;align-items:center;gap:8px;z-index:999;">
+    <div style="display:flex;gap:10px;">
+        <button onclick="window.close()"
+            style="background:#2C2C2A;color:#EF9F27;border:1px solid rgba(239,159,39,.4);border-radius:6px;padding:8px 18px;font-size:12px;cursor:pointer;font-family:inherit;">
+            ✕ Tutup
+        </button>
+        <button onclick="window.print()"
+            style="background:#EF9F27;color:#fff;border:none;border-radius:6px;padding:8px 18px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">
+            🖨 Cetak
+        </button>
+    </div>
+    <div style="background:rgba(44,44,42,.9);color:rgba(255,255,255,.6);font-size:10px;padding:5px 12px;border-radius:5px;text-align:center;line-height:1.5;">
+        Saat dialog print muncul → <strong style="color:#FAC775;">More settings</strong> → matikan <strong style="color:#FAC775;">Headers and footers</strong>
+    </div>
 </div>
 
 <div class="inv-sheet">
@@ -394,10 +430,7 @@ html,body{background:#E8E8E5;display:flex;justify-content:center;padding:56px 0 
             <div class="bc-box">
                 <?php if (!empty($barcodePath)): ?>
                 <img src="<?php echo htmlspecialchars($barcodePath); ?>" alt="Barcode panduan"
-                     onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
-                <div style="display:none;width:72px;height:72px;background:#EDECEA;border-radius:4px;display:flex;align-items:center;justify-content:center;">
-                    <span style="font-size:8px;color:#bbb;text-align:center;">Barcode<br>tidak tersedia</span>
-                </div>
+                     onerror="this.style.display='none'">
                 <?php else: ?>
                 <svg width="72" height="72" viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg">
                     <rect x="2"  y="2"  width="22" height="22" rx="2" fill="#2C2C2A"/>
@@ -460,11 +493,7 @@ html,body{background:#E8E8E5;display:flex;justify-content:center;padding:56px 0 
 </div><!-- /sheet -->
 
 <script>
-window.addEventListener('load', function() {
-    if (new URLSearchParams(window.location.search).get('auto') === '1') {
-        setTimeout(function(){ window.print(); }, 400);
-    }
-});
+/* Print hanya ketika user klik tombol Cetak */
 </script>
 </body>
 </html>
