@@ -94,7 +94,98 @@ $statusLabel  = $isLunas ? 'Lunas' : 'DP / Belum Lunas';
 $statusClass  = $isLunas ? 'lunas' : 'dp';
 $orderDateFmt = date('d M Y', strtotime($data['examination_date']));
 $orderDateNum = date('d/m/Y', strtotime($data['examination_date']));
+
+/* ── Sapaan WA berdasarkan umur ── */
+$customerAge  = (int)($data['age'] ?? $data['customer_age'] ?? 0);
+$customerName = trim($data['customer_name'] ?? '');
+
+// Hitung umur dari tanggal lahir jika kolom dob tersedia
+if ($customerAge === 0 && !empty($data['date_of_birth'])) {
+    $dob = new DateTime($data['date_of_birth']);
+    $now = new DateTime();
+    $customerAge = (int)$dob->diff($now)->y;
+}
+
+// Salam & penutup Arab
+$wasSalam  = "اَلسَّلَامُ عَلَيْكُمْ وَرَحْمَةُ اللهِ وَبَرَكَاتُهُ";
+$wassSalam = "وَالسَّلَامُ عَلَيْكُمْ وَرَحْمَةُ اللهِ وَبَرَكَاتُهُ";
+
+// Deteksi gender dari data (jika tersedia), default netral
+$gender = strtolower(trim($data['gender'] ?? $data['sex'] ?? ''));
+if ($gender === 'l' || $gender === 'male' || $gender === 'laki' || $gender === 'laki-laki') {
+    $sapaPanggil = 'Bapak';
+} elseif ($gender === 'p' || $gender === 'female' || $gender === 'perempuan' || $gender === 'wanita') {
+    $sapaPanggil = 'Ibu';
+} else {
+    $sapaPanggil = 'Bapak/Ibu';
+}
+
+if ($customerAge > 0 && $customerAge <= 12) {
+    // Anak-anak: pesan ke orang tua, sebut "Adik" untuk si anak
+    $anakPanggil = ($gender === 'l' || $gender === 'male' || $gender === 'laki' || $gender === 'laki-laki') ? 'Adik' : (($gender === 'p' || $gender === 'female' || $gender === 'perempuan' || $gender === 'wanita') ? 'Adik' : 'Adik');
+    $waSapaan  = "Yang terhormat Bapak/Ibu orang tua dari *Adik {$customerName}* 🙏";
+    $waKalimat = "Perkenankan kami menyampaikan bahwa pesanan kacamata untuk Adik {$customerName} telah kami terima dengan baik dan sedang dalam proses pengerjaan. Insyaallah kami akan mengerjakannya dengan penuh ketelitian dan kehati-hatian.";
+    $waPenutup = "Semoga kacamata yang kami siapkan dapat memberikan kenyamanan serta mendukung tumbuh kembang dan aktivitas belajar Adik {$customerName}. Terima kasih atas kepercayaan yang telah Bapak/Ibu berikan kepada kami 🙏";
+} elseif ($customerAge > 12 && $customerAge <= 17) {
+    // Remaja (SMP/SMA) — Adik
+    $waSapaan  = "Yang terhormat *Adik {$customerName}* 🙏";
+    $waKalimat = "Perkenankan kami menyampaikan bahwa pesanan kacamata Adik telah kami terima dengan baik dan saat ini sedang dalam proses pengerjaan. Insyaallah kami akan menyelesaikannya dengan sebaik-baiknya.";
+    $waPenutup = "Apabila Adik memiliki pertanyaan atau ingin mengetahui perkembangan pesanan, kami dengan senang hati siap membantu kapan saja. Semoga kacamatanya nyaman dan cocok digunakan 🙏";
+} elseif ($customerAge > 17 && $customerAge <= 25) {
+    // Dewasa muda — Saudara/Saudari
+    $sdra = ($sapaPanggil === 'Bapak') ? 'Saudara' : (($sapaPanggil === 'Ibu') ? 'Saudari' : 'Saudara/i');
+    $waSapaan  = "Yang terhormat *{$sdra} {$customerName}* 🙏";
+    $waKalimat = "Perkenankan kami menyampaikan bahwa pesanan kacamata {$sdra} telah kami terima dengan baik dan saat ini sedang dalam proses pengerjaan. Insyaallah kami akan menyelesaikannya dengan sebaik-baiknya.";
+    $waPenutup = "Apabila {$sdra} memiliki pertanyaan atau ingin mengetahui perkembangan pesanan, kami dengan senang hati siap membantu kapan saja. Semoga kacamatanya nyaman dan cocok digunakan 🙏";
+} elseif ($customerAge > 25 && $customerAge <= 55) {
+    // Dewasa
+    $waSapaan  = "Yang terhormat *{$sapaPanggil} {$customerName}* 🙏";
+    $waKalimat = "Perkenankan kami menyampaikan bahwa pesanan kacamata {$sapaPanggil} telah kami terima dengan baik dan saat ini sedang dalam proses pengerjaan. Insyaallah kami akan menyelesaikannya dengan penuh ketelitian.";
+    $waPenutup = "Apabila {$sapaPanggil} memiliki pertanyaan atau memerlukan informasi lebih lanjut, jangan ragu untuk menghubungi kami. Kami senantiasa siap melayani dengan sepenuh hati 🙏";
+} elseif ($customerAge > 55) {
+    // Lansia
+    $waSapaan  = "Dengan penuh hormat, kami menyapa *{$sapaPanggil} {$customerName}* 🙏";
+    $waKalimat = "Perkenankan kami menyampaikan rasa terima kasih yang sebesar-besarnya atas kepercayaan {$sapaPanggil} kepada kami. Pesanan kacamata {$sapaPanggil} telah kami terima dengan baik dan sedang kami kerjakan dengan penuh ketelitian dan rasa tanggung jawab.";
+    $waPenutup = "Apabila {$sapaPanggil} berkenan menanyakan sesuatu atau memerlukan bantuan apa pun, kami dengan hormat dan sepenuh hati siap melayani kapan saja. Semoga Allah senantiasa memberikan kesehatan dan kemudahan bagi {$sapaPanggil} 🙏";
+} else {
+    // Umur tidak diketahui
+    $waSapaan  = "Yang terhormat *{$sapaPanggil} {$customerName}* 🙏";
+    $waKalimat = "Perkenankan kami menyampaikan bahwa pesanan kacamata {$sapaPanggil} telah kami terima dengan baik dan saat ini sedang dalam proses pengerjaan. Insyaallah kami akan menyelesaikannya dengan sebaik-baiknya.";
+    $waPenutup = "Apabila {$sapaPanggil} memiliki pertanyaan atau memerlukan informasi lebih lanjut, jangan ragu untuk menghubungi kami. Kami senantiasa siap melayani dengan sepenuh hati 🙏";
+}
+
+/* ── Bangun pesan WA — tanpa detail invoice (sudah ada di gambar) ── */
+$waMessage = "{$wasSalam}
+
+"
+           . "{$waSapaan}
+
+"
+           . "{$waKalimat}
+
+"
+           . "Terlampir bersama pesan ini adalah gambar invoice pesanan sebagai bukti transaksi yang sah dari *{$storeName}*.
+
+"
+           . "{$waPenutup}
+
+"
+           . "{$wassSalam} 🙏
+
+"
+           . "— *{$storeName}*";
+
+// Encode untuk URL WA
+$waMessageEncoded = rawurlencode($waMessage);
+
+// Nomor WA: bersihkan dan format internasional
+$waPhone = preg_replace('/[^0-9]/', '', $gPhone);
+if (substr($waPhone, 0, 1) === '0') {
+    $waPhone = '62' . substr($waPhone, 1);
+}
+$waUrl = "https://wa.me/{$waPhone}?text={$waMessageEncoded}";
 ?>
+
 <!DOCTYPE html>
 <html lang="id">
 <head>
@@ -252,6 +343,23 @@ html,body{background:#E8E8E5;display:flex;justify-content:center;padding:50px 0 
             style="background:#EF9F27;color:#fff;border:none;border-radius:6px;padding:8px 18px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">
             🖨 Cetak
         </button>
+        <?php if (!empty($waPhone)): ?>
+        <button id="btnKirimWA" onclick="kirimInvoiceWA()"
+            style="background:#25D366;color:#fff;border:none;border-radius:6px;padding:8px 18px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:6px;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+            </svg>
+            <span id="btnKirimWALabel">📸 Kirim Invoice WA</span>
+        </button>
+        <?php else: ?>
+        <button disabled title="Nomor HP tidak tersedia"
+            style="background:#555;color:#999;border:none;border-radius:6px;padding:8px 18px;font-size:12px;font-weight:600;cursor:not-allowed;font-family:inherit;display:flex;align-items:center;gap:6px;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+            </svg>
+            Kirim WA
+        </button>
+        <?php endif; ?>
     </div>
     <div style="background:rgba(44,44,42,.9);color:rgba(255,255,255,.6);font-size:10px;padding:5px 12px;border-radius:5px;text-align:center;line-height:1.5;">
         Saat dialog print muncul → <strong style="color:#FAC775;">More settings</strong> → matikan <strong style="color:#FAC775;">Headers and footers</strong>
@@ -487,13 +595,61 @@ html,body{background:#E8E8E5;display:flex;justify-content:center;padding:50px 0 
     <!-- STORE BAR -->
     <div class="store-bar">
         <div class="sbar-name"><?php echo htmlspecialchars($storeName); ?></div>
-        <div class="sbar-phone"><?php echo htmlspecialchars($storePhone); ?></div>
     </div>
 
 </div><!-- /sheet -->
 
+<!-- html2canvas untuk screenshot invoice -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script>
-/* Print hanya ketika user klik tombol Cetak */
+var waPhone   = "<?php echo addslashes($waPhone); ?>";
+var waMessage = <?php echo json_encode($waMessage, JSON_UNESCAPED_UNICODE); ?>;
+
+function kirimInvoiceWA() {
+    var btn   = document.getElementById('btnKirimWA');
+    var label = document.getElementById('btnKirimWALabel');
+    if (!btn) return;
+
+    btn.disabled = true;
+    label.textContent = '⏳ Membuat gambar...';
+
+    var sheet    = document.querySelector('.inv-sheet');
+    var invNum   = sheet.querySelector('.inv-num-val')
+                   ? sheet.querySelector('.inv-num-val').innerText.trim().replace(/\s+/g, '_')
+                   : 'invoice';
+    var fileName = 'Invoice_' + invNum + '.png';
+    var waUrl    = "https://wa.me/" + waPhone + "?text=" + encodeURIComponent(waMessage);
+
+    html2canvas(sheet, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#F5F4F0',
+        logging: false
+    }).then(function(canvas) {
+
+        // Download gambar invoice
+        var link      = document.createElement('a');
+        link.download = fileName;
+        link.href     = canvas.toDataURL('image/png');
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        // Langsung buka WA ke nomor yang bersangkutan
+        label.textContent = '⏳ Membuka WhatsApp...';
+        setTimeout(function() {
+            window.open(waUrl, '_blank');
+            btn.disabled      = false;
+            label.textContent = '📸 Kirim Invoice WA';
+        }, 600);
+
+    }).catch(function(err) {
+        console.error('html2canvas error:', err);
+        window.open(waUrl, '_blank');
+        btn.disabled      = false;
+        label.textContent = '📸 Kirim Invoice WA';
+    });
+}
 </script>
 </body>
 </html>
