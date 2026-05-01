@@ -29,6 +29,128 @@
         }
     }
 
+    // ── Save order to customer_orders ─────────────────────────────────
+    if (isset($_POST['save_order'])) {
+ 
+        $inv          = mysqli_real_escape_string($conn, $_POST['inv']);
+        $invoiceSheet = mysqli_real_escape_string($conn, $_POST['invoice_sheet']);   // e.g. "16.31" — used for customer_number, not stored separately
+        $isModified   = (int)$_POST['is_modified'];
+        // frame_ufc: fallback to frame_name in case JS sends UFC code via that field
+        $frameUfc     = mysqli_real_escape_string($conn, $_POST['frame_ufc'] ?? $_POST['frame_name'] ?? '');
+        // frame_price & lens_price: kept for print page (passed via URL), not stored in DB
+        $framePrice   = (float)($_POST['frame_price'] ?? 0);
+        $lensName     = mysqli_real_escape_string($conn, $_POST['lens_name']   ?? '');
+        $lensPrice    = (float)($_POST['lens_price']  ?? 0);
+        $phone        = mysqli_real_escape_string($conn, $_POST['phone']       ?? '');
+        $address      = mysqli_real_escape_string($conn, $_POST['address']     ?? '');
+        $totalAmount  = (float)($_POST['total_amount'] ?? 0);
+        $amountPaid   = (float)($_POST['amount_paid']  ?? 0);
+        $examCode     = mysqli_real_escape_string($conn, $_POST['exam_code']   ?? '');
+ 
+        // ── Parse dates ───────────────────────────────────────────────
+        // order_date: convert dd/mm/yyyy → yyyy-mm-dd
+        $orderDateRaw = $_POST['order_date'] ?? '';
+        $orderDateParts = explode('/', $orderDateRaw);
+        $orderDate = (count($orderDateParts) === 3)
+            ? $orderDateParts[2] . '-' . $orderDateParts[1] . '-' . $orderDateParts[0]
+            : date('Y-m-d');
+ 
+        // due_date: same conversion, NULL when empty or placeholder
+        $dueDateRaw = $_POST['due_date'] ?? '';
+        $dueDate    = 'NULL';
+        if (!empty($dueDateRaw) && $dueDateRaw !== '— select a lens') {
+            $ddParts = explode('/', $dueDateRaw);
+            if (count($ddParts) === 3) {
+                $dueDate = "'" . $ddParts[2] . '-' . $ddParts[1] . '-' . $ddParts[0] . "'";
+            }
+        }
+ 
+        // ── Build customer_number ─────────────────────────────────────
+        // Pattern: aa/LZ-C/00.00/bbb/MM/YY
+        //   aa  = next sequence number (auto from table)
+        //   00.00 = invoice_sheet (e.g. 16.31)
+        //   bbb = 3-digit part from examination_code (LZ/EC/028/IV/2026 → 028)
+        //   MM  = Roman numeral month of order_date
+        //   YY  = last 2 digits of order year
+ 
+        // Get next sequence number
+        $seqResult = mysqli_query($conn, "SELECT COUNT(*) AS cnt FROM customer_orders");
+        $seqRow    = mysqli_fetch_assoc($seqResult);
+        $seqNum    = (int)$seqRow['cnt'] + 1;
+ 
+        // Extract bbb from exam code  (e.g. "LZ/EC/028/IV/2026" → "028")
+        $bbb = '000';
+        if (!empty($examCode)) {
+            $parts = explode('/', $examCode);
+            if (isset($parts[2]) && preg_match('/^\d{3}$/', $parts[2])) {
+                $bbb = $parts[2];
+            }
+        }
+ 
+        // Roman numeral month
+        $romanMonths = ['I','II','III','IV','V','VI','VII','VIII','IX','X','XI','XII'];
+        $monthIndex  = (int)date('n', strtotime($orderDate)) - 1;
+        $romanMonth  = $romanMonths[$monthIndex] ?? date('n', strtotime($orderDate));
+ 
+        // YY
+        $yy = date('y', strtotime($orderDate));
+ 
+        $customerNumber = $seqNum . '/LZ-C/' . $invoiceSheet . '/' . $bbb . '/' . $romanMonth . '/' . $yy;
+        $customerNumber = mysqli_real_escape_string($conn, $customerNumber);
+ 
+        // ── Stock deduction (when a frame was purchased) ───────────────
+        $stockOk = true;
+        if (!empty($frameUfc)) {
+            // Try frames_main first, then frame_staging
+            $stockOk = false;
+            foreach (['frames_main', 'frame_staging'] as $tbl) {
+                $chk = mysqli_query($conn,
+                    "SELECT stock FROM `$tbl` WHERE ufc = '$frameUfc' AND stock > 0 LIMIT 1");
+                if ($chk && mysqli_num_rows($chk) > 0) {
+                    $upd = mysqli_query($conn,
+                        "UPDATE `$tbl` SET stock = stock - 1 WHERE ufc = '$frameUfc'");
+                    if ($upd) { $stockOk = true; break; }
+                }
+            }
+        }
+ 
+        // ── Insert into customer_orders ────────────────────────────────
+        // Removed: invoice_sheet (embedded in customer_number), frame_name,
+        //          frame_price, lens_price (not stored in DB)
+        $frameUfcVal = !empty($frameUfc) ? "'$frameUfc'" : 'NULL';
+        $lensNameVal = !empty($lensName) ? "'$lensName'" : 'NULL';
+        $phoneVal    = !empty($phone)    ? "'$phone'"    : 'NULL';
+        $addressVal  = !empty($address)  ? "'$address'"  : 'NULL';
+ 
+        $sql_order = "INSERT INTO customer_orders
+            (customer_number, invoice_number, is_modified,
+             frame_ufc, lens_name,
+             customer_phone, customer_address,
+             total_amount, amount_paid, order_date, due_date, order_status)
+            VALUES
+            ('$customerNumber', '$inv', $isModified,
+             $frameUfcVal, $lensNameVal,
+             $phoneVal, $addressVal,
+             $totalAmount, $amountPaid, '$orderDate', $dueDate, 1)";
+ 
+        $saved = mysqli_query($conn, $sql_order);
+ 
+        // ── JSON response (called via fetch from JS) ───────────────────
+        header('Content-Type: application/json');
+        if ($saved) {
+            echo json_encode([
+                'success'         => true,
+                'customer_number' => $customerNumber,
+            ]);
+        } else {
+            echo json_encode([
+                'success' => false,
+                'error'   => mysqli_error($conn),
+            ]);
+        }
+        exit();
+    }
+
     if (!isset($_SESSION['user_id'])) { header("Location: index.php"); exit(); }
 
     // Check 'inv' parameter (manual) or 'code' (from customer_prescription.php)
@@ -790,6 +912,13 @@
         $lr_catalog, $lr_typeConfig
     ) : $lr_SET_ORIG;
 
+
+    // Load starting invoice sheet number from settings table
+    $startingInvoiceNumber = '1.01';
+    $resSheet = mysqli_query($conn, "SELECT setting_value FROM settings WHERE setting_key = 'starting_invoice_number' LIMIT 1");
+    if ($resSheet && $rowSheet = mysqli_fetch_assoc($resSheet)) {
+        $startingInvoiceNumber = $rowSheet['setting_value'];
+    }
 
     // Load frame-shape color mapping (optional — fails silently if missing/invalid)
     $frameShapeColors = [];
@@ -3518,11 +3647,11 @@
             // ============================================================
 
             // Selected frame state (populated by frame barcode scanner)
-            var lrSelectedFrame = null; // { name, price }
+            var lrSelectedFrame = null; // { name, price, ufc }
 
             // Called by the barcode scanner when a frame is successfully found
-            function lrSetSelectedFrame(name, price) {
-                lrSelectedFrame = (name && price > 0) ? { name: name, price: price } : null;
+            function lrSetSelectedFrame(name, price, ufc) {
+                lrSelectedFrame = (name && price > 0) ? { name: name, price: price, ufc: ufc || '' } : null;
                 lrUpdateSelectionDisplay(false); // do NOT auto-open bar
             }
 
@@ -5588,7 +5717,7 @@
                 // Update selection display bar
                 if (typeof window.lrSetSelectedFrame === 'function') {
                     var frameName = d.brand + (d.frame_code ? ' — ' + d.frame_code : '') + (d.frame_size ? ' (' + d.frame_size + ')' : '');
-                    window.lrSetSelectedFrame(frameName, frameSellPrice);
+                    window.lrSetSelectedFrame(frameName, frameSellPrice, d.ufc || '');
                 }
 
                 fbsResult.innerHTML =
@@ -5830,10 +5959,10 @@
 
                 // === Update Customer Selection bar via helper so lens selection is preserved ===
                 if (typeof window.lrSetSelectedFrame === 'function') {
-                    window.lrSetSelectedFrame(frameName, priceInt);
+                    window.lrSetSelectedFrame(frameName, priceInt, ufc);
                 } else {
                     // Fallback: keep lrSelectedFrame in sync for total calculation
-                    window.lrSelectedFrame = priceInt > 0 ? { name: frameName, price: priceInt } : null;
+                    window.lrSelectedFrame = priceInt > 0 ? { name: frameName, price: priceInt, ufc: ufc } : null;
                 }
 
                 // Make bar visible but keep body collapsed (user must click to expand)
@@ -5873,277 +6002,481 @@
         }());
         </script>
 
-    <!-- ══════════════════════════════════════════════════════════════
-         MANUAL FACE SHAPE PICKER MODAL
-         ══════════════════════════════════════════════════════════════ -->
-    <div id="mfs-overlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.82); z-index:9999; overflow-y:auto; padding:20px 12px 40px;">
-        <div style="max-width:520px; margin:0 auto; background:#1a1c1d; border:1px solid rgba(170,136,255,0.3); border-radius:22px; padding:22px 18px; position:relative;">
-            <!-- Header -->
-            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:18px;">
-                <div>
-                    <div style="font-size:0.7rem; letter-spacing:2px; color:#aa88ff; font-weight:700;">✋ SELECT FACE SHAPE</div>
-                    <div style="font-size:9px; color:#555; margin-top:3px;">Tap the shape that best matches the customer's face</div>
+        <!-- ══════════════════════════════════════════════════════════════
+            MANUAL FACE SHAPE PICKER MODAL
+            ══════════════════════════════════════════════════════════════ -->
+        <div id="mfs-overlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.82); z-index:9999; overflow-y:auto; padding:20px 12px 40px;">
+            <div style="max-width:520px; margin:0 auto; background:#1a1c1d; border:1px solid rgba(170,136,255,0.3); border-radius:22px; padding:22px 18px; position:relative;">
+                <!-- Header -->
+                <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:18px;">
+                    <div>
+                        <div style="font-size:0.7rem; letter-spacing:2px; color:#aa88ff; font-weight:700;">✋ SELECT FACE SHAPE</div>
+                        <div style="font-size:9px; color:#555; margin-top:3px;">Tap the shape that best matches the customer's face</div>
+                    </div>
+                    <button type="button" onclick="closeManualFaceShape()" style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1); border-radius:50%; width:32px; height:32px; color:#aaa; font-size:16px; cursor:pointer; line-height:1; display:flex; align-items:center; justify-content:center;">✕</button>
                 </div>
-                <button type="button" onclick="closeManualFaceShape()" style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1); border-radius:50%; width:32px; height:32px; color:#aaa; font-size:16px; cursor:pointer; line-height:1; display:flex; align-items:center; justify-content:center;">✕</button>
-            </div>
 
-            <!-- Shape grid -->
-            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap:10px;" id="mfs-grid">
+                <!-- Shape grid -->
+                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap:10px;" id="mfs-grid">
 
-                <!-- OVAL -->
-                <button type="button" class="mfs-card" onclick="selectManualShape('OVAL')">
-                    <svg viewBox="0 0 80 90" xmlns="http://www.w3.org/2000/svg" class="mfs-svg">
-                        <ellipse cx="40" cy="45" rx="27" ry="38" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
-                        <line x1="20" y1="22" x2="60" y2="22" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
-                        <line x1="13" y1="45" x2="67" y2="45" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.3"/>
-                        <line x1="22" y1="68" x2="58" y2="68" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
-                    </svg>
-                    <span class="mfs-label">OVAL</span>
-                    <span class="mfs-sub">Balanced &amp; symmetrical</span>
-                </button>
+                    <!-- OVAL -->
+                    <button type="button" class="mfs-card" onclick="selectManualShape('OVAL')">
+                        <svg viewBox="0 0 80 90" xmlns="http://www.w3.org/2000/svg" class="mfs-svg">
+                            <ellipse cx="40" cy="45" rx="27" ry="38" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+                            <line x1="20" y1="22" x2="60" y2="22" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
+                            <line x1="13" y1="45" x2="67" y2="45" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.3"/>
+                            <line x1="22" y1="68" x2="58" y2="68" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
+                        </svg>
+                        <span class="mfs-label">OVAL</span>
+                        <span class="mfs-sub">Balanced &amp; symmetrical</span>
+                    </button>
 
-                <!-- ROUND -->
-                <button type="button" class="mfs-card" onclick="selectManualShape('ROUND')">
-                    <svg viewBox="0 0 80 90" xmlns="http://www.w3.org/2000/svg" class="mfs-svg">
-                        <ellipse cx="40" cy="45" rx="32" ry="33" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
-                        <line x1="14" y1="27" x2="66" y2="27" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
-                        <line x1="8" y1="45" x2="72" y2="45" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.3"/>
-                        <line x1="14" y1="63" x2="66" y2="63" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
-                    </svg>
-                    <span class="mfs-label">ROUND</span>
-                    <span class="mfs-sub">Equal width &amp; height</span>
-                </button>
+                    <!-- ROUND -->
+                    <button type="button" class="mfs-card" onclick="selectManualShape('ROUND')">
+                        <svg viewBox="0 0 80 90" xmlns="http://www.w3.org/2000/svg" class="mfs-svg">
+                            <ellipse cx="40" cy="45" rx="32" ry="33" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+                            <line x1="14" y1="27" x2="66" y2="27" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
+                            <line x1="8" y1="45" x2="72" y2="45" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.3"/>
+                            <line x1="14" y1="63" x2="66" y2="63" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
+                        </svg>
+                        <span class="mfs-label">ROUND</span>
+                        <span class="mfs-sub">Equal width &amp; height</span>
+                    </button>
 
-                <!-- SQUARE -->
-                <button type="button" class="mfs-card" onclick="selectManualShape('SQUARE')">
-                    <svg viewBox="0 0 80 90" xmlns="http://www.w3.org/2000/svg" class="mfs-svg">
-                        <path d="M15 20 Q40 14 65 20 L68 45 Q64 74 40 78 Q16 74 12 45 Z" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/>
-                        <line x1="15" y1="20" x2="65" y2="20" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
-                        <line x1="12" y1="45" x2="68" y2="45" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.3"/>
-                        <line x1="18" y1="68" x2="62" y2="68" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
-                    </svg>
-                    <span class="mfs-label">SQUARE</span>
-                    <span class="mfs-sub">Strong wide jaw</span>
-                </button>
+                    <!-- SQUARE -->
+                    <button type="button" class="mfs-card" onclick="selectManualShape('SQUARE')">
+                        <svg viewBox="0 0 80 90" xmlns="http://www.w3.org/2000/svg" class="mfs-svg">
+                            <path d="M15 20 Q40 14 65 20 L68 45 Q64 74 40 78 Q16 74 12 45 Z" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/>
+                            <line x1="15" y1="20" x2="65" y2="20" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
+                            <line x1="12" y1="45" x2="68" y2="45" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.3"/>
+                            <line x1="18" y1="68" x2="62" y2="68" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
+                        </svg>
+                        <span class="mfs-label">SQUARE</span>
+                        <span class="mfs-sub">Strong wide jaw</span>
+                    </button>
 
-                <!-- OBLONG -->
-                <button type="button" class="mfs-card" onclick="selectManualShape('OBLONG')">
-                    <svg viewBox="0 0 80 100" xmlns="http://www.w3.org/2000/svg" class="mfs-svg">
-                        <ellipse cx="40" cy="50" rx="22" ry="44" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
-                        <line x1="22" y1="18" x2="58" y2="18" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
-                        <line x1="18" y1="50" x2="62" y2="50" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.3"/>
-                        <line x1="22" y1="82" x2="58" y2="82" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
-                    </svg>
-                    <span class="mfs-label">OBLONG</span>
-                    <span class="mfs-sub">Long &amp; narrow face</span>
-                </button>
+                    <!-- OBLONG -->
+                    <button type="button" class="mfs-card" onclick="selectManualShape('OBLONG')">
+                        <svg viewBox="0 0 80 100" xmlns="http://www.w3.org/2000/svg" class="mfs-svg">
+                            <ellipse cx="40" cy="50" rx="22" ry="44" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+                            <line x1="22" y1="18" x2="58" y2="18" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
+                            <line x1="18" y1="50" x2="62" y2="50" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.3"/>
+                            <line x1="22" y1="82" x2="58" y2="82" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
+                        </svg>
+                        <span class="mfs-label">OBLONG</span>
+                        <span class="mfs-sub">Long &amp; narrow face</span>
+                    </button>
 
-                <!-- HEART -->
-                <button type="button" class="mfs-card" onclick="selectManualShape('HEART')">
-                    <svg viewBox="0 0 80 90" xmlns="http://www.w3.org/2000/svg" class="mfs-svg">
-                        <path d="M12 18 Q40 12 68 18 Q72 36 66 52 Q56 70 40 80 Q24 70 14 52 Q8 36 12 18 Z" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/>
-                        <line x1="12" y1="18" x2="68" y2="18" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
-                        <line x1="11" y1="42" x2="69" y2="42" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.3"/>
-                        <line x1="24" y1="66" x2="56" y2="66" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
-                    </svg>
-                    <span class="mfs-label">HEART</span>
-                    <span class="mfs-sub">Wide forehead, pointed chin</span>
-                </button>
+                    <!-- HEART -->
+                    <button type="button" class="mfs-card" onclick="selectManualShape('HEART')">
+                        <svg viewBox="0 0 80 90" xmlns="http://www.w3.org/2000/svg" class="mfs-svg">
+                            <path d="M12 18 Q40 12 68 18 Q72 36 66 52 Q56 70 40 80 Q24 70 14 52 Q8 36 12 18 Z" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/>
+                            <line x1="12" y1="18" x2="68" y2="18" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
+                            <line x1="11" y1="42" x2="69" y2="42" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.3"/>
+                            <line x1="24" y1="66" x2="56" y2="66" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
+                        </svg>
+                        <span class="mfs-label">HEART</span>
+                        <span class="mfs-sub">Wide forehead, pointed chin</span>
+                    </button>
 
-                <!-- DIAMOND -->
-                <button type="button" class="mfs-card" onclick="selectManualShape('DIAMOND')">
-                    <svg viewBox="0 0 80 100" xmlns="http://www.w3.org/2000/svg" class="mfs-svg">
-                        <path d="M40 8 Q56 18 68 38 Q72 50 62 65 Q52 78 40 88 Q28 78 18 65 Q8 50 12 38 Q24 18 40 8 Z" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/>
-                        <line x1="24" y1="22" x2="56" y2="22" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
-                        <line x1="10" y1="50" x2="70" y2="50" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.3"/>
-                        <line x1="22" y1="72" x2="58" y2="72" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
-                    </svg>
-                    <span class="mfs-label">DIAMOND</span>
-                    <span class="mfs-sub">Prominent cheekbones</span>
-                </button>
+                    <!-- DIAMOND -->
+                    <button type="button" class="mfs-card" onclick="selectManualShape('DIAMOND')">
+                        <svg viewBox="0 0 80 100" xmlns="http://www.w3.org/2000/svg" class="mfs-svg">
+                            <path d="M40 8 Q56 18 68 38 Q72 50 62 65 Q52 78 40 88 Q28 78 18 65 Q8 50 12 38 Q24 18 40 8 Z" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/>
+                            <line x1="24" y1="22" x2="56" y2="22" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
+                            <line x1="10" y1="50" x2="70" y2="50" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.3"/>
+                            <line x1="22" y1="72" x2="58" y2="72" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
+                        </svg>
+                        <span class="mfs-label">DIAMOND</span>
+                        <span class="mfs-sub">Prominent cheekbones</span>
+                    </button>
 
-                <!-- TRIANGLE -->
-                <button type="button" class="mfs-card" onclick="selectManualShape('TRIANGLE')">
-                    <svg viewBox="0 0 80 90" xmlns="http://www.w3.org/2000/svg" class="mfs-svg">
-                        <path d="M28 12 Q40 10 52 12 Q64 22 70 44 Q72 60 62 72 Q50 82 40 84 Q30 82 18 72 Q8 60 10 44 Q16 22 28 12 Z" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/>
-                        <line x1="28" y1="12" x2="52" y2="12" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
-                        <line x1="14" y1="48" x2="66" y2="48" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.3"/>
-                        <line x1="18" y1="70" x2="62" y2="70" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
-                    </svg>
-                    <span class="mfs-label">TRIANGLE</span>
-                    <span class="mfs-sub">Jaw wider than forehead</span>
-                </button>
+                    <!-- TRIANGLE -->
+                    <button type="button" class="mfs-card" onclick="selectManualShape('TRIANGLE')">
+                        <svg viewBox="0 0 80 90" xmlns="http://www.w3.org/2000/svg" class="mfs-svg">
+                            <path d="M28 12 Q40 10 52 12 Q64 22 70 44 Q72 60 62 72 Q50 82 40 84 Q30 82 18 72 Q8 60 10 44 Q16 22 28 12 Z" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/>
+                            <line x1="28" y1="12" x2="52" y2="12" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
+                            <line x1="14" y1="48" x2="66" y2="48" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.3"/>
+                            <line x1="18" y1="70" x2="62" y2="70" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
+                        </svg>
+                        <span class="mfs-label">TRIANGLE</span>
+                        <span class="mfs-sub">Jaw wider than forehead</span>
+                    </button>
 
-            </div><!-- /mfs-grid -->
+                </div><!-- /mfs-grid -->
 
-            <!-- Cancel note -->
-            <div style="text-align:center; margin-top:18px; font-size:9px; color:#444; letter-spacing:0.5px;">
-                Tap a shape to apply · This will show eyeglass frame recommendations
+                <!-- Cancel note -->
+                <div style="text-align:center; margin-top:18px; font-size:9px; color:#444; letter-spacing:0.5px;">
+                    Tap a shape to apply · This will show eyeglass frame recommendations
+                </div>
             </div>
         </div>
-    </div>
 
-    <style>
-    .mfs-card {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 6px;
-        padding: 14px 10px 12px;
-        background: rgba(255,255,255,0.025);
-        border: 1.5px solid rgba(170,136,255,0.18);
-        border-radius: 16px;
-        cursor: pointer;
-        transition: background 0.18s, border-color 0.18s, transform 0.12s;
-        font-family: inherit;
-        text-align: center;
-        color: #aa88ff;
-    }
-    .mfs-card:hover {
-        background: rgba(170,136,255,0.10);
-        border-color: rgba(170,136,255,0.55);
-        transform: translateY(-2px);
-    }
-    .mfs-card:active {
-        transform: scale(0.96);
-    }
-    .mfs-svg {
-        width: 64px;
-        height: 72px;
-        color: #aa88ff;
-        filter: drop-shadow(0 0 6px rgba(170,136,255,0.35));
-    }
-    .mfs-label {
-        font-size: 11px;
-        font-weight: 800;
-        letter-spacing: 1.5px;
-        color: #aa88ff;
-    }
-    .mfs-sub {
-        font-size: 8.5px;
-        color: #666;
-        letter-spacing: 0.3px;
-        line-height: 1.3;
-    }
-    </style>
+        <style>
+            .mfs-card {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 6px;
+                padding: 14px 10px 12px;
+                background: rgba(255,255,255,0.025);
+                border: 1.5px solid rgba(170,136,255,0.18);
+                border-radius: 16px;
+                cursor: pointer;
+                transition: background 0.18s, border-color 0.18s, transform 0.12s;
+                font-family: inherit;
+                text-align: center;
+                color: #aa88ff;
+            }
+            .mfs-card:hover {
+                background: rgba(170,136,255,0.10);
+                border-color: rgba(170,136,255,0.55);
+                transform: translateY(-2px);
+            }
+            .mfs-card:active {
+                transform: scale(0.96);
+            }
+            .mfs-svg {
+                width: 64px;
+                height: 72px;
+                color: #aa88ff;
+                filter: drop-shadow(0 0 6px rgba(170,136,255,0.35));
+            }
+            .mfs-label {
+                font-size: 11px;
+                font-weight: 800;
+                letter-spacing: 1.5px;
+                color: #aa88ff;
+            }
+            .mfs-sub {
+                font-size: 8.5px;
+                color: #666;
+                letter-spacing: 0.3px;
+                line-height: 1.3;
+            }
+        </style>
 
-    <script>
-    function openManualFaceShape() {
-        document.getElementById('mfs-overlay').style.display = 'block';
-    }
-    function closeManualFaceShape() {
-        document.getElementById('mfs-overlay').style.display = 'none';
-    }
+        <script>
+        function openManualFaceShape() {
+            document.getElementById('mfs-overlay').style.display = 'block';
+        }
+        function closeManualFaceShape() {
+            document.getElementById('mfs-overlay').style.display = 'none';
+        }
 
-    function selectManualShape(shape) {
-        closeManualFaceShape();
+        function selectManualShape(shape) {
+            closeManualFaceShape();
 
-        // Populate result box content (but keep it hidden — shown via toggle button)
-        var resultBox = document.getElementById('mp-result');
-        if (resultBox) {
-            var shapeEmojis = {OVAL:'◉',ROUND:'●',SQUARE:'■',OBLONG:'▬',HEART:'♥',DIAMOND:'◆',TRIANGLE:'▼'};
-            var shapeDesc = {
-                OVAL:'Symmetrical face, slightly longer than wide, with soft lines.',
-                ROUND:'Rounded face, width and height nearly equal, blunt chin.',
-                SQUARE:'Strong wide jaw, square chin, balanced proportions.',
-                OBLONG:'Long and narrow face, forehead and jaw parallel.',
-                HEART:'Wide forehead tapering to a pointed chin.',
-                DIAMOND:'Prominent cheekbones, narrower forehead and jaw.',
-                TRIANGLE:'Jaw wider than forehead, face widens toward the bottom.'
+            // Populate result box content (but keep it hidden — shown via toggle button)
+            var resultBox = document.getElementById('mp-result');
+            if (resultBox) {
+                var shapeEmojis = {OVAL:'◉',ROUND:'●',SQUARE:'■',OBLONG:'▬',HEART:'♥',DIAMOND:'◆',TRIANGLE:'▼'};
+                var shapeDesc = {
+                    OVAL:'Symmetrical face, slightly longer than wide, with soft lines.',
+                    ROUND:'Rounded face, width and height nearly equal, blunt chin.',
+                    SQUARE:'Strong wide jaw, square chin, balanced proportions.',
+                    OBLONG:'Long and narrow face, forehead and jaw parallel.',
+                    HEART:'Wide forehead tapering to a pointed chin.',
+                    DIAMOND:'Prominent cheekbones, narrower forehead and jaw.',
+                    TRIANGLE:'Jaw wider than forehead, face widens toward the bottom.'
+                };
+                resultBox.innerHTML =
+                    '<div style="font-size:0.65rem;color:var(--text-muted);letter-spacing:1px;margin-bottom:6px;">MANUAL SELECTION</div>' +
+                    '<div class="shape-badge" style="font-size:1.6rem;">' + shape + '</div>' +
+                    '<div style="margin-top:8px;font-size:10px;color:#888;text-align:center;">' + (shapeDesc[shape]||'') + '</div>' +
+                    '<div style="margin-top:8px;font-size:9px;color:#aa88ff;letter-spacing:0.5px;">✋ Manually selected (no camera scan)</div>';
+                resultBox.style.display = 'none'; // hidden until VIEW RESULT is pressed
+            }
+
+            // Pre-build frame recommendation data (hidden until VIEW RESULT is pressed)
+            if (typeof window.showFrameRecommendation === 'function') {
+                window.showFrameRecommendation(shape, false);
+            }
+
+            // Show VIEW RESULT toggle button (same behaviour as camera flow)
+            var toggleBtn = document.getElementById('mp-result-toggle-btn');
+            if (toggleBtn) {
+                toggleBtn.style.display = 'inline-flex';
+                var lbl = document.getElementById('mp-result-toggle-label');
+                if (lbl) lbl.textContent = '👁 VIEW RESULT';
+            }
+
+            // Scroll to toggle button so user sees it
+            setTimeout(function() {
+                if (toggleBtn) toggleBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }, 100);
+        }
+
+        // ============================================================
+        // CONFIRM ORDER — modal logic
+        // Replaces the old openPrintPage() direct-open behaviour.
+        // ============================================================
+        
+        // Starting invoice sheet from settings (PHP-injected)
+        var _coDefaultSheet = '<?php echo htmlspecialchars($startingInvoiceNumber, ENT_QUOTES); ?>';
+        
+        // Fetch the latest invoice_sheet from customer_orders so we
+        // can suggest the next one automatically.
+        (function () {
+            fetch('invoice_next_sheet.php')
+                .then(function (r) { return r.json(); })
+                .then(function (d) {
+                    if (d && d.next_sheet) _coDefaultSheet = d.next_sheet;
+                })
+                .catch(function () { /* keep default */ });
+        }());
+        
+        // ── Open the confirmation modal ───────────────────────────────
+        function openPrintPage() {
+        
+            // Collect current selection data
+            var frameName  = '';
+            var frameUfc   = '';
+            var framePrice = 0;
+            if (typeof lrSelectedFrame !== 'undefined' && lrSelectedFrame) {
+                frameName  = lrSelectedFrame.name  || '';
+                frameUfc   = lrSelectedFrame.ufc   || '';
+                framePrice = lrSelectedFrame.price || 0;
+            }
+        
+            var lensName  = '';
+            var lensPrice = 0;
+            if (typeof lrSelectedLens !== 'undefined' && lrSelectedLens) {
+                lensName  = lrSelectedLens.name  || '';
+                lensPrice = lrSelectedLens.price || 0;
+            }
+        
+            var rxMode   = (typeof lrPrescriptionIsModified !== 'undefined' && lrPrescriptionIsModified)
+                        ? 'modified' : 'original';
+            var totalRaw = (typeof _lrRawTotal !== 'undefined') ? _lrRawTotal : 0;
+            var paidRaw  = (typeof _lrRawPaid  !== 'undefined') ? _lrRawPaid  : 0;
+        
+            var phone   = '';
+            var phoneEl = document.getElementById('lr-customer-phone');
+            if (phoneEl) phone = phoneEl.value || '';
+        
+            var address   = '';
+            var addrEl    = document.getElementById('lr-customer-address');
+            if (addrEl) address = addrEl.value || '';
+        
+            var dueDate = '';
+            var dueEl   = document.getElementById('lr-due-date-box');
+            if (dueEl) {
+                var dt = dueEl.textContent.trim();
+                if (dt && dt !== '— select a lens') dueDate = dt;
+            }
+        
+            var orderDate = '<?php echo date('d/m/Y', strtotime($data['examination_date'])); ?>';
+        
+            // Stash data on the modal for use by confirmOrderYes()
+            var overlay = document.getElementById('confirm-order-overlay');
+            overlay.dataset.inv        = <?php echo json_encode($invoice_num); ?>;
+            overlay.dataset.examCode   = <?php echo json_encode($data['examination_code'] ?? ''); ?>;
+            overlay.dataset.frameUfc   = frameUfc;
+            overlay.dataset.frameName  = frameName;
+            overlay.dataset.framePrice = framePrice;
+            overlay.dataset.lensName   = lensName;
+            overlay.dataset.lensPrice  = lensPrice;
+            overlay.dataset.rxMode     = rxMode;
+            overlay.dataset.isModified = (rxMode === 'modified') ? '1' : '0';
+            overlay.dataset.total      = totalRaw;
+            overlay.dataset.paid       = paidRaw;
+            overlay.dataset.phone      = phone;
+            overlay.dataset.address    = address;
+            overlay.dataset.dueDate    = dueDate;
+            overlay.dataset.orderDate  = orderDate;
+        
+            // Pre-fill invoice sheet input
+            document.getElementById('co-invoice-sheet').value = _coDefaultSheet;
+            document.getElementById('co-error').style.display = 'none';
+        
+            // Build summary
+            var fmtRp = function (v) {
+                return 'Rp\u00a0' + parseInt(v).toLocaleString('id-ID');
             };
-            resultBox.innerHTML =
-                '<div style="font-size:0.65rem;color:var(--text-muted);letter-spacing:1px;margin-bottom:6px;">MANUAL SELECTION</div>' +
-                '<div class="shape-badge" style="font-size:1.6rem;">' + shape + '</div>' +
-                '<div style="margin-top:8px;font-size:10px;color:#888;text-align:center;">' + (shapeDesc[shape]||'') + '</div>' +
-                '<div style="margin-top:8px;font-size:9px;color:#aa88ff;letter-spacing:0.5px;">✋ Manually selected (no camera scan)</div>';
-            resultBox.style.display = 'none'; // hidden until VIEW RESULT is pressed
+            var row = function (label, value, color) {
+                return '<div style="display:flex;justify-content:space-between;align-items:center;' +
+                    'padding:7px 10px;background:rgba(255,255,255,0.025);border-radius:8px;">' +
+                    '<span style="font-size:9px;color:#555;letter-spacing:0.5px;">' + label + '</span>' +
+                    '<span style="font-size:10px;font-weight:700;color:' + (color || '#ddd') + ';' +
+                    'text-align:right;max-width:65%;word-break:break-word;">' + value + '</span></div>';
+            };
+        
+            var summary = '';
+            summary += row('INVOICE',  <?php echo json_encode($invoice_num); ?>, '#00cfff');
+            if (frameName) summary += row('FRAME', frameName, '#ffaa00');
+            else           summary += row('FRAME', 'No frame (lens only)', '#555');
+            if (lensName)  summary += row('LENS',  lensName,  '#00ff88');
+            else           summary += row('LENS',  'No lens selected', '#ff4d4d');
+            summary += row('PRESCRIPTION', rxMode === 'modified' ? '✏️ Modified' : '📋 Original',
+                        rxMode === 'modified' ? '#ffaa00' : '#00cfff');
+            summary += row('TOTAL AMOUNT', totalRaw > 0 ? fmtRp(totalRaw) : '—', '#ffaa00');
+            summary += row('AMOUNT PAID',  paidRaw  > 0 ? fmtRp(paidRaw)  : '—', '#00ff88');
+            summary += row('BALANCE',
+                        (totalRaw - paidRaw) >= 0 ? fmtRp(totalRaw - paidRaw) : '—', '#ff8a4d');
+            summary += row('PHONE',   phone   || '—', '#ccc');
+            summary += row('DUE DATE', dueDate || '—', '#ccc');
+        
+            document.getElementById('co-summary').innerHTML = summary;
+        
+            overlay.style.display = 'block';
+        }
+        
+        function closeConfirmOrder() {
+            document.getElementById('confirm-order-overlay').style.display = 'none';
+        }
+        
+        // ── YES SHOPPING — save to DB then open print page ───────────
+        function confirmOrderYes() {
+        
+            var btn = document.getElementById('co-yes-btn');
+            btn.disabled    = true;
+            btn.textContent = '⏳ SAVING…';
+        
+            var overlay    = document.getElementById('confirm-order-overlay');
+            var errBox     = document.getElementById('co-error');
+            errBox.style.display = 'none';
+        
+            var invoiceSheet = document.getElementById('co-invoice-sheet').value.trim();
+        
+            // Basic validation: must match  digits.digits  pattern
+            if (!/^\d+\.\d{1,2}$/.test(invoiceSheet)) {
+                errBox.textContent    = 'Invoice sheet format is invalid. Use format: 16.31';
+                errBox.style.display  = 'block';
+                btn.disabled          = false;
+                btn.textContent       = '✅ YES SHOPPING — SAVE & PRINT';
+                return;
+            }
+        
+            var fd = new FormData();
+            fd.append('save_order',    '1');
+            fd.append('inv',           overlay.dataset.inv);
+            fd.append('exam_code',     overlay.dataset.examCode);
+            fd.append('invoice_sheet', invoiceSheet);
+            fd.append('is_modified',   overlay.dataset.isModified);
+            fd.append('frame_ufc',     overlay.dataset.frameUfc);
+            fd.append('frame_name',    overlay.dataset.frameName);
+            fd.append('frame_price',   overlay.dataset.framePrice);
+            fd.append('lens_name',     overlay.dataset.lensName);
+            fd.append('lens_price',    overlay.dataset.lensPrice);
+            fd.append('phone',         overlay.dataset.phone);
+            fd.append('address',       overlay.dataset.address);
+            fd.append('total_amount',  overlay.dataset.total);
+            fd.append('amount_paid',   overlay.dataset.paid);
+            fd.append('order_date',    overlay.dataset.orderDate);
+            fd.append('due_date',      overlay.dataset.dueDate);
+        
+            fetch('invoice.php', { method: 'POST', body: fd })
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (data.success) {
+                        closeConfirmOrder();
+        
+                        // Open print page in new tab
+                        var params = new URLSearchParams({
+                            inv:             overlay.dataset.inv,
+                            frame:           overlay.dataset.frameName,
+                            frame_price:     overlay.dataset.framePrice,
+                            lens:            overlay.dataset.lensName,
+                            lens_price:      overlay.dataset.lensPrice,
+                            rx_mode:         overlay.dataset.rxMode,
+                            total:           overlay.dataset.total,
+                            paid:            overlay.dataset.paid,
+                            balance:         overlay.dataset.total - overlay.dataset.paid,
+                            phone:           overlay.dataset.phone,
+                            due_date:        overlay.dataset.dueDate,
+                            customer_number: data.customer_number,
+                            auto:            '1'
+                        });
+                        window.open('print_invoice_snippet.php?' + params.toString(), '_blank');
+        
+                    } else {
+                        errBox.textContent   = 'Failed to save: ' + (data.error || 'Unknown error');
+                        errBox.style.display = 'block';
+                        btn.disabled         = false;
+                        btn.textContent      = '✅ YES SHOPPING — SAVE & PRINT';
+                    }
+                })
+                .catch(function (err) {
+                    errBox.textContent   = 'Network error. Please try again.';
+                    errBox.style.display = 'block';
+                    btn.disabled         = false;
+                    btn.textContent      = '✅ YES SHOPPING — SAVE & PRINT';
+                });
         }
 
-        // Pre-build frame recommendation data (hidden until VIEW RESULT is pressed)
-        if (typeof window.showFrameRecommendation === 'function') {
-            window.showFrameRecommendation(shape, false);
-        }
+        // Make showFrameRecommendation accessible from outside its IIFE
+        // It is defined inside the IIFE — expose it via a global wrapper set after IIFE runs
+        // We use a deferred approach: the IIFE assigns window.showFrameRecommendation internally.
+        </script>
 
-        // Show VIEW RESULT toggle button (same behaviour as camera flow)
-        var toggleBtn = document.getElementById('mp-result-toggle-btn');
-        if (toggleBtn) {
-            toggleBtn.style.display = 'inline-flex';
-            var lbl = document.getElementById('mp-result-toggle-label');
-            if (lbl) lbl.textContent = '👁 VIEW RESULT';
-        }
-
-        // Scroll to toggle button so user sees it
-        setTimeout(function() {
-            if (toggleBtn) toggleBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        }, 100);
-    }
-
-    function openPrintPage() {
-        /* ── Kumpulkan data dari selection bar ── */
-    
-        // Frame
-        var frameName  = '';
-        var framePrice = 0;
-        if (typeof lrSelectedFrame !== 'undefined' && lrSelectedFrame) {
-            frameName  = lrSelectedFrame.name  || '';
-            framePrice = lrSelectedFrame.price || 0;
-        }
-    
-        // Lensa
-        var lensName  = '';
-        var lensPrice = 0;
-        var rxMode    = 'original';
-        if (typeof lrSelectedLens !== 'undefined' && lrSelectedLens) {
-            lensName  = lrSelectedLens.name  || '';
-            lensPrice = lrSelectedLens.price || 0;
-        }
-        if (typeof lrPrescriptionIsModified !== 'undefined' && lrPrescriptionIsModified) {
-            rxMode = 'modified';
-        }
-    
-        // Payment
-        var totalRaw   = (typeof _lrRawTotal !== 'undefined') ? _lrRawTotal : 0;
-        var paidRaw    = (typeof _lrRawPaid  !== 'undefined') ? _lrRawPaid  : 0;
-        var balanceRaw = totalRaw - paidRaw;
-    
-        // Telepon
-        var phone = '';
-        var phoneEl = document.getElementById('lr-customer-phone');
-        if (phoneEl) phone = phoneEl.value || '';
-    
-        // Tanggal siap
-        var dueDate = '';
-        var dueEl = document.getElementById('lr-due-date-box');
-        if (dueEl) {
-            var dt = dueEl.textContent.trim();
-            if (dt && dt !== '— select a lens') dueDate = dt;
-        }
-    
-        /* ── Bangun URL ── */
-        var inv = <?php echo json_encode($invoice_num); ?>;
-        var params = new URLSearchParams({
-            inv:         inv,
-            frame:       frameName,
-            frame_price: framePrice,
-            lens:        lensName,
-            lens_price:  lensPrice,
-            rx_mode:     rxMode,
-            total:       totalRaw,
-            paid:        paidRaw,
-            balance:     balanceRaw,
-            phone:       phone,
-            due_date:    dueDate,
-            auto:        '1'
-        });
-    
-        window.open('print_invoice_snippet.php?' + params.toString(), '_blank');
-    }
-
-    // Make showFrameRecommendation accessible from outside its IIFE
-    // It is defined inside the IIFE — expose it via a global wrapper set after IIFE runs
-    // We use a deferred approach: the IIFE assigns window.showFrameRecommendation internally.
-    </script>
-
-
+        <!-- ============================================================
+        CONFIRM ORDER MODAL
+        Shown when operator clicks PRINT INVOICE.
+        Operator reviews / edits invoice_sheet, then clicks
+        YES SHOPPING to save + open print page.
+        ============================================================ -->
+        <div id="confirm-order-overlay"
+            style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.88);
+                    z-index:10000;overflow-y:auto;padding:20px 12px 40px;">
+            <div style="max-width:480px;margin:0 auto;background:#1a1c1d;
+                        border:1px solid rgba(0,255,136,0.3);border-radius:22px;
+                        padding:24px 20px;position:relative;">
+        
+                <!-- Header -->
+                <div style="margin-bottom:18px;">
+                    <div style="font-size:0.65rem;letter-spacing:2px;color:#00ff88;font-weight:700;">
+                        ✅ CONFIRM ORDER
+                    </div>
+                    <div style="font-size:9px;color:#555;margin-top:3px;">
+                        Review the details below before saving
+                    </div>
+                </div>
+        
+                <!-- Summary rows -->
+                <div id="co-summary"
+                    style="display:flex;flex-direction:column;gap:8px;margin-bottom:18px;">
+                </div>
+        
+                <!-- Invoice sheet (editable) -->
+                <div style="margin-bottom:16px;">
+                    <div style="font-size:7px;color:#888;letter-spacing:1px;margin-bottom:4px;">
+                        INVOICE SHEET NUMBER <span style="color:#ffaa00;">(editable)</span>
+                    </div>
+                    <input type="text" id="co-invoice-sheet"
+                        maxlength="10"
+                        style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.05);
+                                border:1px solid rgba(255,170,0,0.45);border-radius:8px;
+                                padding:8px 12px;color:#ffaa00;font-size:14px;font-weight:800;
+                                font-family:monospace;letter-spacing:1px;outline:none;">
+                    <div style="font-size:8px;color:#555;margin-top:4px;">
+                        Format: 00.00 — integer part = invoice no, decimal = sheet no (max 50)
+                    </div>
+                </div>
+        
+                <!-- Error message -->
+                <div id="co-error"
+                    style="display:none;background:rgba(255,77,77,0.10);border:1px solid rgba(255,77,77,0.3);
+                            border-radius:8px;padding:8px 12px;font-size:10px;color:#ff4d4d;margin-bottom:12px;">
+                </div>
+        
+                <!-- Action buttons -->
+                <div style="display:flex;gap:10px;margin-top:4px;">
+                    <button type="button" onclick="closeConfirmOrder()"
+                            style="flex:1;padding:11px;border-radius:12px;border:1px solid rgba(255,255,255,0.12);
+                                background:rgba(255,255,255,0.04);color:#888;font-size:11px;font-weight:700;
+                                letter-spacing:1px;cursor:pointer;font-family:inherit;">
+                        CANCEL
+                    </button>
+                    <button type="button" id="co-yes-btn" onclick="confirmOrderYes()"
+                            style="flex:2;padding:11px;border-radius:12px;border:1px solid rgba(0,255,136,0.5);
+                                background:rgba(0,255,136,0.12);color:#00ff88;font-size:11px;font-weight:800;
+                                letter-spacing:1px;cursor:pointer;font-family:inherit;">
+                        ✅ YES SHOPPING — SAVE &amp; PRINT
+                    </button>
+                </div>
+        
+            </div>
+        </div>
     </body>
 </html>
