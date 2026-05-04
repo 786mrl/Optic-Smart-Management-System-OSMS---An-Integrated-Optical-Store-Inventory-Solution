@@ -2463,6 +2463,97 @@
                                 </div><!-- /prescription-container card-3 -->
                                 </div><!-- /fbs-card -->
 
+                                <!-- ══════════════════════════════════════════════════
+                                     CARD 4 — INPUT FRAME BARU (tidak ada di database)
+                                     ══════════════════════════════════════════════════ -->
+                                <div id="cfr-card" style="display:none; margin-top:12px;">
+                                <div class="prescription-container" style="text-align:center; border:1px solid rgba(255,138,77,0.28); background:linear-gradient(135deg,rgba(255,138,77,0.04) 0%,transparent 60%);">
+
+                                    <!-- Header (collapsible) -->
+                                    <div onclick="toggleCfrSection()" style="display:flex; align-items:center; justify-content:space-between; cursor:pointer;">
+                                        <div style="display:flex; align-items:center; gap:10px;">
+                                            <span style="font-size:1.25rem;">✏️</span>
+                                            <div style="text-align:left;">
+                                                <div style="font-size:0.7rem; letter-spacing:2px; color:#ff8a4d; font-weight:700;">INPUT FRAME BARU</div>
+                                                <div style="font-size:8.5px; color:#555; margin-top:1px; letter-spacing:0.5px;">Frame tidak ada di database · Input manual</div>
+                                            </div>
+                                        </div>
+                                        <div style="display:flex; align-items:center; gap:8px;">
+                                            <span style="font-size:8px; background:rgba(255,138,77,0.1); color:#ff8a4d; border:1px solid rgba(255,138,77,0.3); border-radius:20px; padding:3px 9px; letter-spacing:0.5px;">MANUAL INPUT</span>
+                                            <span id="cfr-chev" style="color:#ff8a4d; font-size:11px; display:inline-block; transition:transform 0.3s;">▼</span>
+                                        </div>
+                                    </div>
+
+                                    <!-- Collapsible body -->
+                                    <div id="cfr-body" style="display:none; margin-top:14px;">
+
+                                        <div style="font-size:9px; color:#666; text-align:left; margin-bottom:12px; padding:8px 10px; background:rgba(255,138,77,0.06); border:1px solid rgba(255,138,77,0.15); border-radius:10px; line-height:1.6;">
+                                            ℹ️ Gunakan form ini jika frame tidak ditemukan via <b style="color:#ff8a4d;">Scan Barcode</b> maupun <b style="color:#00cfff;">Manual Search</b>. Data akan disimpan ke database tersendiri dan langsung terpilih sebagai frame customer.
+                                        </div>
+
+                                        <!-- Input fields -->
+                                        <div style="display:flex; flex-direction:column; gap:10px; text-align:left;">
+
+                                            <!-- Brand Name -->
+                                            <div>
+                                                <div style="font-size:8px; color:#555; letter-spacing:1px; margin-bottom:4px;">BRAND NAME <span style="color:#ff4d4d;">*</span></div>
+                                                <input type="text" id="cfr-brand" placeholder="e.g. Brenden, Police, Silhouette…"
+                                                       style="width:100%; box-sizing:border-box; background:rgba(255,255,255,0.04); border:1px solid rgba(255,138,77,0.35); border-radius:10px; color:#ccc; font-size:11px; padding:10px 12px; letter-spacing:0.5px; outline:none; font-family:inherit;"
+                                                       oninput="cfrUpdatePreview()"
+                                                       onfocus="this.style.borderColor='rgba(255,138,77,0.7)'"
+                                                       onblur="this.style.borderColor='rgba(255,138,77,0.35)'">
+                                            </div>
+
+                                            <!-- Sell Price -->
+                                            <div>
+                                                <div style="font-size:8px; color:#555; letter-spacing:1px; margin-bottom:4px;">HARGA JUAL (IDR) <span style="color:#ff4d4d;">*</span></div>
+                                                <input type="text" id="cfr-price" placeholder="e.g. 350000"
+                                                       inputmode="numeric"
+                                                       style="width:100%; box-sizing:border-box; background:rgba(255,255,255,0.04); border:1px solid rgba(255,138,77,0.35); border-radius:10px; color:#ffaa00; font-size:13px; font-weight:700; padding:10px 12px; letter-spacing:0.5px; outline:none; font-family:monospace;"
+                                                       onfocus="cfrPriceFocus(this)"
+                                                       onblur="cfrPriceBlur(this)"
+                                                       oninput="cfrPriceInput(this)">
+                                            </div>
+
+                                            <!-- Frame Size -->
+                                            <div>
+                                                <div style="font-size:8px; color:#555; letter-spacing:1px; margin-bottom:4px;">UKURAN FRAME</div>
+                                                <input type="text" id="cfr-size" placeholder="e.g. 52-18-140, 54□17, M"
+                                                       style="width:100%; box-sizing:border-box; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.12); border-radius:10px; color:#ccc; font-size:11px; padding:10px 12px; letter-spacing:0.5px; outline:none; font-family:inherit;"
+                                                       onfocus="this.style.borderColor='rgba(255,138,77,0.5)'"
+                                                       onblur="this.style.borderColor='rgba(255,255,255,0.12)'">
+                                            </div>
+
+                                        </div>
+
+                                        <!-- Preview brand_key format -->
+                                        <div id="cfr-key-preview" style="margin-top:10px; padding:7px 12px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.07); border-radius:8px; font-size:9px; color:#555; text-align:left; display:none;">
+                                            <span style="color:#888;">Brand Key:</span> <span id="cfr-key-value" style="color:#ff8a4d; font-family:monospace;"></span>
+                                        </div>
+
+                                        <!-- Error box -->
+                                        <div id="cfr-error" style="display:none; margin-top:10px; padding:8px 12px; background:rgba(255,77,77,0.10); border:1px solid rgba(255,77,77,0.3); border-radius:8px; font-size:10px; color:#ff4d4d; text-align:left;"></div>
+
+                                        <!-- Save button -->
+                                        <button type="button" id="cfr-save-btn" onclick="cfrSave()"
+                                                style="width:100%; margin-top:14px; padding:12px; border-radius:12px; border:1px solid rgba(255,138,77,0.5); background:rgba(255,138,77,0.12); color:#ff8a4d; font-size:11px; font-weight:800; letter-spacing:1.2px; cursor:pointer; font-family:inherit; transition:all 0.2s;">
+                                            💾 SAVE TO DATABASE
+                                        </button>
+
+                                        <!-- Success result -->
+                                        <div id="cfr-result" style="display:none; margin-top:12px; padding:12px 14px; background:rgba(0,255,136,0.07); border:1px solid rgba(0,255,136,0.3); border-radius:12px; text-align:left;">
+                                            <div style="font-size:9px; color:#00ff88; letter-spacing:1px; margin-bottom:6px;">✓ FRAME TERSIMPAN &amp; TERPILIH</div>
+                                            <div id="cfr-result-inner" style="display:flex; flex-direction:column; gap:4px;"></div>
+                                            <button type="button" onclick="cfrClear()"
+                                                    style="margin-top:10px; width:100%; padding:8px; border-radius:8px; border:1px solid rgba(255,255,255,0.1); background:rgba(255,255,255,0.04); color:#666; font-size:9px; font-weight:700; letter-spacing:1px; cursor:pointer; font-family:inherit;">
+                                                ✕ INPUT FRAME BARU LAINNYA
+                                            </button>
+                                        </div>
+
+                                    </div><!-- /cfr-body -->
+                                </div><!-- /prescription-container card-4 -->
+                                </div><!-- /cfr-card -->
+
                                 </div><!-- /frame-selection-group -->
 
                         </div><!-- /mp-scan-card -->
@@ -3940,16 +4031,19 @@
                 const btnNo       = document.getElementById('frame-purchase-no');
                 const faceSection = document.getElementById('mp-face-section');
                 const fbsCard     = document.getElementById('fbs-card');
+                const cfrCard     = document.getElementById('cfr-card');
                 if (val === 1) {
                     btnYes.classList.add('active');
                     btnNo.classList.remove('active');
                     faceSection.style.display = 'block';
                     if (fbsCard) fbsCard.style.display = 'block';
+                    if (cfrCard) cfrCard.style.display = 'block';
                 } else {
                     btnNo.classList.add('active');
                     btnYes.classList.remove('active');
                     faceSection.style.display = 'none';
                     if (fbsCard) fbsCard.style.display = 'none';
+                    if (cfrCard) cfrCard.style.display = 'none';
                     // Stop the barcode scanner if it was running
                     if (typeof fbsStopCamera === 'function') fbsStopCamera();
                 }
@@ -4007,6 +4101,8 @@
                 if (!open) {
                     if (faceSection) faceSection.style.display = 'none';
                     if (fbsCard)     fbsCard.style.display     = 'none';
+                    var cfrCardTFP = document.getElementById('cfr-card');
+                    if (cfrCardTFP) cfrCardTFP.style.display = 'none';
                     if (typeof fbsStopCamera === 'function') fbsStopCamera();
                 } else {
                     // Re-opening: restore face section & fbs-card visibility based on current YES/NO state
@@ -4014,6 +4110,8 @@
                     const isYes  = btnYes && btnYes.classList.contains('active');
                     if (faceSection) faceSection.style.display = isYes ? 'block' : 'none';
                     if (fbsCard)     fbsCard.style.display     = isYes ? 'block' : 'none';
+                    var cfrCardTFP2 = document.getElementById('cfr-card');
+                    if (cfrCardTFP2) cfrCardTFP2.style.display = isYes ? 'block' : 'none';
                 }
             }
             window.toggleFpSection = toggleFpSection;
@@ -6478,5 +6576,164 @@
         
             </div>
         </div>
+        <!-- ============================================================
+             INPUT FRAME BARU (CARD 4) — JS
+             Menyimpan frame yang tidak ada di databases ke custom_frames,
+             lalu langsung set sebagai pilihan frame customer.
+             ============================================================ -->
+        <script>
+        (function () {
+            'use strict';
+
+            // ── Current date dd/mm/yyyy for brand_key prefix ─────────────
+            function cfrTodayStr() {
+                var now = new Date();
+                var dd  = String(now.getDate()).padStart(2, '0');
+                var mm  = String(now.getMonth() + 1).padStart(2, '0');
+                var yyyy = now.getFullYear();
+                return dd + '/' + mm + '/' + yyyy;
+            }
+
+            // ── Build brand_key: date+brand ──────────────────────────────
+            function cfrBuildKey(brand) {
+                return cfrTodayStr() + '+' + brand.trim().toLowerCase();
+            }
+
+            // ── Preview brand_key while typing ──────────────────────────
+            window.cfrUpdatePreview = function () {
+                var brand   = (document.getElementById('cfr-brand').value || '').trim();
+                var preview = document.getElementById('cfr-key-preview');
+                var keyVal  = document.getElementById('cfr-key-value');
+                if (brand.length > 0) {
+                    keyVal.textContent  = cfrBuildKey(brand);
+                    preview.style.display = 'block';
+                } else {
+                    preview.style.display = 'none';
+                }
+            };
+
+            // ── Price formatting (same pattern as lrPaymentInput) ────────
+            var _cfrRawPrice = 0;
+            window.cfrPriceInput = function (el) {
+                var digits = el.value.replace(/\D/g, '');
+                el.value   = digits;
+                _cfrRawPrice = parseInt(digits, 10) || 0;
+            };
+            window.cfrPriceFocus = function (el) {
+                el.value = _cfrRawPrice > 0 ? String(_cfrRawPrice) : '';
+                el.select();
+            };
+            window.cfrPriceBlur = function (el) {
+                el.value = _cfrRawPrice > 0
+                    ? 'Rp\u00a0' + _cfrRawPrice.toLocaleString('id-ID')
+                    : '';
+            };
+
+            // ── Collapsible toggle ───────────────────────────────────────
+            window.toggleCfrSection = function () {
+                var body = document.getElementById('cfr-body');
+                var chev = document.getElementById('cfr-chev');
+                if (!body) return;
+                var open = body.style.display === 'none' || body.style.display === '';
+                body.style.display = open ? 'block' : 'none';
+                if (chev) chev.style.transform = open ? 'rotate(180deg)' : 'rotate(0deg)';
+            };
+
+            // ── Save to database ─────────────────────────────────────────
+            window.cfrSave = function () {
+                var brand = (document.getElementById('cfr-brand').value || '').trim();
+                var size  = (document.getElementById('cfr-size').value  || '').trim();
+                var errEl = document.getElementById('cfr-error');
+                errEl.style.display = 'none';
+
+                // Validation
+                if (!brand) {
+                    errEl.textContent    = '⚠ Brand Name wajib diisi.';
+                    errEl.style.display  = 'block';
+                    document.getElementById('cfr-brand').focus();
+                    return;
+                }
+                if (_cfrRawPrice <= 0) {
+                    errEl.textContent    = '⚠ Harga Jual wajib diisi dan harus lebih dari 0.';
+                    errEl.style.display  = 'block';
+                    document.getElementById('cfr-price').focus();
+                    return;
+                }
+
+                var brandKey = cfrBuildKey(brand);
+                var inv      = <?php echo json_encode($invoice_num); ?>;
+
+                var btn = document.getElementById('cfr-save-btn');
+                btn.disabled    = true;
+                btn.textContent = '⏳ MENYIMPAN…';
+
+                var fd = new FormData();
+                fd.append('action',         'save_custom_frame');
+                fd.append('invoice_number', inv);
+                fd.append('brand_key',      brandKey);
+                fd.append('sell_price',     _cfrRawPrice);
+                fd.append('frame_size',     size);
+                fd.append('is_purchased',   '1');
+
+                fetch('custom_frame_save.php', { method: 'POST', body: fd })
+                    .then(function (r) { return r.json(); })
+                    .then(function (data) {
+                        btn.disabled    = false;
+                        btn.textContent = '💾 SAVE TO DATABASE';
+
+                        if (!data.success) {
+                            errEl.textContent   = '✕ Gagal menyimpan: ' + (data.error || 'Unknown error');
+                            errEl.style.display = 'block';
+                            return;
+                        }
+
+                        // ── Show success result ───────────────────────────
+                        var inner = document.getElementById('cfr-result-inner');
+                        inner.innerHTML =
+                            _row('Brand Key', brandKey, '#ff8a4d') +
+                            _row('Harga Jual', 'Rp\u00a0' + _cfrRawPrice.toLocaleString('id-ID'), '#ffaa00') +
+                            (size ? _row('Ukuran', size, '#aa88ff') : '') +
+                            _row('Invoice', inv, '#00cfff');
+                        document.getElementById('cfr-result').style.display = 'block';
+                        document.getElementById('cfr-save-btn').style.display = 'none';
+
+                        // ── Set as selected frame (same helpers used by barcode scanner) ──
+                        // Build a friendly display name: brand + size
+                        var displayName = brand.toUpperCase() + (size ? ' (' + size + ')' : '') + ' [CUSTOM]';
+                        if (typeof window.lrSetFramePrice    === 'function') window.lrSetFramePrice(_cfrRawPrice);
+                        if (typeof window.lrSetSelectedFrame === 'function') window.lrSetSelectedFrame(displayName, _cfrRawPrice, '');
+                        // Also update lens totals
+                        if (typeof window.lrRefreshTotals    === 'function') window.lrRefreshTotals();
+                    })
+                    .catch(function () {
+                        btn.disabled    = false;
+                        btn.textContent = '💾 SAVE TO DATABASE';
+                        errEl.textContent   = '✕ Koneksi error. Coba lagi.';
+                        errEl.style.display = 'block';
+                    });
+            };
+
+            function _row(label, value, color) {
+                return '<div style="display:flex;justify-content:space-between;gap:8px;font-size:9.5px;">' +
+                    '<span style="color:#555;letter-spacing:0.5px;">' + label + '</span>' +
+                    '<span style="color:' + color + ';font-weight:700;font-family:monospace;text-align:right;">' + value + '</span>' +
+                    '</div>';
+            }
+
+            // ── Clear / reset form ────────────────────────────────────────
+            window.cfrClear = function () {
+                document.getElementById('cfr-brand').value      = '';
+                document.getElementById('cfr-price').value      = '';
+                document.getElementById('cfr-size').value       = '';
+                document.getElementById('cfr-error').style.display  = 'none';
+                document.getElementById('cfr-result').style.display = 'none';
+                document.getElementById('cfr-save-btn').style.display = 'block';
+                document.getElementById('cfr-key-preview').style.display = 'none';
+                _cfrRawPrice = 0;
+            };
+
+        }());
+        </script>
+
     </body>
 </html>

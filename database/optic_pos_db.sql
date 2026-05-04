@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Apr 30, 2026 at 11:09 AM
+-- Generation Time: May 04, 2026 at 06:21 AM
 -- Server version: 10.1.38-MariaDB
 -- PHP Version: 7.3.2
 
@@ -73,34 +73,54 @@ CREATE TABLE `customer_examinations` (
 --
 
 INSERT INTO `customer_examinations` (`id`, `examination_date`, `examination_code`, `customer_name`, `gender`, `age`, `symptoms`, `old_r_sph`, `old_r_cyl`, `old_r_ax`, `old_r_add`, `old_l_sph`, `old_l_cyl`, `old_l_ax`, `old_l_add`, `new_r_sph`, `new_r_cyl`, `new_r_ax`, `new_r_add`, `new_r_visus`, `new_l_sph`, `new_l_cyl`, `new_l_ax`, `new_l_add`, `new_l_visus`, `pd_dist`, `created_at`, `invoice_number`, `exam_notes`, `visual_habit`, `digital_usage`, `ucva_r`, `ucva_l`, `lens_modification`, `need_distance`, `need_intermediate`, `need_near`) VALUES
-(1, '2026-04-24', 'LZ/EC/001/IV/2026', 'RAIS', 'MALE', 64, 'HYPEROPIA', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '0.00', '-50', '0.00', '0', '+3.00', '20/20', '-50', '0.00', '0', '+3.00', '20/20', '62/60', '2026-04-24 12:08:05', '001', '', 1, 1, '20/50', '20/50', 0, 1, 1, 1),
-(2, '2026-04-24', 'LZ/EC/002/IV/2026', 'RAIS', 'MALE', 30, 'MYOPIA', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '0.00', '-125', '0.00', '0', '0.00', '20/20', '-200', '0.00', '0', '0.00', '20/20', '62', '2026-04-24 12:50:48', '002', '', 2, 1, '20/70', '20/70', 0, 0, 0, 0),
-(3, '2026-04-26', 'LZ/EC/003/IV/2026', 'RAIS', 'MALE', 30, 'MYOPIA', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '0.00', '-125', '0.00', '0', '0.00', '20/20', '-200', '0.00', '0', '0.00', '20/20', '62/60', '2026-04-26 00:19:28', '003', '', 1, 1, '20/70', '20/70', 0, 0, 0, 0),
-(4, '2026-04-26', 'LZ/EC/004/IV/2026', 'RAIS', 'MALE', 30, '', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '0.00', '-125', '0.00', '0', '0.00', '20/20', '-200', '0.00', '0', '0.00', '20/20', '62/60', '2026-04-26 02:11:27', '004', '', 2, 3, '20/70', '20/70', 0, 0, 0, 0),
-(5, '2026-04-26', 'LZ/EC/005/IV/2026', 'RAIS', 'MALE', 30, 'MYOPIA', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '0.00', '-125', '0.00', '0', '0.00', '20/20', '-200', '0.00', '0', '0.00', '20/20', '62/60', '2026-04-26 02:22:47', '005', '', 2, 1, '20/70', '20/70', 1, 0, 0, 0),
-(6, '2026-04-26', 'LZ/EC/006/IV/2026', 'RAIS', 'MALE', 30, 'MYOPIA', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '0.00', '-125', '0.00', '0', '0.00', '20/20', '-200', '0.00', '0', '0.00', '20/20', '62/60', '2026-04-26 05:49:32', '006', '', 2, 2, '20/70', '20/70', 1, 0, 0, 0),
-(7, '2026-04-26', 'LZ/EC/007/IV/2026', 'RAIS', 'FEMALE', 57, 'PRESBYOPIA, MYOPIA', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '0.00', '-125', '0.00', '0', '+2.50', '20/20', '-225', '0.00', '0', '+2.50', '20/20', '62/60', '2026-04-26 07:24:04', '007', '', 1, 1, '20/70', '20/70', 0, 0, 0, 0),
-(8, '2026-04-26', 'LZ/EC/008/IV/2026', 'RAIS', 'MALE', 57, 'HYPEROPIA, PRESBYOPIA', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '0.00', '+125', '0.00', '0', '+2.50', '20/20', '+225', '0.00', '0', '+2.50', '20/20', '62/60', '2026-04-26 07:25:23', '008', '', 2, 3, '20/70', '20/70', 0, 0, 1, 1),
-(9, '2026-04-26', 'LZ/EC/009/IV/2026', 'RAIS', 'MALE', 30, 'MYOPIA', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '0.00', '-125', '0.00', '0', '0.00', '20/20', '-200', '0.00', '0', '0.00', '20/20', '62/60', '2026-04-26 09:41:35', '009', '', 2, 1, '20/70', '20/70', 1, 0, 0, 0),
-(10, '2026-04-26', 'LZ/EC/010/IV/2026', 'RAIS', 'MALE', 30, 'MYOPIA', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '0.00', '-125', '0.00', '0', '0.00', '20/20', '-200', '0.00', '0', '0.00', '20/20', '62/60', '2026-04-26 10:22:23', '010', '', 1, 1, '20/70', '20/70', 1, 0, 0, 0),
-(11, '2026-04-26', 'LZ/EC/011/IV/2026', 'RAIS', 'MALE', 30, 'MYOPIA', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '0.00', '-125', '0.00', '0', '0.00', '20/20', '-200', '0.00', '0', '0.00', '20/20', '62/60', '2026-04-26 10:34:20', '011', '', 1, 1, '20/70', '20/70', 1, 0, 0, 0),
-(12, '2026-04-26', 'LZ/EC/012/IV/2026', 'RAIS', 'MALE', 57, 'HYPEROPIA', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '0.00', '+125', '0.00', '0', '+2.50', '20/20', '+200', '0.00', '0', '+2.50', '20/20', '62/60', '2026-04-26 10:57:40', '012', '', 3, 3, '20/70', '20/70', 1, 1, 1, 0),
-(13, '2026-04-26', 'LZ/EC/013/IV/2026', 'RAIS', 'MALE', 30, 'MYOPIA', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '0.00', '-125', '0.00', '0', '0.00', '20/20', '-200', '0.00', '0', '0.00', '20/20', '62', '2026-04-26 11:35:37', '013', '', 3, 3, '20/70', '20/70', 1, 0, 0, 0),
-(14, '2026-04-27', 'LZ/EC/014/IV/2026', 'RAIS', 'MALE', 57, 'HYPEROPIA', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '0.00', '-50', '0.00', '0', '+2.50', '20/20', '-50', '0.00', '0', '+2.50', '20/20', '62/60', '2026-04-27 04:08:54', '014', '', 1, 2, '20/50', '20/50', 1, 1, 1, 1),
-(15, '2026-04-27', 'LZ/EC/015/IV/2026', 'RAIS', 'MALE', 30, 'MYOPIA', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '0.00', '-50', '0.00', '0', '0.00', '20/20', '-50', '0.00', '0', '0.00', '20/20', '62/60', '2026-04-27 13:17:57', '015', '', 3, 2, '20/50', '20/50', 0, 0, 0, 0),
-(16, '2026-04-28', 'LZ/EC/016/IV/2026', 'RAIS', 'MALE', 64, 'HYPEROPIA, PRESBYOPIA', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '0.00', '+125', '0.00', '0', '+3.00', '20/20', '+200', '0.00', '0', '+3.00', '20/20', '62/60', '2026-04-27 23:45:14', '016', '', 2, 3, '20/70', '20/70', 0, 0, 1, 1),
-(17, '2026-04-28', 'LZ/EC/017/IV/2026', 'RAIS', 'MALE', 62, 'HYPEROPIA, PRESBYOPIA', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '0.00', '+250', '0.00', '0', '+3.00', '20/20', '+275', '0.00', '0', '+3.00', '20/20', '62/60', '2026-04-27 23:46:41', '017', '', 2, 3, '20/100', '20/100', 1, 1, 1, 0),
-(18, '2026-04-28', 'LZ/EC/018/IV/2026', 'RAIS', 'MALE', 61, 'PRESBYOPIA, HYPEROPIA', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '0.00', '+800', '0.00', '0', '+3.00', '20/20', '+1100', '0.00', '0', '+3.00', '20/20', '62/60', '2026-04-27 23:56:02', '018', '', 2, 2, '20/200', '20/200', 0, 0, 1, 1),
-(19, '2026-04-28', 'LZ/EC/019/IV/2026', 'RAIS', 'MALE', 30, 'MYOPIA, HEADACHE', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '0.00', '-125', '0.00', '0', '0.00', '20/20', '-200', '0.00', '0', '0.00', '20/20', '62/60', '2026-04-27 23:57:26', '019', '', 2, 1, '20/70', '20/70', 0, 0, 0, 0),
-(20, '2026-04-28', 'LZ/EC/020/IV/2026', 'RAIS', 'MALE', 59, 'MYOPIA, ASTIGMATISM, PRESBYOPIA, CATARACT, HEADACHE, DIABETES (150 MG/DL, CONTROLLED)', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '0.00', '-75', '-25', '75', '+2.75', '20/40', '-25', '-25', '75', '+2.75', '20/20', '62/60', '2026-04-28 01:50:49', '020', '', 3, 2, '20/70', '20/50', 0, 1, 0, 1),
-(21, '2026-04-28', 'LZ/EC/021/IV/2026', 'RAIS', 'MALE', 57, 'MYOPIA, ASTIGMATISM, PRESBYOPIA', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '0.00', '-50', '-50', '75', '+2.50', '20/20', '-25', '-75', '85', '+2.50', '20/20', '62/60', '2026-04-28 01:55:14', '021', '', 2, 2, '20/70', '20/70', 0, 1, 0, 1),
-(22, '2026-04-28', 'LZ/EC/022/IV/2026', 'RAIS', 'MALE', 57, 'MYOPIA, PRESBYOPIA, HEADACHE, HEADLIGHT GLARE, EYE STRAIN', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '0.00', '-125', '0.00', '0', '+2.50', '20/20', '-100', '0.00', '0', '+2.50', '20/20', '62/60', '2026-04-28 02:27:06', '022', '', 3, 3, '20/70', '20/50', 0, 1, 1, 1),
-(23, '2026-04-30', 'LZ/EC/023/IV/2026', 'RAIS', 'MALE', 30, 'MYOPIA, ASTIGMATISM, HEADLIGHT GLARE, HEADACHE', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '0.00', '-50', '-25', '5', '0.00', '20/20', '-25', '-25', '175', '0.00', '20/20', '62', '2026-04-30 03:25:02', '023', '', 3, 3, '20/50', '20/50', 0, 0, 0, 0),
-(24, '2026-04-30', 'LZ/EC/024/IV/2026', 'RAIS', 'MALE', 57, 'MYOPIA, ASTIGMATISM, PRESBYOPIA, HEADACHE, HEADLIGHT GLARE, EYE STRAIN', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '0.00', '-50', '-25', '5', '+2.50', '20/20', '-75', '-50', '175', '+2.50', '20/20', '62/60', '2026-04-30 04:38:20', '024', '', 3, 3, '20/50', '20/70', 0, 1, 1, 1),
-(25, '2026-04-30', 'LZ/EC/025/IV/2026', 'UMI', 'FEMALE', 64, 'HYPEROPIA, PRESBYOPIA', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '0.00', '+50', '0.00', '0', '+3.00', '20/20', '+75', '0.00', '0', '+3.00', '20/20', '62/60', '2026-04-30 04:57:18', '025', '', 1, 1, '20/50', '20/70', 0, 1, 0, 1),
-(26, '2026-04-30', 'LZ/EC/026/IV/2026', 'ZAHRA', 'FEMALE', 21, 'MYOPIA', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '0.00', '-50', '0.00', '0', '0.00', '20/20', '-75', '0.00', '0', '0.00', '20/20', '62', '2026-04-30 04:59:40', '026', '', 1, 3, '20/50', '20/70', 0, 0, 0, 0),
-(27, '2026-04-30', 'LZ/EC/027/IV/2026', 'RAIS', 'FEMALE', 15, 'MYOPIA', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '0.00', '-50', '0.00', '0', '0.00', '20/20', '-75', '0.00', '0', '0.00', '20/20', '62', '2026-04-30 05:37:10', '027', '', 3, 3, '20/50', '20/70', 1, 0, 0, 0),
-(28, '2026-04-30', 'LZ/EC/028/IV/2026', 'RAIS', 'MALE', 30, 'MYOPIA', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '0.00', '-50', '0.00', '0', '0.00', '20/20', '-50', '0.00', '0', '0.00', '20/20', '62', '2026-04-30 08:32:37', '028', '', 1, 1, '20/50', '20/50', 0, 0, 0, 0);
+(1, '2026-05-01', 'LZ/EC/001/V/2026', 'RAIS', 'MALE', 57, 'MYOPIA, ASTIGMATISM, PRESBYOPIA, HEADACHE', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '0.00', '-50', '-25', '75', '+2.50', '20/20', '-50', '0.00', '0', '+2.50', '20/20', '62/60', '2026-05-01 12:21:57', '001', '', 3, 3, '20/50', '20/50', 0, 1, 1, 1);
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `customer_orders`
+--
+
+CREATE TABLE `customer_orders` (
+  `id` int(11) UNSIGNED NOT NULL,
+  `customer_number` varchar(40) NOT NULL,
+  `invoice_number` varchar(50) NOT NULL,
+  `is_modified` tinyint(1) NOT NULL DEFAULT '0',
+  `frame_ufc` varchar(50) DEFAULT NULL,
+  `lens_name` varchar(150) DEFAULT NULL,
+  `customer_phone` varchar(30) DEFAULT NULL,
+  `customer_address` text,
+  `total_amount` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `amount_paid` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `order_date` date NOT NULL,
+  `due_date` date DEFAULT NULL,
+  `order_status` tinyint(1) NOT NULL DEFAULT '1',
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Confirmed purchase orders — saved when operator clicks Yes Shopping';
+
+--
+-- Dumping data for table `customer_orders`
+--
+
+INSERT INTO `customer_orders` (`id`, `customer_number`, `invoice_number`, `is_modified`, `frame_ufc`, `lens_name`, `customer_phone`, `customer_address`, `total_amount`, `amount_paid`, `order_date`, `due_date`, `order_status`, `created_at`, `updated_at`) VALUES
+(1, '1/LZ-C/16.31/001/V/26', '001', 0, 'BRENDEN-BR-3543-52-20-143-C1', 'PROGRESSIVE — BALANCE BLUCHROMIC ONE-DRIVE', '+62 812 6764 6916', 'JL. APEL RAYA NO. 51', '2000000.00', '1000000.00', '2026-05-01', '2026-05-11', 1, '2026-05-01 12:22:44', '2026-05-01 12:22:44');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `custom_frames`
+--
+
+CREATE TABLE `custom_frames` (
+  `id` int(11) NOT NULL,
+  `invoice_number` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Nomor invoice yang terkait',
+  `brand_key` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Pola: dd/mm/yyyy+brand_name, contoh: 05/04/2026+brenden',
+  `sell_price` decimal(12,2) NOT NULL DEFAULT '0.00' COMMENT 'Harga jual frame',
+  `frame_size` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Ukuran frame, contoh: 52-18-140',
+  `is_purchased` tinyint(1) NOT NULL DEFAULT '0' COMMENT '0 = belum dibeli, 1 = dibeli',
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Frame custom yang tidak ada di frames_main maupun frame_staging';
 
 -- --------------------------------------------------------
 
@@ -133,7 +153,7 @@ CREATE TABLE `frames_main` (
 --
 
 INSERT INTO `frames_main` (`ufc`, `brand`, `frame_code`, `frame_size`, `color_code`, `material`, `lens_shape`, `structure`, `size_range`, `gender_category`, `buy_price`, `sell_price`, `price_secret_code`, `stock`, `stock_age`, `created_at`, `updated_at`) VALUES
-('BRENDEN-BR-3543-52-20-143-C1', 'BRENDEN', 'BR-3543', '52-20-143', 'C1', 'METAL', 'SQUARE', 'full-rim', 'medium', 'men', '36000.00', '165000.00', 'IH15LZ', 1, 'old', '2026-01-24 17:52:01', '2026-01-24 17:52:01'),
+('BRENDEN-BR-3543-52-20-143-C1', 'BRENDEN', 'BR-3543', '52-20-143', 'C1', 'METAL', 'SQUARE', 'full-rim', 'medium', 'men', '36000.00', '165000.00', 'IH15LZ', 0, 'old', '2026-01-24 17:52:01', '2026-01-24 17:52:01'),
 ('BVLGARI-1303-49-17-138-COL.4', 'BVLGARI', '1303', '49-17-138', 'COL.4', 'PLASTIC', 'WAYFARER', 'full-rim', 'small', 'unisex', '68000.00', '330000.00', 'K30LZ', 1, 'very old', '2026-01-24 17:50:04', '2026-01-24 17:50:04'),
 ('BVLGARI-1376-50-23-137-COL.7', 'BVLGARI', '1376', '50-23-137', 'COL.7', 'TR90', 'WAYFARER', 'rimless', 'large', 'female', '58000.00', '265000.00', 'JH15LZ', 1, 'very old', '2026-01-23 16:50:03', '2026-01-23 16:50:03'),
 ('CEVIRO-lz-786-00-00-786-col.1', 'CEVIRO', 'lz-786', '00-00-786', 'col.1', 'METAL', 'Aviator', 'full-rim', 'medium', 'unisex', '30000.00', '135000.00', 'I35LZ', 2, 'new', '2026-01-21 21:50:31', '2026-01-21 21:50:31'),
@@ -233,26 +253,6 @@ CREATE TABLE `prescription_modifications` (
   `modified_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
---
--- Dumping data for table `prescription_modifications`
---
-
-INSERT INTO `prescription_modifications` (`modification_id`, `invoice_number`, `od_sph`, `od_cyl`, `od_axis`, `od_add`, `os_sph`, `os_cyl`, `os_axis`, `os_add`, `modified_at`) VALUES
-(1, '005', '-125', '0.00', '0', '0.00', '-175', '0.00', '0', '0.00', '2026-04-26 03:01:36'),
-(2, '006', '-125', '0.00', '0', '0.00', '-100', '-50', '10', '0.00', '2026-04-26 07:22:08'),
-(3, '006', '-125', '0.00', '0', '0.00', '-800', '-50', '10', '0.00', '2026-04-26 07:22:32'),
-(4, '009', '-125', '0.00', '0', '0.00', '-800', '0.00', '0', '0.00', '2026-04-26 10:14:33'),
-(5, '009', '-125', '0.00', '0', '0.00', '-700', '-50', '26', '0.00', '2026-04-26 10:21:38'),
-(6, '010', '-125', '0.00', '0', '0.00', '-900', '0.00', '0', '0.00', '2026-04-26 10:22:53'),
-(7, '010', '-125', '0.00', '0.00', '0.00', '-700', '-300', '80', '0.00', '2026-04-26 10:23:11'),
-(8, '010', '-125', '-300', '80', '0.00', '-700', '0.00', '0.00', '0.00', '2026-04-26 10:26:00'),
-(9, '011', '-300', '0.00', '0', '0.00', '-200', '0.00', '0', '0.00', '2026-04-26 10:34:34'),
-(10, '012', '+125', '-50', '25', '+2.50', '+200', '0.00', '0', '+2.50', '2026-04-26 10:58:22'),
-(11, '013', '-125', '0.00', '0', '0.00', '-125', '0.00', '0', '0.00', '2026-04-26 11:37:11'),
-(12, '014', '-50', '0.00', '0', '+2.50', '-50', '-50', '65', '+2.50', '2026-04-27 04:32:41'),
-(13, '017', '+800', '0.00', '0', '+3.00', '+700', '0.00', '0', '+3.00', '2026-04-27 23:51:41'),
-(14, '027', '-50', '0.00', '0', '0.00', '-100', '0.00', '0', '0.00', '2026-04-30 05:37:22');
-
 -- --------------------------------------------------------
 
 --
@@ -312,6 +312,24 @@ INSERT INTO `users` (`user_id`, `username`, `password_hash`, `role`, `is_approve
 (1, 'LenZa786', '$2y$10$E5ZXU41IpXcB443wtKCIou/cpEaFMa7k2tuOx83ZAQ9soeUPagGWm', 'admin', 1, '2026-01-12 05:15:58'),
 (16, 'Rais786', '$2y$10$oytb0PrQF9VUXlVjV8B9eu.1OEYFDIKXO8GqkDDVVZbcATJmteHIu', 'staff', 1, '2026-01-18 14:08:35');
 
+-- --------------------------------------------------------
+
+--
+-- Stand-in structure for view `v_customer_orders`
+-- (See below for the actual view)
+--
+CREATE TABLE `v_customer_orders` (
+);
+
+-- --------------------------------------------------------
+
+--
+-- Structure for view `v_customer_orders`
+--
+DROP TABLE IF EXISTS `v_customer_orders`;
+
+CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v_customer_orders`  AS  select `co`.`id` AS `id`,`co`.`customer_number` AS `customer_number`,`co`.`invoice_number` AS `invoice_number`,`co`.`invoice_sheet` AS `invoice_sheet`,`co`.`is_modified` AS `is_modified`,`co`.`frame_ufc` AS `frame_ufc`,`co`.`frame_name` AS `frame_name`,`co`.`frame_price` AS `frame_price`,`co`.`lens_name` AS `lens_name`,`co`.`lens_price` AS `lens_price`,`co`.`customer_phone` AS `customer_phone`,`co`.`customer_address` AS `customer_address`,`co`.`total_amount` AS `total_amount`,`co`.`amount_paid` AS `amount_paid`,`co`.`order_date` AS `order_date`,`co`.`due_date` AS `due_date`,`co`.`order_status` AS `order_status`,`co`.`created_at` AS `created_at`,`co`.`updated_at` AS `updated_at`,(`co`.`total_amount` - `co`.`amount_paid`) AS `balance`,(case `co`.`order_status` when 1 then 'On Progress' when 2 then 'Manufactured' when 3 then 'Shipping' when 4 then 'Finish' else 'Unknown' end) AS `status_label` from `customer_orders` `co` ;
+
 --
 -- Indexes for dumped tables
 --
@@ -323,6 +341,25 @@ ALTER TABLE `customer_examinations`
   ADD PRIMARY KEY (`id`),
   ADD UNIQUE KEY `examination_code` (`examination_code`),
   ADD KEY `invoice_number` (`invoice_number`);
+
+--
+-- Indexes for table `customer_orders`
+--
+ALTER TABLE `customer_orders`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uq_customer_number` (`customer_number`),
+  ADD UNIQUE KEY `uq_invoice_number` (`invoice_number`),
+  ADD KEY `idx_order_status` (`order_status`),
+  ADD KEY `idx_order_date` (`order_date`);
+
+--
+-- Indexes for table `custom_frames`
+--
+ALTER TABLE `custom_frames`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_invoice_number` (`invoice_number`),
+  ADD KEY `idx_brand_key` (`brand_key`),
+  ADD KEY `idx_is_purchased` (`is_purchased`);
 
 --
 -- Indexes for table `frames_main`
@@ -371,7 +408,19 @@ ALTER TABLE `users`
 -- AUTO_INCREMENT for table `customer_examinations`
 --
 ALTER TABLE `customer_examinations`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=29;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+
+--
+-- AUTO_INCREMENT for table `customer_orders`
+--
+ALTER TABLE `customer_orders`
+  MODIFY `id` int(11) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+
+--
+-- AUTO_INCREMENT for table `custom_frames`
+--
+ALTER TABLE `custom_frames`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT for table `frame_sales`
@@ -383,7 +432,7 @@ ALTER TABLE `frame_sales`
 -- AUTO_INCREMENT for table `prescription_modifications`
 --
 ALTER TABLE `prescription_modifications`
-  MODIFY `modification_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=15;
+  MODIFY `modification_id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT for table `users`
