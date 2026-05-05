@@ -6590,27 +6590,32 @@
             // brandKey of the currently selected custom frame (null = none selected)
             var _cfrSelected = null;
 
-            // ── Current date dd/mm/yyyy for brand_key prefix ─────────────
+            // ── Current date dd/mm for brand_key ────────────────────────
             function cfrTodayStr() {
                 var now = new Date();
                 var dd  = String(now.getDate()).padStart(2, '0');
                 var mm  = String(now.getMonth() + 1).padStart(2, '0');
-                var yyyy = now.getFullYear();
-                return dd + '/' + mm + '/' + yyyy;
+                return dd + '/' + mm;
             }
 
-            // ── Build brand_key: date+brand ──────────────────────────────
-            function cfrBuildKey(brand) {
-                return cfrTodayStr() + '+' + brand.trim().toLowerCase();
+            // ── Build brand_key: size+dd/mm+brand ───────────────────────
+            // Pattern: 52-18-140+05/05+lenza
+            function cfrBuildKey(brand, size) {
+                var parts = [];
+                if (size && size.trim().length > 0) parts.push(size.trim());
+                parts.push(cfrTodayStr());
+                parts.push(brand.trim().toLowerCase());
+                return parts.join('+');
             }
 
             // ── Preview brand_key while typing ──────────────────────────
             window.cfrUpdatePreview = function () {
                 var brand   = (document.getElementById('cfr-brand').value || '').trim();
+                var size    = (document.getElementById('cfr-size').value  || '').trim();
                 var preview = document.getElementById('cfr-key-preview');
                 var keyVal  = document.getElementById('cfr-key-value');
                 if (brand.length > 0) {
-                    keyVal.textContent  = cfrBuildKey(brand);
+                    keyVal.textContent  = cfrBuildKey(brand, size);
                     preview.style.display = 'block';
                 } else {
                     preview.style.display = 'none';
@@ -6764,7 +6769,7 @@
                     return;
                 }
 
-                var brandKey = cfrBuildKey(brand);
+                var brandKey = cfrBuildKey(brand, size);
                 var inv      = <?php echo json_encode($invoice_num); ?>;
 
                 var btn = document.getElementById('cfr-save-btn');

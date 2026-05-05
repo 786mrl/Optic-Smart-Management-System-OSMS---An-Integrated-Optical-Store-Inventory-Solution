@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: May 04, 2026 at 06:21 AM
+-- Generation Time: May 05, 2026 at 10:35 AM
 -- Server version: 10.1.38-MariaDB
 -- PHP Version: 7.3.2
 
@@ -68,13 +68,6 @@ CREATE TABLE `customer_examinations` (
   `need_near` tinyint(1) NOT NULL DEFAULT '0' COMMENT '1=Yes, 0=No — Kebutuhan jarak dekat'
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
---
--- Dumping data for table `customer_examinations`
---
-
-INSERT INTO `customer_examinations` (`id`, `examination_date`, `examination_code`, `customer_name`, `gender`, `age`, `symptoms`, `old_r_sph`, `old_r_cyl`, `old_r_ax`, `old_r_add`, `old_l_sph`, `old_l_cyl`, `old_l_ax`, `old_l_add`, `new_r_sph`, `new_r_cyl`, `new_r_ax`, `new_r_add`, `new_r_visus`, `new_l_sph`, `new_l_cyl`, `new_l_ax`, `new_l_add`, `new_l_visus`, `pd_dist`, `created_at`, `invoice_number`, `exam_notes`, `visual_habit`, `digital_usage`, `ucva_r`, `ucva_l`, `lens_modification`, `need_distance`, `need_intermediate`, `need_near`) VALUES
-(1, '2026-05-01', 'LZ/EC/001/V/2026', 'RAIS', 'MALE', 57, 'MYOPIA, ASTIGMATISM, PRESBYOPIA, HEADACHE', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '0.00', '-50', '-25', '75', '+2.50', '20/20', '-50', '0.00', '0', '+2.50', '20/20', '62/60', '2026-05-01 12:21:57', '001', '', 3, 3, '20/50', '20/50', 0, 1, 1, 1);
-
 -- --------------------------------------------------------
 
 --
@@ -98,13 +91,6 @@ CREATE TABLE `customer_orders` (
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Confirmed purchase orders — saved when operator clicks Yes Shopping';
-
---
--- Dumping data for table `customer_orders`
---
-
-INSERT INTO `customer_orders` (`id`, `customer_number`, `invoice_number`, `is_modified`, `frame_ufc`, `lens_name`, `customer_phone`, `customer_address`, `total_amount`, `amount_paid`, `order_date`, `due_date`, `order_status`, `created_at`, `updated_at`) VALUES
-(1, '1/LZ-C/16.31/001/V/26', '001', 0, 'BRENDEN-BR-3543-52-20-143-C1', 'PROGRESSIVE — BALANCE BLUCHROMIC ONE-DRIVE', '+62 812 6764 6916', 'JL. APEL RAYA NO. 51', '2000000.00', '1000000.00', '2026-05-01', '2026-05-11', 1, '2026-05-01 12:22:44', '2026-05-01 12:22:44');
 
 -- --------------------------------------------------------
 
@@ -408,13 +394,13 @@ ALTER TABLE `users`
 -- AUTO_INCREMENT for table `customer_examinations`
 --
 ALTER TABLE `customer_examinations`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT for table `customer_orders`
 --
 ALTER TABLE `customer_orders`
-  MODIFY `id` int(11) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+  MODIFY `id` int(11) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT for table `custom_frames`
