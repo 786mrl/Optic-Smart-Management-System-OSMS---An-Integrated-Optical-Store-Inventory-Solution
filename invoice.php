@@ -920,6 +920,39 @@
         $startingInvoiceNumber = $rowSheet['setting_value'];
     }
 
+    // ── Helper: increment invoice sheet number ──────────────────────
+    // Rules:
+    //   - Format: XX.YY  (integer part . sub-part, sub always 2 digits)
+    //   - Sub-part increments by 1 each order (01, 02, … 50)
+    //   - When sub-part reaches 50, next is (XX+1).01  (e.g. 16.50 → 17.01)
+    function incrementInvoiceSheet($sheet) {
+        $parts = explode('.', $sheet);
+        if (count($parts) !== 2) return $sheet; // fallback: return as-is
+        $major = (int)$parts[0];
+        $minor = (int)$parts[1];
+        $minor++;
+        if ($minor > 50) {
+            $major++;
+            $minor = 1;
+        }
+        return $major . '.' . str_pad($minor, 2, '0', STR_PAD_LEFT);
+    }
+
+    // ── Compute the next invoice sheet from the latest order in DB ──
+    // Extracts the sheet portion (3rd segment) from customer_number, e.g.
+    // "5/LZ-C/16.31/028/V/26" → "16.31"
+    $nextInvoiceSheet = $startingInvoiceNumber; // default: use settings value
+    $resLast = mysqli_query($conn,
+        "SELECT customer_number FROM customer_orders ORDER BY id DESC LIMIT 1");
+    if ($resLast && $rowLast = mysqli_fetch_assoc($resLast)) {
+        $cn = $rowLast['customer_number'];
+        $cnParts = explode('/', $cn);
+        // customer_number pattern: seq/LZ-C/XX.YY/bbb/MM/YY
+        if (isset($cnParts[2]) && preg_match('/^\d+\.\d{1,2}$/', $cnParts[2])) {
+            $nextInvoiceSheet = incrementInvoiceSheet($cnParts[2]);
+        }
+    }
+
     // Load frame-shape color mapping (optional — fails silently if missing/invalid)
     $frameShapeColors = [];
     $colorJsonPath = __DIR__ . '/data_json/color_shape.json';
@@ -6325,19 +6358,9 @@
         // Replaces the old openPrintPage() direct-open behaviour.
         // ============================================================
         
-        // Starting invoice sheet from settings (PHP-injected)
-        var _coDefaultSheet = '<?php echo htmlspecialchars($startingInvoiceNumber, ENT_QUOTES); ?>';
-        
-        // Fetch the latest invoice_sheet from customer_orders so we
-        // can suggest the next one automatically.
-        (function () {
-            fetch('invoice_next_sheet.php')
-                .then(function (r) { return r.json(); })
-                .then(function (d) {
-                    if (d && d.next_sheet) _coDefaultSheet = d.next_sheet;
-                })
-                .catch(function () { /* keep default */ });
-        }());
+        // Next invoice sheet — computed server-side from the latest order in DB.
+        // Falls back to starting_invoice_number from settings when no orders exist yet.
+        var _coDefaultSheet = '<?php echo htmlspecialchars($nextInvoiceSheet, ENT_QUOTES); ?>';
         
         // ── Open the confirmation modal ───────────────────────────────
         function openPrintPage() {
