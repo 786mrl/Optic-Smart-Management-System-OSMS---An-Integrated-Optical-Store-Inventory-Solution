@@ -57,6 +57,31 @@ if ($action === 'save_custom_frame') {
     exit();
 }
 
+if ($action === 'set_purchased') {
+
+    $invoice_number = mysqli_real_escape_string($conn, $_POST['invoice_number'] ?? '');
+    $brand_key      = mysqli_real_escape_string($conn, $_POST['brand_key']      ?? '');
+    $is_purchased   = (int)($_POST['is_purchased'] ?? 0);
+
+    if (empty($invoice_number) || empty($brand_key)) {
+        echo json_encode(['success' => false, 'error' => 'invoice_number and brand_key are required.']);
+        exit();
+    }
+
+    $is_purchased = ($is_purchased >= 1) ? 1 : 0;
+
+    $sql = "UPDATE custom_frames
+            SET is_purchased = $is_purchased
+            WHERE invoice_number = '$invoice_number' AND brand_key = '$brand_key'";
+
+    if (mysqli_query($conn, $sql)) {
+        echo json_encode(['success' => true, 'is_purchased' => $is_purchased]);
+    } else {
+        echo json_encode(['success' => false, 'error' => mysqli_error($conn)]);
+    }
+    exit();
+}
+
 // Unknown action
 echo json_encode(['success' => false, 'error' => 'Unknown action: ' . htmlspecialchars($action)]);
 exit();

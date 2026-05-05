@@ -2464,7 +2464,7 @@
                                 </div><!-- /fbs-card -->
 
                                 <!-- ══════════════════════════════════════════════════
-                                     CARD 4 — INPUT FRAME BARU (tidak ada di database)
+                                     CARD 4 — NEW FRAME INPUT (not in database)
                                      ══════════════════════════════════════════════════ -->
                                 <div id="cfr-card" style="display:none; margin-top:12px;">
                                 <div class="prescription-container" style="text-align:center; border:1px solid rgba(255,138,77,0.28); background:linear-gradient(135deg,rgba(255,138,77,0.04) 0%,transparent 60%);">
@@ -2474,8 +2474,8 @@
                                         <div style="display:flex; align-items:center; gap:10px;">
                                             <span style="font-size:1.25rem;">✏️</span>
                                             <div style="text-align:left;">
-                                                <div style="font-size:0.7rem; letter-spacing:2px; color:#ff8a4d; font-weight:700;">INPUT FRAME BARU</div>
-                                                <div style="font-size:8.5px; color:#555; margin-top:1px; letter-spacing:0.5px;">Frame tidak ada di database · Input manual</div>
+                                                <div style="font-size:0.7rem; letter-spacing:2px; color:#ff8a4d; font-weight:700;">NEW FRAME INPUT</div>
+                                                <div style="font-size:8.5px; color:#555; margin-top:1px; letter-spacing:0.5px;">Frame not in database · Manual entry</div>
                                             </div>
                                         </div>
                                         <div style="display:flex; align-items:center; gap:8px;">
@@ -2488,7 +2488,13 @@
                                     <div id="cfr-body" style="display:none; margin-top:14px;">
 
                                         <div style="font-size:9px; color:#666; text-align:left; margin-bottom:12px; padding:8px 10px; background:rgba(255,138,77,0.06); border:1px solid rgba(255,138,77,0.15); border-radius:10px; line-height:1.6;">
-                                            ℹ️ Gunakan form ini jika frame tidak ditemukan via <b style="color:#ff8a4d;">Scan Barcode</b> maupun <b style="color:#00cfff;">Manual Search</b>. Data akan disimpan ke database tersendiri dan langsung terpilih sebagai frame customer.
+                                            ℹ️ Use this form if the frame is not found via <b style="color:#ff8a4d;">Scan Barcode</b> or <b style="color:#00cfff;">Manual Search</b>. Data will be saved to the database and listed below — tap a frame to select it as the customer's choice.
+                                        </div>
+
+                                        <!-- Saved custom frames list -->
+                                        <div id="cfr-list" style="display:none; margin-bottom:12px; text-align:left;">
+                                            <div style="font-size:8px; color:#888; letter-spacing:1px; margin-bottom:6px;">SAVED FRAMES — TAP TO SELECT / DESELECT</div>
+                                            <div id="cfr-list-inner" style="display:flex; flex-direction:column; gap:6px;"></div>
                                         </div>
 
                                         <!-- Input fields -->
@@ -2506,7 +2512,7 @@
 
                                             <!-- Sell Price -->
                                             <div>
-                                                <div style="font-size:8px; color:#555; letter-spacing:1px; margin-bottom:4px;">HARGA JUAL (IDR) <span style="color:#ff4d4d;">*</span></div>
+                                                <div style="font-size:8px; color:#555; letter-spacing:1px; margin-bottom:4px;">SELL PRICE (IDR) <span style="color:#ff4d4d;">*</span></div>
                                                 <input type="text" id="cfr-price" placeholder="e.g. 350000"
                                                        inputmode="numeric"
                                                        style="width:100%; box-sizing:border-box; background:rgba(255,255,255,0.04); border:1px solid rgba(255,138,77,0.35); border-radius:10px; color:#ffaa00; font-size:13px; font-weight:700; padding:10px 12px; letter-spacing:0.5px; outline:none; font-family:monospace;"
@@ -2517,7 +2523,7 @@
 
                                             <!-- Frame Size -->
                                             <div>
-                                                <div style="font-size:8px; color:#555; letter-spacing:1px; margin-bottom:4px;">UKURAN FRAME</div>
+                                                <div style="font-size:8px; color:#555; letter-spacing:1px; margin-bottom:4px;">FRAME SIZE</div>
                                                 <input type="text" id="cfr-size" placeholder="e.g. 52-18-140, 54□17, M"
                                                        style="width:100%; box-sizing:border-box; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.12); border-radius:10px; color:#ccc; font-size:11px; padding:10px 12px; letter-spacing:0.5px; outline:none; font-family:inherit;"
                                                        onfocus="this.style.borderColor='rgba(255,138,77,0.5)'"
@@ -2539,16 +2545,6 @@
                                                 style="width:100%; margin-top:14px; padding:12px; border-radius:12px; border:1px solid rgba(255,138,77,0.5); background:rgba(255,138,77,0.12); color:#ff8a4d; font-size:11px; font-weight:800; letter-spacing:1.2px; cursor:pointer; font-family:inherit; transition:all 0.2s;">
                                             💾 SAVE TO DATABASE
                                         </button>
-
-                                        <!-- Success result -->
-                                        <div id="cfr-result" style="display:none; margin-top:12px; padding:12px 14px; background:rgba(0,255,136,0.07); border:1px solid rgba(0,255,136,0.3); border-radius:12px; text-align:left;">
-                                            <div style="font-size:9px; color:#00ff88; letter-spacing:1px; margin-bottom:6px;">✓ FRAME TERSIMPAN &amp; TERPILIH</div>
-                                            <div id="cfr-result-inner" style="display:flex; flex-direction:column; gap:4px;"></div>
-                                            <button type="button" onclick="cfrClear()"
-                                                    style="margin-top:10px; width:100%; padding:8px; border-radius:8px; border:1px solid rgba(255,255,255,0.1); background:rgba(255,255,255,0.04); color:#666; font-size:9px; font-weight:700; letter-spacing:1px; cursor:pointer; font-family:inherit;">
-                                                ✕ INPUT FRAME BARU LAINNYA
-                                            </button>
-                                        </div>
 
                                     </div><!-- /cfr-body -->
                                 </div><!-- /prescription-container card-4 -->
@@ -3743,6 +3739,9 @@
             // Called by the barcode scanner when a frame is successfully found
             function lrSetSelectedFrame(name, price, ufc) {
                 lrSelectedFrame = (name && price > 0) ? { name: name, price: price, ufc: ufc || '' } : null;
+                // If the new frame is NOT a custom frame, reset any selected custom frame
+                var isCustom = name && String(name).indexOf('[CUSTOM]') !== -1;
+                if (!isCustom && typeof window.cfrResetPurchased === 'function') window.cfrResetPurchased();
                 lrUpdateSelectionDisplay(false); // do NOT auto-open bar
             }
 
@@ -6585,6 +6584,12 @@
         (function () {
             'use strict';
 
+            // ── State ─────────────────────────────────────────────────────
+            // List of saved custom frames for this invoice: [{ brandKey, brand, price, size, id }]
+            var _cfrFrames = [];
+            // brandKey of the currently selected custom frame (null = none selected)
+            var _cfrSelected = null;
+
             // ── Current date dd/mm/yyyy for brand_key prefix ─────────────
             function cfrTodayStr() {
                 var now = new Date();
@@ -6612,7 +6617,7 @@
                 }
             };
 
-            // ── Price formatting (same pattern as lrPaymentInput) ────────
+            // ── Price formatting ─────────────────────────────────────────
             var _cfrRawPrice = 0;
             window.cfrPriceInput = function (el) {
                 var digits = el.value.replace(/\D/g, '');
@@ -6639,23 +6644,122 @@
                 if (chev) chev.style.transform = open ? 'rotate(180deg)' : 'rotate(0deg)';
             };
 
-            // ── Save to database ─────────────────────────────────────────
+            // ── Render the saved frames list ─────────────────────────────
+            function cfrRenderList() {
+                var listWrap = document.getElementById('cfr-list');
+                var listInner = document.getElementById('cfr-list-inner');
+                if (!listWrap || !listInner) return;
+
+                if (_cfrFrames.length === 0) {
+                    listWrap.style.display = 'none';
+                    return;
+                }
+                listWrap.style.display = 'block';
+
+                listInner.innerHTML = _cfrFrames.map(function (f) {
+                    var isSelected = (f.brandKey === _cfrSelected);
+                    var borderColor = isSelected ? 'rgba(0,255,136,0.6)' : 'rgba(255,138,77,0.25)';
+                    var bg          = isSelected ? 'rgba(0,255,136,0.08)' : 'rgba(255,255,255,0.02)';
+                    var badge       = isSelected
+                        ? '<span style="font-size:8px;background:rgba(0,255,136,0.15);color:#00ff88;border:1px solid rgba(0,255,136,0.4);border-radius:20px;padding:2px 8px;letter-spacing:0.5px;">&#10003; SELECTED</span>'
+                        : '<span style="font-size:8px;background:rgba(255,138,77,0.1);color:#ff8a4d;border:1px solid rgba(255,138,77,0.3);border-radius:20px;padding:2px 8px;letter-spacing:0.5px;">TAP TO SELECT</span>';
+                    // Use data-attribute + addEventListener to avoid quote conflicts in onclick
+                    var safeKey = escHtml(f.brandKey);
+                    return '<div data-cfr-key="' + safeKey + '" '
+                        + 'style="cursor:pointer;padding:10px 12px;border-radius:10px;border:1px solid ' + borderColor + ';background:' + bg + ';transition:all 0.2s;">'
+                        + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">'
+                        +   '<div style="min-width:0;flex:1;">'
+                        +     '<div style="font-size:10px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escHtml(f.brand.toUpperCase()) + (f.size ? ' <span style="color:#888;font-size:9px;">(' + escHtml(f.size) + ')</span>' : '') + '</div>'
+                        +     '<div style="font-size:10px;color:#ffaa00;font-family:monospace;font-weight:700;margin-top:2px;">Rp\u00a0' + f.price.toLocaleString('id-ID') + '</div>'
+                        +     '<div style="font-size:8px;color:#444;font-family:monospace;margin-top:2px;">' + safeKey + '</div>'
+                        +   '</div>'
+                        +   '<div style="flex-shrink:0;">' + badge + '</div>'
+                        + '</div>'
+                        + '</div>';
+                }).join('');
+
+                // Attach click listeners via data attribute (avoids inline onclick quote issues)
+                listInner.querySelectorAll('[data-cfr-key]').forEach(function (el) {
+                    el.addEventListener('click', function () {
+                        window.cfrToggleSelect(el.getAttribute('data-cfr-key'));
+                    });
+                });
+            }
+
+            // ── Toggle select / deselect a custom frame ──────────────────
+            window.cfrToggleSelect = function (brandKey) {
+                var inv = <?php echo json_encode($invoice_num); ?>;
+
+                if (_cfrSelected === brandKey) {
+                    // Deselect: set is_purchased = 0 for this frame
+                    _cfrSelected = null;
+                    cfrSetPurchased(inv, brandKey, 0, function () {
+                        cfrRenderList();
+                        // Clear the global frame selection
+                        if (typeof window.lrSetFramePrice    === 'function') window.lrSetFramePrice(0);
+                        if (typeof window.lrSetSelectedFrame === 'function') window.lrSetSelectedFrame(null, 0, '');
+                        if (typeof window.lrRefreshTotals    === 'function') window.lrRefreshTotals();
+                    });
+                } else {
+                    // If another custom frame was selected, deselect it first
+                    if (_cfrSelected) {
+                        cfrSetPurchased(inv, _cfrSelected, 0, function () {});
+                    }
+                    _cfrSelected = brandKey;
+                    // Set is_purchased = 1 for newly selected frame
+                    cfrSetPurchased(inv, brandKey, 1, function () {
+                        cfrRenderList();
+                        // Find the frame data and pass to global selection
+                        var f = _cfrFrames.filter(function (x) { return x.brandKey === brandKey; })[0];
+                        if (f) {
+                            var displayName = f.brand.toUpperCase() + (f.size ? ' (' + f.size + ')' : '') + ' [CUSTOM]';
+                            if (typeof window.lrSetFramePrice    === 'function') window.lrSetFramePrice(f.price);
+                            if (typeof window.lrSetSelectedFrame === 'function') window.lrSetSelectedFrame(displayName, f.price, f.brandKey);
+                            if (typeof window.lrRefreshTotals    === 'function') window.lrRefreshTotals();
+                        }
+                    });
+                }
+            };
+
+            // ── AJAX: update is_purchased for a custom frame ─────────────
+            function cfrSetPurchased(inv, brandKey, isPurchased, cb) {
+                var fd = new FormData();
+                fd.append('action',         'set_purchased');
+                fd.append('invoice_number', inv);
+                fd.append('brand_key',      brandKey);
+                fd.append('is_purchased',   String(isPurchased));
+                fetch('custom_frame_save.php', { method: 'POST', body: fd })
+                    .then(function (r) { return r.json(); })
+                    .then(function () { if (cb) cb(); })
+                    .catch(function () { if (cb) cb(); });
+            }
+
+            // ── Called by lrSetSelectedFrame when a non-custom frame is picked ──
+            // Resets is_purchased = 0 in DB for the currently selected custom frame
+            window.cfrResetPurchased = function () {
+                if (!_cfrSelected) return;
+                var inv = <?php echo json_encode($invoice_num); ?>;
+                cfrSetPurchased(inv, _cfrSelected, 0, function () {});
+                _cfrSelected = null;
+                cfrRenderList();
+            };
+
+            // ── Save to database (is_purchased = 0 initially) ────────────
             window.cfrSave = function () {
                 var brand = (document.getElementById('cfr-brand').value || '').trim();
                 var size  = (document.getElementById('cfr-size').value  || '').trim();
                 var errEl = document.getElementById('cfr-error');
                 errEl.style.display = 'none';
 
-                // Validation
                 if (!brand) {
-                    errEl.textContent    = '⚠ Brand Name wajib diisi.';
-                    errEl.style.display  = 'block';
+                    errEl.textContent   = '⚠ Brand Name is required.';
+                    errEl.style.display = 'block';
                     document.getElementById('cfr-brand').focus();
                     return;
                 }
                 if (_cfrRawPrice <= 0) {
-                    errEl.textContent    = '⚠ Harga Jual wajib diisi dan harus lebih dari 0.';
-                    errEl.style.display  = 'block';
+                    errEl.textContent   = '⚠ Sell Price is required and must be greater than 0.';
+                    errEl.style.display = 'block';
                     document.getElementById('cfr-price').focus();
                     return;
                 }
@@ -6665,7 +6769,7 @@
 
                 var btn = document.getElementById('cfr-save-btn');
                 btn.disabled    = true;
-                btn.textContent = '⏳ MENYIMPAN…';
+                btn.textContent = '⏳ SAVING…';
 
                 var fd = new FormData();
                 fd.append('action',         'save_custom_frame');
@@ -6673,7 +6777,7 @@
                 fd.append('brand_key',      brandKey);
                 fd.append('sell_price',     _cfrRawPrice);
                 fd.append('frame_size',     size);
-                fd.append('is_purchased',   '1');
+                fd.append('is_purchased',   '0');   // Not purchased yet — user must tap to select
 
                 fetch('custom_frame_save.php', { method: 'POST', body: fd })
                     .then(function (r) { return r.json(); })
@@ -6682,55 +6786,43 @@
                         btn.textContent = '💾 SAVE TO DATABASE';
 
                         if (!data.success) {
-                            errEl.textContent   = '✕ Gagal menyimpan: ' + (data.error || 'Unknown error');
+                            errEl.textContent   = '✕ Failed to save: ' + (data.error || 'Unknown error');
                             errEl.style.display = 'block';
                             return;
                         }
 
-                        // ── Show success result ───────────────────────────
-                        var inner = document.getElementById('cfr-result-inner');
-                        inner.innerHTML =
-                            _row('Brand Key', brandKey, '#ff8a4d') +
-                            _row('Harga Jual', 'Rp\u00a0' + _cfrRawPrice.toLocaleString('id-ID'), '#ffaa00') +
-                            (size ? _row('Ukuran', size, '#aa88ff') : '') +
-                            _row('Invoice', inv, '#00cfff');
-                        document.getElementById('cfr-result').style.display = 'block';
-                        document.getElementById('cfr-save-btn').style.display = 'none';
+                        // ── Add to local list and render ──────────────────
+                        _cfrFrames.push({
+                            brandKey: brandKey,
+                            brand:    brand,
+                            price:    _cfrRawPrice,
+                            size:     size
+                        });
+                        cfrRenderList();
 
-                        // ── Set as selected frame (same helpers used by barcode scanner) ──
-                        // Build a friendly display name: brand + size
-                        var displayName = brand.toUpperCase() + (size ? ' (' + size + ')' : '') + ' [CUSTOM]';
-                        if (typeof window.lrSetFramePrice    === 'function') window.lrSetFramePrice(_cfrRawPrice);
-                        if (typeof window.lrSetSelectedFrame === 'function') window.lrSetSelectedFrame(displayName, _cfrRawPrice, '');
-                        // Also update lens totals
-                        if (typeof window.lrRefreshTotals    === 'function') window.lrRefreshTotals();
+                        // ── Reset input form for next entry ───────────────
+                        document.getElementById('cfr-brand').value = '';
+                        document.getElementById('cfr-price').value = '';
+                        document.getElementById('cfr-size').value  = '';
+                        document.getElementById('cfr-key-preview').style.display = 'none';
+                        _cfrRawPrice = 0;
                     })
                     .catch(function () {
                         btn.disabled    = false;
                         btn.textContent = '💾 SAVE TO DATABASE';
-                        errEl.textContent   = '✕ Koneksi error. Coba lagi.';
+                        errEl.textContent   = '✕ Connection error. Please try again.';
                         errEl.style.display = 'block';
                     });
             };
 
-            function _row(label, value, color) {
-                return '<div style="display:flex;justify-content:space-between;gap:8px;font-size:9.5px;">' +
-                    '<span style="color:#555;letter-spacing:0.5px;">' + label + '</span>' +
-                    '<span style="color:' + color + ';font-weight:700;font-family:monospace;text-align:right;">' + value + '</span>' +
-                    '</div>';
+            // ── Escape HTML helper ────────────────────────────────────────
+            function escHtml(str) {
+                return String(str)
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;');
             }
-
-            // ── Clear / reset form ────────────────────────────────────────
-            window.cfrClear = function () {
-                document.getElementById('cfr-brand').value      = '';
-                document.getElementById('cfr-price').value      = '';
-                document.getElementById('cfr-size').value       = '';
-                document.getElementById('cfr-error').style.display  = 'none';
-                document.getElementById('cfr-result').style.display = 'none';
-                document.getElementById('cfr-save-btn').style.display = 'block';
-                document.getElementById('cfr-key-preview').style.display = 'none';
-                _cfrRawPrice = 0;
-            };
 
         }());
         </script>
