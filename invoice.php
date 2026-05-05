@@ -6625,17 +6625,31 @@
             // ── Price formatting ─────────────────────────────────────────
             var _cfrRawPrice = 0;
             window.cfrPriceInput = function (el) {
+                // Strip semua non-digit, simpan nilai mentah
                 var digits = el.value.replace(/\D/g, '');
-                el.value   = digits;
-                _cfrRawPrice = parseInt(digits, 10) || 0;
+                var num    = parseInt(digits, 10) || 0;
+                _cfrRawPrice = num;
+                // Tampilkan dengan pemisah ribuan secara live saat mengetik
+                el.value = num > 0 ? num.toLocaleString('en-US') : '';
+                // Pertahankan kursor di akhir setelah reformat
+                setTimeout(function () {
+                    el.selectionStart = el.selectionEnd = el.value.length;
+                }, 0);
             };
             window.cfrPriceFocus = function (el) {
-                el.value = _cfrRawPrice > 0 ? String(_cfrRawPrice) : '';
+                // Saat fokus: tampilkan dengan format koma supaya mudah dibaca/diedit
+                el.value = _cfrRawPrice > 0 ? _cfrRawPrice.toLocaleString('en-US') : '';
                 el.select();
             };
             window.cfrPriceBlur = function (el) {
-                el.value = _cfrRawPrice > 0
-                    ? 'Rp\u00a0' + _cfrRawPrice.toLocaleString('id-ID')
+                var raw = _cfrRawPrice;
+                // Auto ×1000: angka <= 999 dianggap dalam ribuan (15 → 15.000)
+                if (raw > 0 && raw <= 999) {
+                    raw          = raw * 1000;
+                    _cfrRawPrice = raw;
+                }
+                el.value = raw > 0
+                    ? 'Rp\u00a0' + raw.toLocaleString('en-US')
                     : '';
             };
 
