@@ -2457,6 +2457,8 @@
                                     }
                                     .fbs-frame-row:hover  { background:rgba(0,255,136,0.07);border-color:rgba(0,255,136,0.35); }
                                     .fbs-frame-row.selected { background:rgba(0,255,136,0.13);border-color:rgba(0,255,136,0.70);box-shadow:0 0 0 1px rgba(0,255,136,0.25); }
+                                    .fbs-frame-row.oos { cursor:not-allowed !important; pointer-events:none !important; opacity:0.45; }
+                                    .fbs-frame-row.oos:hover { background:rgba(255,255,255,0.025) !important; border-color:rgba(255,255,255,0.07) !important; }
                                 </style>
 
                                     </div><!-- /fbs-body -->
@@ -5976,6 +5978,7 @@
 
                         if (listEl)  listEl.innerHTML = rows.map(function (row) {
                             var stock      = parseInt(row.stock) || 0;
+                            var isOOS      = (stock === 0);
                             var stockColor = stock > 5 ? '#00ff88' : (stock > 0 ? '#ffaa00' : '#ff4d4d');
                             var stockLabel = stock > 0 ? stock + ' pcs' : 'OUT OF STOCK';
                             var priceInt   = parseInt(row.sell_price) || 0;
@@ -6002,7 +6005,18 @@
                                 ? '<div style="font-size:9px;color:#555;margin:4px 0 2px;display:flex;flex-wrap:wrap;gap:4px;">' + detailParts.join('<span style="color:#333;">·</span>') + '</div>'
                                 : '';
 
-                            return '<button type="button" class="fbs-frame-row" id="fbs-row-' + ufcSafe + '" data-ufc="' + ufcSafe + '" onclick="fbsAttrSelectRow(window._fbsAttrRowMap[this.dataset.ufc])">' +
+                            // Out-of-stock rows: dimmed, no cursor, no click
+                            var oosOverlay = isOOS
+                                ? '<div style="position:absolute;inset:0;border-radius:12px;background:rgba(0,0,0,0.45);display:flex;align-items:center;justify-content:center;pointer-events:none;">'
+                                  + '<span style="font-size:9px;font-weight:800;color:#ff4d4d;letter-spacing:2px;text-shadow:0 0 8px rgba(255,77,77,0.6);">🚫 OUT OF STOCK</span>'
+                                  + '</div>'
+                                : '';
+
+                            var oosClass  = isOOS ? ' oos' : '';
+                            var clickAttr = isOOS ? '' : ' onclick="fbsAttrSelectRow(window._fbsAttrRowMap[this.dataset.ufc])"';
+
+                            return '<button type="button" class="fbs-frame-row' + oosClass + '" id="fbs-row-' + ufcSafe + '" data-ufc="' + ufcSafe + '"' + clickAttr + ' style="position:relative;">' +
+                                oosOverlay +
                                 '<div style="flex:1;min-width:0;">' +
                                     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px;flex-wrap:wrap;gap:4px;">' +
                                         '<span style="font-size:11px;font-weight:800;color:#fff;letter-spacing:0.5px;">' + esc(row.brand || '') + '</span>' +
@@ -6015,7 +6029,7 @@
                                         '<span style="font-size:10px;font-weight:700;color:' + stockColor + ';">' + stockLabel + ageBadge + '</span>' +
                                     '</div>' +
                                 '</div>' +
-                                '<div style="font-size:18px;color:#555;flex-shrink:0;line-height:1;align-self:center;">›</div>' +
+                                (isOOS ? '<div style="font-size:18px;color:#333;flex-shrink:0;line-height:1;align-self:center;">✕</div>' : '<div style="font-size:18px;color:#555;flex-shrink:0;line-height:1;align-self:center;">›</div>') +
                             '</button>';
                         }).join('');
 
@@ -6034,6 +6048,8 @@
             /* ── SELECT a row from attr list ────────────────────────────── */
             window.fbsAttrSelectRow = function (row) {
                 if (!row) return;
+                // Block selection if out of stock
+                if ((parseInt(row.stock) || 0) === 0) return;
                 var ufc = row.ufc || '';
 
                 // Highlight selected row
