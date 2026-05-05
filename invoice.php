@@ -6795,7 +6795,6 @@
                 fd.append('invoice_number', inv);
                 fd.append('brand_key',      brandKey);
                 fd.append('sell_price',     _cfrRawPrice);
-                fd.append('frame_size',     size);
                 fd.append('is_purchased',   '0');   // Not purchased yet — user must tap to select
 
                 fetch('custom_frame_save.php', { method: 'POST', body: fd })
