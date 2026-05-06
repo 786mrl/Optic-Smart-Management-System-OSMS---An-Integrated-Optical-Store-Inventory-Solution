@@ -353,7 +353,7 @@ html,body{background:#E8E8E5;display:flex;justify-content:center;padding:50px 0 
 
 <div class="no-print" style="position:fixed;top:10px;left:50%;transform:translateX(-50%);flex-direction:column;align-items:center;gap:8px;z-index:999;">
     <div style="display:flex;gap:10px;">
-        <button onclick="window.close()"
+        <button onclick="window.location.href='customer.php'"
             style="background:#2C2C2A;color:#EF9F27;border:1px solid rgba(239,159,39,.4);border-radius:6px;padding:8px 18px;font-size:12px;cursor:pointer;font-family:inherit;">
             ✕ Tutup
         </button>
