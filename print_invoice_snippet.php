@@ -77,6 +77,10 @@ $gBalance    = (int)($_GET['balance']     ?? ($gTotal - $gPaid));
 $gPhone      = trim($_GET['phone']        ?? '');
 $gDueDate    = trim($_GET['due_date']     ?? '');
 
+/* ── Hitung discount (selisih harga item vs total yang dibayar) ── */
+$gItemsTotal = $gFramePrice + $gLensPrice;
+$gDiscount   = ($gItemsTotal > $gTotal && $gTotal > 0) ? ($gItemsTotal - $gTotal) : 0;
+
 /* ── Data dari DB ── */
 $symptoms  = trim($data['symptoms']   ?? '');
 $examNotes = trim($data['exam_notes'] ?? '');
@@ -529,7 +533,12 @@ html,body{background:#E8E8E5;display:flex;justify-content:center;padding:50px 0 
         <!-- PAYMENT -->
         <div class="tot-wrap">
             <div class="tot-inner">
+                <?php if ($gDiscount > 0): ?>
+                <div class="tot-row"><span>Harga Item</span><span><?php echo piIDR($gItemsTotal); ?></span></div>
+                <div class="tot-row div"><span>Diskon</span><span class="v-green">- <?php echo piIDR($gDiscount); ?></span></div>
+                <?php else: ?>
                 <div class="tot-row div"><span>Subtotal</span><span><?php echo piIDR($gTotal); ?></span></div>
+                <?php endif; ?>
                 <div class="tot-row"><span>Bayar</span><span><?php echo piIDR($gPaid); ?></span></div>
                 <div class="tot-row div">
                     <span>Sisa</span>
