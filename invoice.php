@@ -6524,7 +6524,7 @@
                             customer_number: data.customer_number,
                             auto:            '1'
                         });
-                        window.open('print_invoice_snippet.php?' + params.toString(), '_blank');
+                        window.open('print_invoice_snippet.php?' + params.toString(), '_self');
         
                     } else {
                         errBox.textContent   = 'Failed to save: ' + (data.error || 'Unknown error');
