@@ -1858,7 +1858,12 @@
                 const l_ax  = document.querySelector('input[name="new_l_ax"]').value || "0";
                 const l_va  = document.querySelector('input[name="new_l_va"]').value || "20/20";
 
-                const pd = document.querySelector('input[name="pd_dist"]').value || "62/60";
+                const _pdRawAdd_r = document.querySelector('input[name="new_r_add"]').value.trim();
+                const _pdRawAdd_l = document.querySelector('input[name="new_l_add"]').value.trim();
+                const _pdHasAdd = (_pdRawAdd_r !== '' && _pdRawAdd_r !== '0.00')
+                               || (_pdRawAdd_l !== '' && _pdRawAdd_l !== '0.00');
+                const _pdSmartDefault = _pdHasAdd ? '62/60' : '62';
+                const pd = document.querySelector('input[name="pd_dist"]').value.trim() || _pdSmartDefault;
 
                 // Create HTML template for the first popup
                 const summaryHtml = `
@@ -1959,6 +1964,15 @@
                     // --- 4. Final Submit ---
                     // Update the final examination code one last time before sending
                     document.getElementById('hidden_exam_code').value = generateExamCode();
+                    // Ensure PD has the correct default value before submit (not left empty)
+                    const _pdInput = document.querySelector('input[name="pd_dist"]');
+                    if (_pdInput.value.trim() === '') {
+                        const _rAdd = document.querySelector('input[name="new_r_add"]').value.trim();
+                        const _lAdd = document.querySelector('input[name="new_l_add"]').value.trim();
+                        const _hasAdd = (_rAdd !== '' && _rAdd !== '0.00')
+                                     || (_lAdd !== '' && _lAdd !== '0.00');
+                        _pdInput.value = _hasAdd ? '62/60' : '62';
+                    }
                     document.getElementById('examForm').submit();
                 }
             }
