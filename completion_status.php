@@ -24,7 +24,7 @@
     }
 
     // ── Fetch all active orders (status 1-4) ─────────────────────────
-    // JOIN with customer_examinations to get patient info (name, age, gender, dob)
+    // Try JOIN with customer_examinations first
     $sql = "
         SELECT 
             co.id,
@@ -50,9 +50,47 @@
         ORDER BY co.order_date DESC, co.id DESC
     ";
     $result = mysqli_query($conn, $sql);
+
     $orders = [];
-    while ($row = mysqli_fetch_assoc($result)) {
-        $orders[] = $row;
+    if ($result) {
+        while ($row = mysqli_fetch_assoc($result)) {
+            $orders[] = $row;
+        }
+    }
+
+    // Fallback: jika JOIN gagal (tabel tidak ada / error) ATAU hasil 0 baris,
+    // coba query orders saja menggunakan customer_name dari customer_orders
+    if (!$result || count($orders) === 0) {
+        $sql_fallback = "
+            SELECT 
+                co.id,
+                co.customer_number,
+                co.invoice_number,
+                co.frame_ufc,
+                co.lens_name,
+                co.customer_phone,
+                co.customer_address,
+                co.total_amount,
+                co.amount_paid,
+                co.order_date,
+                co.due_date,
+                co.order_status,
+                co.customer_name  AS patient_name,
+                NULL              AS age,
+                NULL              AS gender,
+                NULL              AS date_of_birth,
+                NULL              AS examination_code
+            FROM customer_orders co
+            WHERE co.order_status BETWEEN 1 AND 4
+            ORDER BY co.order_date DESC, co.id DESC
+        ";
+        $result_fallback = mysqli_query($conn, $sql_fallback);
+        $orders = [];
+        if ($result_fallback) {
+            while ($row = mysqli_fetch_assoc($result_fallback)) {
+                $orders[] = $row;
+            }
+        }
     }
 
     // ── Status label & color map ──────────────────────────────────────
@@ -67,7 +105,7 @@
     // ── WA message generator ──────────────────────────────────────────
     // Generates a contextual WA message based on order_status, patient name, age, gender
     function buildWAMessage($order, $statusMap) {
-        $name    = trim($order['patient_name'] ?? 'Pelanggan');
+        $name    = trim($order['patient_name'] ?? 'Customer');
         $age     = (int)($order['age'] ?? 0);
         $gender  = strtolower(trim($order['gender'] ?? ''));
         $status  = (int)$order['order_status'];
@@ -75,14 +113,14 @@
         $custNum = $order['customer_number'] ?? '';
         $dueDate = $order['due_date'] ? date('d/m/Y', strtotime($order['due_date'])) : '-';
 
-        // ── Sapaan berdasarkan gender & usia ─────────────────────────
-        // Anak-anak: < 13 | Remaja: 13-17 | Dewasa: 18+ 
+        // ── Greeting based on gender & age ──────────────────────────
+        // Children: < 13 | Teens: 13-17 | Adults: 18+ 
         if ($age > 0 && $age < 13) {
-            // Anak-anak — sapa orang tua
-            $sapaan    = 'Bapak/Ibu';
-            $gaya      = 'formal_ortu'; // gunakan bahasa formal, konteks orang tua
+            // Children — address the parents
+            $sapaan    = 'Sir/Ma\'am';
+            $gaya      = 'formal_ortu'; // use formal language, parent context
         } elseif ($age >= 13 && $age <= 17) {
-            // Remaja — santai tapi sopan
+            // Teens — casual but polite
             if ($gender === 'male' || $gender === 'laki-laki' || $gender === 'm') {
                 $sapaan = 'Kak ' . explode(' ', $name)[0];
             } else {
@@ -90,7 +128,7 @@
             }
             $gaya = 'remaja';
         } else {
-            // Dewasa / lansia — formal
+            // Adults / elderly — formal
             if ($gender === 'male' || $gender === 'laki-laki' || $gender === 'm') {
                 $sapaan = 'Bapak ' . explode(' ', $name)[0];
             } else {
@@ -99,50 +137,50 @@
             $gaya = 'dewasa';
         }
 
-        // ── Buat pesan per status ────────────────────────────────────
+        // ── Build message per status ─────────────────────────────────
         switch ($status) {
             case 1: // Order Received / Processing
                 if ($gaya === 'formal_ortu') {
-                    $msg = "Halo $sapaan 🙏\n\nKami dari *Optik LZ* ingin menginformasikan bahwa pesanan kacamata putra/putri Anda dengan nomor order *$custNum* telah kami terima dan sedang dalam proses.\n\nNomor Invoice: *$invNum*\nEstimasi selesai: *$dueDate*\n\nTerima kasih telah mempercayakan kebutuhan penglihatan kepada kami. Kami akan menginformasikan perkembangan selanjutnya. 🙏";
+                    $msg = "Hello $sapaan 🙏\n\nWe from *Optik LZ* would like to inform you that the eyeglass order for your child with order number *$custNum* has been received and is currently being processed.\n\nInvoice Number: *$invNum*\nEstimated completion: *$dueDate*\n\nThank you for entrusting your child's vision needs to us. We will keep you updated on the progress. 🙏";
                 } elseif ($gaya === 'remaja') {
-                    $msg = "Halo $sapaan! 👋\n\nPesanan kacamata kamu dengan nomor *$custNum* sudah kami terima ya dan lagi diproses nih!\n\nNo. Invoice: *$invNum*\nEstimasi selesai: *$dueDate*\n\nNanti kami kabarin lagi perkembangannya. Ditunggu ya! 😊";
+                    $msg = "Hey $sapaan! 👋\n\nYour eyeglass order number *$custNum* has been received and is being processed!\n\nInvoice No: *$invNum*\nEstimated completion: *$dueDate*\n\nWe'll keep you posted on the progress. Stay tuned! 😊";
                 } else {
-                    $msg = "Halo $sapaan 🙏\n\nKami dari *Optik LZ* ingin menginformasikan bahwa pesanan kacamata Anda dengan nomor order *$custNum* telah kami terima dan sedang dalam proses.\n\nNomor Invoice: *$invNum*\nEstimasi selesai: *$dueDate*\n\nTerima kasih atas kepercayaan Anda. Kami akan segera menginformasikan perkembangan lebih lanjut. 🙏";
+                    $msg = "Hello $sapaan 🙏\n\nWe from *Optik LZ* would like to inform you that your eyeglass order number *$custNum* has been received and is currently being processed.\n\nInvoice Number: *$invNum*\nEstimated completion: *$dueDate*\n\nThank you for your trust. We will notify you of further progress shortly. 🙏";
                 }
                 break;
 
             case 2: // Manufacturing in Progress
                 if ($gaya === 'formal_ortu') {
-                    $msg = "Halo $sapaan 🙏\n\nKami ingin menginformasikan bahwa kacamata putra/putri Anda (No. Order: *$custNum*) saat ini sedang dalam proses pembuatan lensa.\n\nKami memastikan setiap detail dikerjakan dengan teliti. Estimasi selesai: *$dueDate*\n\nTerima kasih atas kesabarannya 🙏";
+                    $msg = "Hello $sapaan 🙏\n\nWe would like to inform you that your child's eyeglasses (Order No: *$custNum*) are currently in the lens manufacturing process.\n\nWe ensure every detail is crafted with care. Estimated completion: *$dueDate*\n\nThank you for your patience 🙏";
                 } elseif ($gaya === 'remaja') {
-                    $msg = "Halo $sapaan! ⚙️\n\nUpdate pesanan kamu nih — kacamatamu (No. Order: *$custNum*) lagi dalam proses pembuatan lensa!\n\nEstimasi selesai: *$dueDate*\nDitunggu ya, hampir jadi! 😄";
+                    $msg = "Hey $sapaan! ⚙️\n\nOrder update — your eyeglasses (Order No: *$custNum*) are in the lens manufacturing process!\n\nEstimated completion: *$dueDate*\nHang tight, almost done! 😄";
                 } else {
-                    $msg = "Halo $sapaan 🙏\n\nKami ingin menyampaikan bahwa kacamata Anda (No. Order: *$custNum*) sedang dalam proses pembuatan lensa.\n\nSetiap detail dikerjakan dengan penuh ketelitian. Estimasi selesai: *$dueDate*\n\nTerima kasih atas kesabaran Anda 🙏";
+                    $msg = "Hello $sapaan 🙏\n\nWe would like to inform you that your eyeglasses (Order No: *$custNum*) are currently in the lens manufacturing process.\n\nEvery detail is being crafted with great care. Estimated completion: *$dueDate*\n\nThank you for your patience 🙏";
                 }
                 break;
 
             case 3: // Out for Delivery / Shipping
                 if ($gaya === 'formal_ortu') {
-                    $msg = "Halo $sapaan 🙏\n\nKabar baik! Kacamata putra/putri Anda (No. Order: *$custNum*) sudah selesai dibuat dan sedang dalam pengiriman menuju toko kami.\n\nKami akan segera menghubungi kembali saat sudah tiba dan siap diambil. 🚚";
+                    $msg = "Hello $sapaan 🙏\n\nGreat news! Your child's eyeglasses (Order No: *$custNum*) have been completed and are on their way to our store.\n\nWe will contact you again once they arrive and are ready for pickup. 🚚";
                 } elseif ($gaya === 'remaja') {
-                    $msg = "Halo $sapaan! 🚚\n\nYey, kacamatamu (No. Order: *$custNum*) udah selesai dan lagi dalam perjalanan ke toko kita!\n\nNanti kami kabarin lagi kalau udah bisa diambil ya 😊";
+                    $msg = "Hey $sapaan! 🚚\n\nYay, your eyeglasses (Order No: *$custNum*) are done and on their way to our store!\n\nWe'll let you know once they're ready for pickup 😊";
                 } else {
-                    $msg = "Halo $sapaan 🙏\n\nKabar baik! Kacamata Anda (No. Order: *$custNum*) telah selesai dibuat dan saat ini sedang dalam proses pengiriman ke toko kami.\n\nKami akan menghubungi Anda kembali begitu kacamata tiba dan siap untuk diambil. 🚚";
+                    $msg = "Hello $sapaan 🙏\n\nGreat news! Your eyeglasses (Order No: *$custNum*) have been completed and are currently in transit to our store.\n\nWe will contact you once the eyeglasses arrive and are ready for pickup. 🚚";
                 }
                 break;
 
             case 4: // Completed / Awaiting Collection
                 if ($gaya === 'formal_ortu') {
-                    $msg = "Halo $sapaan 🙏\n\nAlhamdulillah, kacamata putra/putri Anda (No. Order: *$custNum*) sudah selesai dan siap untuk diambil di toko kami!\n\nMohon membawa nomor invoice *$invNum* saat pengambilan.\n\nKami tunggu kedatangannya. Terima kasih 😊🙏";
+                    $msg = "Hello $sapaan 🙏\n\nAlhamdulillah, your child's eyeglasses (Order No: *$custNum*) are ready and available for pickup at our store!\n\nPlease bring invoice number *$invNum* when collecting.\n\nWe look forward to seeing you. Thank you 😊🙏";
                 } elseif ($gaya === 'remaja') {
-                    $msg = "Halo $sapaan! ✅\n\nKacamatamu udah jadi dan siap diambil di toko kita!\n\nNo. Order: *$custNum*\nJangan lupa bawa nomor invoice *$invNum* ya waktu ke sini.\n\nDitunggu kedatangannya! 😄";
+                    $msg = "Hey $sapaan! ✅\n\nYour eyeglasses are done and ready for pickup at our store!\n\nOrder No: *$custNum*\nDon't forget to bring invoice number *$invNum* when you come.\n\nSee you soon! 😄";
                 } else {
-                    $msg = "Halo $sapaan 🙏\n\nKami dengan senang hati menginformasikan bahwa kacamata Anda (No. Order: *$custNum*) telah selesai dan siap untuk diambil di toko kami.\n\nHarap membawa nomor invoice *$invNum* saat pengambilan.\n\nKami tunggu kedatangan Anda. Terima kasih 😊🙏";
+                    $msg = "Hello $sapaan 🙏\n\nWe are pleased to inform you that your eyeglasses (Order No: *$custNum*) are ready and available for pickup at our store.\n\nPlease bring invoice number *$invNum* when collecting.\n\nWe look forward to your visit. Thank you 😊🙏";
                 }
                 break;
 
             default:
-                $msg = "Halo, ini informasi mengenai pesanan Anda no. *$custNum*. Silakan hubungi kami untuk info lebih lanjut.";
+                $msg = "Hello, here is information regarding your order no. *$custNum*. Please contact us for further details.";
         }
 
         return $msg;
@@ -186,50 +224,22 @@
             letter-spacing: 0.5px;
         }
 
-        /* ── Filter bar ──────────────────────────────────────── */
-        .cs-filter-bar {
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-            margin-bottom: 20px;
-        }
-
-        .cs-filter-btn {
-            background: var(--bg-color);
-            border: 1px solid rgba(255,255,255,0.07);
-            border-radius: 20px;
-            color: var(--text-muted);
-            font-size: 0.72rem;
-            font-weight: 700;
-            letter-spacing: 0.8px;
-            padding: 7px 16px;
+        /* ── Stat cards as filter buttons ───────────────────── */
+        .cs-stat-card {
             cursor: pointer;
-            font-family: inherit;
-            box-shadow: 4px 4px 8px var(--shadow-dark), -4px -4px 8px var(--shadow-light);
             transition: all 0.2s;
+            user-select: none;
         }
 
-        .cs-filter-btn:hover,
-        .cs-filter-btn.active {
-            border-color: rgba(0,255,136,0.35);
-            color: #00ff88;
-            box-shadow: 0 0 10px rgba(0,255,136,0.1), 4px 4px 8px var(--shadow-dark), -4px -4px 8px var(--shadow-light);
+        .cs-stat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 10px 10px 24px var(--shadow-dark), -10px -10px 24px var(--shadow-light);
+            border-color: rgba(0,255,136,0.25);
         }
 
-        /* ── Count badges ────────────────────────────────────── */
-        .cs-filter-btn .cnt {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            background: rgba(255,255,255,0.07);
-            border-radius: 20px;
-            font-size: 0.65rem;
-            padding: 1px 7px;
-            margin-left: 5px;
-        }
-
-        .cs-filter-btn.active .cnt {
-            background: rgba(0,255,136,0.15);
+        .cs-stat-card.active {
+            border-color: rgba(0,255,136,0.45);
+            box-shadow: 0 0 14px rgba(0,255,136,0.12), 8px 8px 20px var(--shadow-dark), -8px -8px 20px var(--shadow-light);
         }
 
         /* ── Search bar ──────────────────────────────────────── */
@@ -603,9 +613,20 @@
         /* ── Summary stats ───────────────────────────────────── */
         .cs-stats-row {
             display: flex;
-            gap: 12px;
+            flex-direction: column;
+            gap: 10px;
             margin-bottom: 20px;
+        }
+
+        .cs-stats-top {
+            display: flex;
+            gap: 12px;
             flex-wrap: wrap;
+        }
+
+        .cs-stats-bottom {
+            display: flex;
+            justify-content: center;
         }
 
         .cs-stat-card {
@@ -619,6 +640,14 @@
             display: flex;
             flex-direction: column;
             gap: 4px;
+        }
+
+        .cs-stats-bottom .cs-stat-card {
+            flex: 0 0 auto;
+            min-width: 160px;
+            max-width: 220px;
+            align-items: center;
+            text-align: center;
         }
 
         .cs-stat-num {
@@ -643,6 +672,22 @@
     </style>
 </head>
 <body>
+    <div class="main-wrapper">
+        <div class="content-area" style="flex-direction: column">
+            <div class="header-container" style="margin-left: auto; margin-right: auto; width: 100%;">
+                <button class="logout-btn" onclick="window.location.href='logout.php';">
+                    <span>Logout</span>
+                </button>
+                <div class="brand-section">
+                    <div class="logo-box">
+                        <img src="<?php echo htmlspecialchars($BRAND_IMAGE_PATH); ?>" alt="Brand Logo" style="height: 40px;">
+                    </div>
+                    <h1 class="company-name"><?php echo htmlspecialchars($STORE_NAME); ?></h1>
+                    <p class="company-address"><?php echo htmlspecialchars($STORE_ADDRESS); ?></p>
+                </div>
+            </div>
+
+            <div class="main-card" style="margin-left: auto; margin-right: auto; width: 100%;">
     <div class="cs-body">
 
         <!-- ── Page Header ─────────────────────────────────────── -->
@@ -665,37 +710,30 @@
             foreach ($orders as $o) { $counts[(int)$o['order_status']]++; }
         ?>
         <div class="cs-stats-row">
-            <div class="cs-stat-card">
-                <div class="cs-stat-num" style="color:#fff;"><?php echo count($orders); ?></div>
-                <div class="cs-stat-label">Total Active</div>
+            <!-- Top row: Order Received → Awaiting Collection -->
+            <div class="cs-stats-top">
+                <?php foreach ($statusMap as $s => $sm): if ($s === 5) continue; ?>
+                <div class="cs-stat-card" data-filter="<?php echo $s; ?>" onclick="csSetFilter('<?php echo $s; ?>', this)" title="Filter: <?php echo $sm['label']; ?>">
+                    <div class="cs-stat-num" style="color:<?php echo $sm['color']; ?>"><?php echo $counts[$s]; ?></div>
+                    <div class="cs-stat-label"><?php echo $sm['icon'] . ' ' . $sm['label']; ?></div>
+                </div>
+                <?php endforeach; ?>
             </div>
-            <?php foreach ($statusMap as $s => $sm): if ($s === 5) continue; ?>
-            <div class="cs-stat-card">
-                <div class="cs-stat-num" style="color:<?php echo $sm['color']; ?>"><?php echo $counts[$s]; ?></div>
-                <div class="cs-stat-label"><?php echo $sm['icon'] . ' ' . $sm['label']; ?></div>
+            <!-- Bottom row: Total Active centered -->
+            <div class="cs-stats-bottom">
+                <div class="cs-stat-card active" data-filter="all" onclick="csSetFilter('all', this)" title="Show all orders">
+                    <div class="cs-stat-num" style="color:#fff;"><?php echo count($orders); ?></div>
+                    <div class="cs-stat-label">Total Active</div>
+                </div>
             </div>
-            <?php endforeach; ?>
-        </div>
-
-        <!-- ── Filter Tabs ─────────────────────────────────────── -->
-        <div class="cs-filter-bar">
-            <button class="cs-filter-btn active" data-filter="all" onclick="csSetFilter('all', this)">
-                ALL <span class="cnt"><?php echo count($orders); ?></span>
-            </button>
-            <?php foreach ($statusMap as $s => $sm): if ($s === 5) continue; ?>
-            <button class="cs-filter-btn" data-filter="<?php echo $s; ?>" onclick="csSetFilter('<?php echo $s; ?>', this)">
-                <?php echo $sm['icon'] . ' ' . strtoupper($sm['label']); ?>
-                <span class="cnt"><?php echo $counts[$s]; ?></span>
-            </button>
-            <?php endforeach; ?>
         </div>
 
         <!-- ── Order Cards ─────────────────────────────────────── -->
         <?php if (empty($orders)): ?>
         <div class="cs-empty">
             <div class="cs-empty-icon">🎉</div>
-            <div class="cs-empty-title">Tidak ada order aktif</div>
-            <div class="cs-empty-sub">Semua pesanan telah selesai atau belum ada order masuk.</div>
+            <div class="cs-empty-title">No active orders</div>
+            <div class="cs-empty-sub">All orders have been completed or no orders have been placed yet.</div>
         </div>
         <?php else: ?>
 
@@ -741,7 +779,7 @@
                         <span class="cs-chip inv">INV: <?php echo htmlspecialchars($o['invoice_number'] ?? '—'); ?></span>
                         <span class="cs-chip cust"><?php echo htmlspecialchars($o['customer_number'] ?? '—'); ?></span>
                         <?php if ($age > 0): ?>
-                        <span class="cs-chip age"><?php echo $age; ?> thn</span>
+                        <span class="cs-chip age"><?php echo $age; ?> yrs</span>
                         <?php endif; ?>
                     </div>
                 </div>
@@ -754,7 +792,7 @@
             <!-- Details grid -->
             <div class="cs-details-grid">
                 <div class="cs-detail-item">
-                    <span class="cs-detail-label">Lensa</span>
+                    <span class="cs-detail-label">Lens</span>
                     <span class="cs-detail-value"><?php echo htmlspecialchars($lensName); ?></span>
                 </div>
                 <div class="cs-detail-item">
@@ -762,11 +800,11 @@
                     <span class="cs-detail-value"><?php echo htmlspecialchars($frameUfc); ?></span>
                 </div>
                 <div class="cs-detail-item">
-                    <span class="cs-detail-label">Tgl Order</span>
+                    <span class="cs-detail-label">Order Date</span>
                     <span class="cs-detail-value"><?php echo $orderDate; ?></span>
                 </div>
                 <div class="cs-detail-item">
-                    <span class="cs-detail-label">Estimasi Selesai</span>
+                    <span class="cs-detail-label">Est. Completion</span>
                     <span class="cs-detail-value due <?php echo (!$isDuePast ? 'ok' : ''); ?>">
                         <?php echo $dueDate; ?><?php echo ($isDuePast && $dueDate !== '—') ? ' ⚠' : ''; ?>
                     </span>
@@ -776,17 +814,17 @@
                     <span class="cs-detail-value price">Rp <?php echo number_format($totalAmt, 0, ',', '.'); ?></span>
                 </div>
                 <div class="cs-detail-item">
-                    <span class="cs-detail-label">Sisa Bayar</span>
+                    <span class="cs-detail-label">Remaining Balance</span>
                     <span class="cs-detail-value price" style="<?php echo ($remaining > 0 ? 'color:#ff6b6b' : 'color:#00ff88'); ?>">
-                        <?php echo $remaining > 0 ? 'Rp ' . number_format($remaining, 0, ',', '.') : 'LUNAS ✓'; ?>
+                        <?php echo $remaining > 0 ? 'Rp ' . number_format($remaining, 0, ',', '.') : 'PAID ✓'; ?>
                     </span>
                 </div>
                 <div class="cs-detail-item">
-                    <span class="cs-detail-label">No. HP</span>
+                    <span class="cs-detail-label">Phone No.</span>
                     <span class="cs-detail-value"><?php echo htmlspecialchars($phone ?: '—'); ?></span>
                 </div>
                 <div class="cs-detail-item">
-                    <span class="cs-detail-label">Alamat</span>
+                    <span class="cs-detail-label">Address</span>
                     <span class="cs-detail-value" style="font-size:0.75rem;"><?php echo htmlspecialchars($o['customer_address'] ?? '—'); ?></span>
                 </div>
             </div>
@@ -795,7 +833,7 @@
             <div class="cs-card-actions">
 
                 <!-- Status stepper: click to advance/set status -->
-                <div class="cs-stepper" title="Klik angka untuk mengubah status">
+                <div class="cs-stepper" title="Click a number to change status">
                     <?php foreach ([1,2,3,4,5] as $step):
                         $isDone    = ($step < $st);
                         $isCurrent = ($step === $st);
@@ -822,10 +860,10 @@
                     <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                         <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
                     </svg>
-                    KIRIM WA
+                    SEND WA
                 </button>
                 <?php else: ?>
-                <span style="font-size:0.68rem;color:#555;font-style:italic;">No HP tidak tersedia</span>
+                <span style="font-size:0.68rem;color:#555;font-style:italic;">Phone number unavailable</span>
                 <?php endif; ?>
 
             </div>
@@ -837,16 +875,29 @@
 
     </div><!-- /cs-body -->
 
+            </div><!-- /main-card -->
+
+            <div class="btn-group">
+                <button type="button" class="back-main" onclick="window.history.back()">BACK TO PREVIOUS PAGE</button>
+            </div>
+
+            <footer class="footer-container">
+                <p class="footer-text"><?php echo $COPYRIGHT_FOOTER; ?></p>
+            </footer>
+
+        </div><!-- /content-area -->
+    </div><!-- /main-wrapper -->
+
     <!-- ── WA Preview Modal ─────────────────────────────────────── -->
     <div class="cs-modal-overlay" id="cs-modal-overlay">
         <div class="cs-modal">
-            <div class="cs-modal-title">📱 Preview Pesan WhatsApp</div>
-            <div class="cs-modal-sub" id="cs-modal-sub">Kepada: —</div>
+            <div class="cs-modal-title">📱 WhatsApp Message Preview</div>
+            <div class="cs-modal-sub" id="cs-modal-sub">To: —</div>
             <div class="cs-msg-preview" id="cs-modal-msg"></div>
             <div class="cs-modal-actions">
-                <button class="cs-btn cancel" onclick="csCloseModal()">Batal</button>
+                <button class="cs-btn cancel" onclick="csCloseModal()">Cancel</button>
                 <a class="cs-btn send" id="cs-modal-wa-link" href="#" target="_blank" onclick="csCloseModal()">
-                    Kirim via WhatsApp 📲
+                    Send via WhatsApp 📲
                 </a>
             </div>
         </div>
@@ -861,7 +912,7 @@
 
     function csSetFilter(val, btn) {
         _csActiveFilter = val;
-        document.querySelectorAll('.cs-filter-btn').forEach(function(b) {
+        document.querySelectorAll('.cs-stat-card').forEach(function(b) {
             b.classList.remove('active');
         });
         btn.classList.add('active');
@@ -946,20 +997,20 @@
                         }, 800);
                     }
 
-                    csShowToast('✅ Status diperbarui');
+                    csShowToast('✅ Status updated');
                 } else {
-                    csShowToast('❌ Gagal: ' + (data.error || 'Unknown error'));
+                    csShowToast('❌ Failed: ' + (data.error || 'Unknown error'));
                 }
             })
             .catch(function() {
-                csShowToast('❌ Koneksi error');
+                csShowToast('❌ Connection error');
             });
     }
 
     // ── WA Modal ──────────────────────────────────────────────────
     function csOpenWAModal(msg, waUrl, name) {
         document.getElementById('cs-modal-msg').textContent = msg;
-        document.getElementById('cs-modal-sub').textContent = 'Kepada: ' + name;
+        document.getElementById('cs-modal-sub').textContent = 'To: ' + name;
         document.getElementById('cs-modal-wa-link').href    = waUrl;
         document.getElementById('cs-modal-overlay').classList.add('open');
     }
