@@ -543,6 +543,57 @@
             font-family: inherit;
         }
 
+        /* ── Muslim/Non-Muslim toggle ────────────────────────── */
+        .cs-religion-toggle {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        .cs-religion-toggle-label {
+            font-size: 0.68rem;
+            color: var(--text-muted);
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            white-space: nowrap;
+        }
+
+        .cs-toggle-group {
+            display: flex;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 20px;
+            overflow: hidden;
+            padding: 3px;
+            gap: 3px;
+        }
+
+        .cs-toggle-btn {
+            padding: 5px 14px;
+            border-radius: 16px;
+            font-size: 0.68rem;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            cursor: pointer;
+            border: none;
+            background: transparent;
+            color: var(--text-muted);
+            font-family: inherit;
+            transition: all 0.2s;
+        }
+
+        .cs-toggle-btn.active {
+            background: rgba(0,255,136,0.15);
+            color: #00ff88;
+            box-shadow: 0 0 8px rgba(0,255,136,0.15);
+        }
+
+        .cs-toggle-btn:hover:not(.active) {
+            color: var(--text-main);
+            background: rgba(255,255,255,0.05);
+        }
+
         .cs-modal-actions {
             display: flex;
             gap: 10px;
@@ -882,7 +933,7 @@
                 <!-- WA Button -->
                 <?php if (!empty($phone)): ?>
                 <button class="cs-wa-btn"
-                        onclick="csOpenWAModal(<?php echo htmlspecialchars(json_encode($waMsg)); ?>, <?php echo htmlspecialchars(json_encode($waUrl)); ?>, <?php echo htmlspecialchars(json_encode($name)); ?>)">
+                        onclick="csOpenWAModal(<?php echo $st; ?>, <?php echo htmlspecialchars(json_encode($name)); ?>, <?php echo $age; ?>, <?php echo htmlspecialchars(json_encode(strtolower($gender))); ?>, <?php echo htmlspecialchars(json_encode($o['customer_number'] ?? '')); ?>, <?php echo htmlspecialchars(json_encode($o['invoice_number'] ?? '')); ?>, <?php echo htmlspecialchars(json_encode($dueDate)); ?>, <?php echo htmlspecialchars(json_encode($waPhone)); ?>, <?php echo htmlspecialchars(json_encode($name)); ?>)">
                     <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                         <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
                     </svg>
@@ -919,11 +970,19 @@
         <div class="cs-modal">
             <div class="cs-modal-title">📱 WhatsApp Message Preview</div>
             <div class="cs-modal-sub" id="cs-modal-sub">To: —</div>
+            <!-- Muslim / Non-Muslim toggle -->
+            <div class="cs-religion-toggle">
+                <span class="cs-religion-toggle-label">Customer:</span>
+                <div class="cs-toggle-group">
+                    <button class="cs-toggle-btn active" id="cs-toggle-muslim" onclick="csSetReligion('muslim')">&#9775;&#65039; Muslim</button>
+                    <button class="cs-toggle-btn" id="cs-toggle-nonmuslim" onclick="csSetReligion('nonmuslim')">Non-Muslim</button>
+                </div>
+            </div>
             <div class="cs-msg-preview" id="cs-modal-msg"></div>
             <div class="cs-modal-actions">
                 <button class="cs-btn cancel" onclick="csCloseModal()">Cancel</button>
                 <a class="cs-btn send" id="cs-modal-wa-link" href="#" target="_blank" onclick="csCloseModal()">
-                    Send via WhatsApp 📲
+                    Send via WhatsApp &#128242;
                 </a>
             </div>
         </div>
@@ -968,12 +1027,14 @@
     }
 
     // ── WA Message Builder (JavaScript, sinkron dengan PHP) ──────
-    function buildWAMessage(status, name, age, gender, custNum, invNum, dueDate) {
-        age    = parseInt(age) || 0;
-        gender = (gender || '').toLowerCase();
-        status = parseInt(status);
+    // isMuslim: true = sertakan salam & alhamdulillah; false = hilangkan keduanya
+    function buildWAMessage(status, name, age, gender, custNum, invNum, dueDate, isMuslim) {
+        age      = parseInt(age) || 0;
+        gender   = (gender || '').toLowerCase();
+        status   = parseInt(status);
+        if (isMuslim === undefined) isMuslim = true;
 
-        var salam     = 'السَّلَامُ عَلَيْكُمْ وَرَحْمَةُ اللهِ وَبَرَكَاتُهُ\n\n';
+        var salam     = isMuslim ? 'السَّلَامُ عَلَيْكُمْ وَرَحْمَةُ اللهِ وَبَرَكَاتُهُ\n\n' : '';
         var sapaan, gaya;
         var firstName = name.split(' ')[0];
 
@@ -987,6 +1048,9 @@
             sapaan = (gender === 'male') ? 'Bapak ' + firstName : 'Ibu ' + firstName;
             gaya   = 'dewasa';
         }
+
+        // Prefix status 4: "Alhamdulillah, " hanya untuk Muslim
+        var alhamdulillah = isMuslim ? 'Alhamdulillah, kami' : 'Kami';
 
         var msg = '';
         switch (status) {
@@ -1013,9 +1077,9 @@
                 break;
             case 4:
                 if (gaya === 'formal_ortu') {
-                    msg = salam + 'Kepada ' + sapaan + ' 🙏\n\nAlhamdulillah, kami dengan senang hati menginformasikan bahwa kacamata putra/putri Anda (No. Order: *' + custNum + '*) telah selesai dan siap untuk diambil di toko kami.\n\nMohon membawa nomor invoice *' + invNum + '* saat pengambilan.\n\nKami tunggu kedatangan Anda. Terima kasih 😊🙏';
+                    msg = salam + 'Kepada ' + sapaan + ' 🙏\n\n' + alhamdulillah + ' dengan senang hati menginformasikan bahwa kacamata putra/putri Anda (No. Order: *' + custNum + '*) telah selesai dan siap untuk diambil di toko kami.\n\nMohon membawa nomor invoice *' + invNum + '* saat pengambilan.\n\nKami tunggu kedatangan Anda. Terima kasih 😊🙏';
                 } else {
-                    msg = salam + 'Kepada ' + sapaan + ' 🙏\n\nAlhamdulillah, kami dengan senang hati menginformasikan bahwa kacamata Anda (No. Order: *' + custNum + '*) telah selesai dan siap untuk diambil di toko kami.\n\nMohon membawa nomor invoice *' + invNum + '* saat pengambilan.\n\nKami tunggu kedatangan Anda. Terima kasih 😊🙏';
+                    msg = salam + 'Kepada ' + sapaan + ' 🙏\n\n' + alhamdulillah + ' dengan senang hati menginformasikan bahwa kacamata Anda (No. Order: *' + custNum + '*) telah selesai dan siap untuk diambil di toko kami.\n\nMohon membawa nomor invoice *' + invNum + '* saat pengambilan.\n\nKami tunggu kedatangan Anda. Terima kasih 😊🙏';
                 }
                 break;
             default:
@@ -1106,12 +1170,12 @@
                         var dueDate  = card.getAttribute('data-duedate') || '-';
                         var waPhone  = card.getAttribute('data-waphone') || '';
 
-                        var newMsg = buildWAMessage(newStatus, fullName, age, gender, custNum, invNum, dueDate);
+                        var newMsg = buildWAMessage(newStatus, fullName, age, gender, custNum, invNum, dueDate, true);
                         var newUrl = 'https://wa.me/' + waPhone + '?text=' + encodeURIComponent(newMsg);
 
-                        waBtn.onclick = (function(m, u, n) {
-                            return function() { csOpenWAModal(m, u, n); };
-                        })(newMsg, newUrl, fullName);
+                        waBtn.onclick = (function(m, u, n, wp, st, fn, a, g, cn, inv, dd) {
+                            return function() { csOpenWAModal(st, fn, a, g, cn, inv, dd, wp, n); };
+                        })(newMsg, newUrl, fullName, waPhone, newStatus, fullName, age, gender, custNum, invNum, dueDate);
                     }
 
                     csShowToast('✅ Status updated');
@@ -1124,11 +1188,41 @@
             });
     }
 
+    // ── WA Modal state ────────────────────────────────────────────
+    var _csModalIsMuslim = true;
+    var _csModalData     = {}; // { status, name, age, gender, custNum, invNum, dueDate, waPhone }
+
+    function csSetReligion(religion) {
+        _csModalIsMuslim = (religion === 'muslim');
+        document.getElementById('cs-toggle-muslim').classList.toggle('active',    _csModalIsMuslim);
+        document.getElementById('cs-toggle-nonmuslim').classList.toggle('active', !_csModalIsMuslim);
+
+        // Re-build message preview & update WA link
+        var d   = _csModalData;
+        var msg = buildWAMessage(d.status, d.name, d.age, d.gender, d.custNum, d.invNum, d.dueDate, _csModalIsMuslim);
+        var url = 'https://wa.me/' + d.waPhone + '?text=' + encodeURIComponent(msg);
+        document.getElementById('cs-modal-msg').textContent  = msg;
+        document.getElementById('cs-modal-wa-link').href     = url;
+    }
+
     // ── WA Modal ──────────────────────────────────────────────────
-    function csOpenWAModal(msg, waUrl, name) {
+    // status, name, age, gender, custNum, invNum, dueDate, waPhone, displayName
+    function csOpenWAModal(status, name, age, gender, custNum, invNum, dueDate, waPhone, displayName) {
+        // Store state for re-build on toggle
+        _csModalIsMuslim = true; // reset to Muslim (default) each time modal opens
+        _csModalData = { status: status, name: name, age: age, gender: gender,
+                         custNum: custNum, invNum: invNum, dueDate: dueDate, waPhone: waPhone };
+
+        // Reset toggle UI
+        document.getElementById('cs-toggle-muslim').classList.add('active');
+        document.getElementById('cs-toggle-nonmuslim').classList.remove('active');
+
+        var msg = buildWAMessage(status, name, age, gender, custNum, invNum, dueDate, true);
+        var url = 'https://wa.me/' + waPhone + '?text=' + encodeURIComponent(msg);
+
         document.getElementById('cs-modal-msg').textContent = msg;
-        document.getElementById('cs-modal-sub').textContent = 'To: ' + name;
-        document.getElementById('cs-modal-wa-link').href    = waUrl;
+        document.getElementById('cs-modal-sub').textContent = 'To: ' + (displayName || name);
+        document.getElementById('cs-modal-wa-link').href    = url;
         document.getElementById('cs-modal-overlay').classList.add('open');
     }
 
