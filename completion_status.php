@@ -24,7 +24,8 @@
     }
 
     // ── Fetch all active orders (status 1-4) ─────────────────────────
-    // Try JOIN with customer_examinations first
+    // JOIN dengan customer_examinations jika invoice_number valid (bukan '00')
+    // Kolom nama pasien ada di customer_examinations.customer_name
     $sql = "
         SELECT 
             co.id,
@@ -39,13 +40,15 @@
             co.order_date,
             co.due_date,
             co.order_status,
-            ce.patient_name,
+            ce.customer_name  AS patient_name,
             ce.age,
             ce.gender,
-            ce.date_of_birth,
+            NULL              AS date_of_birth,
             ce.examination_code
         FROM customer_orders co
-        LEFT JOIN customer_examinations ce ON co.invoice_number = ce.invoice_number
+        LEFT JOIN customer_examinations ce
+            ON co.invoice_number = ce.invoice_number
+            AND co.invoice_number != '00'
         WHERE co.order_status BETWEEN 1 AND 4
         ORDER BY co.order_date DESC, co.id DESC
     ";
@@ -55,41 +58,6 @@
     if ($result) {
         while ($row = mysqli_fetch_assoc($result)) {
             $orders[] = $row;
-        }
-    }
-
-    // Fallback: jika JOIN gagal (tabel tidak ada / error) ATAU hasil 0 baris,
-    // coba query orders saja menggunakan customer_name dari customer_orders
-    if (!$result || count($orders) === 0) {
-        $sql_fallback = "
-            SELECT 
-                co.id,
-                co.customer_number,
-                co.invoice_number,
-                co.frame_ufc,
-                co.lens_name,
-                co.customer_phone,
-                co.customer_address,
-                co.total_amount,
-                co.amount_paid,
-                co.order_date,
-                co.due_date,
-                co.order_status,
-                co.customer_name  AS patient_name,
-                NULL              AS age,
-                NULL              AS gender,
-                NULL              AS date_of_birth,
-                NULL              AS examination_code
-            FROM customer_orders co
-            WHERE co.order_status BETWEEN 1 AND 4
-            ORDER BY co.order_date DESC, co.id DESC
-        ";
-        $result_fallback = mysqli_query($conn, $sql_fallback);
-        $orders = [];
-        if ($result_fallback) {
-            while ($row = mysqli_fetch_assoc($result_fallback)) {
-                $orders[] = $row;
-            }
         }
     }
 
