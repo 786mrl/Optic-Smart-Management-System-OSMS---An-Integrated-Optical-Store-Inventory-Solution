@@ -3,6 +3,25 @@
     include 'db_config.php';
     include 'config_helper.php';
 
+    // ── Build daftar nama lensa STOCK dari lense_prices.json ─────────────
+    // Format nama di DB: "CATEGORY / TYPE" (contoh: "SINGLE VISION / BLUERAY")
+    // Semua nama di bawah key "stock" dianggap lensa stock
+    $stockLensNames = [];
+    $lensJsonPath   = __DIR__ . '/lense_prices.json';
+    if (file_exists($lensJsonPath)) {
+        $lensData = json_decode(file_get_contents($lensJsonPath), true);
+        if (!empty($lensData['stock']) && is_array($lensData['stock'])) {
+            foreach ($lensData['stock'] as $category => $types) {
+                if (is_array($types)) {
+                    foreach (array_keys($types) as $type) {
+                        // Simpan dalam uppercase untuk pencocokan case-insensitive
+                        $stockLensNames[] = strtoupper(trim($category) . ' / ' . trim($type));
+                    }
+                }
+            }
+        }
+    }
+
     if (!isset($_SESSION['user_id'])) { header("Location: index.php"); exit(); }
 
     // ── Handle order_status update via AJAX ───────────────────────────
@@ -411,6 +430,25 @@
             color: #aaa;
         }
 
+        .cs-step.step-disabled {
+            cursor: not-allowed;
+            opacity: 0.25;
+            border-style: dashed;
+            color: #555;
+            font-size: 0.75rem;
+        }
+
+        .cs-step.step-disabled:hover {
+            border-color: rgba(255,255,255,0.08);
+            color: #555;
+        }
+
+        .cs-step-line.step-line-disabled {
+            opacity: 0.2;
+            border-top: 2px dashed rgba(255,255,255,0.2);
+            background: transparent;
+        }
+
         .cs-step-line {
             width: 12px;
             height: 2px;
@@ -726,6 +764,10 @@
             $dueDate   = $o['due_date']   ? date('d/m/Y', strtotime($o['due_date']))   : '—';
             $isDuePast = $o['due_date'] && strtotime($o['due_date']) < time();
 
+            // Deteksi lensa stock vs lab: cocokkan lens_name dengan daftar dari lense_prices.json
+            // Format: "CATEGORY / TYPE" — contoh "SINGLE VISION / BLUERAY"
+            $isStock = in_array(strtoupper(trim($lensName)), $stockLensNames);
+
             // Build WA message
             $waMsg     = buildWAMessage($o, $statusMap);
             $waMsgEnc  = urlencode($waMsg);
@@ -747,7 +789,8 @@
              data-custnum-orig="<?php echo htmlspecialchars($o['customer_number'] ?? ''); ?>"
              data-invnum="<?php echo htmlspecialchars($o['invoice_number'] ?? ''); ?>"
              data-duedate="<?php echo $dueDate; ?>"
-             data-waphone="<?php echo htmlspecialchars(preg_replace('/[^0-9]/', '', $phone) ? (($waPhone)) : ''); ?>">
+             data-waphone="<?php echo htmlspecialchars(preg_replace('/[^0-9]/', '', $phone) ? (($waPhone)) : ''); ?>"
+             data-isstock="<?php echo $isStock ? '1' : '0'; ?>">
 
             <!-- Top row: patient info + status badge -->
             <div class="cs-card-top">
@@ -811,6 +854,7 @@
             <div class="cs-card-actions">
 
                 <!-- Status stepper: click to advance/set status -->
+                <!-- Stock lens: hanya step 1, 4, 5 yang aktif -->
                 <div class="cs-stepper" title="Click a number to change status">
                     <?php foreach ([1,2,3,4,5] as $step):
                         $isDone    = ($step < $st);
@@ -818,14 +862,18 @@
                         $cls = $isDone ? 'done' : ($isCurrent ? 'current' : '');
                         $stepSm = $statusMap[$step] ?? [];
                         $tt = htmlspecialchars($stepSm['label'] ?? 'Step ' . $step);
+                        // Stock lens: step 2 & 3 tidak tersedia
+                        $isDisabled = $isStock && in_array($step, [2, 3]);
                     ?>
                     <?php if ($step > 1): ?>
-                    <div class="cs-step-line <?php echo ($step <= $st ? 'done-line' : ''); ?>"></div>
+                    <div class="cs-step-line <?php echo ($step <= $st ? 'done-line' : ''); ?><?php echo $isDisabled ? ' step-line-disabled' : ''; ?>"></div>
                     <?php endif; ?>
-                    <div class="cs-step <?php echo $cls; ?>"
-                         title="Set: <?php echo $tt; ?>"
-                         onclick="csChangeStatus(<?php echo $o['id']; ?>, <?php echo $step; ?>, this)">
-                        <?php echo $step; ?>
+                    <div class="cs-step <?php echo $cls; ?><?php echo $isDisabled ? ' step-disabled' : ''; ?>"
+                         title="<?php echo $isDisabled ? 'Tidak tersedia untuk lensa stock' : 'Set: ' . $tt; ?>"
+                         <?php if (!$isDisabled): ?>
+                         onclick="csChangeStatus(<?php echo $o['id']; ?>, <?php echo $step; ?>, this)"
+                         <?php endif; ?>>
+                        <?php echo $isDisabled ? '—' : $step; ?>
                     </div>
                     <?php endforeach; ?>
                     <span style="font-size:0.65rem;color:var(--text-muted);margin-left:8px;letter-spacing:0.5px;">STATUS</span>
@@ -978,6 +1026,9 @@
 
     // ── Change order status via AJAX ─────────────────────────────
     function csChangeStatus(orderId, newStatus, stepEl) {
+        // Proteksi: abaikan jika step ini disabled (lensa stock)
+        if (stepEl.classList.contains('step-disabled')) return;
+
         var fd = new FormData();
         fd.append('action',     'update_status');
         fd.append('order_id',   orderId);
@@ -992,17 +1043,29 @@
                     card.setAttribute('data-status', newStatus);
 
                     // Update all steps in this stepper
+                    // Pertahankan class step-disabled untuk lensa stock
                     card.querySelectorAll('.cs-step').forEach(function(s, idx) {
-                        var stepNum = idx + 1;
+                        var stepNum    = idx + 1;
+                        var wasDisabled = s.classList.contains('step-disabled');
                         s.className = 'cs-step';
-                        if (stepNum < newStatus)       s.classList.add('done');
-                        else if (stepNum === newStatus) s.classList.add('current');
+                        if (wasDisabled) {
+                            s.classList.add('step-disabled');
+                        } else if (stepNum < newStatus) {
+                            s.classList.add('done');
+                        } else if (stepNum === newStatus) {
+                            s.classList.add('current');
+                        }
                     });
 
-                    // Update step lines
+                    // Update step lines — pertahankan step-line-disabled
                     card.querySelectorAll('.cs-step-line').forEach(function(ln, idx) {
+                        var wasDisabled = ln.classList.contains('step-line-disabled');
                         ln.className = 'cs-step-line';
-                        if ((idx + 2) <= newStatus) ln.classList.add('done-line');
+                        if (wasDisabled) {
+                            ln.classList.add('step-line-disabled');
+                        } else if ((idx + 2) <= newStatus) {
+                            ln.classList.add('done-line');
+                        }
                     });
 
                     // Update status badge
