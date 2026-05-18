@@ -538,9 +538,18 @@
             line-height: 1.6;
             white-space: pre-wrap;
             word-break: break-word;
-            max-height: 280px;
+            height: 260px;
             overflow-y: auto;
             font-family: inherit;
+            resize: none;
+            width: 100%;
+            box-sizing: border-box;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .cs-msg-preview:focus {
+            border-color: rgba(0,255,136,0.3);
         }
 
         /* ── Muslim/Non-Muslim toggle ────────────────────────── */
@@ -724,10 +733,104 @@
         }
 
         @media (max-width: 600px) {
-            .cs-body { padding: 14px; }
-            .cs-details-grid { grid-template-columns: repeat(2, 1fr); }
-            .cs-card-actions { flex-direction: column; align-items: flex-start; }
-            .cs-stepper { flex-wrap: wrap; }
+            /* ── Layout ── */
+            .cs-body { padding: 10px; }
+
+            /* ── Header: stack title + search ── */
+            .cs-header {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 10px;
+                margin-bottom: 16px;
+            }
+            .cs-title { font-size: 1.1rem; }
+            .cs-search-wrap { max-width: 100%; }
+
+            /* ── Stat cards: 2×2 grid on mobile ── */
+            .cs-stats-top {
+                display: grid;
+                grid-template-columns: repeat(2, 1fr);
+                gap: 8px;
+            }
+            .cs-stat-card { min-width: 0; padding: 10px 12px; }
+            .cs-stat-num { font-size: 1.3rem; }
+            .cs-stat-label { font-size: 0.58rem; }
+            .cs-stats-bottom .cs-stat-card { min-width: 0; max-width: 100%; width: 100%; }
+
+            /* ── Order card ── */
+            .cs-card { padding: 14px 14px; border-radius: 16px; }
+
+            /* ── Top row: stack name + badge vertically ── */
+            .cs-card-top { flex-direction: column; gap: 8px; }
+            .cs-status-badge { align-self: flex-start; font-size: 0.65rem; padding: 5px 11px; }
+
+            /* ── Chips ── */
+            .cs-chip { font-size: 0.6rem; padding: 2px 8px; }
+
+            /* ── Details grid: 2 columns ── */
+            .cs-details-grid {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 8px;
+                margin-top: 10px;
+                padding-top: 10px;
+            }
+            .cs-detail-label { font-size: 0.58rem; }
+            .cs-detail-value { font-size: 0.76rem; }
+
+            /* ── Action row: stepper full-width, WA button full-width ── */
+            .cs-card-actions {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 10px;
+                margin-top: 12px;
+            }
+            .cs-stepper { justify-content: space-between; }
+            .cs-step { width: 32px; height: 32px; font-size: 0.65rem; }
+            .cs-step-line { flex: 1; }
+
+            /* ── WA button: full width ── */
+            .cs-wa-btn {
+                width: 100%;
+                justify-content: center;
+                padding: 10px 16px;
+                font-size: 0.75rem;
+            }
+
+            /* ── Modal: bottom sheet style ── */
+            .cs-modal-overlay {
+                align-items: flex-end;
+                padding: 0;
+            }
+            .cs-modal {
+                border-radius: 24px 24px 0 0;
+                padding: 20px 18px 30px;
+                max-width: 100%;
+                max-height: 92vh;
+                overflow-y: auto;
+            }
+            .cs-msg-preview { height: 200px; font-size: 0.75rem; }
+
+            /* ── Religion toggle wraps nicely ── */
+            .cs-religion-toggle { flex-wrap: wrap; }
+
+            /* ── Modal buttons: stack ── */
+            .cs-modal-actions { flex-direction: column; }
+            .cs-btn { flex: none; width: 100%; text-align: center; padding: 12px; }
+
+            /* ── Toast: full width bottom ── */
+            #cs-toast {
+                left: 12px;
+                right: 12px;
+                bottom: 16px;
+                text-align: center;
+            }
+
+            /* ── Back button: full width ── */
+            .btn-group { padding: 0 10px; }
+            .btn-group .back-main {
+                width: 100%;
+                box-sizing: border-box;
+            }
         }
     </style>
 </head>
@@ -978,10 +1081,10 @@
                     <button class="cs-toggle-btn" id="cs-toggle-nonmuslim" onclick="csSetReligion('nonmuslim')">Non-Muslim</button>
                 </div>
             </div>
-            <div class="cs-msg-preview" id="cs-modal-msg"></div>
+            <textarea class="cs-msg-preview" id="cs-modal-msg" spellcheck="false"></textarea>
             <div class="cs-modal-actions">
                 <button class="cs-btn cancel" onclick="csCloseModal()">Cancel</button>
-                <a class="cs-btn send" id="cs-modal-wa-link" href="#" target="_blank" onclick="csCloseModal()">
+                <a class="cs-btn send" id="cs-modal-wa-link" href="#" target="_blank" onclick="csUpdateWALinkAndClose()">
                     Send via WhatsApp &#128242;
                 </a>
             </div>
@@ -1034,7 +1137,17 @@
         status   = parseInt(status);
         if (isMuslim === undefined) isMuslim = true;
 
-        var salam     = isMuslim ? 'السَّلَامُ عَلَيْكُمْ وَرَحْمَةُ اللهِ وَبَرَكَاتُهُ\n\n' : '';
+        var salam;
+        if (isMuslim) {
+            salam = 'السَّلَامُ عَلَيْكُمْ وَرَحْمَةُ اللهِ وَبَرَكَاتُهُ\n\n';
+        } else {
+            var hour = new Date().getHours();
+            var greeting = hour >= 3 && hour < 11  ? 'Selamat Pagi'
+                         : hour >= 11 && hour < 15 ? 'Selamat Siang'
+                         : hour >= 15 && hour < 19 ? 'Selamat Sore'
+                         :                           'Selamat Malam';
+            salam = greeting + '\n\n';
+        }
         var sapaan, gaya;
         var firstName = name.split(' ')[0];
 
@@ -1201,8 +1314,8 @@
         var d   = _csModalData;
         var msg = buildWAMessage(d.status, d.name, d.age, d.gender, d.custNum, d.invNum, d.dueDate, _csModalIsMuslim);
         var url = 'https://wa.me/' + d.waPhone + '?text=' + encodeURIComponent(msg);
-        document.getElementById('cs-modal-msg').textContent  = msg;
-        document.getElementById('cs-modal-wa-link').href     = url;
+        document.getElementById('cs-modal-msg').value         = msg;
+        document.getElementById('cs-modal-wa-link').href      = url;
     }
 
     // ── WA Modal ──────────────────────────────────────────────────
@@ -1220,7 +1333,7 @@
         var msg = buildWAMessage(status, name, age, gender, custNum, invNum, dueDate, true);
         var url = 'https://wa.me/' + waPhone + '?text=' + encodeURIComponent(msg);
 
-        document.getElementById('cs-modal-msg').textContent = msg;
+        document.getElementById('cs-modal-msg').value       = msg;
         document.getElementById('cs-modal-sub').textContent = 'To: ' + (displayName || name);
         document.getElementById('cs-modal-wa-link').href    = url;
         document.getElementById('cs-modal-overlay').classList.add('open');
@@ -1228,6 +1341,16 @@
 
     function csCloseModal() {
         document.getElementById('cs-modal-overlay').classList.remove('open');
+    }
+
+    // Update WA link with current (possibly edited) textarea content before opening WA
+    function csUpdateWALinkAndClose() {
+        var editedMsg = document.getElementById('cs-modal-msg').value;
+        var d = _csModalData;
+        var waPhone = d.waPhone || '';
+        var url = 'https://wa.me/' + waPhone + '?text=' + encodeURIComponent(editedMsg);
+        document.getElementById('cs-modal-wa-link').href = url;
+        csCloseModal();
     }
 
     // Close modal on overlay click
