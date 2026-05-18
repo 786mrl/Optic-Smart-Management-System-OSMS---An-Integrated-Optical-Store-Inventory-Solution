@@ -88,11 +88,11 @@
             $sapaan    = 'Sir/Ma\'am';
             $gaya      = 'formal_ortu'; // use formal language, parent context
         } elseif ($age >= 13 && $age <= 17) {
-            // Teens — casual but polite
+            // Remaja — formal
             if ($gender === 'male' || $gender === 'laki-laki' || $gender === 'm') {
-                $sapaan = 'Kak ' . explode(' ', $name)[0];
+                $sapaan = 'Saudara ' . explode(' ', $name)[0];
             } else {
-                $sapaan = 'Kak ' . explode(' ', $name)[0];
+                $sapaan = 'Saudari ' . explode(' ', $name)[0];
             }
             $gaya = 'remaja';
         } else {
@@ -105,50 +105,53 @@
             $gaya = 'dewasa';
         }
 
+        // ── Salam pembuka (selalu di awal) ───────────────────────────
+        $salam = "السَّلَامُ عَلَيْكُمْ وَرَحْمَةُ اللهِ وَبَرَكَاتُهُ\n\n";
+
         // ── Build message per status ─────────────────────────────────
         switch ($status) {
             case 1: // Pesanan Diterima / Sedang Diproses
                 if ($gaya === 'formal_ortu') {
-                    $msg = "Halo $sapaan 🙏\n\nKami dari LenZa Optic ingin menginformasikan bahwa pesanan kacamata untuk putra/putri Anda dengan nomor order *$custNum* telah kami terima dan sedang dalam proses pengerjaan.\n\nNomor Invoice: *$invNum*\nEstimasi selesai: *$dueDate*\n\nTerima kasih telah mempercayakan kebutuhan penglihatan buah hati Anda kepada kami. Kami akan terus memberikan update perkembangannya. 🙏";
+                    $msg = $salam . "Kepada $sapaan 🙏\n\nKami dari LenZa Optic ingin menginformasikan bahwa pesanan kacamata untuk putra/putri Anda dengan nomor order *$custNum* telah kami terima dan sedang dalam proses pengerjaan.\n\nNomor Invoice: *$invNum*\nEstimasi selesai: *$dueDate*\n\nTerima kasih telah mempercayakan kebutuhan penglihatan buah hati Anda kepada kami. Kami akan terus memberikan informasi perkembangannya. 🙏";
                 } elseif ($gaya === 'remaja') {
-                    $msg = "Halo $sapaan! 👋\n\nPesanan kacamata kamu dengan nomor order *$custNum* sudah kami terima dan sedang diproses nih!\n\nNo. Invoice: *$invNum*\nEstimasi selesai: *$dueDate*\n\nTenang, kami akan kasih kabar terus ya perkembangannya. Ditunggu! 😊";
+                    $msg = $salam . "Kepada $sapaan 🙏\n\nKami dari LenZa Optic ingin menginformasikan bahwa pesanan kacamata dengan nomor order *$custNum* telah kami terima dan sedang dalam proses pengerjaan.\n\nNomor Invoice: *$invNum*\nEstimasi selesai: *$dueDate*\n\nTerima kasih atas kepercayaan Anda. Kami akan segera menginformasikan perkembangan selanjutnya. 🙏";
                 } else {
-                    $msg = "Halo $sapaan 🙏\n\nKami dari LenZa Optic ingin menginformasikan bahwa pesanan kacamata Anda dengan nomor order *$custNum* telah kami terima dan sedang dalam proses pengerjaan.\n\nNomor Invoice: *$invNum*\nEstimasi selesai: *$dueDate*\n\nTerima kasih atas kepercayaan Anda. Kami akan segera menginformasikan perkembangan selanjutnya. 🙏";
+                    $msg = $salam . "Kepada $sapaan 🙏\n\nKami dari LenZa Optic ingin menginformasikan bahwa pesanan kacamata Anda dengan nomor order *$custNum* telah kami terima dan sedang dalam proses pengerjaan.\n\nNomor Invoice: *$invNum*\nEstimasi selesai: *$dueDate*\n\nTerima kasih atas kepercayaan Anda. Kami akan segera menginformasikan perkembangan selanjutnya. 🙏";
                 }
                 break;
 
             case 2: // Sedang Proses Produksi Lensa
                 if ($gaya === 'formal_ortu') {
-                    $msg = "Halo $sapaan 🙏\n\nKami ingin menginformasikan bahwa kacamata putra/putri Anda (No. Order: *$custNum*) saat ini sedang dalam proses pembuatan lensa.\n\nSetiap detail dikerjakan dengan teliti dan penuh perhatian. Estimasi selesai: *$dueDate*\n\nTerima kasih atas kesabaran Anda. 🙏";
+                    $msg = $salam . "Kepada $sapaan 🙏\n\nKami ingin menginformasikan bahwa kacamata putra/putri Anda (No. Order: *$custNum*) saat ini sedang dalam proses pembuatan lensa.\n\nSetiap detail dikerjakan dengan teliti dan penuh perhatian. Estimasi selesai: *$dueDate*\n\nTerima kasih atas kesabaran Anda. 🙏";
                 } elseif ($gaya === 'remaja') {
-                    $msg = "Halo $sapaan! ⚙️\n\nUpdate pesanan — kacamata kamu (No. Order: *$custNum*) lagi dalam proses pembuatan lensa nih!\n\nEstimasi selesai: *$dueDate*\nSebentar lagi jadi, sabar ya! 😄";
+                    $msg = $salam . "Kepada $sapaan 🙏\n\nKami ingin menginformasikan bahwa kacamata Anda (No. Order: *$custNum*) saat ini sedang dalam proses pembuatan lensa.\n\nSetiap detail dikerjakan dengan penuh ketelitian. Estimasi selesai: *$dueDate*\n\nTerima kasih atas kesabaran Anda. 🙏";
                 } else {
-                    $msg = "Halo $sapaan 🙏\n\nKami ingin menginformasikan bahwa kacamata Anda (No. Order: *$custNum*) saat ini sedang dalam proses pembuatan lensa.\n\nSetiap detail dikerjakan dengan penuh ketelitian. Estimasi selesai: *$dueDate*\n\nTerima kasih atas kesabaran Anda. 🙏";
+                    $msg = $salam . "Kepada $sapaan 🙏\n\nKami ingin menginformasikan bahwa kacamata Anda (No. Order: *$custNum*) saat ini sedang dalam proses pembuatan lensa.\n\nSetiap detail dikerjakan dengan penuh ketelitian. Estimasi selesai: *$dueDate*\n\nTerima kasih atas kesabaran Anda. 🙏";
                 }
                 break;
 
             case 3: // Dalam Pengiriman ke Toko
                 if ($gaya === 'formal_ortu') {
-                    $msg = "Halo $sapaan 🙏\n\nKabar baik! Kacamata putra/putri Anda (No. Order: *$custNum*) telah selesai dibuat dan saat ini sedang dalam perjalanan menuju toko kami.\n\nKami akan menghubungi kembali begitu kacamata tiba dan siap untuk diambil. 🚚";
+                    $msg = $salam . "Kepada $sapaan 🙏\n\nKami ingin menyampaikan kabar baik bahwa kacamata putra/putri Anda (No. Order: *$custNum*) telah selesai dibuat dan saat ini sedang dalam perjalanan menuju toko kami.\n\nKami akan menghubungi kembali begitu kacamata tiba dan siap untuk diambil. 🚚";
                 } elseif ($gaya === 'remaja') {
-                    $msg = "Halo $sapaan! 🚚\n\nYeay, kacamata kamu (No. Order: *$custNum*) sudah selesai dan lagi dalam perjalanan ke toko kami nih!\n\nNanti kami kabarin lagi ya kalau sudah siap diambil 😊";
+                    $msg = $salam . "Kepada $sapaan 🙏\n\nKami ingin menyampaikan kabar baik bahwa kacamata Anda (No. Order: *$custNum*) telah selesai dibuat dan saat ini sedang dalam perjalanan menuju toko kami.\n\nKami akan menghubungi Anda kembali begitu kacamata tiba dan siap untuk diambil. 🚚";
                 } else {
-                    $msg = "Halo $sapaan 🙏\n\nKabar baik! Kacamata Anda (No. Order: *$custNum*) telah selesai dibuat dan saat ini sedang dalam perjalanan menuju toko kami.\n\nKami akan menghubungi Anda kembali begitu kacamata tiba dan siap untuk diambil. 🚚";
+                    $msg = $salam . "Kepada $sapaan 🙏\n\nKami ingin menyampaikan kabar baik bahwa kacamata Anda (No. Order: *$custNum*) telah selesai dibuat dan saat ini sedang dalam perjalanan menuju toko kami.\n\nKami akan menghubungi Anda kembali begitu kacamata tiba dan siap untuk diambil. 🚚";
                 }
                 break;
 
             case 4: // Siap Diambil
                 if ($gaya === 'formal_ortu') {
-                    $msg = "Halo $sapaan 🙏\n\nAlhamdulillah, kacamata putra/putri Anda (No. Order: *$custNum*) sudah selesai dan siap untuk diambil di toko kami!\n\nMohon membawa nomor invoice *$invNum* saat pengambilan.\n\nKami tunggu kedatangan Anda. Terima kasih 😊🙏";
+                    $msg = $salam . "Kepada $sapaan 🙏\n\nAlhamdulillah, kami dengan senang hati menginformasikan bahwa kacamata putra/putri Anda (No. Order: *$custNum*) telah selesai dan siap untuk diambil di toko kami.\n\nMohon membawa nomor invoice *$invNum* saat pengambilan.\n\nKami tunggu kedatangan Anda. Terima kasih 😊🙏";
                 } elseif ($gaya === 'remaja') {
-                    $msg = "Halo $sapaan! ✅\n\nKacamata kamu sudah jadi dan siap diambil di toko kami!\n\nNo. Order: *$custNum*\nJangan lupa bawa nomor invoice *$invNum* ya waktu ke sini.\n\nDitunggu kedatangannya! 😄";
+                    $msg = $salam . "Kepada $sapaan 🙏\n\nAlhamdulillah, kami dengan senang hati menginformasikan bahwa kacamata Anda (No. Order: *$custNum*) telah selesai dan siap untuk diambil di toko kami.\n\nMohon membawa nomor invoice *$invNum* saat pengambilan.\n\nKami tunggu kedatangan Anda. Terima kasih 😊🙏";
                 } else {
-                    $msg = "Halo $sapaan 🙏\n\nDengan senang hati kami informasikan bahwa kacamata Anda (No. Order: *$custNum*) telah selesai dan siap untuk diambil di toko kami.\n\nMohon membawa nomor invoice *$invNum* saat pengambilan.\n\nKami tunggu kedatangan Anda. Terima kasih 😊🙏";
+                    $msg = $salam . "Kepada $sapaan 🙏\n\nAlhamdulillah, kami dengan senang hati menginformasikan bahwa kacamata Anda (No. Order: *$custNum*) telah selesai dan siap untuk diambil di toko kami.\n\nMohon membawa nomor invoice *$invNum* saat pengambilan.\n\nKami tunggu kedatangan Anda. Terima kasih 😊🙏";
                 }
                 break;
 
             default:
-                $msg = "Halo, berikut informasi mengenai pesanan Anda dengan no. order *$custNum*. Silakan hubungi kami untuk informasi lebih lanjut.";
+                $msg = $salam . "Kepada pelanggan,\n\nBerikut informasi mengenai pesanan Anda dengan no. order *$custNum*. Silakan hubungi kami untuk informasi lebih lanjut.";
         }
 
         return $msg;
@@ -922,6 +925,7 @@
         gender = (gender || '').toLowerCase();
         status = parseInt(status);
 
+        var salam     = 'السَّلَامُ عَلَيْكُمْ وَرَحْمَةُ اللهِ وَبَرَكَاتُهُ\n\n';
         var sapaan, gaya;
         var firstName = name.split(' ')[0];
 
@@ -929,57 +933,45 @@
             sapaan = 'Bapak/Ibu';
             gaya   = 'formal_ortu';
         } else if (age >= 13 && age <= 17) {
-            sapaan = 'Kak ' + firstName;
+            sapaan = (gender === 'male') ? 'Saudara ' + firstName : 'Saudari ' + firstName;
             gaya   = 'remaja';
         } else {
-            if (gender === 'male') {
-                sapaan = 'Bapak ' + firstName;
-            } else {
-                sapaan = 'Ibu ' + firstName;
-            }
-            gaya = 'dewasa';
+            sapaan = (gender === 'male') ? 'Bapak ' + firstName : 'Ibu ' + firstName;
+            gaya   = 'dewasa';
         }
 
         var msg = '';
         switch (status) {
             case 1:
                 if (gaya === 'formal_ortu') {
-                    msg = 'Halo ' + sapaan + ' 🙏\n\nKami dari LenZa Optic ingin menginformasikan bahwa pesanan kacamata untuk putra/putri Anda dengan nomor order *' + custNum + '* telah kami terima dan sedang dalam proses pengerjaan.\n\nNomor Invoice: *' + invNum + '*\nEstimasi selesai: *' + dueDate + '*\n\nTerima kasih telah mempercayakan kebutuhan penglihatan buah hati Anda kepada kami. Kami akan terus memberikan update perkembangannya. 🙏';
-                } else if (gaya === 'remaja') {
-                    msg = 'Halo ' + sapaan + '! 👋\n\nPesanan kacamata kamu dengan nomor order *' + custNum + '* sudah kami terima dan sedang diproses nih!\n\nNo. Invoice: *' + invNum + '*\nEstimasi selesai: *' + dueDate + '*\n\nTenang, kami akan kasih kabar terus ya perkembangannya. Ditunggu! 😊';
+                    msg = salam + 'Kepada ' + sapaan + ' 🙏\n\nKami dari LenZa Optic ingin menginformasikan bahwa pesanan kacamata untuk putra/putri Anda dengan nomor order *' + custNum + '* telah kami terima dan sedang dalam proses pengerjaan.\n\nNomor Invoice: *' + invNum + '*\nEstimasi selesai: *' + dueDate + '*\n\nTerima kasih telah mempercayakan kebutuhan penglihatan buah hati Anda kepada kami. Kami akan terus memberikan informasi perkembangannya. 🙏';
                 } else {
-                    msg = 'Halo ' + sapaan + ' 🙏\n\nKami dari LenZa Optic ingin menginformasikan bahwa pesanan kacamata Anda dengan nomor order *' + custNum + '* telah kami terima dan sedang dalam proses pengerjaan.\n\nNomor Invoice: *' + invNum + '*\nEstimasi selesai: *' + dueDate + '*\n\nTerima kasih atas kepercayaan Anda. Kami akan segera menginformasikan perkembangan selanjutnya. 🙏';
+                    msg = salam + 'Kepada ' + sapaan + ' 🙏\n\nKami dari LenZa Optic ingin menginformasikan bahwa pesanan kacamata Anda dengan nomor order *' + custNum + '* telah kami terima dan sedang dalam proses pengerjaan.\n\nNomor Invoice: *' + invNum + '*\nEstimasi selesai: *' + dueDate + '*\n\nTerima kasih atas kepercayaan Anda. Kami akan segera menginformasikan perkembangan selanjutnya. 🙏';
                 }
                 break;
             case 2:
                 if (gaya === 'formal_ortu') {
-                    msg = 'Halo ' + sapaan + ' 🙏\n\nKami ingin menginformasikan bahwa kacamata putra/putri Anda (No. Order: *' + custNum + '*) saat ini sedang dalam proses pembuatan lensa.\n\nSetiap detail dikerjakan dengan teliti dan penuh perhatian. Estimasi selesai: *' + dueDate + '*\n\nTerima kasih atas kesabaran Anda. 🙏';
-                } else if (gaya === 'remaja') {
-                    msg = 'Halo ' + sapaan + '! ⚙️\n\nUpdate pesanan — kacamata kamu (No. Order: *' + custNum + '*) lagi dalam proses pembuatan lensa nih!\n\nEstimasi selesai: *' + dueDate + '*\nSebentar lagi jadi, sabar ya! 😄';
+                    msg = salam + 'Kepada ' + sapaan + ' 🙏\n\nKami ingin menginformasikan bahwa kacamata putra/putri Anda (No. Order: *' + custNum + '*) saat ini sedang dalam proses pembuatan lensa.\n\nSetiap detail dikerjakan dengan teliti dan penuh perhatian. Estimasi selesai: *' + dueDate + '*\n\nTerima kasih atas kesabaran Anda. 🙏';
                 } else {
-                    msg = 'Halo ' + sapaan + ' 🙏\n\nKami ingin menginformasikan bahwa kacamata Anda (No. Order: *' + custNum + '*) saat ini sedang dalam proses pembuatan lensa.\n\nSetiap detail dikerjakan dengan penuh ketelitian. Estimasi selesai: *' + dueDate + '*\n\nTerima kasih atas kesabaran Anda. 🙏';
+                    msg = salam + 'Kepada ' + sapaan + ' 🙏\n\nKami ingin menginformasikan bahwa kacamata Anda (No. Order: *' + custNum + '*) saat ini sedang dalam proses pembuatan lensa.\n\nSetiap detail dikerjakan dengan penuh ketelitian. Estimasi selesai: *' + dueDate + '*\n\nTerima kasih atas kesabaran Anda. 🙏';
                 }
                 break;
             case 3:
                 if (gaya === 'formal_ortu') {
-                    msg = 'Halo ' + sapaan + ' 🙏\n\nKabar baik! Kacamata putra/putri Anda (No. Order: *' + custNum + '*) telah selesai dibuat dan saat ini sedang dalam perjalanan menuju toko kami.\n\nKami akan menghubungi kembali begitu kacamata tiba dan siap untuk diambil. 🚚';
-                } else if (gaya === 'remaja') {
-                    msg = 'Halo ' + sapaan + '! 🚚\n\nYeay, kacamata kamu (No. Order: *' + custNum + '*) sudah selesai dan lagi dalam perjalanan ke toko kami nih!\n\nNanti kami kabarin lagi ya kalau sudah siap diambil 😊';
+                    msg = salam + 'Kepada ' + sapaan + ' 🙏\n\nKami ingin menyampaikan kabar baik bahwa kacamata putra/putri Anda (No. Order: *' + custNum + '*) telah selesai dibuat dan saat ini sedang dalam perjalanan menuju toko kami.\n\nKami akan menghubungi kembali begitu kacamata tiba dan siap untuk diambil. 🚚';
                 } else {
-                    msg = 'Halo ' + sapaan + ' 🙏\n\nKabar baik! Kacamata Anda (No. Order: *' + custNum + '*) telah selesai dibuat dan saat ini sedang dalam perjalanan menuju toko kami.\n\nKami akan menghubungi Anda kembali begitu kacamata tiba dan siap untuk diambil. 🚚';
+                    msg = salam + 'Kepada ' + sapaan + ' 🙏\n\nKami ingin menyampaikan kabar baik bahwa kacamata Anda (No. Order: *' + custNum + '*) telah selesai dibuat dan saat ini sedang dalam perjalanan menuju toko kami.\n\nKami akan menghubungi Anda kembali begitu kacamata tiba dan siap untuk diambil. 🚚';
                 }
                 break;
             case 4:
                 if (gaya === 'formal_ortu') {
-                    msg = 'Halo ' + sapaan + ' 🙏\n\nAlhamdulillah, kacamata putra/putri Anda (No. Order: *' + custNum + '*) sudah selesai dan siap untuk diambil di toko kami!\n\nMohon membawa nomor invoice *' + invNum + '* saat pengambilan.\n\nKami tunggu kedatangan Anda. Terima kasih 😊🙏';
-                } else if (gaya === 'remaja') {
-                    msg = 'Halo ' + sapaan + '! ✅\n\nKacamata kamu sudah jadi dan siap diambil di toko kami!\n\nNo. Order: *' + custNum + '*\nJangan lupa bawa nomor invoice *' + invNum + '* ya waktu ke sini.\n\nDitunggu kedatangannya! 😄';
+                    msg = salam + 'Kepada ' + sapaan + ' 🙏\n\nAlhamdulillah, kami dengan senang hati menginformasikan bahwa kacamata putra/putri Anda (No. Order: *' + custNum + '*) telah selesai dan siap untuk diambil di toko kami.\n\nMohon membawa nomor invoice *' + invNum + '* saat pengambilan.\n\nKami tunggu kedatangan Anda. Terima kasih 😊🙏';
                 } else {
-                    msg = 'Halo ' + sapaan + ' 🙏\n\nDengan senang hati kami informasikan bahwa kacamata Anda (No. Order: *' + custNum + '*) telah selesai dan siap untuk diambil di toko kami.\n\nMohon membawa nomor invoice *' + invNum + '* saat pengambilan.\n\nKami tunggu kedatangan Anda. Terima kasih 😊🙏';
+                    msg = salam + 'Kepada ' + sapaan + ' 🙏\n\nAlhamdulillah, kami dengan senang hati menginformasikan bahwa kacamata Anda (No. Order: *' + custNum + '*) telah selesai dan siap untuk diambil di toko kami.\n\nMohon membawa nomor invoice *' + invNum + '* saat pengambilan.\n\nKami tunggu kedatangan Anda. Terima kasih 😊🙏';
                 }
                 break;
             default:
-                msg = 'Halo, berikut informasi mengenai pesanan Anda dengan no. order *' + custNum + '*. Silakan hubungi kami untuk informasi lebih lanjut.';
+                msg = salam + 'Kepada pelanggan,\n\nBerikut informasi mengenai pesanan Anda dengan no. order *' + custNum + '*. Silakan hubungi kami untuk informasi lebih lanjut.';
         }
         return msg;
     }
