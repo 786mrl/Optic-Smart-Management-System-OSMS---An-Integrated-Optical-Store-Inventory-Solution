@@ -922,6 +922,15 @@
             // Format: "CATEGORY / TYPE" — contoh "SINGLE VISION / BLUERAY"
             $isStock = in_array(strtoupper(trim($lensName)), $stockLensNames);
 
+            // Deteksi short order: due_date - order_date == 3 hari → step 4 & 5 disabled
+            $isShortOrder = false;
+            if (!empty($o['order_date']) && !empty($o['due_date'])) {
+                $orderTs = strtotime(date('Y-m-d', strtotime($o['order_date'])));
+                $dueTs   = strtotime(date('Y-m-d', strtotime($o['due_date'])));
+                $diffDays = ($dueTs - $orderTs) / 86400;
+                $isShortOrder = ($diffDays <= 3);
+            }
+
             // Build WA message
             $waMsg     = buildWAMessage($o, $statusMap);
             $waMsgEnc  = urlencode($waMsg);
@@ -944,7 +953,9 @@
              data-invnum="<?php echo htmlspecialchars($o['invoice_number'] ?? ''); ?>"
              data-duedate="<?php echo $dueDate; ?>"
              data-waphone="<?php echo htmlspecialchars(preg_replace('/[^0-9]/', '', $phone) ? (($waPhone)) : ''); ?>"
-             data-isstock="<?php echo $isStock ? '1' : '0'; ?>">
+             data-isstock="<?php echo $isStock ? '1' : '0'; ?>"
+             data-shortorder="<?php echo $isShortOrder ? '1' : '0'; ?>"
+             data-orderdate="<?php echo htmlspecialchars($o['order_date'] ?? ''); ?>">
 
             <!-- Top row: patient info + status badge -->
             <div class="cs-card-top">
@@ -1018,12 +1029,26 @@
                         $tt = htmlspecialchars($stepSm['label'] ?? 'Step ' . $step);
                         // Stock lens: step 2 & 3 tidak tersedia
                         $isDisabled = $isStock && in_array($step, [2, 3]);
+                        // Short order (due_date - order_date <= 3 hari): step 2 & 3 tidak tersedia
+                        if (!$isDisabled && $isShortOrder && in_array($step, [2, 3])) {
+                            $isDisabled = true;
+                        }
                     ?>
                     <?php if ($step > 1): ?>
                     <div class="cs-step-line <?php echo ($step <= $st ? 'done-line' : ''); ?><?php echo $isDisabled ? ' step-line-disabled' : ''; ?>"></div>
                     <?php endif; ?>
                     <div class="cs-step <?php echo $cls; ?><?php echo $isDisabled ? ' step-disabled' : ''; ?>"
-                         title="<?php echo $isDisabled ? 'Tidak tersedia untuk lensa stock' : 'Set: ' . $tt; ?>"
+                         title="<?php
+                             if ($isDisabled) {
+                                 if ($isStock && in_array($step, [2, 3])) {
+                                     echo 'Tidak tersedia untuk lensa stock';
+                                 } else {
+                                     echo 'Tidak tersedia untuk order 3 hari';
+                                 }
+                             } else {
+                                 echo 'Set: ' . $tt;
+                             }
+                         ?>"
                          <?php if (!$isDisabled): ?>
                          onclick="csChangeStatus(<?php echo $o['id']; ?>, <?php echo $step; ?>, this)"
                          <?php endif; ?>>
@@ -1220,7 +1245,7 @@
                     card.setAttribute('data-status', newStatus);
 
                     // Update all steps in this stepper
-                    // Pertahankan class step-disabled untuk lensa stock
+                    // Pertahankan class step-disabled untuk lensa stock dan short order
                     card.querySelectorAll('.cs-step').forEach(function(s, idx) {
                         var stepNum    = idx + 1;
                         var wasDisabled = s.classList.contains('step-disabled');
