@@ -14,13 +14,14 @@
         $flanel   = (int)$_POST['flanel'];
         $faset    = (int)$_POST['faset'];
         $wrapping = (int)$_POST['wrapping'];
+        $cleaner  = (int)$_POST['cleaner'];
 
         if ($order_id <= 0) {
             echo json_encode(['success' => false, 'error' => 'Invalid order id']);
             exit();
         }
 
-        $packaging_cost = $box + $flanel + $faset + $wrapping;
+        $packaging_cost = $box + $flanel + $faset + $wrapping + $cleaner;
 
         $stmt = $conn->prepare("UPDATE customer_orders SET packaging_cost = ? WHERE id = ?");
         $stmt->bind_param("ii", $packaging_cost, $order_id);
@@ -985,23 +986,23 @@
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:8px;">
                 <div class="ph-modal-field">
                     <label>📦 Box</label>
-                    <input type="text" class="ph-modal-input" id="ph-pkg-box" oninput="phPkgFormat(this);phPkgUpdateTotal()" inputmode="numeric">
+                    <input type="text" class="ph-modal-input" id="ph-pkg-box" oninput="phPkgFormat(this);phPkgUpdateTotal()" onfocus="this.select()" inputmode="numeric">
                 </div>
                 <div class="ph-modal-field">
                     <label>🧣 Flanel</label>
-                    <input type="text" class="ph-modal-input" id="ph-pkg-flanel" oninput="phPkgFormat(this);phPkgUpdateTotal()" inputmode="numeric">
+                    <input type="text" class="ph-modal-input" id="ph-pkg-flanel" oninput="phPkgFormat(this);phPkgUpdateTotal()" onfocus="this.select()" inputmode="numeric">
                 </div>
                 <div class="ph-modal-field">
                     <label>💎 Faset</label>
-                    <input type="text" class="ph-modal-input" id="ph-pkg-faset" oninput="phPkgFormat(this);phPkgUpdateTotal()" inputmode="numeric">
+                    <input type="text" class="ph-modal-input" id="ph-pkg-faset" oninput="phPkgFormat(this);phPkgUpdateTotal()" onfocus="this.select()" inputmode="numeric">
                 </div>
                 <div class="ph-modal-field">
                     <label>🎁 Wrapping</label>
-                    <input type="text" class="ph-modal-input" id="ph-pkg-wrapping" oninput="phPkgFormat(this);phPkgUpdateTotal()" inputmode="numeric">
+                    <input type="text" class="ph-modal-input" id="ph-pkg-wrapping" oninput="phPkgFormat(this);phPkgUpdateTotal()" onfocus="this.select()" inputmode="numeric">
                 </div>
                 <div class="ph-modal-field">
                     <label>🧴 Lens Cleaner</label>
-                    <input type="text" class="ph-modal-input" id="ph-pkg-cleaner" oninput="phPkgFormat(this);phPkgUpdateTotal()" inputmode="numeric">
+                    <input type="text" class="ph-modal-input" id="ph-pkg-cleaner" oninput="phPkgFormat(this);phPkgUpdateTotal()" onfocus="this.select()" inputmode="numeric">
                 </div>
             </div>
 
@@ -1422,7 +1423,7 @@
         document.getElementById('ph-pkg-modal-sub').textContent = name + '  |  INV: ' + inv.toUpperCase() + '  |  Current: Rp ' + pkgTotal.toLocaleString('id-ID');
 
         // Pre-fill with defaults (breakdown not stored in DB)
-        ['box','flanel','faset','wrapping'].forEach(function(key) {
+        ['box','flanel','faset','wrapping','cleaner'].forEach(function(key) {
             document.getElementById('ph-pkg-' + key).value = phFormatNumber(String(_phPkgDefaults[key]));
         });
 
