@@ -730,6 +730,8 @@
         .cs-stats-bottom {
             display: flex;
             justify-content: center;
+            gap: 12px;
+            flex-wrap: wrap;
         }
 
         .cs-stat-card {
@@ -751,6 +753,39 @@
             max-width: 220px;
             align-items: center;
             text-align: center;
+        }
+
+        /* ── Due Soon / Overdue filter card ─────────────────── */
+        .cs-stat-card.due-alert {
+            border-color: rgba(255,107,107,0.2);
+        }
+        .cs-stat-card.due-alert:hover {
+            border-color: rgba(255,107,107,0.45);
+            box-shadow: 10px 10px 24px var(--shadow-dark), -10px -10px 24px var(--shadow-light);
+        }
+        .cs-stat-card.due-alert.active {
+            border-color: rgba(255,107,107,0.55);
+            box-shadow: 0 0 14px rgba(255,107,107,0.18), 8px 8px 20px var(--shadow-dark), -8px -8px 20px var(--shadow-light);
+        }
+        .cs-due-badge {
+            display: inline-block;
+            font-size: 0.58rem;
+            font-weight: 800;
+            letter-spacing: 0.6px;
+            padding: 2px 7px;
+            border-radius: 10px;
+            margin-left: 5px;
+            vertical-align: middle;
+        }
+        .cs-due-badge.overdue {
+            background: rgba(255,107,107,0.15);
+            color: #ff6b6b;
+            border: 1px solid rgba(255,107,107,0.3);
+        }
+        .cs-due-badge.soon {
+            background: rgba(255,170,0,0.15);
+            color: #ffaa00;
+            border: 1px solid rgba(255,170,0,0.3);
         }
 
         .cs-stat-num {
@@ -905,7 +940,7 @@
             <div class="cs-search-wrap">
                 <span class="cs-search-icon">🔍</span>
                 <input type="text" class="cs-search" id="cs-search-input"
-                       placeholder="Cari nama, invoice, no. HP…"
+                       placeholder="Find by name, invoice, phone number…"
                        oninput="csFilterCards()">
             </div>
         </div>
@@ -914,22 +949,50 @@
         <?php
             $counts = [1=>0, 2=>0, 3=>0, 4=>0];
             foreach ($orders as $o) { $counts[(int)$o['order_status']]++; }
+
+            // Hitung due soon (≤ 2 hari ke depan) dan overdue (sudah lewat)
+            $countOverdue  = 0;
+            $countDueSoon  = 0;
+            $now = time();
+            foreach ($orders as $o) {
+                if (empty($o['due_date'])) continue;
+                $dueTs = strtotime($o['due_date']);
+                $diff  = $dueTs - strtotime(date('Y-m-d')); // selisih hari (dalam detik)
+                if ($diff < 0) {
+                    $countOverdue++;
+                } elseif ($diff <= 2 * 86400) {
+                    $countDueSoon++;
+                }
+            }
+            $countDueTotal = $countOverdue + $countDueSoon;
         ?>
         <div class="cs-stats-row">
             <!-- Top row: Order Received → Awaiting Collection -->
             <div class="cs-stats-top">
                 <?php foreach ($statusMap as $s => $sm): if ($s === 5) continue; ?>
-                <div class="cs-stat-card <?php echo $s === 1 ? 'active' : ''; ?>" data-filter="<?php echo $s; ?>" onclick="csSetFilter('<?php echo $s; ?>', this)" title="Filter: <?php echo $sm['label']; ?>">
+                <div class="cs-stat-card" data-filter="<?php echo $s; ?>" onclick="csSetFilter('<?php echo $s; ?>', this)" title="Filter: <?php echo $sm['label']; ?>">
                     <div class="cs-stat-num" style="color:<?php echo $sm['color']; ?>"><?php echo $counts[$s]; ?></div>
                     <div class="cs-stat-label"><?php echo $sm['icon'] . ' ' . $sm['label']; ?></div>
                 </div>
                 <?php endforeach; ?>
             </div>
-            <!-- Bottom row: Total Active centered -->
+            <!-- Bottom row: Total Active + Due Alert -->
             <div class="cs-stats-bottom">
                 <div class="cs-stat-card" data-filter="all" onclick="csSetFilter('all', this)" title="Show all orders">
                     <div class="cs-stat-num" style="color:#fff;"><?php echo count($orders); ?></div>
                     <div class="cs-stat-label">Total Active</div>
+                </div>
+                <div class="cs-stat-card due-alert" data-filter="due" onclick="csSetFilter('due', this)" title="Filter: Due Soon & Overdue">
+                    <div class="cs-stat-num" style="color:#ff6b6b;"><?php echo $countDueTotal; ?></div>
+                    <div class="cs-stat-label">
+                        ⏰ Due Alert
+                        <?php if ($countOverdue > 0): ?>
+                            <span class="cs-due-badge overdue"><?php echo $countOverdue; ?> overdue</span>
+                        <?php endif; ?>
+                        <?php if ($countDueSoon > 0): ?>
+                            <span class="cs-due-badge soon"><?php echo $countDueSoon; ?> soon</span>
+                        <?php endif; ?>
+                    </div>
                 </div>
             </div>
         </div>
@@ -998,7 +1061,8 @@
              data-waphone="<?php echo htmlspecialchars(preg_replace('/[^0-9]/', '', $phone) ? (($waPhone)) : ''); ?>"
              data-isstock="<?php echo $isStock ? '1' : '0'; ?>"
              data-shortorder="<?php echo $isShortOrder ? '1' : '0'; ?>"
-             data-orderdate="<?php echo htmlspecialchars($o['order_date'] ?? ''); ?>">
+             data-orderdate="<?php echo htmlspecialchars($o['order_date'] ?? ''); ?>"
+             data-duedate-raw="<?php echo htmlspecialchars($o['due_date'] ?? ''); ?>">
 
             <!-- Top row: patient info + status badge (clickable header) -->
             <div class="cs-card-header cs-card-top" onclick="csToggleCard(this)">
@@ -1171,7 +1235,7 @@
 
     <script>
     // ── Filter state ──────────────────────────────────────────────
-    var _csActiveFilter = '1'; // default: tampilkan status 1 (Order Received)
+    var _csActiveFilter = 'none'; // default: tidak ada yang dipilih, semua card tersembunyi
 
     // ── Toggle card expand/collapse ───────────────────────────────
     function csToggleCard(headerEl) {
@@ -1192,14 +1256,39 @@
         var q      = (document.getElementById('cs-search-input').value || '').toLowerCase().trim();
         var filter = _csActiveFilter;
 
-        document.querySelectorAll('#cs-cards-container .cs-card').forEach(function(card) {
+        // Pre-compute today's date string (YYYY-MM-DD) for due filter
+        var today    = new Date();
+        today.setHours(0,0,0,0);
+        var todayTs  = today.getTime();
+        var in2days  = todayTs + (2 * 86400 * 1000);
+
+        var container = document.getElementById('cs-cards-container');
+        var cards     = Array.prototype.slice.call(container.querySelectorAll('.cs-card'));
+
+        cards.forEach(function(card) {
             var status  = card.getAttribute('data-status');
             var name    = card.getAttribute('data-name') || '';
             var inv     = card.getAttribute('data-inv') || '';
             var phone   = card.getAttribute('data-phone') || '';
             var custnum = card.getAttribute('data-custnum') || '';
 
-            var matchFilter = (filter === 'all' || status === filter);
+            var matchFilter;
+            if (filter === 'none') {
+                matchFilter = false;
+            } else if (filter === 'all') {
+                matchFilter = true;
+            } else if (filter === 'due') {
+                var dueDateRaw = card.getAttribute('data-duedate-raw') || '';
+                if (!dueDateRaw) {
+                    matchFilter = false;
+                } else {
+                    var dueTs = new Date(dueDateRaw).getTime();
+                    matchFilter = (dueTs < todayTs || dueTs <= in2days);
+                }
+            } else {
+                matchFilter = (status === filter);
+            }
+
             var matchSearch = !q ||
                 name.indexOf(q) !== -1 ||
                 inv.indexOf(q) !== -1 ||
@@ -1208,6 +1297,18 @@
 
             card.style.display = (matchFilter && matchSearch) ? '' : 'none';
         });
+
+        // Jika filter 'due': urutkan cards berdasarkan due date ascending
+        // (paling lama overdue paling atas, lalu yang hampir jatuh tempo)
+        if (filter === 'due') {
+            var visible = cards.filter(function(c) { return c.style.display !== 'none'; });
+            visible.sort(function(a, b) {
+                var da = new Date(a.getAttribute('data-duedate-raw') || '9999-12-31').getTime();
+                var db = new Date(b.getAttribute('data-duedate-raw') || '9999-12-31').getTime();
+                return da - db; // ascending: paling lama lewat (terkecil) di atas
+            });
+            visible.forEach(function(card) { container.appendChild(card); });
+        }
     }
 
     // ── WA Message Builder (JavaScript, sinkron dengan PHP) ──────
