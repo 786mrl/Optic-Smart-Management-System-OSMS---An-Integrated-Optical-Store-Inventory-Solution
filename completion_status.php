@@ -956,6 +956,7 @@
             $now = time();
             foreach ($orders as $o) {
                 if (empty($o['due_date'])) continue;
+                if ((int)$o['order_status'] === 4) continue; // status 4 dikecualikan
                 $dueTs = strtotime($o['due_date']);
                 $diff  = $dueTs - strtotime(date('Y-m-d')); // selisih hari (dalam detik)
                 if ($diff < 0) {
@@ -1278,12 +1279,17 @@
             } else if (filter === 'all') {
                 matchFilter = true;
             } else if (filter === 'due') {
-                var dueDateRaw = card.getAttribute('data-duedate-raw') || '';
-                if (!dueDateRaw) {
+                // Status 4 (Awaiting Collection) dikecualikan dari Due Alert
+                if (status === '4') {
                     matchFilter = false;
                 } else {
-                    var dueTs = new Date(dueDateRaw).getTime();
-                    matchFilter = (dueTs < todayTs || dueTs <= in2days);
+                    var dueDateRaw = card.getAttribute('data-duedate-raw') || '';
+                    if (!dueDateRaw) {
+                        matchFilter = false;
+                    } else {
+                        var dueTs = new Date(dueDateRaw).getTime();
+                        matchFilter = (dueTs < todayTs || dueTs <= in2days);
+                    }
                 }
             } else {
                 matchFilter = (status === filter);
@@ -1298,14 +1304,14 @@
             card.style.display = (matchFilter && matchSearch) ? '' : 'none';
         });
 
-        // Jika filter 'due': urutkan cards berdasarkan due date ascending
-        // (paling lama overdue paling atas, lalu yang hampir jatuh tempo)
-        if (filter === 'due') {
+        // filter 'due': overdue/due soon ascending (paling lama lewat paling atas)
+        // filter '4' (Awaiting Collection): ascending (paling duluan siap paling atas)
+        if (filter === 'due' || filter === '4') {
             var visible = cards.filter(function(c) { return c.style.display !== 'none'; });
             visible.sort(function(a, b) {
                 var da = new Date(a.getAttribute('data-duedate-raw') || '9999-12-31').getTime();
                 var db = new Date(b.getAttribute('data-duedate-raw') || '9999-12-31').getTime();
-                return da - db; // ascending: paling lama lewat (terkecil) di atas
+                return da - db;
             });
             visible.forEach(function(card) { container.appendChild(card); });
         }
