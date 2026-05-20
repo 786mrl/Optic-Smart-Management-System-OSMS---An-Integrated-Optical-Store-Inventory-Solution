@@ -72,6 +72,46 @@
     }
 
 
+    // ── Auto-update packaging_cost based on total_amount ─────────────
+    // Rules:
+    //   total  50,000 –  89,999 → packaging 14,500
+    //   total  90,000 – 499,999 → packaging 19,500
+    //   total 500,000+          → packaging 26,500
+    // Only update if packaging_cost == 19500 (old default) OR within ±1000 of any tier
+    // Tier values — packaging that matches exactly one of these = auto-managed
+    $tierValues = [14500, 19500, 26500];
+
+    $autoResult = $conn->query("SELECT id, total_amount, packaging_cost FROM customer_orders WHERE order_status = 5");
+    if ($autoResult) {
+        while ($autoRow = $autoResult->fetch_assoc()) {
+            $curPkg   = (int)$autoRow['packaging_cost'];
+            $curTotal = (int)$autoRow['total_amount'];
+
+            // Only auto-manage if packaging_cost is exactly one of the tier values
+            // (meaning it hasn't been manually customised to something else)
+            if (!in_array($curPkg, $tierValues)) continue;
+
+            // Determine correct tier based on total_amount
+            if ($curTotal >= 500000) {
+                $newPkg = 26500;
+            } elseif ($curTotal >= 90000) {
+                $newPkg = 19500;
+            } elseif ($curTotal >= 50000) {
+                $newPkg = 14500;
+            } else {
+                continue; // below range — skip
+            }
+
+            if ($newPkg !== $curPkg) {
+                $updStmt = $conn->prepare("UPDATE customer_orders SET packaging_cost = ? WHERE id = ?");
+                $updStmt->bind_param("ii", $newPkg, $autoRow['id']);
+                $updStmt->execute();
+                $updStmt->close();
+            }
+        }
+        $autoResult->free();
+    }
+
     // ── Fetch all finished orders (status 5) ─────────────────────────
     $sql = "
         SELECT
@@ -884,7 +924,8 @@
              data-total="<?php echo $totalAmt; ?>"
              data-fullname="<?php echo htmlspecialchars($name); ?>"
              data-orderdate-raw="<?php echo htmlspecialchars($o['order_date'] ?? ''); ?>"
-             data-pkg-total="<?php echo $pkgTotal; ?>">
+             data-pkg-total="<?php echo $pkgTotal; ?>"
+             data-total-amount="<?php echo $totalAmt; ?>">
 
             <!-- Header (clickable) -->
             <div class="cs-card-header cs-card-top" onclick="csToggleCard(this)">
@@ -1411,8 +1452,16 @@
     // ── Packaging Modal ──────────────────────────────────────────────
     var _phPkgCard = null;
 
-    // Default breakdown values (used to pre-fill modal)
-    var _phPkgDefaults = { box: 3000, flanel: 500, faset: 10000, wrapping: 3000, cleaner: 3000 };
+    // Return packaging breakdown defaults based on total_amount tier
+    function phPkgTierDefaults(totalAmount) {
+        if (totalAmount >= 500000) {
+            return { box: 10000, flanel: 500, faset: 10000, wrapping: 3000, cleaner: 3000 }; // 26,500
+        } else if (totalAmount >= 90000) {
+            return { box: 3000,  flanel: 500, faset: 10000, wrapping: 3000, cleaner: 3000 }; // 19,500
+        } else {
+            return { box: 3000,  flanel: 500, faset: 10000, wrapping: 1000, cleaner: 0    }; // 14,500
+        }
+    }
 
     function phOpenPkgModal(btnEl) {
         _phPkgCard = btnEl.closest('.cs-card');
@@ -1422,9 +1471,11 @@
 
         document.getElementById('ph-pkg-modal-sub').textContent = name + '  |  INV: ' + inv.toUpperCase() + '  |  Current: Rp ' + pkgTotal.toLocaleString('id-ID');
 
-        // Pre-fill with defaults (breakdown not stored in DB)
+        // Pre-fill with tier defaults based on total_amount
+        var totalAmt  = parseInt(_phPkgCard.getAttribute('data-total-amount')) || 0;
+        var tierDefs  = phPkgTierDefaults(totalAmt);
         ['box','flanel','faset','wrapping','cleaner'].forEach(function(key) {
-            document.getElementById('ph-pkg-' + key).value = phFormatNumber(String(_phPkgDefaults[key]));
+            document.getElementById('ph-pkg-' + key).value = phFormatNumber(String(tierDefs[key]));
         });
 
         phPkgUpdateTotal();
