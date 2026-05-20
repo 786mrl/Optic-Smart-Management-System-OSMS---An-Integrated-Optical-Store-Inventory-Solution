@@ -6,6 +6,26 @@
     if (!isset($_SESSION['user_id'])) { header("Location: index.php"); exit(); }
 
 
+    // ── Handle AJAX: update custom_frames buy_price ─────────────────────
+    if (isset($_POST['action']) && $_POST['action'] === 'update_frame_cost') {
+        header('Content-Type: application/json');
+        $invoice  = $conn->real_escape_string($_POST['invoice'] ?? '');
+        $buy_price = (int)$_POST['buy_price'];
+        if (empty($invoice)) {
+            echo json_encode(['success' => false, 'error' => 'Invalid invoice']);
+            exit();
+        }
+        $stmt = $conn->prepare("UPDATE custom_frames SET buy_price = ? WHERE invoice_number = ?");
+        $stmt->bind_param("is", $buy_price, $invoice);
+        if ($stmt->execute()) {
+            echo json_encode(['success' => true, 'buy_price' => $buy_price]);
+        } else {
+            echo json_encode(['success' => false, 'error' => $conn->error]);
+        }
+        $stmt->close();
+        exit();
+    }
+
     // ── Handle AJAX: update packaging cost ──────────────────────────────
     if (isset($_POST['action']) && $_POST['action'] === 'update_packaging') {
         header('Content-Type: application/json');
@@ -112,6 +132,35 @@
         $autoResult->free();
     }
 
+    // ── Auto-set custom_frames buy_price if column missing/zero ────────
+    // Add buy_price column if not exists (safe to run every time)
+    $conn->query("ALTER TABLE custom_frames ADD COLUMN IF NOT EXISTS buy_price DECIMAL(12,2) NOT NULL DEFAULT 0");
+
+    // Function to get default buy_price from sell_price tier
+    function getCustomFrameBuyPrice($sellPrice) {
+        $sp = (int)$sellPrice;
+        if ($sp <= 90000)          return 20000;
+        elseif ($sp <= 150000)     return 30000;
+        elseif ($sp <= 180000)     return 36000;
+        elseif ($sp <= 200000)     return 42000;
+        elseif ($sp <= 250000)     return 54000;
+        elseif ($sp <= 300000)     return 62000;
+        elseif ($sp <= 350000)     return 70000;
+        elseif ($sp <= 400000)     return 92000;
+        else                       return 100000;
+    }
+
+    // Update custom_frames rows where buy_price = 0 (not yet set)
+    $cfResult = $conn->query("SELECT id, sell_price, buy_price FROM custom_frames WHERE buy_price = 0 OR buy_price IS NULL");
+    if ($cfResult) {
+        while ($cfRow = $cfResult->fetch_assoc()) {
+            $defaultBuy = getCustomFrameBuyPrice($cfRow['sell_price']);
+            $cfId = (int)$cfRow['id'];
+            $conn->query("UPDATE custom_frames SET buy_price = $defaultBuy WHERE id = $cfId");
+        }
+        $cfResult->free();
+    }
+
     // ── Fetch all finished orders (status 5) ─────────────────────────
     $sql = "
         SELECT
@@ -169,6 +218,46 @@
         if (!empty($o['order_date']) && date('Y-m', strtotime($o['order_date'])) === $thisMonth) {
             $thisMonthCount++;
         }
+    }
+
+    // ── Total net profit (all orders) ────────────────────────────────
+    $lensJsonPathEarly = __DIR__ . '/data_json/lense_prices.json';
+    $lensCostMapEarly  = [];
+    if (file_exists($lensJsonPathEarly)) {
+        $ljEarly = json_decode(file_get_contents($lensJsonPathEarly), true);
+        foreach (['stock', 'lab'] as $lt) {
+            if (!empty($ljEarly[$lt])) {
+                foreach ($ljEarly[$lt] as $cat => $types) {
+                    foreach ($types as $type => $info) {
+                        $k = strtoupper(trim($cat) . ' / ' . trim($type));
+                        $lensCostMapEarly[$k] = (int)($info['cost'] ?? 0);
+                    }
+                }
+            }
+        }
+    }
+    $frameCostMapEarly = [];
+    $r1 = $conn->query("SELECT ufc, buy_price FROM frames_main WHERE buy_price IS NOT NULL");
+    if ($r1) { while ($r = $r1->fetch_assoc()) { $frameCostMapEarly[strtoupper(trim($r['ufc']))] = (int)$r['buy_price']; } $r1->free(); }
+    $r2 = $conn->query("SELECT ufc, buy_price FROM frame_staging WHERE buy_price IS NOT NULL");
+    if ($r2) { while ($r = $r2->fetch_assoc()) { $k2 = strtoupper(trim($r['ufc'])); if (!isset($frameCostMapEarly[$k2])) $frameCostMapEarly[$k2] = (int)$r['buy_price']; } $r2->free(); }
+    $customMapEarly = [];
+    $r3 = $conn->query("SELECT invoice_number, buy_price FROM custom_frames");
+    if ($r3) { while ($r = $r3->fetch_assoc()) { $customMapEarly[$r['invoice_number']] = (int)$r['buy_price']; } $r3->free(); }
+
+    $totalNetProfit = 0;
+    $totalCost      = 0;
+    foreach ($orders as $o) {
+        $oAmt = (int)$o['total_amount'];
+        $oPkg = (int)($o['packaging_cost'] ?? 19500);
+        $oLnNorm = preg_replace('/\s*[\x{2014}\x{2013}\/]\s*/u', ' / ', trim($o['lens_name'] ?? ''));
+        $oLc  = $lensCostMapEarly[strtoupper($oLnNorm)] ?? 0;
+        $oUfc = strtoupper(trim($o['frame_ufc'] ?? ''));
+        $oFc  = (strlen($oUfc) > 0 && is_numeric($oUfc[0]))
+            ? ($customMapEarly[$o['invoice_number'] ?? ''] ?? 0)
+            : ($frameCostMapEarly[$oUfc] ?? 0);
+        $totalNetProfit += ($oAmt - $oLc - $oFc - $oPkg);
+        $totalCost      += ($oLc + $oFc + $oPkg);
     }
 ?>
 <!DOCTYPE html>
@@ -634,6 +723,14 @@
 
 
 
+
+        /* ── Net profit highlight ────────────────────────────── */
+        .ph-net-profit {
+            display: inline-flex;
+            align-items: baseline;
+            gap: 4px;
+        }
+
         /* ── Edit total button ───────────────────────────────── */
         .ph-edit-btn {
             background: none;
@@ -821,6 +918,18 @@
                 <div class="cs-stat-num" style="color:#00cfff;"><?php echo $thisMonthCount; ?></div>
                 <div class="cs-stat-label">📅 This Month</div>
             </div>
+            <div class="cs-stat-card">
+                <div class="cs-stat-num" id="ph-profit-display" style="color:<?php echo $totalNetProfit >= 0 ? '#00ff88' : '#ff6b6b'; ?>;font-size:1.1rem;">
+                    <?php echo ($totalNetProfit >= 0 ? '' : '-') . 'Rp ' . number_format(abs($totalNetProfit), 0, ',', '.'); ?>
+                </div>
+                <div class="cs-stat-label">💹 Total Net Profit</div>
+            </div>
+            <div class="cs-stat-card">
+                <div class="cs-stat-num" id="ph-cost-display" style="color:#ff6b6b;font-size:1.1rem;">
+                    Rp <?php echo number_format($totalCost, 0, ',', '.'); ?>
+                </div>
+                <div class="cs-stat-label">💸 Total Cost</div>
+            </div>
 
         </div>
 
@@ -891,6 +1000,37 @@
         <?php else: ?>
 
         <div id="ph-cards-container">
+        <?php
+    // ── Build lens cost lookup from lense_prices.json ──────────────────
+    $lensJsonPath = __DIR__ . '/data_json/lense_prices.json';
+    $lensCostMap  = []; // key: "CATEGORY / TYPE" (uppercase) => cost
+    if (file_exists($lensJsonPath)) {
+        $lensJson = json_decode(file_get_contents($lensJsonPath), true);
+        foreach (['stock', 'lab'] as $lensType) {
+            if (!empty($lensJson[$lensType])) {
+                foreach ($lensJson[$lensType] as $cat => $types) {
+                    foreach ($types as $type => $info) {
+                        $key = strtoupper(trim($cat) . ' / ' . trim($type));
+                        $lensCostMap[$key] = ['cost' => (int)($info['cost'] ?? 0), 'type' => $lensType];
+                    }
+                }
+            }
+        }
+    }
+
+    // ── Build frame cost lookup ───────────────────────────────────────
+    $frameCostMap = [];
+    $fmRes = $conn->query("SELECT ufc, buy_price FROM frames_main WHERE buy_price IS NOT NULL");
+    if ($fmRes) { while ($r = $fmRes->fetch_assoc()) { $frameCostMap[strtoupper(trim($r['ufc']))] = (int)$r['buy_price']; } $fmRes->free(); }
+    $fsRes = $conn->query("SELECT ufc, buy_price FROM frame_staging WHERE buy_price IS NOT NULL");
+    if ($fsRes) { while ($r = $fsRes->fetch_assoc()) { $key = strtoupper(trim($r['ufc'])); if (!isset($frameCostMap[$key])) $frameCostMap[$key] = (int)$r['buy_price']; } $fsRes->free(); }
+
+    // ── Pre-fetch custom_frames keyed by invoice_number ───────────────
+    $customFrameMap = [];
+    $cfRes = $conn->query("SELECT id, invoice_number, sell_price, buy_price FROM custom_frames");
+    if ($cfRes) { while ($r = $cfRes->fetch_assoc()) { $customFrameMap[$r['invoice_number']] = $r; } $cfRes->free(); }
+        ?>
+
         <?php foreach ($orders as $o):
             $name      = trim($o['patient_name'] ?? '—');
             $age       = (int)($o['age'] ?? 0);
@@ -905,11 +1045,63 @@
             $dueDate   = $o['due_date']   ? date('d/m/Y', strtotime($o['due_date']))   : '—';
             $genderNorm = ($gender === 'male' || $gender === 'laki-laki' || $gender === 'm') ? 'male' : 'female';
             $pkgTotal   = (int)($o['packaging_cost'] ?? 19500);
-            // Default breakdown for modal (box 3000, flanel 500, faset 10000, wrapping 3000)
+            // Default breakdown for modal
             $pkgBox      = 3000;
             $pkgFlanel   = 500;
             $pkgFaset    = 10000;
             $pkgWrapping = 3000;
+
+            // ── Lens cost ─────────────────────────────────────────────
+            // Detect stock vs lab: diff <= 3 days = stock, >= 10 days = lab
+            // Normalize lens_name: DB uses em dash (SINGLE VISION — ONE-DRIVE)
+            // JSON keys use slash (SINGLE VISION / ONE-DRIVE)
+            $lensNameNorm = preg_replace('/\s*[\x{2014}\x{2013}\/]\s*/u', ' / ', trim($lensName));
+            $lensKey      = strtoupper($lensNameNorm);
+            $diffDays    = 0;
+            if (!empty($o['order_date']) && !empty($o['due_date'])) {
+                $diffDays = (int)round((strtotime(date('Y-m-d', strtotime($o['due_date']))) - strtotime(date('Y-m-d', strtotime($o['order_date'])))) / 86400);
+            }
+            $lensType    = ($diffDays >= 10) ? 'lab' : 'stock';
+            $lensCost    = 0;
+            $lensSource  = '—';
+            // Try exact key match first
+            if (isset($lensCostMap[$lensKey]) && $lensCostMap[$lensKey]['type'] === $lensType) {
+                $lensCost   = $lensCostMap[$lensKey]['cost'];
+                $lensSource = $lensKey;
+            } else {
+                // Try any type (fallback)
+                if (isset($lensCostMap[$lensKey])) {
+                    $lensCost   = $lensCostMap[$lensKey]['cost'];
+                    $lensSource = $lensKey;
+                }
+            }
+
+            // ── Frame cost ────────────────────────────────────────────
+            $ufcUpper    = strtoupper(trim($frameUfc));
+            $frameCost   = 0;
+            $frameSource = '—';
+            $isCustom    = false;
+            $customFrameData = null;
+
+            // Detect custom frame: UFC starts with digit
+            if (strlen($ufcUpper) > 0 && is_numeric($ufcUpper[0])) {
+                $isCustom = true;
+                $inv      = $o['invoice_number'] ?? '';
+                if (isset($customFrameMap[$inv])) {
+                    $customFrameData = $customFrameMap[$inv];
+                    $frameCost   = (int)$customFrameData['buy_price'];
+                    $frameSource = 'custom';
+                }
+            } else {
+                // Look up in frames_main then frame_staging
+                if (isset($frameCostMap[$ufcUpper])) {
+                    $frameCost   = $frameCostMap[$ufcUpper];
+                    $frameSource = 'catalog';
+                }
+            }
+
+            // ── Net profit ────────────────────────────────────────────
+            $netProfit   = $totalAmt - $lensCost - $frameCost - $pkgTotal;
         ?>
         <div class="cs-card"
              data-name="<?php echo htmlspecialchars(strtolower($name)); ?>"
@@ -925,7 +1117,13 @@
              data-fullname="<?php echo htmlspecialchars($name); ?>"
              data-orderdate-raw="<?php echo htmlspecialchars($o['order_date'] ?? ''); ?>"
              data-pkg-total="<?php echo $pkgTotal; ?>"
-             data-total-amount="<?php echo $totalAmt; ?>">
+             data-total-amount="<?php echo $totalAmt; ?>"
+             data-net-profit="<?php echo $netProfit; ?>"
+             data-cost="<?php echo $lensCost + $frameCost + $pkgTotal; ?>"
+             data-lens-cost="<?php echo $lensCost; ?>"
+             data-frame-cost="<?php echo $frameCost; ?>"
+             data-is-custom="<?php echo $isCustom ? '1' : '0'; ?>"
+             data-invoice="<?php echo htmlspecialchars($o['invoice_number'] ?? ''); ?>">
 
             <!-- Header (clickable) -->
             <div class="cs-card-header cs-card-top" onclick="csToggleCard(this)">
@@ -984,6 +1182,38 @@
                             <button class="ph-edit-btn" onclick="phOpenPkgModal(this)" title="Edit packaging cost">✏️</button>
                         </span>
                         <span class="ph-pkg-total cs-detail-value price">Rp <?php echo number_format($pkgTotal, 0, ',', '.'); ?></span>
+                    </div>
+
+                    <!-- Frame Cost (custom = editable) -->
+                    <div class="cs-detail-item">
+                        <span class="cs-detail-label">
+                            Frame Cost
+                            <?php if ($isCustom): ?>
+                            <button class="ph-edit-btn" onclick="phOpenFrameCostModal(this)" title="Edit frame cost">✏️</button>
+                            <?php endif; ?>
+                        </span>
+                        <span class="ph-frame-cost-display cs-detail-value price" style="color:#aa88ff;">
+                            <?php echo $frameCost > 0 ? 'Rp ' . number_format($frameCost, 0, ',', '.') : '<span style="color:#555;font-size:0.72rem;">Not found</span>'; ?>
+                        </span>
+                    </div>
+
+                    <!-- Lens Cost -->
+                    <div class="cs-detail-item">
+                        <span class="cs-detail-label">Lens Cost <span style="font-size:0.58rem;color:#555;">(<?php echo $lensType; ?>)</span></span>
+                        <span class="cs-detail-value price" style="color:#aa88ff;">
+                            <?php echo $lensCost > 0 ? 'Rp ' . number_format($lensCost, 0, ',', '.') : '<span style="color:#555;font-size:0.72rem;">Not found</span>'; ?>
+                        </span>
+                    </div>
+
+                    <!-- Net Profit -->
+                    <div class="cs-detail-item" style="grid-column: 1 / -1;">
+                        <span class="cs-detail-label">Net Profit</span>
+                        <span class="ph-net-profit cs-detail-value" style="font-size:1rem;font-weight:900;color:<?php echo $netProfit >= 0 ? '#00ff88' : '#ff6b6b'; ?>;">
+                            <?php echo ($netProfit >= 0 ? '' : '−') . 'Rp ' . number_format(abs($netProfit), 0, ',', '.'); ?>
+                            <span style="font-size:0.65rem;font-weight:600;color:var(--text-muted);margin-left:6px;">
+                                (<?php echo $totalAmt > 0 ? round($netProfit / $totalAmt * 100) : 0; ?>%)
+                            </span>
+                        </span>
                     </div>
 
                     <div class="cs-detail-item">
@@ -1055,6 +1285,28 @@
             <div class="ph-modal-actions">
                 <button class="ph-modal-btn cancel" onclick="phClosePkgModal()">Cancel</button>
                 <button class="ph-modal-btn confirm" id="ph-pkg-confirm" onclick="phSubmitPkg()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Edit Frame Cost Modal (custom frames only) ──────────────────── -->
+    <div class="ph-modal-overlay" id="ph-frame-modal-overlay">
+        <div class="ph-modal">
+            <div class="ph-modal-title">🖼 Edit Frame Cost</div>
+            <div class="ph-modal-sub" id="ph-frame-modal-sub">Custom Frame —</div>
+
+            <div class="ph-modal-field">
+                <label>Buy Price (Modal Frame)</label>
+                <input type="text" class="ph-modal-input" id="ph-frame-cost-input"
+                       onfocus="this.select()"
+                       oninput="phFrameCostFormat(this)"
+                       inputmode="numeric" autocomplete="off">
+                <div class="ph-modal-preview" id="ph-frame-cost-preview"></div>
+            </div>
+
+            <div class="ph-modal-actions">
+                <button class="ph-modal-btn cancel" onclick="phCloseFrameModal()">Cancel</button>
+                <button class="ph-modal-btn confirm" id="ph-frame-confirm" onclick="phSubmitFrameCost()">Save</button>
             </div>
         </div>
     </div>
@@ -1254,7 +1506,9 @@
     }
 
 
-    var _phTotalRevenue = <?php echo (int)$totalRevenue; ?>;
+    var _phTotalRevenue   = <?php echo (int)$totalRevenue; ?>;
+    var _phTotalNetProfit = <?php echo (int)$totalNetProfit; ?>;
+    var _phTotalCost      = <?php echo (int)$totalCost; ?>;
 
     // ── Edit Total Modal ──────────────────────────────────────────────
     var _phEditState = { orderId: null, currentTotal: 0, displayEl: null, headerEl: null };
@@ -1554,6 +1808,9 @@
                     var totEl = _phPkgCard.querySelector('.ph-pkg-total');
                     if (totEl) totEl.textContent = 'Rp ' + data.packaging_cost.toLocaleString('id-ID');
 
+                    // Recalculate net profit
+                    phUpdateNetProfit(_phPkgCard);
+
                     phClosePkgModal();
                     phShowToast('✅ Packaging updated');
                 } else {
@@ -1565,6 +1822,122 @@
                 btn.textContent = 'Save';
                 phShowToast('❌ Connection error');
             });
+    }
+
+    // ── Frame Cost Modal ─────────────────────────────────────────────
+    var _phFrameCard = null;
+
+    function phOpenFrameCostModal(btnEl) {
+        _phFrameCard = btnEl.closest('.cs-card');
+        var name     = _phFrameCard.getAttribute('data-fullname') || '—';
+        var inv      = _phFrameCard.getAttribute('data-invoice') || '—';
+        var current  = parseInt(_phFrameCard.getAttribute('data-frame-cost')) || 0;
+
+        document.getElementById('ph-frame-modal-sub').textContent = name + '  |  INV: ' + inv.toUpperCase() + '  |  Current: Rp ' + current.toLocaleString('id-ID');
+        document.getElementById('ph-frame-cost-input').value      = phFormatNumber(String(current));
+        document.getElementById('ph-frame-cost-preview').textContent = '';
+        document.getElementById('ph-frame-modal-overlay').classList.add('open');
+        setTimeout(function() { var inp = document.getElementById('ph-frame-cost-input'); inp.focus(); inp.select(); }, 100);
+    }
+
+    function phCloseFrameModal() {
+        document.getElementById('ph-frame-modal-overlay').classList.remove('open');
+    }
+
+    document.getElementById('ph-frame-modal-overlay').addEventListener('click', function(e) {
+        if (e.target === this) phCloseFrameModal();
+    });
+
+    function phFrameCostFormat(inp) {
+        var pos    = inp.selectionStart;
+        var beforeCursorDigits = inp.value.slice(0, pos).replace(/\./g, '').replace(/[^0-9]/g, '');
+        var allDigits = inp.value.replace(/\./g, '').replace(/[^0-9]/g, '');
+        var formatted = phFormatNumber(allDigits);
+        inp.value = formatted;
+        var newPos = 0, digitCount = 0;
+        for (var i = 0; i < formatted.length; i++) {
+            if (digitCount >= beforeCursorDigits.length) break;
+            if (formatted[i] !== '.') digitCount++;
+            newPos = i + 1;
+        }
+        inp.setSelectionRange(newPos, newPos);
+        // Update preview
+        var val = parseInt(allDigits) || 0;
+        document.getElementById('ph-frame-cost-preview').textContent = val > 0 ? '→ Rp ' + val.toLocaleString('id-ID') : '';
+    }
+
+    function phSubmitFrameCost() {
+        if (!_phFrameCard) return;
+        var btn      = document.getElementById('ph-frame-confirm');
+        var invoice  = _phFrameCard.getAttribute('data-invoice') || '';
+        var rawVal   = document.getElementById('ph-frame-cost-input').value.replace(/\./g, '');
+        var buyPrice = parseInt(rawVal) || 0;
+
+        btn.disabled    = true;
+        btn.textContent = 'Saving…';
+
+        var fd = new FormData();
+        fd.append('action',    'update_frame_cost');
+        fd.append('invoice',   invoice);
+        fd.append('buy_price', buyPrice);
+
+        fetch('purchase_history.php', { method: 'POST', body: fd })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                btn.disabled    = false;
+                btn.textContent = 'Save';
+                if (data.success) {
+                    // Update card display + data attr
+                    _phFrameCard.setAttribute('data-frame-cost', buyPrice);
+                    var dispEl = _phFrameCard.querySelector('.ph-frame-cost-display');
+                    if (dispEl) dispEl.innerHTML = 'Rp ' + buyPrice.toLocaleString('id-ID');
+
+                    // Recalculate net profit display
+                    phUpdateNetProfit(_phFrameCard);
+
+                    phCloseFrameModal();
+                    phShowToast('✅ Frame cost updated');
+                } else {
+                    phShowToast('❌ ' + (data.error || 'Failed'));
+                }
+            })
+            .catch(function() {
+                btn.disabled    = false;
+                btn.textContent = 'Save';
+                phShowToast('❌ Connection error');
+            });
+    }
+
+    // ── Recalculate net profit on card after any cost edit ────────────
+    function phUpdateNetProfit(card) {
+        var total    = parseInt(card.getAttribute('data-total'))      || 0;
+        var lensCost = parseInt(card.getAttribute('data-lens-cost'))   || 0;
+        var frameCost= parseInt(card.getAttribute('data-frame-cost'))  || 0;
+        var pkgCost  = parseInt(card.getAttribute('data-pkg-total'))   || 0;
+        var profit   = total - lensCost - frameCost - pkgCost;
+        var pct      = total > 0 ? Math.round(profit / total * 100) : 0;
+        var el       = card.querySelector('.ph-net-profit');
+        if (!el) return;
+        el.style.color = profit >= 0 ? '#00ff88' : '#ff6b6b';
+        var sign = profit >= 0 ? '' : '−';
+        // Update total net profit stat card
+        var oldProfit = parseInt(card.getAttribute('data-net-profit') || '0');
+        var oldCost   = parseInt(card.getAttribute('data-cost') || '0');
+        var newCost   = lensCost + frameCost + pkgCost;
+        card.setAttribute('data-net-profit', profit);
+        card.setAttribute('data-cost', newCost);
+        _phTotalNetProfit += (profit - oldProfit);
+        _phTotalCost      += (newCost - oldCost);
+        var profEl = document.getElementById('ph-profit-display');
+        if (profEl) {
+            profEl.style.color = _phTotalNetProfit >= 0 ? '#00ff88' : '#ff6b6b';
+            profEl.textContent = (_phTotalNetProfit >= 0 ? '' : '-') + 'Rp ' + Math.abs(_phTotalNetProfit).toLocaleString('id-ID');
+        }
+        var costEl = document.getElementById('ph-cost-display');
+        if (costEl) costEl.textContent = 'Rp ' + _phTotalCost.toLocaleString('id-ID');
+
+        el.innerHTML = sign + 'Rp ' + Math.abs(profit).toLocaleString('id-ID')
+            + ' <span style="font-size:0.65rem;font-weight:600;color:var(--text-muted);margin-left:6px;">(' + pct + '%)</span>';
     }
 
     // ── Toast ─────────────────────────────────────────────────────────
