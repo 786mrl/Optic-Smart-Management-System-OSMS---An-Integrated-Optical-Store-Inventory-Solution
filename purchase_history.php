@@ -5,6 +5,34 @@
 
     if (!isset($_SESSION['user_id'])) { header("Location: index.php"); exit(); }
 
+
+    // ── Handle AJAX: update packaging cost ──────────────────────────────
+    if (isset($_POST['action']) && $_POST['action'] === 'update_packaging') {
+        header('Content-Type: application/json');
+        $order_id = (int)$_POST['order_id'];
+        $box      = (int)$_POST['box'];
+        $flanel   = (int)$_POST['flanel'];
+        $faset    = (int)$_POST['faset'];
+        $wrapping = (int)$_POST['wrapping'];
+
+        if ($order_id <= 0) {
+            echo json_encode(['success' => false, 'error' => 'Invalid order id']);
+            exit();
+        }
+
+        $packaging_cost = $box + $flanel + $faset + $wrapping;
+
+        $stmt = $conn->prepare("UPDATE customer_orders SET packaging_cost = ? WHERE id = ?");
+        $stmt->bind_param("ii", $packaging_cost, $order_id);
+        if ($stmt->execute()) {
+            echo json_encode(['success' => true, 'packaging_cost' => $packaging_cost]);
+        } else {
+            echo json_encode(['success' => false, 'error' => $conn->error]);
+        }
+        $stmt->close();
+        exit();
+    }
+
     // ── Handle AJAX: update total_amount with password verification ──────
     if (isset($_POST['action']) && $_POST['action'] === 'update_total') {
         header('Content-Type: application/json');
@@ -57,6 +85,7 @@
             co.order_date,
             co.due_date,
             co.order_status,
+            COALESCE(co.packaging_cost, 16500) AS packaging_cost,
             ce.customer_name  AS patient_name,
             ce.age,
             ce.gender,
@@ -562,6 +591,8 @@
             .btn-group .back-main { width: 100%; box-sizing: border-box; }
         }
 
+
+
         /* ── Edit total button ───────────────────────────────── */
         .ph-edit-btn {
             background: none;
@@ -832,6 +863,12 @@
             $orderMonth = $o['order_date'] ? date('Y-m', strtotime($o['order_date'])) : '';
             $dueDate   = $o['due_date']   ? date('d/m/Y', strtotime($o['due_date']))   : '—';
             $genderNorm = ($gender === 'male' || $gender === 'laki-laki' || $gender === 'm') ? 'male' : 'female';
+            $pkgTotal   = (int)($o['packaging_cost'] ?? 16500);
+            // Default breakdown for modal (box 3000, flanel 500, faset 10000, wrapping 3000)
+            $pkgBox      = 3000;
+            $pkgFlanel   = 500;
+            $pkgFaset    = 10000;
+            $pkgWrapping = 3000;
         ?>
         <div class="cs-card"
              data-name="<?php echo htmlspecialchars(strtolower($name)); ?>"
@@ -845,7 +882,8 @@
              data-id="<?php echo $o['id']; ?>"
              data-total="<?php echo $totalAmt; ?>"
              data-fullname="<?php echo htmlspecialchars($name); ?>"
-             data-orderdate-raw="<?php echo htmlspecialchars($o['order_date'] ?? ''); ?>">
+             data-orderdate-raw="<?php echo htmlspecialchars($o['order_date'] ?? ''); ?>"
+             data-pkg-total="<?php echo $pkgTotal; ?>">
 
             <!-- Header (clickable) -->
             <div class="cs-card-header cs-card-top" onclick="csToggleCard(this)">
@@ -897,6 +935,15 @@
                         <span class="ph-total-display cs-detail-value price" data-raw="<?php echo $totalAmt; ?>">Rp <?php echo number_format($totalAmt, 0, ',', '.'); ?></span>
                     </div>
 
+                    <!-- Packaging Cost -->
+                    <div class="cs-detail-item">
+                        <span class="cs-detail-label">
+                            Packaging
+                            <button class="ph-edit-btn" onclick="phOpenPkgModal(this)" title="Edit packaging cost">✏️</button>
+                        </span>
+                        <span class="ph-pkg-total cs-detail-value price">Rp <?php echo number_format($pkgTotal, 0, ',', '.'); ?></span>
+                    </div>
+
                     <div class="cs-detail-item">
                         <span class="cs-detail-label">Phone No.</span>
                         <span class="cs-detail-value"><?php echo htmlspecialchars($phone ?: '—'); ?></span>
@@ -928,6 +975,43 @@
         </div><!-- .content-area -->
     </div><!-- .main-wrapper -->
 
+
+    <!-- ── Packaging Cost Modal ─────────────────────────────────────── -->
+    <div class="ph-modal-overlay" id="ph-pkg-modal-overlay">
+        <div class="ph-modal">
+            <div class="ph-modal-title">📦 Edit Packaging Cost</div>
+            <div class="ph-modal-sub" id="ph-pkg-modal-sub">Order —</div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:8px;">
+                <div class="ph-modal-field">
+                    <label>📦 Box</label>
+                    <input type="text" class="ph-modal-input" id="ph-pkg-box" oninput="phPkgFormat(this);phPkgUpdateTotal()" inputmode="numeric">
+                </div>
+                <div class="ph-modal-field">
+                    <label>🧣 Flanel</label>
+                    <input type="text" class="ph-modal-input" id="ph-pkg-flanel" oninput="phPkgFormat(this);phPkgUpdateTotal()" inputmode="numeric">
+                </div>
+                <div class="ph-modal-field">
+                    <label>💎 Faset</label>
+                    <input type="text" class="ph-modal-input" id="ph-pkg-faset" oninput="phPkgFormat(this);phPkgUpdateTotal()" inputmode="numeric">
+                </div>
+                <div class="ph-modal-field">
+                    <label>🎁 Wrapping</label>
+                    <input type="text" class="ph-modal-input" id="ph-pkg-wrapping" oninput="phPkgFormat(this);phPkgUpdateTotal()" inputmode="numeric">
+                </div>
+            </div>
+
+            <div style="background:rgba(255,170,0,0.07);border:1px solid rgba(255,170,0,0.2);border-radius:12px;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                <span style="font-size:0.72rem;color:var(--text-muted);font-weight:700;letter-spacing:0.5px;">TOTAL PACKAGING</span>
+                <span id="ph-pkg-total-preview" style="font-size:0.88rem;font-weight:900;color:#ffaa00;font-family:monospace;">Rp 0</span>
+            </div>
+
+            <div class="ph-modal-actions">
+                <button class="ph-modal-btn cancel" onclick="phClosePkgModal()">Cancel</button>
+                <button class="ph-modal-btn confirm" id="ph-pkg-confirm" onclick="phSubmitPkg()">Save</button>
+            </div>
+        </div>
+    </div>
 
     <!-- ── Edit Total Modal ───────────────────────────────────────── -->
     <div class="ph-modal-overlay" id="ph-modal-overlay">
@@ -1318,6 +1402,111 @@
     document.getElementById('ph-modal-password').addEventListener('keydown', function(e) {
         if (e.key === 'Enter') phSubmitEdit();
     });
+
+    // ── Packaging Modal ──────────────────────────────────────────────
+    var _phPkgCard = null;
+
+    // Default breakdown values (used to pre-fill modal)
+    var _phPkgDefaults = { box: 3000, flanel: 500, faset: 10000, wrapping: 3000 };
+
+    function phOpenPkgModal(btnEl) {
+        _phPkgCard = btnEl.closest('.cs-card');
+        var name     = _phPkgCard.getAttribute('data-fullname') || '—';
+        var inv      = _phPkgCard.getAttribute('data-inv') || '—';
+        var pkgTotal = parseInt(_phPkgCard.getAttribute('data-pkg-total')) || 16500;
+
+        document.getElementById('ph-pkg-modal-sub').textContent = name + '  |  INV: ' + inv.toUpperCase() + '  |  Current: Rp ' + pkgTotal.toLocaleString('id-ID');
+
+        // Pre-fill with defaults (breakdown not stored in DB)
+        ['box','flanel','faset','wrapping'].forEach(function(key) {
+            document.getElementById('ph-pkg-' + key).value = phFormatNumber(String(_phPkgDefaults[key]));
+        });
+
+        phPkgUpdateTotal();
+        document.getElementById('ph-pkg-modal-overlay').classList.add('open');
+        setTimeout(function() { document.getElementById('ph-pkg-box').focus(); document.getElementById('ph-pkg-box').select(); }, 100);
+    }
+
+    function phClosePkgModal() {
+        document.getElementById('ph-pkg-modal-overlay').classList.remove('open');
+    }
+
+    document.getElementById('ph-pkg-modal-overlay').addEventListener('click', function(e) {
+        if (e.target === this) phClosePkgModal();
+    });
+
+    // Format a packaging input (digits only, dot thousand sep)
+    function phPkgFormat(inp) {
+        var pos    = inp.selectionStart;
+        var before = inp.value.length;
+        var beforeCursorDigits = inp.value.slice(0, pos).replace(/\./g, '').replace(/[^0-9]/g, '');
+        var allDigits = inp.value.replace(/\./g, '').replace(/[^0-9]/g, '');
+        var formatted = phFormatNumber(allDigits);
+        inp.value = formatted;
+        // Restore cursor
+        var newPos = 0, digitCount = 0;
+        for (var i = 0; i < formatted.length; i++) {
+            if (digitCount >= beforeCursorDigits.length) break;
+            if (formatted[i] !== '.') digitCount++;
+            newPos = i + 1;
+        }
+        inp.setSelectionRange(newPos, newPos);
+    }
+
+    function phPkgRawVal(id) {
+        return parseInt(document.getElementById(id).value.replace(/\./g, '')) || 0;
+    }
+
+    function phPkgUpdateTotal() {
+        var total = phPkgRawVal('ph-pkg-box') + phPkgRawVal('ph-pkg-flanel')
+                  + phPkgRawVal('ph-pkg-faset') + phPkgRawVal('ph-pkg-wrapping');
+        document.getElementById('ph-pkg-total-preview').textContent = 'Rp ' + total.toLocaleString('id-ID');
+    }
+
+    function phSubmitPkg() {
+        if (!_phPkgCard) return;
+        var btn     = document.getElementById('ph-pkg-confirm');
+        var orderId = _phPkgCard.getAttribute('data-id');
+        var box     = phPkgRawVal('ph-pkg-box');
+        var flanel  = phPkgRawVal('ph-pkg-flanel');
+        var faset   = phPkgRawVal('ph-pkg-faset');
+        var wrapping= phPkgRawVal('ph-pkg-wrapping');
+        var total   = box + flanel + faset + wrapping;
+
+        btn.disabled    = true;
+        btn.textContent = 'Saving…';
+
+        var fd = new FormData();
+        fd.append('action',   'update_packaging');
+        fd.append('order_id', orderId);
+        fd.append('box',      box);
+        fd.append('flanel',   flanel);
+        fd.append('faset',    faset);
+        fd.append('wrapping', wrapping);
+
+        fetch('purchase_history.php', { method: 'POST', body: fd })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                btn.disabled    = false;
+                btn.textContent = 'Save';
+                if (data.success) {
+                    // Update card data attribute + displayed total
+                    _phPkgCard.setAttribute('data-pkg-total', data.packaging_cost);
+                    var totEl = _phPkgCard.querySelector('.ph-pkg-total');
+                    if (totEl) totEl.textContent = 'Rp ' + data.packaging_cost.toLocaleString('id-ID');
+
+                    phClosePkgModal();
+                    phShowToast('✅ Packaging updated');
+                } else {
+                    phShowToast('❌ ' + (data.error || 'Failed'));
+                }
+            })
+            .catch(function() {
+                btn.disabled    = false;
+                btn.textContent = 'Save';
+                phShowToast('❌ Connection error');
+            });
+    }
 
     // ── Toast ─────────────────────────────────────────────────────────
     var _phToastTimer = null;

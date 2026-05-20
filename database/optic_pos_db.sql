@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: May 05, 2026 at 10:35 AM
+-- Generation Time: May 20, 2026 at 03:13 PM
 -- Server version: 10.1.38-MariaDB
 -- PHP Version: 7.3.2
 
@@ -68,6 +68,14 @@ CREATE TABLE `customer_examinations` (
   `need_near` tinyint(1) NOT NULL DEFAULT '0' COMMENT '1=Yes, 0=No — Kebutuhan jarak dekat'
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
+--
+-- Dumping data for table `customer_examinations`
+--
+
+INSERT INTO `customer_examinations` (`id`, `examination_date`, `examination_code`, `customer_name`, `gender`, `age`, `symptoms`, `old_r_sph`, `old_r_cyl`, `old_r_ax`, `old_r_add`, `old_l_sph`, `old_l_cyl`, `old_l_ax`, `old_l_add`, `new_r_sph`, `new_r_cyl`, `new_r_ax`, `new_r_add`, `new_r_visus`, `new_l_sph`, `new_l_cyl`, `new_l_ax`, `new_l_add`, `new_l_visus`, `pd_dist`, `created_at`, `invoice_number`, `exam_notes`, `visual_habit`, `digital_usage`, `ucva_r`, `ucva_l`, `lens_modification`, `need_distance`, `need_intermediate`, `need_near`) VALUES
+(1, '2026-05-07', 'LZ/EC/001/V/2026', 'RAIS', 'MALE', 30, 'MYOPIA, ASTIGMATISM, HEADACHE', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '0.00', '-50', '-25', '75', '0.00', '20/20', '-25', '-25', '5', '0.00', '20/20', '62', '2026-05-07 03:30:53', '001', 'Lensa suka berembun', 3, 3, '20/50', '20/50', 1, 0, 0, 0),
+(2, '2026-05-08', 'LZ/EC/002/V/2026', 'RAIS', 'MALE', 30, 'MYOPIA, ASTIGMATISM, HEADACHE', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '0.00', '-50', '-25', '75', '0.00', '20/20', '-25', '0.00', '0', '0.00', '20/20', '62', '2026-05-08 04:02:35', '002', '', 3, 3, '20/50', '20/50', 0, 0, 0, 0);
+
 -- --------------------------------------------------------
 
 --
@@ -87,10 +95,19 @@ CREATE TABLE `customer_orders` (
   `amount_paid` decimal(15,2) NOT NULL DEFAULT '0.00',
   `order_date` date NOT NULL,
   `due_date` date DEFAULT NULL,
-  `order_status` tinyint(1) NOT NULL DEFAULT '1',
+  `order_status` int(11) NOT NULL DEFAULT '1',
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `packaging_cost` int(11) NOT NULL DEFAULT '16500'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Confirmed purchase orders — saved when operator clicks Yes Shopping';
+
+--
+-- Dumping data for table `customer_orders`
+--
+
+INSERT INTO `customer_orders` (`id`, `customer_number`, `invoice_number`, `is_modified`, `frame_ufc`, `lens_name`, `customer_phone`, `customer_address`, `total_amount`, `amount_paid`, `order_date`, `due_date`, `order_status`, `created_at`, `updated_at`, `packaging_cost`) VALUES
+(1, '1/LZ-C/16.31/001/V/26', '001', 1, 'TAKEYAMA-TAKE700-52-15-140-col.4', 'SINGLE VISION — ONE-DRIVE', '+62 812 6764 6916', 'JL. APEL RAYA NO. 51', '700000.00', '300000.00', '2026-05-07', '2026-05-09', 1, '2026-05-07 03:32:39', '2026-05-18 15:16:58', 16500),
+(2, '2/LZ-C/16.32/002/V/26', '002', 0, '51-32-144+08/05+brenden', 'SINGLE VISION — ONE-DRIVE', '+62 812 6764 6916', NULL, '550000.00', '200000.00', '2026-05-08', '2026-05-10', 5, '2026-05-08 04:03:22', '2026-05-20 12:57:27', 16500);
 
 -- --------------------------------------------------------
 
@@ -103,10 +120,16 @@ CREATE TABLE `custom_frames` (
   `invoice_number` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Nomor invoice yang terkait',
   `brand_key` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Pola: dd/mm/yyyy+brand_name, contoh: 05/04/2026+brenden',
   `sell_price` decimal(12,2) NOT NULL DEFAULT '0.00' COMMENT 'Harga jual frame',
-  `frame_size` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Ukuran frame, contoh: 52-18-140',
   `is_purchased` tinyint(1) NOT NULL DEFAULT '0' COMMENT '0 = belum dibeli, 1 = dibeli',
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Frame custom yang tidak ada di frames_main maupun frame_staging';
+
+--
+-- Dumping data for table `custom_frames`
+--
+
+INSERT INTO `custom_frames` (`id`, `invoice_number`, `brand_key`, `sell_price`, `is_purchased`, `created_at`) VALUES
+(1, '002', '51-32-144+08/05+brenden', '160000.00', 1, '2026-05-08 04:03:02');
 
 -- --------------------------------------------------------
 
@@ -142,11 +165,11 @@ INSERT INTO `frames_main` (`ufc`, `brand`, `frame_code`, `frame_size`, `color_co
 ('BRENDEN-BR-3543-52-20-143-C1', 'BRENDEN', 'BR-3543', '52-20-143', 'C1', 'METAL', 'SQUARE', 'full-rim', 'medium', 'men', '36000.00', '165000.00', 'IH15LZ', 0, 'old', '2026-01-24 17:52:01', '2026-01-24 17:52:01'),
 ('BVLGARI-1303-49-17-138-COL.4', 'BVLGARI', '1303', '49-17-138', 'COL.4', 'PLASTIC', 'WAYFARER', 'full-rim', 'small', 'unisex', '68000.00', '330000.00', 'K30LZ', 1, 'very old', '2026-01-24 17:50:04', '2026-01-24 17:50:04'),
 ('BVLGARI-1376-50-23-137-COL.7', 'BVLGARI', '1376', '50-23-137', 'COL.7', 'TR90', 'WAYFARER', 'rimless', 'large', 'female', '58000.00', '265000.00', 'JH15LZ', 1, 'very old', '2026-01-23 16:50:03', '2026-01-23 16:50:03'),
-('CEVIRO-lz-786-00-00-786-col.1', 'CEVIRO', 'lz-786', '00-00-786', 'col.1', 'METAL', 'Aviator', 'full-rim', 'medium', 'unisex', '30000.00', '135000.00', 'I35LZ', 2, 'new', '2026-01-21 21:50:31', '2026-01-21 21:50:31'),
+('CEVIRO-lz-786-00-00-786-col.1', 'CEVIRO', 'lz-786', '00-00-786', 'col.1', 'METAL', 'Aviator', 'full-rim', 'medium', 'unisex', '30000.00', '135000.00', 'I35LZ', 0, 'new', '2026-01-21 21:50:31', '2026-01-21 21:50:31'),
 ('CHANEL-58472-52-16-145-c5', 'CHANEL', '58472', '52-16-145', 'c5', 'PRC', 'AVIATOR', 'semi-rimless', 'medium', 'unisex', '45000.00', '205000.00', 'J05LZ', 10, 'new', '2026-01-21 21:50:31', '2026-01-22 14:16:40'),
 ('DIOR-AT1021-50-20-150-C6', 'DIOR', 'AT1021', '50-20-150', 'C6', 'PLASTIC', 'RECTANGLE', 'full-rim', 'medium', 'unisex', '30000.00', '135000.00', 'I35LZ', 1, 'old', '2026-01-22 17:32:06', '2026-01-22 17:32:06'),
 ('EYEWEAR-TAKE648-52-16-145-COL.MBLK', 'EYE WEAR', 'TAKE 648', '52-16-145', 'COL. MBLK', 'TR', 'CAT-EYE', 'semi-rimless', 'medium', 'men', '78000.00', '390000.00', 'KH40LZ', 1, 'old', '2026-01-23 17:01:48', '2026-01-23 17:01:48'),
-('GNA-G083543-52-20-143-COL.9', 'GNA', 'G08 3543', '52-20-143', 'COL.9', 'B TITANIUM', 'SQUARE', 'full-rim', 'medium', 'unisex', '105000.00', '665000.00', 'NH15LZ', 1, 'old', '2026-01-22 14:16:40', '2026-01-22 14:16:40'),
+('GNA-G083543-52-20-143-COL.9', 'GNA', 'G08 3543', '52-20-143', 'COL.9', 'B TITANIUM', 'SQUARE', 'full-rim', 'medium', 'unisex', '105000.00', '665000.00', 'NH15LZ', 0, 'old', '2026-01-22 14:16:40', '2026-01-22 14:16:40'),
 ('HANSHA-9384-50-22-143-C08', 'HAN SHA', '9384', '50-22-143', 'C08', 'PLASTIC', 'ROUND', 'full-rim', 'medium', 'unisex', '38000.00', '175000.00', 'IH25LZ', 1, 'very old', '2026-01-22 17:32:06', '2026-01-22 17:32:06'),
 ('HUMANSKULL-H1520-45-23-140-C2', 'HUMAN SKULL', 'H1520', '45-23-140', 'C2', 'PLASTIC', 'Oval', 'full-rim', 'medium', 'female', '38000.00', '175000.00', 'IH25LZ', 6, 'new', '2026-01-21 21:50:31', '2026-01-21 22:21:15'),
 ('MARTINJOY-23235-48-22-143-COL.02', 'MARTIN JOY', '23235', '48-22-143', 'COL. 02', 'PLASTIC', 'ROUND', 'full-rim', 'medium', 'men', '59000.00', '270000.00', 'JH20LZ', 1, 'old', '2026-01-22 17:32:06', '2026-01-22 17:32:06'),
@@ -160,9 +183,9 @@ INSERT INTO `frames_main` (`ufc`, `brand`, `frame_code`, `frame_size`, `color_co
 ('REDSMART-RS16062-50-18-138-COL.12', 'RED SMART', 'RS16062', '50-18-138', 'COL.12', 'METAL', 'OVAL', 'full-rim', 'medium', 'unisex', '36000.00', '165000.00', 'IH15LZ', 1, 'new', '2026-01-22 17:32:06', '2026-01-22 17:32:06'),
 ('SOOPER-5004-53-17-139-COL.11', 'SOOPER', '5004', '53-17-139', 'COL.11', 'PLASTIC', 'BUTTERFLY', 'full-rim', 'medium', 'female', '36000.00', '165000.00', 'IH15LZ', 1, 'new', '2026-01-22 17:32:06', '2026-01-22 17:32:06'),
 ('SWAROVSKI-1515-50-17-138-COL.4', 'SWAROVSKI', '1515', '50-17-138', 'COL.4', 'PLASTIC', 'OVAL', 'full-rim', 'medium', 'unisex', '62000.00', '300000.00', 'K00LZ', 2, 'very old', '2026-01-22 17:32:06', '2026-01-22 17:32:06'),
-('TAKEYAMA-TAKE648-52-15-140-C4', 'TAKEYAMA', 'TAKE 648', '52-15-140', 'C4', 'METAL', 'BUTTERFLY', 'full-rim', 'medium', 'female', '36000.00', '165000.00', 'IH15LZ', 1, 'old', '2026-01-24 19:05:48', '2026-01-24 19:05:48'),
+('TAKEYAMA-TAKE648-52-15-140-C4', 'TAKEYAMA', 'TAKE 648', '52-15-140', 'C4', 'METAL', 'BUTTERFLY', 'full-rim', 'medium', 'female', '36000.00', '165000.00', 'IH15LZ', 0, 'old', '2026-01-24 19:05:48', '2026-01-24 19:05:48'),
 ('TAKEYAMA-TAKE648-52-15-140-C5', 'TAKEYAMA', 'TAKE 648', '52-15-140', 'C5', 'OPTYL', 'OVAL', 'semi-rimless', 'medium', 'unisex', '38000.00', '175000.00', 'IH25LZ', 2, 'old', '2026-01-23 17:01:48', '2026-01-23 17:01:48'),
-('TAKEYAMA-TAKE700-52-15-140-col.4', 'TAKEYAMA', 'TAKE 700', '52-15-140', 'col.4', 'METAL', 'SQUARE', 'semi-rimless', 'medium', 'female', '45000.00', '205000.00', 'IH15LZ', 6, 'old', '2026-01-21 21:50:31', '2026-01-21 22:16:08'),
+('TAKEYAMA-TAKE700-52-15-140-col.4', 'TAKEYAMA', 'TAKE 700', '52-15-140', 'col.4', 'METAL', 'SQUARE', 'semi-rimless', 'medium', 'female', '45000.00', '205000.00', 'IH15LZ', 4, 'old', '2026-01-21 21:50:31', '2026-01-21 22:16:08'),
 ('Z-GENERATION-ZG-437235-53-17-148-C16', 'Z-GENERATION', 'ZG-437235', '53-17-148', 'C16', 'METAL', 'GEOMETRIC', 'full-rim', 'medium', 'female', '58000.00', '265000.00', 'JH15LZ', 3, 'very old', '2026-01-24 19:51:00', '2026-01-24 19:51:00');
 
 -- --------------------------------------------------------
@@ -238,6 +261,13 @@ CREATE TABLE `prescription_modifications` (
   `os_add` varchar(10) DEFAULT NULL,
   `modified_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+--
+-- Dumping data for table `prescription_modifications`
+--
+
+INSERT INTO `prescription_modifications` (`modification_id`, `invoice_number`, `od_sph`, `od_cyl`, `od_axis`, `od_add`, `os_sph`, `os_cyl`, `os_axis`, `os_add`, `modified_at`) VALUES
+(1, '001', '-50', '-25', '75', '0.00', '-25', '-50', '5', '0.00', '2026-05-07 03:31:18');
 
 -- --------------------------------------------------------
 
@@ -394,19 +424,19 @@ ALTER TABLE `users`
 -- AUTO_INCREMENT for table `customer_examinations`
 --
 ALTER TABLE `customer_examinations`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
 -- AUTO_INCREMENT for table `customer_orders`
 --
 ALTER TABLE `customer_orders`
-  MODIFY `id` int(11) UNSIGNED NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(11) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
 -- AUTO_INCREMENT for table `custom_frames`
 --
 ALTER TABLE `custom_frames`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `frame_sales`
@@ -418,7 +448,7 @@ ALTER TABLE `frame_sales`
 -- AUTO_INCREMENT for table `prescription_modifications`
 --
 ALTER TABLE `prescription_modifications`
-  MODIFY `modification_id` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `modification_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `users`
