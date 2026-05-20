@@ -643,7 +643,41 @@
             box-shadow: 0 0 14px rgba(37,211,102,0.25);
         }
 
-        /* ── Empty state ─────────────────────────────────────── */
+        /* ── Collapsible card body ───────────────────────────── */
+        .cs-card-header {
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .cs-card-header:hover .cs-patient-name {
+            color: #00ff88;
+            transition: color 0.2s;
+        }
+
+        .cs-card-body {
+            overflow: hidden;
+            max-height: 0;
+            transition: max-height 0.35s ease, opacity 0.3s ease;
+            opacity: 0;
+        }
+
+        .cs-card.expanded .cs-card-body {
+            max-height: 900px;
+            opacity: 1;
+        }
+
+        .cs-chevron {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            transition: transform 0.3s;
+            flex-shrink: 0;
+        }
+
+        .cs-card.expanded .cs-chevron {
+            transform: rotate(180deg);
+        }
+
+
         .cs-empty {
             text-align: center;
             padding: 60px 20px;
@@ -760,12 +794,21 @@
             /* ── Order card ── */
             .cs-card { padding: 14px 14px; border-radius: 16px; }
 
-            /* ── Top row: stack name + badge vertically ── */
-            .cs-card-top { flex-direction: column; gap: 8px; }
-            .cs-status-badge { align-self: flex-start; font-size: 0.65rem; padding: 5px 11px; }
+            /* ── Top row (header): name kiri, badge+chevron kanan — tetap row di mobile ── */
+            .cs-card-header.cs-card-top {
+                flex-direction: row;
+                align-items: center;
+                gap: 10px;
+            }
+            .cs-card-header .cs-patient-info { flex: 1; min-width: 0; }
+            .cs-card-header .cs-patient-name { font-size: 0.9rem; }
+            .cs-status-badge { align-self: center; font-size: 0.6rem; padding: 4px 9px; white-space: nowrap; }
 
-            /* ── Chips ── */
-            .cs-chip { font-size: 0.6rem; padding: 2px 8px; }
+            /* ── Chips: wrap & potong teks panjang ── */
+            .cs-chip { font-size: 0.6rem; padding: 2px 8px; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+            /* ── Card body: beri jarak dari header ── */
+            .cs-card.expanded .cs-card-body { padding-top: 12px; }
 
             /* ── Details grid: 2 columns ── */
             .cs-details-grid {
@@ -876,7 +919,7 @@
             <!-- Top row: Order Received → Awaiting Collection -->
             <div class="cs-stats-top">
                 <?php foreach ($statusMap as $s => $sm): if ($s === 5) continue; ?>
-                <div class="cs-stat-card" data-filter="<?php echo $s; ?>" onclick="csSetFilter('<?php echo $s; ?>', this)" title="Filter: <?php echo $sm['label']; ?>">
+                <div class="cs-stat-card <?php echo $s === 1 ? 'active' : ''; ?>" data-filter="<?php echo $s; ?>" onclick="csSetFilter('<?php echo $s; ?>', this)" title="Filter: <?php echo $sm['label']; ?>">
                     <div class="cs-stat-num" style="color:<?php echo $sm['color']; ?>"><?php echo $counts[$s]; ?></div>
                     <div class="cs-stat-label"><?php echo $sm['icon'] . ' ' . $sm['label']; ?></div>
                 </div>
@@ -884,7 +927,7 @@
             </div>
             <!-- Bottom row: Total Active centered -->
             <div class="cs-stats-bottom">
-                <div class="cs-stat-card active" data-filter="all" onclick="csSetFilter('all', this)" title="Show all orders">
+                <div class="cs-stat-card" data-filter="all" onclick="csSetFilter('all', this)" title="Show all orders">
                     <div class="cs-stat-num" style="color:#fff;"><?php echo count($orders); ?></div>
                     <div class="cs-stat-label">Total Active</div>
                 </div>
@@ -957,8 +1000,8 @@
              data-shortorder="<?php echo $isShortOrder ? '1' : '0'; ?>"
              data-orderdate="<?php echo htmlspecialchars($o['order_date'] ?? ''); ?>">
 
-            <!-- Top row: patient info + status badge -->
-            <div class="cs-card-top">
+            <!-- Top row: patient info + status badge (clickable header) -->
+            <div class="cs-card-header cs-card-top" onclick="csToggleCard(this)">
                 <div class="cs-patient-info">
                     <div class="cs-patient-name"><?php echo htmlspecialchars($name); ?> <?php echo $genderIcon; ?></div>
                     <div class="cs-meta-row">
@@ -969,11 +1012,17 @@
                         <?php endif; ?>
                     </div>
                 </div>
-                <div class="cs-status-badge"
-                     style="color:<?php echo $sm['color']; ?>;border-color:<?php echo $sm['color']; ?>33;background:<?php echo $sm['bg']; ?>">
-                    <?php echo $sm['icon']; ?>&nbsp;<?php echo strtoupper($sm['label']); ?>
+                <div style="display:flex;align-items:center;gap:10px;flex-shrink:0;">
+                    <div class="cs-status-badge"
+                         style="color:<?php echo $sm['color']; ?>;border-color:<?php echo $sm['color']; ?>33;background:<?php echo $sm['bg']; ?>">
+                        <?php echo $sm['icon']; ?>&nbsp;<?php echo strtoupper($sm['label']); ?>
+                    </div>
+                    <span class="cs-chevron">▼</span>
                 </div>
             </div>
+
+            <!-- Collapsible body: details + actions -->
+            <div class="cs-card-body">
 
             <!-- Details grid -->
             <div class="cs-details-grid">
@@ -1071,8 +1120,9 @@
                 <span style="font-size:0.68rem;color:#555;font-style:italic;">Phone number unavailable</span>
                 <?php endif; ?>
 
-            </div>
-        </div>
+            </div><!-- /cs-card-actions -->
+            </div><!-- /cs-card-body -->
+        </div><!-- /cs-card -->
         <?php endforeach; ?>
         </div>
 
@@ -1121,7 +1171,13 @@
 
     <script>
     // ── Filter state ──────────────────────────────────────────────
-    var _csActiveFilter = 'all';
+    var _csActiveFilter = '1'; // default: tampilkan status 1 (Order Received)
+
+    // ── Toggle card expand/collapse ───────────────────────────────
+    function csToggleCard(headerEl) {
+        var card = headerEl.closest('.cs-card');
+        card.classList.toggle('expanded');
+    }
 
     function csSetFilter(val, btn) {
         _csActiveFilter = val;
@@ -1225,6 +1281,9 @@
         }
         return msg;
     }
+
+    // ── Run initial filter on page load ──────────────────────────
+    document.addEventListener('DOMContentLoaded', function() { csFilterCards(); });
 
     // ── Change order status via AJAX ─────────────────────────────
     function csChangeStatus(orderId, newStatus, stepEl) {
