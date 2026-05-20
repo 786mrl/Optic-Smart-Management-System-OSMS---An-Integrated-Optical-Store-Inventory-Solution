@@ -5,6 +5,44 @@
 
     if (!isset($_SESSION['user_id'])) { header("Location: index.php"); exit(); }
 
+    // ── Handle AJAX: update total_amount with password verification ──────
+    if (isset($_POST['action']) && $_POST['action'] === 'update_total') {
+        header('Content-Type: application/json');
+        $order_id  = (int)$_POST['order_id'];
+        $new_total = (int)$_POST['new_total'];
+        $password  = $_POST['password'] ?? '';
+        $user_id   = (int)$_SESSION['user_id'];
+
+        if ($order_id <= 0 || $new_total < 0 || empty($password)) {
+            echo json_encode(['success' => false, 'error' => 'Invalid input']);
+            exit();
+        }
+
+        // Verify password against current logged-in user
+        $stmt = $conn->prepare("SELECT password_hash FROM users WHERE user_id = ?");
+        $stmt->bind_param("i", $user_id);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+
+        if (!$row || !password_verify($password, $row['password_hash'])) {
+            echo json_encode(['success' => false, 'error' => 'Incorrect password']);
+            exit();
+        }
+
+        // Update total_amount
+        $stmt2 = $conn->prepare("UPDATE customer_orders SET total_amount = ? WHERE id = ? AND order_status = 5");
+        $stmt2->bind_param("ii", $new_total, $order_id);
+        if ($stmt2->execute()) {
+            echo json_encode(['success' => true, 'new_total' => $new_total]);
+        } else {
+            echo json_encode(['success' => false, 'error' => $conn->error]);
+        }
+        $stmt2->close();
+        exit();
+    }
+
+
     // ── Fetch all finished orders (status 5) ─────────────────────────
     $sql = "
         SELECT
@@ -16,7 +54,6 @@
             co.customer_phone,
             co.customer_address,
             co.total_amount,
-            co.amount_paid,
             co.order_date,
             co.due_date,
             co.order_status,
@@ -54,8 +91,6 @@
     // ── Summary stats ─────────────────────────────────────────────────
     $totalOrders   = count($orders);
     $totalRevenue  = array_sum(array_column($orders, 'total_amount'));
-    $totalPaid     = array_sum(array_column($orders, 'amount_paid'));
-    $totalUnpaid   = $totalRevenue - $totalPaid;
 
     // Count this month
     $thisMonth     = date('Y-m');
@@ -526,6 +561,151 @@
             .btn-group { padding: 0 10px; }
             .btn-group .back-main { width: 100%; box-sizing: border-box; }
         }
+
+        /* ── Edit total button ───────────────────────────────── */
+        .ph-edit-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 0.75rem;
+            padding: 0 0 0 5px;
+            vertical-align: middle;
+            opacity: 0.5;
+            transition: opacity 0.2s;
+            line-height: 1;
+        }
+        .ph-edit-btn:hover { opacity: 1; }
+
+        /* ── Edit modal ──────────────────────────────────────── */
+        .ph-modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.75);
+            z-index: 9000;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .ph-modal-overlay.open { display: flex; }
+
+        .ph-modal {
+            background: var(--bg-color);
+            border-radius: 24px;
+            padding: 28px;
+            max-width: 420px;
+            width: 100%;
+            box-shadow: 20px 20px 60px var(--shadow-dark), -20px -20px 60px var(--shadow-light);
+            border: 1px solid rgba(255,255,255,0.07);
+        }
+
+        .ph-modal-title {
+            font-size: 0.95rem;
+            font-weight: 800;
+            color: var(--text-main);
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+        }
+
+        .ph-modal-sub {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            margin-bottom: 20px;
+        }
+
+        .ph-modal-field {
+            margin-bottom: 14px;
+        }
+
+        .ph-modal-field label {
+            display: block;
+            font-size: 0.62rem;
+            color: var(--text-muted);
+            letter-spacing: 0.7px;
+            text-transform: uppercase;
+            margin-bottom: 6px;
+        }
+
+        .ph-modal-input {
+            width: 100%;
+            background: var(--bg-color);
+            border: 1px solid rgba(255,255,255,0.09);
+            border-radius: 14px;
+            color: var(--text-main);
+            font-size: 0.85rem;
+            font-weight: 600;
+            padding: 10px 14px;
+            font-family: inherit;
+            box-shadow: inset 3px 3px 6px var(--shadow-dark), inset -3px -3px 6px var(--shadow-light);
+            outline: none;
+            transition: border-color 0.2s;
+            box-sizing: border-box;
+        }
+
+        .ph-modal-input:focus { border-color: rgba(0,255,136,0.35); }
+
+        .ph-modal-input.password-input { letter-spacing: 2px; }
+
+        .ph-modal-preview {
+            font-size: 0.72rem;
+            color: #ffaa00;
+            font-weight: 700;
+            margin-top: 6px;
+            min-height: 18px;
+            font-family: monospace;
+        }
+
+        .ph-modal-preview.error { color: #ff6b6b; }
+
+        .ph-modal-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .ph-modal-btn {
+            flex: 1;
+            padding: 10px 16px;
+            border-radius: 14px;
+            font-size: 0.78rem;
+            font-weight: 700;
+            letter-spacing: 0.6px;
+            cursor: pointer;
+            font-family: inherit;
+            border: 1px solid;
+            transition: all 0.2s;
+        }
+
+        .ph-modal-btn.cancel {
+            background: var(--bg-color);
+            border-color: rgba(255,255,255,0.1);
+            color: var(--text-muted);
+            box-shadow: 4px 4px 8px var(--shadow-dark), -4px -4px 8px var(--shadow-light);
+        }
+
+        .ph-modal-btn.cancel:hover { color: var(--text-main); }
+
+        .ph-modal-btn.confirm {
+            background: rgba(0,255,136,0.1);
+            border-color: rgba(0,255,136,0.35);
+            color: #00ff88;
+        }
+
+        .ph-modal-btn.confirm:hover {
+            background: rgba(0,255,136,0.2);
+            box-shadow: 0 0 12px rgba(0,255,136,0.2);
+        }
+
+        .ph-modal-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        @media (max-width: 600px) {
+            .ph-modal { padding: 20px 18px 28px; border-radius: 24px 24px 0 0; }
+            .ph-modal-overlay { align-items: flex-end; padding: 0; }
+            .ph-modal-actions { flex-direction: column; }
+        }
     </style>
 </head>
 <body>
@@ -562,19 +742,14 @@
                 <div class="cs-stat-label">🏁 Total Finished</div>
             </div>
             <div class="cs-stat-card">
-                <div class="cs-stat-num" style="color:#ffaa00;font-size:1.1rem;">Rp <?php echo number_format($totalRevenue, 0, ',', '.'); ?></div>
+                <div class="cs-stat-num" id="ph-revenue-display" style="color:#ffaa00;font-size:1.1rem;">Rp <?php echo number_format($totalRevenue, 0, ',', '.'); ?></div>
                 <div class="cs-stat-label">💰 Total Revenue</div>
             </div>
             <div class="cs-stat-card">
                 <div class="cs-stat-num" style="color:#00cfff;"><?php echo $thisMonthCount; ?></div>
                 <div class="cs-stat-label">📅 This Month</div>
             </div>
-            <?php if ($totalUnpaid > 0): ?>
-            <div class="cs-stat-card">
-                <div class="cs-stat-num" style="color:#ff6b6b;font-size:1.1rem;">Rp <?php echo number_format($totalUnpaid, 0, ',', '.'); ?></div>
-                <div class="cs-stat-label">⚠ Unpaid Balance</div>
-            </div>
-            <?php endif; ?>
+
         </div>
 
         <!-- ── Smart Filter Bar ────────────────────────────────── -->
@@ -612,17 +787,7 @@
                 </select>
             </div>
 
-            <!-- Payment filter -->
-            <div class="ph-filter-group">
-                <div class="ph-filter-label">💳 Payment</div>
-                <select class="ph-select" id="ph-filter-payment" onchange="phApplyFilters()">
-                    <option value="">All</option>
-                    <option value="paid">Fully Paid ✓</option>
-                    <option value="unpaid">Has Balance ⚠</option>
-                </select>
-            </div>
-
-            <!-- Sort -->
+<!-- Sort -->
             <div class="ph-filter-group">
                 <div class="ph-filter-label">↕ Sort</div>
                 <select class="ph-select" id="ph-sort" onchange="phApplyFilters()">
@@ -663,8 +828,6 @@
             $lensName  = $o['lens_name'] ?? '—';
             $frameUfc  = $o['frame_ufc'] ?? '—';
             $totalAmt  = (int)$o['total_amount'];
-            $paidAmt   = (int)$o['amount_paid'];
-            $remaining = $totalAmt - $paidAmt;
             $orderDate = $o['order_date'] ? date('d/m/Y', strtotime($o['order_date'])) : '—';
             $orderMonth = $o['order_date'] ? date('Y-m', strtotime($o['order_date'])) : '';
             $dueDate   = $o['due_date']   ? date('d/m/Y', strtotime($o['due_date']))   : '—';
@@ -679,7 +842,7 @@
              data-lens="<?php echo htmlspecialchars(strtolower($lensName)); ?>"
              data-month="<?php echo $orderMonth; ?>"
              data-gender="<?php echo $genderNorm; ?>"
-             data-payment="<?php echo ($remaining <= 0 ? 'paid' : 'unpaid'); ?>"
+             data-id="<?php echo $o['id']; ?>"
              data-total="<?php echo $totalAmt; ?>"
              data-fullname="<?php echo htmlspecialchars($name); ?>"
              data-orderdate-raw="<?php echo htmlspecialchars($o['order_date'] ?? ''); ?>">
@@ -699,12 +862,10 @@
                 </div>
                 <div style="display:flex;align-items:center;gap:10px;flex-shrink:0;">
                     <div style="text-align:right;">
-                        <div style="font-size:0.72rem;font-weight:800;color:#ffaa00;font-family:monospace;">
+                        <div class="ph-header-total" style="font-size:0.72rem;font-weight:800;color:#ffaa00;font-family:monospace;">
                             Rp <?php echo number_format($totalAmt, 0, ',', '.'); ?>
                         </div>
-                        <div style="font-size:0.62rem;color:<?php echo $remaining <= 0 ? '#00ff88' : '#ff6b6b'; ?>;font-weight:700;margin-top:2px;">
-                            <?php echo $remaining <= 0 ? 'PAID ✓' : 'Balance: Rp ' . number_format($remaining, 0, ',', '.'); ?>
-                        </div>
+                        <div style="font-size:0.62rem;color:#00ff88;font-weight:700;margin-top:2px;">PAID ✓</div>
                     </div>
                     <span class="cs-chevron">▼</span>
                 </div>
@@ -730,20 +891,12 @@
                         <span class="cs-detail-value"><?php echo $dueDate; ?></span>
                     </div>
                     <div class="cs-detail-item">
-                        <span class="cs-detail-label">Total</span>
-                        <span class="cs-detail-value price">Rp <?php echo number_format($totalAmt, 0, ',', '.'); ?></span>
-                    </div>
-                    <div class="cs-detail-item">
-                        <span class="cs-detail-label">Amount Paid</span>
-                        <span class="cs-detail-value price">Rp <?php echo number_format($paidAmt, 0, ',', '.'); ?></span>
-                    </div>
-                    <div class="cs-detail-item">
-                        <span class="cs-detail-label">Remaining Balance</span>
-                        <span class="cs-detail-value <?php echo $remaining <= 0 ? 'paid' : 'price'; ?>"
-                              style="<?php echo $remaining > 0 ? 'color:#ff6b6b' : ''; ?>">
-                            <?php echo $remaining <= 0 ? 'PAID ✓' : 'Rp ' . number_format($remaining, 0, ',', '.'); ?>
+                        <span class="cs-detail-label">Total
+                            <button class="ph-edit-btn" onclick="phOpenEditModal(this)" title="Edit total amount">✏️</button>
                         </span>
+                        <span class="ph-total-display cs-detail-value price" data-raw="<?php echo $totalAmt; ?>">Rp <?php echo number_format($totalAmt, 0, ',', '.'); ?></span>
                     </div>
+
                     <div class="cs-detail-item">
                         <span class="cs-detail-label">Phone No.</span>
                         <span class="cs-detail-value"><?php echo htmlspecialchars($phone ?: '—'); ?></span>
@@ -763,8 +916,45 @@
 
     </div><!-- .cs-body -->
             </div><!-- .main-card -->
+
+            <div class="btn-group">
+                <button type="button" class="back-main" onclick="window.history.back()">BACK TO PREVIOUS PAGE</button>
+            </div>
+
+            <footer class="footer-container">
+                <p class="footer-text"><?php echo $COPYRIGHT_FOOTER; ?></p>
+            </footer>
+
         </div><!-- .content-area -->
     </div><!-- .main-wrapper -->
+
+
+    <!-- ── Edit Total Modal ───────────────────────────────────────── -->
+    <div class="ph-modal-overlay" id="ph-modal-overlay">
+        <div class="ph-modal">
+            <div class="ph-modal-title">✏️ Edit Total Amount</div>
+            <div class="ph-modal-sub" id="ph-modal-sub">Order — —</div>
+
+            <div class="ph-modal-field">
+                <label>New Amount (or expression e.g. 600000-50000)</label>
+                <input type="text" class="ph-modal-input" id="ph-modal-amount"
+                       placeholder="e.g. 550000 or 600000-50000"
+                       autocomplete="off">
+                <div class="ph-modal-preview" id="ph-modal-preview"></div>
+            </div>
+
+            <div class="ph-modal-field">
+                <label>Your Password (verification)</label>
+                <input type="password" class="ph-modal-input password-input" id="ph-modal-password"
+                       placeholder="Enter your password" autocomplete="current-password">
+            </div>
+
+            <div class="ph-modal-actions">
+                <button class="ph-modal-btn cancel" onclick="phCloseModal()">Cancel</button>
+                <button class="ph-modal-btn confirm" id="ph-modal-confirm" onclick="phSubmitEdit()">Save Changes</button>
+            </div>
+        </div>
+    </div>
 
     <div id="ph-toast"></div>
 
@@ -774,7 +964,6 @@
         search:  '',
         month:   '',
         gender:  '',
-        payment: '',
         sort:    'date_desc'
     };
 
@@ -788,7 +977,6 @@
         _phFilters.search  = (document.getElementById('ph-search').value || '').toLowerCase().trim();
         _phFilters.month   = document.getElementById('ph-filter-month').value;
         _phFilters.gender  = document.getElementById('ph-filter-gender').value;
-        _phFilters.payment = document.getElementById('ph-filter-payment').value;
         _phFilters.sort    = document.getElementById('ph-sort').value;
 
         var container = document.getElementById('ph-cards-container');
@@ -822,11 +1010,6 @@
             // Gender
             if (show && _phFilters.gender) {
                 if (card.getAttribute('data-gender') !== _phFilters.gender) show = false;
-            }
-
-            // Payment
-            if (show && _phFilters.payment) {
-                if (card.getAttribute('data-payment') !== _phFilters.payment) show = false;
             }
 
             card.style.display = show ? '' : 'none';
@@ -910,7 +1093,6 @@
         var labels = {
             month:   { label: '📅 ' + (document.getElementById('ph-filter-month').options[document.getElementById('ph-filter-month').selectedIndex] || {}).text, clear: function() { document.getElementById('ph-filter-month').value = ''; phApplyFilters(); } },
             gender:  { label: '👤 ' + (document.getElementById('ph-filter-gender').options[document.getElementById('ph-filter-gender').selectedIndex] || {}).text, clear: function() { document.getElementById('ph-filter-gender').value = ''; phApplyFilters(); } },
-            payment: { label: '💳 ' + (document.getElementById('ph-filter-payment').options[document.getElementById('ph-filter-payment').selectedIndex] || {}).text, clear: function() { document.getElementById('ph-filter-payment').value = ''; phApplyFilters(); } }
         };
 
         if (_phFilters.search) {
@@ -920,7 +1102,7 @@
             container.appendChild(chip);
         }
 
-        ['month','gender','payment'].forEach(function(key) {
+        ['month','gender'].forEach(function(key) {
             if (_phFilters[key]) {
                 var chip = document.createElement('div');
                 chip.className = 'ph-active-chip';
@@ -937,10 +1119,205 @@
         document.getElementById('ph-search').value          = '';
         document.getElementById('ph-filter-month').value   = '';
         document.getElementById('ph-filter-gender').value  = '';
-        document.getElementById('ph-filter-payment').value = '';
         document.getElementById('ph-sort').value           = 'date_desc';
         phApplyFilters();
     }
+
+
+    var _phTotalRevenue = <?php echo (int)$totalRevenue; ?>;
+
+    // ── Edit Total Modal ──────────────────────────────────────────────
+    var _phEditState = { orderId: null, currentTotal: 0, displayEl: null, headerEl: null };
+
+    function phOpenEditModal(btnEl) {
+        var card     = btnEl.closest('.cs-card');
+        var totalEl  = card.querySelector('.ph-total-display');
+        var headerAmt = card.querySelector('.ph-header-total');
+        var orderId  = card.getAttribute('data-id');
+        var current  = parseInt(card.getAttribute('data-total')) || 0;
+        var name     = card.getAttribute('data-fullname') || '—';
+        var inv      = card.getAttribute('data-inv') || '—';
+
+        _phEditState = { orderId: orderId, currentTotal: current, displayEl: totalEl, headerEl: headerAmt, card: card };
+
+        document.getElementById('ph-modal-sub').textContent  = name + '  |  INV: ' + inv.toUpperCase() + '  |  Current: Rp ' + current.toLocaleString('id-ID');
+        document.getElementById('ph-modal-amount').value     = phFormatNumber(String(current));
+        phUpdatePreview(phFormatNumber(String(current)));
+        document.getElementById('ph-modal-password').value   = '';
+        document.getElementById('ph-modal-preview').className   = 'ph-modal-preview';
+        document.getElementById('ph-modal-overlay').classList.add('open');
+        setTimeout(function() { var inp = document.getElementById('ph-modal-amount'); inp.focus(); inp.select(); }, 100);
+    }
+
+    function phCloseModal() {
+        document.getElementById('ph-modal-overlay').classList.remove('open');
+    }
+
+    // Close on overlay click
+    document.getElementById('ph-modal-overlay').addEventListener('click', function(e) {
+        if (e.target === this) phCloseModal();
+    });
+
+    // ── Parse raw digits from a value (strip thousand separators) ──────
+    function phStripFormat(val) {
+        return val.replace(/\./g, '').replace(/[^0-9+\-*\/\s().]/g, '');
+    }
+
+    // ── Format plain number with dot thousand separators ─────────────
+    function phFormatNumber(digits) {
+        if (!digits) return '';
+        return digits.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    }
+
+    // ── Real-time input handler: format digits as typed ──────────────
+    function phHandleAmountInput(e) {
+        var inp  = e.target;
+        var raw  = inp.value;
+
+        // If expression (has operator other than leading minus) — skip formatting
+        var isExpr = /[+*\/]/.test(raw) || /\d[\-]/.test(raw);
+        if (isExpr) {
+            phUpdatePreview(raw);
+            return;
+        }
+
+        // Plain number mode: strip non-digits, reformat, restore cursor
+        var cursorPos   = inp.selectionStart;
+        var beforeCursor = raw.slice(0, cursorPos);
+        var digitsBeforeCursor = beforeCursor.replace(/\./g, '').replace(/[^0-9]/g, '');
+        var allDigits   = raw.replace(/\./g, '').replace(/[^0-9]/g, '');
+
+        var formatted   = phFormatNumber(allDigits);
+        inp.value       = formatted;
+
+        // Restore cursor: count how many digits are before cursor, find new position
+        var newPos = 0, digitCount = 0;
+        for (var i = 0; i < formatted.length; i++) {
+            if (digitCount >= digitsBeforeCursor.length) break;
+            if (formatted[i] !== '.') digitCount++;
+            newPos = i + 1;
+        }
+        inp.setSelectionRange(newPos, newPos);
+
+        phUpdatePreview(formatted);
+    }
+
+    // ── Update preview line below input ──────────────────────────────
+    function phUpdatePreview(raw) {
+        var preview = document.getElementById('ph-modal-preview');
+        if (!raw || !raw.trim()) { preview.textContent = ''; return; }
+
+        var sanitized = phStripFormat(raw);
+        if (!sanitized.trim()) { preview.textContent = ''; return; }
+
+        var result;
+        try {
+            result = Function('"use strict"; return (' + sanitized + ')')();
+        } catch(e) {
+            preview.textContent = 'Invalid expression';
+            preview.className   = 'ph-modal-preview error';
+            return;
+        }
+
+        result = Math.round(result);
+        if (isNaN(result) || result < 0) {
+            preview.textContent = 'Invalid value';
+            preview.className   = 'ph-modal-preview error';
+        } else {
+            var diff    = result - (_phEditState.currentTotal || 0);
+            var diffStr = diff === 0 ? '' : (diff > 0
+                ? '  (+Rp ' + diff.toLocaleString('id-ID') + ')'
+                : '  (−Rp ' + Math.abs(diff).toLocaleString('id-ID') + ')');
+            preview.textContent = '→ Rp ' + result.toLocaleString('id-ID') + diffStr;
+            preview.className   = 'ph-modal-preview';
+        }
+    }
+
+    // Bind input handler after DOM ready (see DOMContentLoaded below)
+    function phBindAmountInput() {
+        var inp = document.getElementById('ph-modal-amount');
+        inp.addEventListener('input', phHandleAmountInput);
+    }
+
+    // ── Submit edit ───────────────────────────────────────────────────
+    function phSubmitEdit() {
+        var raw      = document.getElementById('ph-modal-amount').value.trim();
+        var password = document.getElementById('ph-modal-password').value;
+        var confirm  = document.getElementById('ph-modal-confirm');
+
+        if (!raw || !password) {
+            phShowToast('⚠ Fill in amount and password');
+            return;
+        }
+
+        var sanitized = phStripFormat(raw);
+        var newTotal;
+        try {
+            newTotal = Math.round(Function('"use strict"; return (' + sanitized + ')')());
+        } catch(e) {
+            phShowToast('⚠ Invalid amount expression');
+            return;
+        }
+
+        if (isNaN(newTotal) || newTotal < 0) {
+            phShowToast('⚠ Invalid amount');
+            return;
+        }
+
+        confirm.disabled    = true;
+        confirm.textContent = 'Saving…';
+
+        var fd = new FormData();
+        fd.append('action',    'update_total');
+        fd.append('order_id',  _phEditState.orderId);
+        fd.append('new_total', newTotal);
+        fd.append('password',  password);
+
+        fetch('purchase_history.php', { method: 'POST', body: fd })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                confirm.disabled    = false;
+                confirm.textContent = 'Save Changes';
+
+                if (data.success) {
+                    var oldTotal  = _phEditState.currentTotal;
+                    var formatted = 'Rp ' + newTotal.toLocaleString('id-ID');
+                    _phEditState.currentTotal = newTotal; // update state for next edit
+                    if (_phEditState.displayEl) {
+                        _phEditState.displayEl.textContent = formatted;
+                        _phEditState.displayEl.setAttribute('data-raw', newTotal);
+                    }
+                    if (_phEditState.headerEl) {
+                        _phEditState.headerEl.textContent = formatted;
+                    }
+                    _phEditState.card.setAttribute('data-total', newTotal);
+
+                    // Update card header total
+                    var headerTotal = _phEditState.card.querySelector('.ph-header-total');
+                    if (headerTotal) headerTotal.textContent = formatted;
+
+                    // Update Total Revenue stat card live
+                    _phTotalRevenue = _phTotalRevenue - oldTotal + newTotal;
+                    var revEl = document.getElementById('ph-revenue-display');
+                    if (revEl) revEl.textContent = 'Rp ' + _phTotalRevenue.toLocaleString('id-ID');
+
+                    phCloseModal();
+                    phShowToast('✅ Total updated');
+                } else {
+                    phShowToast('❌ ' + (data.error || 'Failed'));
+                }
+            })
+            .catch(function() {
+                confirm.disabled    = false;
+                confirm.textContent = 'Save Changes';
+                phShowToast('❌ Connection error');
+            });
+    }
+
+    // Enter key submits
+    document.getElementById('ph-modal-password').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') phSubmitEdit();
+    });
 
     // ── Toast ─────────────────────────────────────────────────────────
     var _phToastTimer = null;
@@ -953,7 +1330,7 @@
     }
 
     // ── Init on load ──────────────────────────────────────────────────
-    document.addEventListener('DOMContentLoaded', function() { phApplyFilters(); });
+    document.addEventListener('DOMContentLoaded', function() { phApplyFilters(); phBindAmountInput(); });
     </script>
 </body>
 </html>
