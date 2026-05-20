@@ -85,7 +85,7 @@
             co.order_date,
             co.due_date,
             co.order_status,
-            COALESCE(co.packaging_cost, 16500) AS packaging_cost,
+            COALESCE(co.packaging_cost, 19500) AS packaging_cost,
             ce.customer_name  AS patient_name,
             ce.age,
             ce.gender,
@@ -863,7 +863,7 @@
             $orderMonth = $o['order_date'] ? date('Y-m', strtotime($o['order_date'])) : '';
             $dueDate   = $o['due_date']   ? date('d/m/Y', strtotime($o['due_date']))   : '—';
             $genderNorm = ($gender === 'male' || $gender === 'laki-laki' || $gender === 'm') ? 'male' : 'female';
-            $pkgTotal   = (int)($o['packaging_cost'] ?? 16500);
+            $pkgTotal   = (int)($o['packaging_cost'] ?? 19500);
             // Default breakdown for modal (box 3000, flanel 500, faset 10000, wrapping 3000)
             $pkgBox      = 3000;
             $pkgFlanel   = 500;
@@ -998,6 +998,10 @@
                 <div class="ph-modal-field">
                     <label>🎁 Wrapping</label>
                     <input type="text" class="ph-modal-input" id="ph-pkg-wrapping" oninput="phPkgFormat(this);phPkgUpdateTotal()" inputmode="numeric">
+                </div>
+                <div class="ph-modal-field">
+                    <label>🧴 Lens Cleaner</label>
+                    <input type="text" class="ph-modal-input" id="ph-pkg-cleaner" oninput="phPkgFormat(this);phPkgUpdateTotal()" inputmode="numeric">
                 </div>
             </div>
 
@@ -1407,7 +1411,7 @@
     var _phPkgCard = null;
 
     // Default breakdown values (used to pre-fill modal)
-    var _phPkgDefaults = { box: 3000, flanel: 500, faset: 10000, wrapping: 3000 };
+    var _phPkgDefaults = { box: 3000, flanel: 500, faset: 10000, wrapping: 3000, cleaner: 3000 };
 
     function phOpenPkgModal(btnEl) {
         _phPkgCard = btnEl.closest('.cs-card');
@@ -1459,7 +1463,8 @@
 
     function phPkgUpdateTotal() {
         var total = phPkgRawVal('ph-pkg-box') + phPkgRawVal('ph-pkg-flanel')
-                  + phPkgRawVal('ph-pkg-faset') + phPkgRawVal('ph-pkg-wrapping');
+                  + phPkgRawVal('ph-pkg-faset') + phPkgRawVal('ph-pkg-wrapping')
+                  + phPkgRawVal('ph-pkg-cleaner');
         document.getElementById('ph-pkg-total-preview').textContent = 'Rp ' + total.toLocaleString('id-ID');
     }
 
@@ -1471,7 +1476,8 @@
         var flanel  = phPkgRawVal('ph-pkg-flanel');
         var faset   = phPkgRawVal('ph-pkg-faset');
         var wrapping= phPkgRawVal('ph-pkg-wrapping');
-        var total   = box + flanel + faset + wrapping;
+        var cleaner = phPkgRawVal('ph-pkg-cleaner');
+        var total   = box + flanel + faset + wrapping + cleaner;
 
         btn.disabled    = true;
         btn.textContent = 'Saving…';
@@ -1483,6 +1489,7 @@
         fd.append('flanel',   flanel);
         fd.append('faset',    faset);
         fd.append('wrapping', wrapping);
+        fd.append('cleaner', cleaner);
 
         fetch('purchase_history.php', { method: 'POST', body: fd })
             .then(function(r) { return r.json(); })

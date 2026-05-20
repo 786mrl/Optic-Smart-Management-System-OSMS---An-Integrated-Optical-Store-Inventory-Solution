@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: May 20, 2026 at 03:13 PM
+-- Generation Time: May 20, 2026 at 03:25 PM
 -- Server version: 10.1.38-MariaDB
 -- PHP Version: 7.3.2
 
@@ -98,7 +98,7 @@ CREATE TABLE `customer_orders` (
   `order_status` int(11) NOT NULL DEFAULT '1',
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  `packaging_cost` int(11) NOT NULL DEFAULT '16500'
+  `packaging_cost` int(11) NOT NULL DEFAULT '19500'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Confirmed purchase orders — saved when operator clicks Yes Shopping';
 
 --
@@ -106,8 +106,8 @@ CREATE TABLE `customer_orders` (
 --
 
 INSERT INTO `customer_orders` (`id`, `customer_number`, `invoice_number`, `is_modified`, `frame_ufc`, `lens_name`, `customer_phone`, `customer_address`, `total_amount`, `amount_paid`, `order_date`, `due_date`, `order_status`, `created_at`, `updated_at`, `packaging_cost`) VALUES
-(1, '1/LZ-C/16.31/001/V/26', '001', 1, 'TAKEYAMA-TAKE700-52-15-140-col.4', 'SINGLE VISION — ONE-DRIVE', '+62 812 6764 6916', 'JL. APEL RAYA NO. 51', '700000.00', '300000.00', '2026-05-07', '2026-05-09', 1, '2026-05-07 03:32:39', '2026-05-18 15:16:58', 16500),
-(2, '2/LZ-C/16.32/002/V/26', '002', 0, '51-32-144+08/05+brenden', 'SINGLE VISION — ONE-DRIVE', '+62 812 6764 6916', NULL, '550000.00', '200000.00', '2026-05-08', '2026-05-10', 5, '2026-05-08 04:03:22', '2026-05-20 12:57:27', 16500);
+(1, '1/LZ-C/16.31/001/V/26', '001', 1, 'TAKEYAMA-TAKE700-52-15-140-col.4', 'SINGLE VISION — ONE-DRIVE', '+62 812 6764 6916', 'JL. APEL RAYA NO. 51', '700000.00', '300000.00', '2026-05-07', '2026-05-09', 1, '2026-05-07 03:32:39', '2026-05-20 13:25:24', 19500),
+(2, '2/LZ-C/16.32/002/V/26', '002', 0, '51-32-144+08/05+brenden', 'SINGLE VISION — ONE-DRIVE', '+62 812 6764 6916', NULL, '550000.00', '200000.00', '2026-05-08', '2026-05-10', 5, '2026-05-08 04:03:22', '2026-05-20 13:16:18', 23500);
 
 -- --------------------------------------------------------
 
