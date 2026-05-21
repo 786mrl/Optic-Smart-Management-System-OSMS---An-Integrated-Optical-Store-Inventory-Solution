@@ -238,9 +238,27 @@
             need_distance, need_intermediate, need_near
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
 
-        $ds_symptoms = 'DIRECT SALE';
-        $ds_zero     = '0.00'; $ds_zero_ax = '0'; $ds_va = '20/20'; $ds_notes = 'Direct sale — Lens from customer.';
-        $ds_hab = 1; $ds_dig = 1; $ds_nd = 0; $ds_ni = 0; $ds_nn = 0;
+        $ds_zero = '0.00'; $ds_zero_ax = '0'; $ds_va = '20/20';
+        $ds_notes = 'Direct sale — Lens from customer.';
+
+        // Visual habit & digital usage from form
+        $ds_hab = max(1, min(3, (int)($_POST['ds_visual_habit'] ?? 1)));
+        $ds_dig = max(1, min(3, (int)($_POST['ds_digital_usage'] ?? 1)));
+
+        // Vision need (only stored if age >= 39, same rule as customer_prescription)
+        $ds_nd = ($ds_age >= 39) ? max(0, min(1, (int)($_POST['ds_need_distance']     ?? 0))) : 0;
+        $ds_ni = ($ds_age >= 39) ? max(0, min(1, (int)($_POST['ds_need_intermediate'] ?? 0))) : 0;
+        $ds_nn = ($ds_age >= 39) ? max(0, min(1, (int)($_POST['ds_need_near']         ?? 0))) : 0;
+
+        // Symptoms: build from JSON list + other text
+        $symptoms_arr = json_decode($_POST['ds_symptoms_json'] ?? '[]', true) ?? [];
+        $symptoms_arr = array_map('strtoupper', $symptoms_arr);
+        if (!empty($_POST['ds_other_symptoms'])) {
+            $symptoms_arr[] = 'OTHERS: ' . strtoupper(trim($_POST['ds_other_symptoms']));
+        }
+        // Always keep DIRECT SALE marker
+        array_unshift($symptoms_arr, 'DIRECT SALE');
+        $ds_symptoms = mysqli_real_escape_string($conn, implode(', ', $symptoms_arr));
 
         // Type key (34 params):
         // s=date, s=exam_code, s=name, s=gender, i=age, s=symptoms,
@@ -346,9 +364,34 @@
                            autocomplete="off">
                 </div>
 
-                <!-- Prescription (optional) -->
+                <!-- PURCHASE TYPE SELECTOR -->
+                <input type="hidden" name="ds_purchase_type" id="ds_purchase_type" value="">
+                <div id="ds_purchase_type_section" style="margin-bottom:20px;">
+                    <div style="text-align:center;margin-bottom:14px;">
+                        <div style="font-size:0.65em;color:#888;letter-spacing:2px;text-transform:uppercase;font-weight:bold;margin-bottom:12px;">CUSTOMER PURCHASE TYPE</div>
+                        <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
+                            <button type="button" id="ds_btn_frame_only" onclick="dsPurchaseType('frame')" style="flex:1;max-width:180px;padding:18px 12px;border-radius:16px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.03);color:#888;font-family:inherit;cursor:pointer;transition:all 0.2s;display:flex;flex-direction:column;align-items:center;gap:8px;">
+                                <span style="font-size:2rem;">🕶️</span>
+                                <span style="font-size:0.75em;font-weight:800;letter-spacing:1.5px;">FRAME ONLY</span>
+                                <span style="font-size:0.65em;color:#555;">No lens needed</span>
+                                <div class="led" style="width:8px;height:8px;border-radius:50%;background:#333;transition:all 0.2s;"></div>
+                            </button>
+                            <button type="button" id="ds_btn_complete" onclick="dsPurchaseType('complete')" style="flex:1;max-width:180px;padding:18px 12px;border-radius:16px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.03);color:#888;font-family:inherit;cursor:pointer;transition:all 0.2s;display:flex;flex-direction:column;align-items:center;gap:8px;">
+                                <span style="font-size:2rem;">🔬</span>
+                                <span style="font-size:0.75em;font-weight:800;letter-spacing:1.5px;">FRAME + LENS</span>
+                                <span style="font-size:0.65em;color:#555;">With prescription</span>
+                                <div class="led" style="width:8px;height:8px;border-radius:50%;background:#333;transition:all 0.2s;"></div>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Complete purchase sections (FRAME + LENS only) -->
+                <div id="ds_complete_sections" style="display:none;">
+
+                <!-- Prescription -->
                 <div class="ds-card" style="margin-bottom:15px;">
-                    <div class="ds-section-label">PRESCRIPTION (optional — leave blank if frame only)</div>
+                    <div class="ds-section-label">PRESCRIPTION</div>
                     <div class="ds-pres-grid header" style="margin-bottom:6px;">
                         <div>EYE</div><div>SPH</div><div>CYL</div><div>AXIS</div><div>ADD</div>
                     </div>
@@ -374,7 +417,64 @@
                     </div>
                 </div>
 
-                <div class="btn-group" style="margin-top:25px;display:flex;justify-content:center;">
+                <!-- Visual Habit -->
+                <div class="ds-card" style="margin-bottom:15px;">
+                    <div class="ds-section-label">VISUAL HABITS</div>
+                    <input type="hidden" name="ds_visual_habit" id="ds_visual_habit" value="1">
+                    <div class="selection-wrapper">
+                        <button type="button" class="neu-btn active" value="1" onclick="dsToggleBtn(this,'ds_visual_habit')"><span>INDOOR</span><div class="led"></div></button>
+                        <button type="button" class="neu-btn" value="2" onclick="dsToggleBtn(this,'ds_visual_habit')"><span>OUTDOOR</span><div class="led"></div></button>
+                        <button type="button" class="neu-btn" value="3" onclick="dsToggleBtn(this,'ds_visual_habit')"><span>BOTH</span><div class="led"></div></button>
+                    </div>
+                </div>
+
+                <!-- Digital Device Usage -->
+                <div class="ds-card" style="margin-bottom:15px;">
+                    <div class="ds-section-label">DIGITAL DEVICE USAGE</div>
+                    <input type="hidden" name="ds_digital_usage" id="ds_digital_usage" value="1">
+                    <div class="selection-wrapper">
+                        <button type="button" class="neu-btn active" value="1" onclick="dsToggleBtn(this,'ds_digital_usage')"><span>LOW<br>(&lt; 2H)</span><div class="led"></div></button>
+                        <button type="button" class="neu-btn" value="2" onclick="dsToggleBtn(this,'ds_digital_usage')"><span>MODERATE<br>(2H-5H)</span><div class="led"></div></button>
+                        <button type="button" class="neu-btn" value="3" onclick="dsToggleBtn(this,'ds_digital_usage')"><span>HIGH<br>(&gt; 5H)</span><div class="led"></div></button>
+                    </div>
+                </div>
+
+                <!-- Symptoms -->
+                <div class="ds-card" style="margin-bottom:15px;">
+                    <div class="ds-section-label">SYMPTOMS / COMPLAINTS <span style="color:#444;font-weight:normal;">(optional)</span></div>
+                    <input type="hidden" name="ds_symptoms_json" id="ds_symptoms_json" value="[]">
+                    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:10px;">
+                        <button type="button" class="neu-btn" onclick="dsToggleSymptom(this,'HEADACHE')"><span>HEADACHE</span><div class="led"></div></button>
+                        <button type="button" class="neu-btn" onclick="dsToggleSymptom(this,'EYE STRAIN')"><span>EYE STRAIN</span><div class="led"></div></button>
+                        <button type="button" class="neu-btn" onclick="dsToggleSymptom(this,'HEADLIGHT GLARE')"><span>HEADLIGHT GLARE</span><div class="led"></div></button>
+                        <button type="button" class="neu-btn" onclick="dsToggleSymptom(this,'CATARACT')"><span>CATARACT</span><div class="led"></div></button>
+                        <button type="button" class="neu-btn" style="grid-column:1/-1;" onclick="dsToggleSymptom(this,'DRIVING')"><span>FREQUENT DRIVING</span><div class="led"></div></button>
+                    </div>
+                    <textarea name="ds_other_symptoms" id="ds_other_symptoms" placeholder="OTHER COMPLAINTS..." oninput="this.value=this.value.toUpperCase()" style="width:100%;background:#1a1c1d;color:white;border:1px solid #444;padding:10px;border-radius:10px;font-family:monospace;resize:vertical;min-height:60px;box-sizing:border-box;"></textarea>
+                </div>
+
+                <!-- Vision Need (auto-show if age >= 39) -->
+                <div id="ds_vision_need_section" style="display:none;margin-bottom:15px;">
+                <div class="ds-card">
+                    <div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:10px;">
+                        <span style="color:#ffcc00;font-size:0.78em;font-weight:bold;letter-spacing:2px;">⚑ VISION NEED</span>
+                        <span style="background:#3a3200;border:1px solid rgba(255,204,0,0.4);color:#ffcc00;font-size:0.65em;padding:2px 8px;border-radius:20px;">AGE ≥ 39</span>
+                    </div>
+                    <p style="text-align:center;font-size:0.72em;color:#888;margin:0 0 12px 0;">Select required vision needs (multiple selection allowed)</p>
+                    <input type="hidden" name="ds_need_distance"     id="ds_need_distance"     value="0">
+                    <input type="hidden" name="ds_need_intermediate" id="ds_need_intermediate" value="0">
+                    <input type="hidden" name="ds_need_near"         id="ds_need_near"         value="0">
+                    <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
+                        <button type="button" class="neu-btn" id="ds_btn_dist"  onclick="dsToggleVisionNeed(this,'ds_need_distance')"    style="flex:1;min-width:90px;flex-direction:column;align-items:center;gap:4px;padding:12px 8px;"><span style="font-size:1.3em;">🔭</span><span>DISTANCE</span><div class="led"></div></button>
+                        <button type="button" class="neu-btn" id="ds_btn_inter" onclick="dsToggleVisionNeed(this,'ds_need_intermediate')" style="flex:1;min-width:90px;flex-direction:column;align-items:center;gap:4px;padding:12px 8px;"><span style="font-size:1.3em;">🖥️</span><span>INTERMEDIATE</span><div class="led"></div></button>
+                        <button type="button" class="neu-btn" id="ds_btn_near"  onclick="dsToggleVisionNeed(this,'ds_need_near')"         style="flex:1;min-width:90px;flex-direction:column;align-items:center;gap:4px;padding:12px 8px;"><span style="font-size:1.3em;">📖</span><span>NEAR</span><div class="led"></div></button>
+                    </div>
+                </div>
+                </div><!-- /ds_vision_need_section -->
+
+                </div><!-- /ds_complete_sections -->
+
+                <div id="ds_submit_btn" style="display:none;margin-top:25px;justify-content:center;">
                     <button type="submit" class="submit-main" style="width:100%;max-width:400px;">
                         PROCEED TO INVOICE →
                     </button>
@@ -431,17 +531,21 @@ document.getElementById('ds_age').addEventListener('blur', function() {
     }
     if (!isNaN(age) && age > 0) {
         this.value = age;
-        // Auto-fill ADD if age >= 40
-        var suggestedAdd = calculateAddByAge(age);
-        if (suggestedAdd) {
+        // Auto-fill ADD if age >= 40 AND purchase type is complete (frame+lens)
+        var purchaseType = document.getElementById('ds_purchase_type').value;
+        if (purchaseType === 'complete') {
             var rAdd = document.getElementById('ds_r_add');
             var lAdd = document.getElementById('ds_l_add');
-            if (rAdd && (!rAdd.value || rAdd.value === '0.00')) {
-                rAdd.value = suggestedAdd;
-                lAdd.value = suggestedAdd;
+            var suggestedAdd = calculateAddByAge(age);
+            if (rAdd && lAdd) {
+                // Always update ADD when age changes (suggestedAdd empty = age < 40, reset to 0.00)
+                rAdd.value = suggestedAdd || '0.00';
+                lAdd.value = suggestedAdd || '0.00';
                 dsPdUpdate();
             }
         }
+        // Show/hide vision need section
+        dsUpdateVisionNeed(age);
     }
 });
 
@@ -458,6 +562,104 @@ function dsPdUpdate() {
 }
 document.getElementById('ds_r_add').addEventListener('blur', dsPdUpdate);
 document.getElementById('ds_l_add').addEventListener('blur', dsPdUpdate);
+
+// Purchase type selector
+// frame only: show submit immediately, all detail sections use defaults
+// complete  : show prescription + visual habit + digital + symptoms + vision need
+function dsPurchaseType(type) {
+    document.getElementById('ds_purchase_type').value = type;
+
+    var btnFrame    = document.getElementById('ds_btn_frame_only');
+    var btnComplete = document.getElementById('ds_btn_complete');
+    var activeColor   = '#00ff88';
+    var inactiveColor = '#888';
+
+    // Reset both buttons
+    [btnFrame, btnComplete].forEach(function(b) {
+        b.style.borderColor = 'rgba(255,255,255,0.12)';
+        b.style.background  = 'rgba(255,255,255,0.03)';
+        b.style.color       = inactiveColor;
+        b.querySelector('.led').style.background = '#333';
+        b.querySelector('.led').style.boxShadow  = 'none';
+    });
+
+    // Highlight selected button
+    var active = (type === 'frame') ? btnFrame : btnComplete;
+    active.style.borderColor = 'rgba(0,255,136,0.6)';
+    active.style.background  = 'rgba(0,255,136,0.10)';
+    active.style.color       = activeColor;
+    active.querySelector('.led').style.background = '#00ff88';
+    active.querySelector('.led').style.boxShadow  = '0 0 8px #00ff88';
+
+    if (type === 'frame') {
+        // Frame only: hide all complete sections, show submit directly
+        document.getElementById('ds_complete_sections').style.display = 'none';
+    } else {
+        // Complete: show all detail sections
+        document.getElementById('ds_complete_sections').style.display = 'block';
+        // Re-check vision need based on current age
+        var ageVal = parseInt(document.getElementById('ds_age').value) || 0;
+        if (ageVal >= 39) dsUpdateVisionNeed(ageVal);
+    }
+
+    // Always show submit button once type is chosen
+    document.getElementById('ds_submit_btn').style.display = 'flex';
+}
+
+// Generic toggle for single-select button groups (visual habit, digital usage)
+function dsToggleBtn(btn, hiddenId) {
+    btn.closest('.selection-wrapper').querySelectorAll('.neu-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById(hiddenId).value = btn.getAttribute('value');
+}
+
+// Symptoms multi-select
+var dsSelectedSymptoms = [];
+function dsToggleSymptom(btn, value) {
+    btn.classList.toggle('active');
+    if (btn.classList.contains('active')) {
+        dsSelectedSymptoms.push(value);
+    } else {
+        dsSelectedSymptoms = dsSelectedSymptoms.filter(function(s) { return s !== value; });
+    }
+    document.getElementById('ds_symptoms_json').value = JSON.stringify(dsSelectedSymptoms);
+}
+
+// Vision need toggle (multi-select, each tied to a hidden 0/1 field)
+function dsToggleVisionNeed(btn, hiddenId) {
+    btn.classList.toggle('active');
+    document.getElementById(hiddenId).value = btn.classList.contains('active') ? '1' : '0';
+}
+
+// Show / hide vision need section based on age (same rule: age >= 39)
+function dsUpdateVisionNeed(age) {
+    var sec = document.getElementById('ds_vision_need_section');
+    if (!sec) return;
+    if (age >= 39) {
+        sec.style.display = 'block';
+        // Auto-activate Distance + Near as defaults
+        var distBtn = document.getElementById('ds_btn_dist');
+        var nearBtn = document.getElementById('ds_btn_near');
+        if (distBtn && !distBtn.classList.contains('active')) {
+            distBtn.classList.add('active');
+            document.getElementById('ds_need_distance').value = '1';
+        }
+        if (nearBtn && !nearBtn.classList.contains('active')) {
+            nearBtn.classList.add('active');
+            document.getElementById('ds_need_near').value = '1';
+        }
+    } else {
+        sec.style.display = 'none';
+        ['ds_btn_dist','ds_btn_inter','ds_btn_near'].forEach(function(id) {
+            var b = document.getElementById(id);
+            if (b) b.classList.remove('active');
+        });
+        ['ds_need_distance','ds_need_intermediate','ds_need_near'].forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el) el.value = '0';
+        });
+    }
+}
 </script>
 </body>
 </html>
