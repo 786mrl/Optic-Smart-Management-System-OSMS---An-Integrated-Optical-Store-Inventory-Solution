@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: May 20, 2026 at 03:25 PM
+-- Generation Time: May 21, 2026 at 04:53 AM
 -- Server version: 10.1.38-MariaDB
 -- PHP Version: 7.3.2
 
@@ -106,8 +106,8 @@ CREATE TABLE `customer_orders` (
 --
 
 INSERT INTO `customer_orders` (`id`, `customer_number`, `invoice_number`, `is_modified`, `frame_ufc`, `lens_name`, `customer_phone`, `customer_address`, `total_amount`, `amount_paid`, `order_date`, `due_date`, `order_status`, `created_at`, `updated_at`, `packaging_cost`) VALUES
-(1, '1/LZ-C/16.31/001/V/26', '001', 1, 'TAKEYAMA-TAKE700-52-15-140-col.4', 'SINGLE VISION — ONE-DRIVE', '+62 812 6764 6916', 'JL. APEL RAYA NO. 51', '700000.00', '300000.00', '2026-05-07', '2026-05-09', 1, '2026-05-07 03:32:39', '2026-05-20 13:25:24', 19500),
-(2, '2/LZ-C/16.32/002/V/26', '002', 0, '51-32-144+08/05+brenden', 'SINGLE VISION — ONE-DRIVE', '+62 812 6764 6916', NULL, '550000.00', '200000.00', '2026-05-08', '2026-05-10', 5, '2026-05-08 04:03:22', '2026-05-20 13:16:18', 23500);
+(1, '1/LZ-C/16.31/001/V/26', '001', 1, 'TAKEYAMA-TAKE700-52-15-140-col.4', 'SINGLE VISION — ONE-DRIVE', '+62 812 6764 6916', 'JL. APEL RAYA NO. 51', '700000.00', '300000.00', '2026-05-07', '2026-05-09', 5, '2026-05-07 03:32:39', '2026-05-20 14:37:55', 26500),
+(2, '2/LZ-C/16.32/002/V/26', '002', 0, '51-32-144+08/05+brenden', 'SINGLE VISION — ONE-DRIVE', '+62 812 6764 6916', NULL, '550000.00', '200000.00', '2026-05-08', '2026-05-10', 5, '2026-05-08 04:03:22', '2026-05-20 14:00:19', 26500);
 
 -- --------------------------------------------------------
 
@@ -121,15 +121,16 @@ CREATE TABLE `custom_frames` (
   `brand_key` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Pola: dd/mm/yyyy+brand_name, contoh: 05/04/2026+brenden',
   `sell_price` decimal(12,2) NOT NULL DEFAULT '0.00' COMMENT 'Harga jual frame',
   `is_purchased` tinyint(1) NOT NULL DEFAULT '0' COMMENT '0 = belum dibeli, 1 = dibeli',
-  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `buy_price` decimal(12,2) NOT NULL DEFAULT '0.00'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Frame custom yang tidak ada di frames_main maupun frame_staging';
 
 --
 -- Dumping data for table `custom_frames`
 --
 
-INSERT INTO `custom_frames` (`id`, `invoice_number`, `brand_key`, `sell_price`, `is_purchased`, `created_at`) VALUES
-(1, '002', '51-32-144+08/05+brenden', '160000.00', 1, '2026-05-08 04:03:02');
+INSERT INTO `custom_frames` (`id`, `invoice_number`, `brand_key`, `sell_price`, `is_purchased`, `created_at`, `buy_price`) VALUES
+(1, '002', '51-32-144+08/05+brenden', '160000.00', 1, '2026-05-08 04:03:02', '33000.00');
 
 -- --------------------------------------------------------
 

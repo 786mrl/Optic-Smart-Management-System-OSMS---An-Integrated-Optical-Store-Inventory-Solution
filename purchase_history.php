@@ -207,6 +207,24 @@
     }
     krsort($monthList); // latest first
 
+    // ── Build faktur (invoice book) list from customer_number ─────────
+    // Format: 1/LZ-C/16.31/001/V/26  → segment[2] = "16.31" → faktur = 16
+    $fakturList = [];
+    foreach ($orders as $o) {
+        $cn = $o['customer_number'] ?? '';
+        if (!empty($cn)) {
+            $parts = explode('/', $cn);
+            if (isset($parts[2])) {
+                $sub = explode('.', $parts[2]);
+                $fNum = (int)$sub[0];
+                if ($fNum > 0 && !in_array($fNum, $fakturList)) {
+                    $fakturList[] = $fNum;
+                }
+            }
+        }
+    }
+    sort($fakturList);
+
     // ── Summary stats ─────────────────────────────────────────────────
     $totalOrders   = count($orders);
     $totalRevenue  = array_sum(array_column($orders, 'total_amount'));
@@ -907,7 +925,7 @@
         <!-- ── Summary Stats ───────────────────────────────────── -->
         <div class="cs-stats-row">
             <div class="cs-stat-card">
-                <div class="cs-stat-num" style="color:#00ff88;"><?php echo $totalOrders; ?></div>
+                <div class="cs-stat-num" id="ph-finished-display" style="color:#00ff88;"><?php echo $totalOrders; ?></div>
                 <div class="cs-stat-label">🏁 Total Finished</div>
             </div>
             <div class="cs-stat-card">
@@ -915,7 +933,7 @@
                 <div class="cs-stat-label">💰 Total Revenue</div>
             </div>
             <div class="cs-stat-card">
-                <div class="cs-stat-num" style="color:#00cfff;"><?php echo $thisMonthCount; ?></div>
+                <div class="cs-stat-num" id="ph-month-display" style="color:#00cfff;"><?php echo $thisMonthCount; ?></div>
                 <div class="cs-stat-label">📅 This Month</div>
             </div>
             <div class="cs-stat-card">
@@ -965,6 +983,17 @@
                     <option value="">All</option>
                     <option value="male">Male 👨</option>
                     <option value="female">Female 👩</option>
+                </select>
+            </div>
+
+            <!-- Faktur filter -->
+            <div class="ph-filter-group">
+                <div class="ph-filter-label">📒 Invoice Book</div>
+                <select class="ph-select" id="ph-filter-faktur" onchange="phApplyFilters()">
+                    <option value="">All Books</option>
+                    <?php foreach ($fakturList as $fNum): ?>
+                    <option value="<?php echo $fNum; ?>">Book #<?php echo $fNum; ?></option>
+                    <?php endforeach; ?>
                 </select>
             </div>
 
@@ -1051,6 +1080,15 @@
             $pkgFaset    = 10000;
             $pkgWrapping = 3000;
 
+            // ── Extract faktur number from customer_number ────────────
+            // Format: 1/LZ-C/16.31/001/V/26 → parts[2] = "16.31" → faktur = 16
+            $fakturNum = 0;
+            $_cnParts = explode('/', $o['customer_number'] ?? '');
+            if (isset($_cnParts[2])) {
+                $_cnSub = explode('.', $_cnParts[2]);
+                $fakturNum = (int)$_cnSub[0];
+            }
+
             // ── Lens cost ─────────────────────────────────────────────
             // Detect stock vs lab: diff <= 3 days = stock, >= 10 days = lab
             // Normalize lens_name: DB uses em dash (SINGLE VISION — ONE-DRIVE)
@@ -1123,7 +1161,8 @@
              data-lens-cost="<?php echo $lensCost; ?>"
              data-frame-cost="<?php echo $frameCost; ?>"
              data-is-custom="<?php echo $isCustom ? '1' : '0'; ?>"
-             data-invoice="<?php echo htmlspecialchars($o['invoice_number'] ?? ''); ?>">
+             data-invoice="<?php echo htmlspecialchars($o['invoice_number'] ?? ''); ?>"
+             data-faktur="<?php echo $fakturNum; ?>">
 
             <!-- Header (clickable) -->
             <div class="cs-card-header cs-card-top" onclick="csToggleCard(this)">
@@ -1346,6 +1385,7 @@
         search:  '',
         month:   '',
         gender:  '',
+        faktur:  '',
         sort:    'date_desc'
     };
 
@@ -1359,6 +1399,7 @@
         _phFilters.search  = (document.getElementById('ph-search').value || '').toLowerCase().trim();
         _phFilters.month   = document.getElementById('ph-filter-month').value;
         _phFilters.gender  = document.getElementById('ph-filter-gender').value;
+        _phFilters.faktur  = document.getElementById('ph-filter-faktur').value;
         _phFilters.sort    = document.getElementById('ph-sort').value;
 
         var container = document.getElementById('ph-cards-container');
@@ -1392,6 +1433,11 @@
             // Gender
             if (show && _phFilters.gender) {
                 if (card.getAttribute('data-gender') !== _phFilters.gender) show = false;
+            }
+
+            // Faktur
+            if (show && _phFilters.faktur) {
+                if (card.getAttribute('data-faktur') !== _phFilters.faktur) show = false;
             }
 
             card.style.display = show ? '' : 'none';
@@ -1434,6 +1480,52 @@
 
         // ── Active filter chips ───────────────────────────────────────
         phRenderChips();
+
+        // ── Recalculate stat cards based on visible cards ─────────────
+        var isFiltered = (_phFilters.search || _phFilters.month || _phFilters.gender || _phFilters.faktur);
+        var thisMonthKey = (function() {
+            var now = new Date();
+            return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+        })();
+
+        if (!isFiltered) {
+            // No filter: restore original totals from PHP-rendered values
+            var finishedEl = document.getElementById('ph-finished-display');
+            var revenueEl  = document.getElementById('ph-revenue-display');
+            var monthEl    = document.getElementById('ph-month-display');
+            var profitEl   = document.getElementById('ph-profit-display');
+            var costEl     = document.getElementById('ph-cost-display');
+            if (finishedEl) finishedEl.textContent = _phOrigFinished;
+            if (revenueEl)  { revenueEl.style.color = '#ffaa00'; revenueEl.textContent = 'Rp ' + _phOrigRevenue.toLocaleString('id-ID'); }
+            if (monthEl)    monthEl.textContent = _phOrigMonth;
+            if (profitEl)   { profitEl.style.color = _phOrigNetProfit >= 0 ? '#00ff88' : '#ff6b6b'; profitEl.textContent = (_phOrigNetProfit >= 0 ? '' : '-') + 'Rp ' + Math.abs(_phOrigNetProfit).toLocaleString('id-ID'); }
+            if (costEl)     costEl.textContent = 'Rp ' + _phOrigCost.toLocaleString('id-ID');
+        } else {
+            // Filtered: sum only visible cards
+            var filtTotal    = 0;
+            var filtRevenue  = 0;
+            var filtMonth    = 0;
+            var filtProfit   = 0;
+            var filtCost     = 0;
+            visible.forEach(function(card) {
+                filtTotal++;
+                filtRevenue += parseInt(card.getAttribute('data-total') || 0);
+                var cardMonth = card.getAttribute('data-month') || '';
+                if (cardMonth === thisMonthKey) filtMonth++;
+                filtProfit  += parseInt(card.getAttribute('data-net-profit') || 0);
+                filtCost    += parseInt(card.getAttribute('data-cost') || 0);
+            });
+            var finishedEl = document.getElementById('ph-finished-display');
+            var revenueEl  = document.getElementById('ph-revenue-display');
+            var monthEl    = document.getElementById('ph-month-display');
+            var profitEl   = document.getElementById('ph-profit-display');
+            var costEl     = document.getElementById('ph-cost-display');
+            if (finishedEl) finishedEl.textContent = filtTotal;
+            if (revenueEl)  { revenueEl.style.color = '#ffaa00'; revenueEl.textContent = 'Rp ' + filtRevenue.toLocaleString('id-ID'); }
+            if (monthEl)    monthEl.textContent = filtMonth;
+            if (profitEl)   { profitEl.style.color = filtProfit >= 0 ? '#00ff88' : '#ff6b6b'; profitEl.textContent = (filtProfit >= 0 ? '' : '-') + 'Rp ' + Math.abs(filtProfit).toLocaleString('id-ID'); }
+            if (costEl)     costEl.textContent = 'Rp ' + filtCost.toLocaleString('id-ID');
+        }
     }
 
     // ── Month dividers ────────────────────────────────────────────────
@@ -1475,6 +1567,7 @@
         var labels = {
             month:   { label: '📅 ' + (document.getElementById('ph-filter-month').options[document.getElementById('ph-filter-month').selectedIndex] || {}).text, clear: function() { document.getElementById('ph-filter-month').value = ''; phApplyFilters(); } },
             gender:  { label: '👤 ' + (document.getElementById('ph-filter-gender').options[document.getElementById('ph-filter-gender').selectedIndex] || {}).text, clear: function() { document.getElementById('ph-filter-gender').value = ''; phApplyFilters(); } },
+            faktur:  { label: '📒 ' + (document.getElementById('ph-filter-faktur').options[document.getElementById('ph-filter-faktur').selectedIndex] || {}).text, clear: function() { document.getElementById('ph-filter-faktur').value = ''; phApplyFilters(); } },
         };
 
         if (_phFilters.search) {
@@ -1484,7 +1577,7 @@
             container.appendChild(chip);
         }
 
-        ['month','gender'].forEach(function(key) {
+        ['month','gender','faktur'].forEach(function(key) {
             if (_phFilters[key]) {
                 var chip = document.createElement('div');
                 chip.className = 'ph-active-chip';
@@ -1501,6 +1594,7 @@
         document.getElementById('ph-search').value          = '';
         document.getElementById('ph-filter-month').value   = '';
         document.getElementById('ph-filter-gender').value  = '';
+        document.getElementById('ph-filter-faktur').value  = '';
         document.getElementById('ph-sort').value           = 'date_desc';
         phApplyFilters();
     }
@@ -1509,6 +1603,13 @@
     var _phTotalRevenue   = <?php echo (int)$totalRevenue; ?>;
     var _phTotalNetProfit = <?php echo (int)$totalNetProfit; ?>;
     var _phTotalCost      = <?php echo (int)$totalCost; ?>;
+
+    // Original (unfiltered) values for stat card restoration
+    var _phOrigFinished   = <?php echo (int)$totalOrders; ?>;
+    var _phOrigRevenue    = <?php echo (int)$totalRevenue; ?>;
+    var _phOrigMonth      = <?php echo (int)$thisMonthCount; ?>;
+    var _phOrigNetProfit  = <?php echo (int)$totalNetProfit; ?>;
+    var _phOrigCost       = <?php echo (int)$totalCost; ?>;
 
     // ── Edit Total Modal ──────────────────────────────────────────────
     var _phEditState = { orderId: null, currentTotal: 0, displayEl: null, headerEl: null };
