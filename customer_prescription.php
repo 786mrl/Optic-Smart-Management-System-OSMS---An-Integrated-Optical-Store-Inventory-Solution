@@ -219,7 +219,10 @@
             die("DATABASE ERROR: " . $stmt->error);
         }
     }
-    $query_seq = "SELECT examination_code FROM customer_examinations ORDER BY id DESC LIMIT 1";
+    // Skip direct-sale codes (LZ/EC/000-xxx/...) to avoid resetting the sequence.
+    $query_seq = "SELECT examination_code FROM customer_examinations
+                  WHERE examination_code NOT LIKE 'LZ/EC/000-%'
+                  ORDER BY id DESC LIMIT 1";
     $res_seq   = mysqli_query($conn, $query_seq);
     $sequence  = 1;
 

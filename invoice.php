@@ -58,7 +58,7 @@
         // due_date: same conversion, NULL when empty or placeholder
         $dueDateRaw = $_POST['due_date'] ?? '';
         $dueDate    = 'NULL';
-        if (!empty($dueDateRaw) && $dueDateRaw !== '— select a lens') {
+        if (!empty($dueDateRaw) && $dueDateRaw !== '— select a lens' && $dueDateRaw !== '— not set') {
             $ddParts = explode('/', $dueDateRaw);
             if (count($ddParts) === 3) {
                 $dueDate = "'" . $ddParts[2] . '-' . $ddParts[1] . '-' . $ddParts[0] . "'";
@@ -153,18 +153,316 @@
 
     if (!isset($_SESSION['user_id'])) { header("Location: index.php"); exit(); }
 
+    // ── DIRECT SALE: create a minimal customer_examinations record ──────────
+    // Triggered when the user submits the direct-sale entry form.
+    // Prescription from customer → examination_code uses '000' as sequence.
+    if (isset($_POST['create_direct_sale'])) {
+
+        // 1. Helper: Roman numeral for month
+        function getRomawiDirect($month) {
+            $r = [1=>'I',2=>'II',3=>'III',4=>'IV',5=>'V',6=>'VI',
+                  7=>'VII',8=>'VIII',9=>'IX',10=>'X',11=>'XI',12=>'XII'];
+            return $r[(int)$month] ?? 'I';
+        }
+
+        // 2. Basic fields
+        $ds_date  = date('Y-m-d');
+        $ds_month = (int)date('n');
+        $ds_year  = (int)date('Y');
+
+
+        $ds_name    = mysqli_real_escape_string($conn, strtoupper(trim($_POST['ds_customer_name'] ?? '')));
+        $ds_gender  = mysqli_real_escape_string($conn, strtoupper(trim($_POST['ds_gender'] ?? 'FEMALE')));
+        // Age: supports direct input (e.g. 31) or birth year with dot (e.g. .95 or .1995)
+        $raw_age = trim($_POST['ds_age'] ?? '');
+        $ds_age  = 0;
+        if (!empty($raw_age)) {
+            if (strpos($raw_age, '.') !== false) {
+                $year_input = str_replace('.', '', $raw_age);
+                $year_val   = (int)$year_input;
+                if (strlen($year_input) <= 2) {
+                    $full_year = ($year_val > (int)date('y')) ? 1900 + $year_val : 2000 + $year_val;
+                } else {
+                    $full_year = $year_val;
+                }
+                $ds_age = (int)date('Y') - $full_year;
+            } else {
+                $ds_age = (int)$raw_age;
+            }
+        }
+
+        // Prescription (optional — all default to 0.00/0)
+        function dsPres($conn, $val) {
+            $v = mysqli_real_escape_string($conn, trim($val));
+            if ($v === '') return '0.00';
+            if (is_numeric($v) && (float)$v > 0 && strpos($v, '+') === false) $v = '+' . $v;
+            return $v;
+        }
+        $ds_r_sph = dsPres($conn, $_POST['ds_r_sph'] ?? '');
+        $ds_r_cyl = dsPres($conn, $_POST['ds_r_cyl'] ?? '');
+        $ds_r_ax  = (int)($_POST['ds_r_ax'] ?? 0);
+        $ds_r_add = dsPres($conn, $_POST['ds_r_add'] ?? '');
+        $ds_l_sph = dsPres($conn, $_POST['ds_l_sph'] ?? '');
+        $ds_l_cyl = dsPres($conn, $_POST['ds_l_cyl'] ?? '');
+        $ds_l_ax  = (int)($_POST['ds_l_ax'] ?? 0);
+        $ds_l_add = dsPres($conn, $_POST['ds_l_add'] ?? '');
+
+        $ds_r_ax  = mysqli_real_escape_string($conn, (string)$ds_r_ax);
+        $ds_l_ax  = mysqli_real_escape_string($conn, (string)$ds_l_ax);
+
+        $ds_pd = mysqli_real_escape_string($conn, trim($_POST['ds_pd'] ?? '62'));
+        if ($ds_pd === '') $ds_pd = '62';
+
+        // 3. Get next invoice number (same format as customer_prescription: "001", "002", etc.)
+        // Query the MAX numeric invoice_number from customer_examinations, then increment & pad to 3 digits.
+        $invRes = mysqli_query($conn, "SELECT MAX(CAST(invoice_number AS UNSIGNED)) AS max_inv FROM customer_examinations WHERE invoice_number REGEXP '^[0-9]+$'");
+        $invRow = mysqli_fetch_assoc($invRes);
+        $ds_inv_num = max(1, (int)($invRow['max_inv'] ?? 0) + 1);
+        $ds_inv_str = str_pad((string)$ds_inv_num, 3, '0', STR_PAD_LEFT);
+        $ds_inv_str = mysqli_real_escape_string($conn, $ds_inv_str);
+
+        // Examination code: LZ/EC/000-{inv}/MONTH_ROM/YEAR  (000 = from-customer marker)
+        // The invoice number is appended to guarantee uniqueness (examination_code has a UNIQUE key).
+        $ds_exam_code = 'LZ/EC/000-' . $ds_inv_str . '/' . getRomawiDirect($ds_month) . '/' . $ds_year;
+        $ds_exam_code = mysqli_real_escape_string($conn, $ds_exam_code);
+
+        // 4. Insert into customer_examinations
+        $stmt = $conn->prepare("INSERT INTO customer_examinations (
+            examination_date, examination_code, customer_name, gender, age, symptoms,
+            old_r_sph, old_r_cyl, old_r_ax, old_r_add,
+            old_l_sph, old_l_cyl, old_l_ax, old_l_add,
+            new_r_sph, new_r_cyl, new_r_ax, new_r_add, new_r_visus,
+            new_l_sph, new_l_cyl, new_l_ax, new_l_add, new_l_visus,
+            pd_dist, invoice_number,
+            visual_habit, digital_usage, ucva_r, ucva_l, exam_notes,
+            need_distance, need_intermediate, need_near
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+
+        $ds_symptoms = 'DIRECT SALE';
+        $ds_zero     = '0.00'; $ds_zero_ax = '0'; $ds_va = '20/20'; $ds_notes = 'Direct sale — Lens from customer.';
+        $ds_hab = 1; $ds_dig = 1; $ds_nd = 0; $ds_ni = 0; $ds_nn = 0;
+
+        // Type key (34 params):
+        // s=date, s=exam_code, s=name, s=gender, i=age, s=symptoms,
+        // s,s,s,s=old_R, s,s,s,s=old_L,
+        // s,s,s,s,s=new_R(sph,cyl,ax,add,va), s,s,s,s,s=new_L,
+        // s=pd, s=invoice_number,
+        // i=visual_habit, i=digital_usage, s=ucva_r, s=ucva_l, s=exam_notes,
+        // i=need_dist, i=need_inter, i=need_near
+        $stmt->bind_param('ssssisssssssssssssssssssssiisssiii',
+            $ds_date, $ds_exam_code, $ds_name, $ds_gender, $ds_age, $ds_symptoms,
+            $ds_zero, $ds_zero, $ds_zero_ax, $ds_zero,
+            $ds_zero, $ds_zero, $ds_zero_ax, $ds_zero,
+            $ds_r_sph, $ds_r_cyl, $ds_r_ax, $ds_r_add, $ds_va,
+            $ds_l_sph, $ds_l_cyl, $ds_l_ax, $ds_l_add, $ds_va,
+            $ds_pd, $ds_inv_str,
+            $ds_hab, $ds_dig, $ds_va, $ds_va, $ds_notes,
+            $ds_nd, $ds_ni, $ds_nn
+        );
+
+        if ($stmt->execute()) {
+            header("Location: invoice.php?inv=" . $ds_inv_str . "&direct=1");
+            exit();
+        } else {
+            $ds_error = "DATABASE ERROR: " . $stmt->error;
+        }
+    }
+
     // Check 'inv' parameter (manual) or 'code' (from customer_prescription.php)
     $invoice_num = $_GET['inv'] ?? $_GET['code'] ?? '';
     $invoice_num = mysqli_real_escape_string($conn, $invoice_num);
 
+    // ── DIRECT SALE ENTRY FORM (shown when no invoice number is given) ──────
     if (empty($invoice_num) || $invoice_num === '00' || $invoice_num === '000') {
-        die("
-            <div style='background:#1a1c1d; color:#888; height:100vh; display:flex; align-items:center; justify-content:center; font-family:sans-serif; flex-direction:column;'>
-                <h2 style='color:#00ff88;'>NO PURCHASE FOUND</h2>
-                <p>Invoice '$invoice_num' is invalid or represents an examination only.</p>
-                <a href='customer.php' style='color:#00ff88; text-decoration:none; border:1px solid #00ff88; padding:10px 20px; border-radius:10px;'>Back to List</a>
+        // Show the direct-sale entry form instead of dying
+        $ds_err_msg = $ds_error ?? '';
+        ?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Direct Sale - <?php echo htmlspecialchars($STORE_NAME); ?></title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .ds-card { background:#25282a; padding:20px; border-radius:15px; border:1px solid #444; box-shadow:inset 5px 5px 10px #1a1c1d; margin-bottom:18px; }
+        .ds-pres-grid { display:grid; grid-template-columns:1.2fr repeat(4,1fr); gap:8px; align-items:center; width:100%; }
+        .ds-pres-grid.header { font-size:0.7em; color:#888; text-align:center; font-weight:bold; text-transform:uppercase; }
+        .ds-pres-grid input { width:100%; background:#1a1c1d!important; border:1px solid #333!important; border-radius:8px!important; padding:10px 5px!important; color:#00ff88!important; text-align:center; font-family:monospace; font-size:0.9em; }
+        .eye-lbl { font-size:0.8em; font-weight:bold; color:#eee; }
+        .ds-section-label { font-size:0.65em; color:#888; letter-spacing:2px; text-transform:uppercase; font-weight:bold; margin-bottom:10px; }
+    </style>
+</head>
+<body>
+<div class="main-wrapper">
+    <div class="content-area" style="flex-direction:column">
+        <div class="header-container" style="margin:0 auto;width:100%;">
+            <button class="logout-btn" onclick="window.location.href='logout.php';"><span>Logout</span></button>
+            <div class="brand-section">
+                <div class="logo-box"><img src="<?php echo htmlspecialchars($BRAND_IMAGE_PATH); ?>" alt="Logo" style="height:40px;"></div>
+                <h1 class="company-name"><?php echo htmlspecialchars($STORE_NAME); ?></h1>
+                <p class="company-address"><?php echo htmlspecialchars($STORE_ADDRESS); ?></p>
             </div>
-        ");
+        </div>
+
+        <div class="main-card" style="margin:0 auto;width:100%;">
+            <h2 style="text-align:center;margin-bottom:25px;font-weight:700;">DIRECT SALE</h2>
+            <p style="text-align:center;font-size:0.82em;color:#888;margin-bottom:25px;line-height:1.6;">
+                Customer is purchasing directly without a prior examination.<br>
+                Prescription is provided by the customer (sequence code will be <span style="color:#00ff88;">000</span>).
+            </p>
+
+            <?php if ($ds_err_msg): ?>
+            <div style="background:rgba(255,77,77,0.1);border:1px solid #ff4d4d;border-radius:10px;padding:12px 16px;margin-bottom:18px;color:#ff8888;font-size:0.85em;">
+                ⚠ <?php echo htmlspecialchars($ds_err_msg); ?>
+            </div>
+            <?php endif; ?>
+
+            <form method="POST" action="invoice.php">
+                <input type="hidden" name="create_direct_sale" value="1">
+
+                <!-- Customer Name -->
+                <div class="input-group" style="margin-bottom:15px;">
+                    <label>CUSTOMER NAME <span style="color:#ff4d4d;">*</span></label>
+                    <input type="text" name="ds_customer_name" required placeholder="CUSTOMER NAME"
+                           style="text-transform:uppercase;" oninput="this.value=this.value.toUpperCase()">
+                </div>
+
+                <!-- Gender -->
+                <div class="ds-card" style="margin-bottom:15px;">
+                    <div class="ds-section-label">GENDER</div>
+                    <input type="hidden" name="ds_gender" id="ds_gender" value="FEMALE">
+                    <div class="selection-wrapper">
+                        <button type="button" class="neu-btn active" value="FEMALE" onclick="dsToggleGender(this)"><span>FEMALE</span><div class="led"></div></button>
+                        <button type="button" class="neu-btn" value="MALE" onclick="dsToggleGender(this)"><span>MALE</span><div class="led"></div></button>
+                    </div>
+                </div>
+
+                <!-- Age -->
+                <div class="input-group" style="margin-bottom:15px;">
+                    <label>AGE / BIRTH YEAR</label>
+                    <input type="text" id="ds_age" name="ds_age" inputmode="tel"
+                           placeholder="e.g. 35 (age) or .95 (birth year)"
+                           autocomplete="off">
+                </div>
+
+                <!-- Prescription (optional) -->
+                <div class="ds-card" style="margin-bottom:15px;">
+                    <div class="ds-section-label">PRESCRIPTION (optional — leave blank if frame only)</div>
+                    <div class="ds-pres-grid header" style="margin-bottom:6px;">
+                        <div>EYE</div><div>SPH</div><div>CYL</div><div>AXIS</div><div>ADD</div>
+                    </div>
+                    <div class="ds-pres-grid" style="margin-bottom:8px;">
+                        <div class="eye-lbl">RIGHT</div>
+                        <input type="text" inputmode="tel" name="ds_r_sph" placeholder="0.00">
+                        <input type="text" inputmode="tel" name="ds_r_cyl" placeholder="0.00">
+                        <input type="text" inputmode="tel" name="ds_r_ax"  placeholder="0">
+                        <input type="text" inputmode="tel" name="ds_r_add" placeholder="0.00" id="ds_r_add">
+                    </div>
+                    <div class="ds-pres-grid">
+                        <div class="eye-lbl">LEFT</div>
+                        <input type="text" inputmode="tel" name="ds_l_sph" placeholder="0.00">
+                        <input type="text" inputmode="tel" name="ds_l_cyl" placeholder="0.00">
+                        <input type="text" inputmode="tel" name="ds_l_ax"  placeholder="0">
+                        <input type="text" inputmode="tel" name="ds_l_add" placeholder="0.00" id="ds_l_add">
+                    </div>
+                    <div style="margin-top:16px;display:flex;justify-content:center;">
+                        <div class="input-group" style="width:200px;">
+                            <label style="font-size:0.75em;color:#888;text-align:center;display:block;">PD (PUPILLARY DISTANCE)</label>
+                            <input type="text" inputmode="tel" name="ds_pd" id="ds_pd" placeholder="62" style="background:#1a1c1d;border:1px solid #333;color:#00ff88;border-radius:8px;padding:10px;width:100%;text-align:center;font-family:monospace;">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="btn-group" style="margin-top:25px;display:flex;justify-content:center;">
+                    <button type="submit" class="submit-main" style="width:100%;max-width:400px;">
+                        PROCEED TO INVOICE →
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="btn-group">
+        <button type="button" class="back-main" onclick="window.location.href='customer.php'">BACK TO PREVIOUS PAGE</button>
+    </div>
+
+    <footer class="footer-container">
+        <p class="footer-text"><?php echo $COPYRIGHT_FOOTER; ?></p>
+    </footer>
+</div>
+<script>
+function dsToggleGender(btn) {
+    btn.closest('.selection-wrapper').querySelectorAll('.neu-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('ds_gender').value = btn.getAttribute('value');
+}
+
+// Age: supports direct input (35) or birth year with dot (.95 / .1995)
+// On blur: convert to calculated age and display, same logic as customer_prescription
+function calculateAddByAge(age) {
+    if (age < 40) return '';
+    if (age >= 40 && age <= 42) return '+1.00';
+    if (age >= 43 && age <= 44) return '+1.25';
+    if (age >= 45 && age <= 47) return '+1.50';
+    if (age >= 48 && age <= 49) return '+1.75';
+    if (age >= 50 && age <= 52) return '+2.00';
+    if (age >= 53 && age <= 54) return '+2.25';
+    if (age >= 55 && age <= 57) return '+2.50';
+    if (age >= 58 && age <= 59) return '+2.75';
+    if (age > 60) return '+3.00';
+    return '';
+}
+
+document.getElementById('ds_age').addEventListener('blur', function() {
+    var val = this.value.trim();
+    if (!val) return;
+    var currentYear = 2026;
+    var age = 0;
+    if (val.includes('.')) {
+        var yearInput = val.replace('.', '');
+        var yearVal   = parseInt(yearInput);
+        var fullYear  = yearInput.length <= 2
+            ? (yearVal > parseInt(String(currentYear).slice(-2)) ? 1900 + yearVal : 2000 + yearVal)
+            : yearVal;
+        age = currentYear - fullYear;
+    } else {
+        age = parseInt(val) || 0;
+    }
+    if (!isNaN(age) && age > 0) {
+        this.value = age;
+        // Auto-fill ADD if age >= 40
+        var suggestedAdd = calculateAddByAge(age);
+        if (suggestedAdd) {
+            var rAdd = document.getElementById('ds_r_add');
+            var lAdd = document.getElementById('ds_l_add');
+            if (rAdd && (!rAdd.value || rAdd.value === '0.00')) {
+                rAdd.value = suggestedAdd;
+                lAdd.value = suggestedAdd;
+                dsPdUpdate();
+            }
+        }
+    }
+});
+
+// Sync R-ADD → L-ADD
+document.getElementById('ds_r_add').addEventListener('input', function() {
+    document.getElementById('ds_l_add').value = this.value;
+});
+// Auto-update PD placeholder based on ADD
+function dsPdUpdate() {
+    var rAdd = document.getElementById('ds_r_add').value.trim();
+    var lAdd = document.getElementById('ds_l_add').value.trim();
+    var hasAdd = (rAdd !== '' && rAdd !== '0.00') || (lAdd !== '' && lAdd !== '0.00');
+    document.getElementById('ds_pd').placeholder = hasAdd ? '62/60' : '62';
+}
+document.getElementById('ds_r_add').addEventListener('blur', dsPdUpdate);
+document.getElementById('ds_l_add').addEventListener('blur', dsPdUpdate);
+</script>
+</body>
+</html>
+        <?php
+        exit();
     }
 
     // Query customer_examinations using 'invoice_number' column
@@ -213,6 +511,13 @@
     $lr_orig_l_sph = lrValRaw($data['new_l_sph'] ?? '0');
     $lr_orig_l_cyl = lrValRaw($data['new_l_cyl'] ?? '0');
     $lr_orig_l_add = lrValRaw($data['new_l_add'] ?? '0');
+
+    // Lens recommendation is only meaningful when at least one prescription value is non-zero.
+    // If all values are 0 (frame-only purchase), hide the section entirely.
+    $lr_hasPrescription = (
+        abs($lr_orig_r_sph) > 0.01 || abs($lr_orig_r_cyl) > 0.01 || abs($lr_orig_r_add) > 0.01 ||
+        abs($lr_orig_l_sph) > 0.01 || abs($lr_orig_l_cyl) > 0.01 || abs($lr_orig_l_add) > 0.01
+    );
 
     // ── MODIFIED Rx (from prescription_modifications if exists) ──
     $lr_hasModData  = ($data['lens_modification'] == 1
@@ -1933,8 +2238,13 @@
                 margin-left: auto; 
                 margin-right: auto; 
                 width: 100%;">
-                    <h2>INVOICE</h2>
+                    <h2>INVOICE<?php if (!empty($_GET['direct'])): ?> <span style="font-size:0.55em;background:rgba(0,255,136,0.15);color:#00ff88;border:1px solid rgba(0,255,136,0.4);border-radius:20px;padding:3px 10px;letter-spacing:1px;vertical-align:middle;">DIRECT SALE</span><?php endif; ?></h2>
             
+                    <?php if (!empty($_GET['direct'])): ?>
+                    <div style="background:rgba(0,255,136,0.05);border:1px solid rgba(0,255,136,0.2);border-radius:12px;padding:12px 16px;margin-bottom:18px;font-size:0.8em;color:#888;text-align:center;line-height:1.7;">
+                        Prescription provided by customer · Sequence code: <span style="color:#00ff88;font-weight:bold;">000</span>
+                    </div>
+                    <?php endif; ?>
                     <div class="info-grid">
                         <div>
                             <label>EXAMINATION CODE</label>
@@ -2590,8 +2900,9 @@
                         </div><!-- /mp-scan-card -->
 
                         <!-- ============================================================
-                             LENS RECOMMENDED — appears AFTER Face Shape Analysis
+                             LENS RECOMMENDED — appears only when prescription exists
                              ============================================================ -->
+                        <?php if ($lr_hasPrescription): ?>
                         <div class="full" id="lens-rec-wrap">
                             <div class="prescription-container" style="border:1px solid rgba(255,170,0,0.18);">
 
@@ -3362,6 +3673,16 @@
                             </div>
                         </div>
                         <!-- END LENS RECOMMENDATION -->
+                        <?php endif; // $lr_hasPrescription ?>
+                        <?php if (!$lr_hasPrescription): ?>
+                        <div class="full">
+                            <div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.07);border-radius:14px;padding:14px 18px;text-align:center;">
+                                <span style="font-size:0.75rem;">🕶️</span>
+                                <div style="font-size:0.65rem;letter-spacing:1.5px;color:#555;font-weight:700;margin-top:6px;">FRAME ONLY — NO PRESCRIPTION</div>
+                                <div style="font-size:9px;color:#444;margin-top:4px;">Lens recommendation is not available because all prescription values are zero.</div>
+                            </div>
+                        </div>
+                        <?php endif; ?>
 
                         </div><!-- /order-details-body -->
                         </div><!-- /order-details-group -->
@@ -3469,10 +3790,12 @@
 
                                             <!-- Due Date -->
                                             <div>
-                                                <div style="font-size:7px;color:#555;letter-spacing:1px;margin-bottom:3px;">DUE DATE</div>
-                                                <div id="lr-due-date-box" style="background:rgba(255,255,255,0.04);border:1px solid rgba(0,207,255,0.20);border-radius:6px;padding:5px 8px;font-size:10px;color:#ccc;font-family:monospace;">
-                                                    — select a lens
-                                                </div>
+                                                <div style="font-size:7px;color:#555;letter-spacing:1px;margin-bottom:3px;">DUE DATE <span style="color:#444;font-weight:normal;">(editable)</span></div>
+                                                <input type="text" id="lr-due-date-box"
+                                                    placeholder="— not set"
+                                                    style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.04);border:1px solid rgba(0,207,255,0.20);border-radius:6px;padding:5px 8px;font-size:10px;color:#ccc;font-family:monospace;outline:none;"
+                                                    onfocus="this.style.borderColor='rgba(0,207,255,0.6)'"
+                                                    onblur="this.style.borderColor='rgba(0,207,255,0.20)'">
                                             </div>
 
                                         </div>
@@ -3710,7 +4033,10 @@
                     lrSelectedLens = null;
                     lrHighlightSelected(null);
                     lrUpdateSelectionDisplay(false);
-                    if (typeof lrUpdateDueDate === 'function') lrUpdateDueDate(null);
+                    // Revert to frame-only due date if frame still selected, else clear
+                    if (typeof lrUpdateDueDate === 'function') {
+                        lrUpdateDueDate(lrSelectedFrame ? 'frame' : null);
+                    }
                     return;
                 }
                 lrSelectedLens = { uid: uid, name: name, price: price, source: source };
@@ -3778,6 +4104,12 @@
                 var isCustom = name && String(name).indexOf('[CUSTOM]') !== -1;
                 if (!isCustom && typeof window.cfrResetPurchased === 'function') window.cfrResetPurchased();
                 lrUpdateSelectionDisplay(false); // do NOT auto-open bar
+                // If frame is set but no lens yet, due date = +3 days (frame pickup)
+                if (lrSelectedFrame && !lrSelectedLens) {
+                    if (typeof lrUpdateDueDate === 'function') lrUpdateDueDate('frame');
+                } else if (!lrSelectedFrame && !lrSelectedLens) {
+                    if (typeof lrUpdateDueDate === 'function') lrUpdateDueDate(null);
+                }
             }
 
             // Called when the barcode scanner result is cleared
@@ -3852,15 +4184,23 @@
                     '</div>';
                 }
 
-                // Total chip (only when both have a numeric price)
-                if (hasFrame && hasLens && lrSelectedFrame.price > 0 && lrSelectedLens.price > 0) {
-                    var total = lrSelectedFrame.price + lrSelectedLens.price;
+                // Total chip - shown whenever at least one item has a numeric price.
+                // Frame only => total = frame price. Lens only => total = lens price. Both => frame + lens.
+                var frameAmt = (hasFrame && lrSelectedFrame.price > 0) ? lrSelectedFrame.price : 0;
+                var lensAmt  = (hasLens  && lrSelectedLens.price  > 0) ? lrSelectedLens.price  : 0;
+                var total    = frameAmt + lensAmt;
+
+                if (total > 0) {
+                    var totalLabel = (hasFrame && hasLens && frameAmt > 0 && lensAmt > 0)
+                        ? 'TOTAL'
+                        : (frameAmt > 0 && lensAmt === 0 ? 'FRAME ONLY' : 'LENS ONLY');
+
                     html += '<div style="background:rgba(255,170,0,0.10);border:1px solid rgba(255,170,0,0.30);border-radius:10px;padding:6px 12px;text-align:center;width:100%;">' +
-                        '<div style="font-size:7px;color:#888;letter-spacing:1px;margin-bottom:2px;">TOTAL</div>' +
+                        '<div style="font-size:7px;color:#888;letter-spacing:1px;margin-bottom:2px;">' + totalLabel + '</div>' +
                         '<div style="font-size:11px;font-weight:800;color:#ffaa00;font-family:monospace;">Rp\u00a0' + total.toLocaleString('id-ID') + '</div>' +
                     '</div>';
 
-                    // Auto-fill Total Amount input with the chip total value
+                    // Auto-fill Total Amount input
                     _lrRawTotal = total;
                     var totalInput = document.getElementById('lr-total-amount');
                     if (totalInput) {
@@ -3992,12 +4332,14 @@
             function lrUpdateDueDate(source) {
                 var box = document.getElementById('lr-due-date-box');
                 if (!box || !window._lrOrderDate) return;
-                if (!source) { box.textContent = '— select a lens'; box.style.color = '#ccc'; return; }
-                var days = (source === 'stock') ? 2 : 10;
-                var due  = new Date(window._lrOrderDate.getTime());
+                if (!source) { box.value = ''; box.style.color = '#ccc'; return; }
+                // days: stock lens=2, lab lens=10, frame-only=3
+                var days  = (source === 'stock') ? 2 : (source === 'frame') ? 3 : 10;
+                var color = (source === 'stock') ? '#00ff88' : (source === 'frame') ? '#00cfff' : '#ff8a4d';
+                var due   = new Date(window._lrOrderDate.getTime());
                 due.setDate(due.getDate() + days);
-                box.textContent = lrFormatDate(due);
-                box.style.color = (source === 'stock') ? '#00ff88' : '#ff8a4d';
+                box.value = lrFormatDate(due);
+                box.style.color = color;
             }
 
             // Expose so lrSelectLens can call it
@@ -6398,8 +6740,8 @@
             var dueDate = '';
             var dueEl   = document.getElementById('lr-due-date-box');
             if (dueEl) {
-                var dt = dueEl.textContent.trim();
-                if (dt && dt !== '— select a lens') dueDate = dt;
+                var dt = (dueEl.value !== undefined ? dueEl.value : dueEl.textContent).trim();
+                if (dt && dt !== '— select a lens' && dt !== '— not set') dueDate = dt;
             }
         
             var orderDate = '<?php echo date('d/m/Y', strtotime($data['examination_date'])); ?>';
