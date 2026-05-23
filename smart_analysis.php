@@ -82,7 +82,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
     $frameInventory = [];
     $r = $conn->query("
         SELECT brand, material, structure, size_range, gender_category,
-               stock_age, stock, buy_price, sell_price
+               stock_age, stock, buy_price, sell_price, lens_shape
         FROM frames_main
     ");
     if ($r) { while ($row = $r->fetch_assoc()) { $frameInventory[] = $row; } $r->free(); }
@@ -111,6 +111,8 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
 
     // Prescription analytics
     $sphBuckets   = ['≤-6'=>0,'-6 to -3'=>0,'-3 to 0'=>0,'0 to +3'=>0,'+3 to +6'=>0,'>+6'=>0,'Unknown'=>0];
+    $lensRxCount  = ['singlevision'=>[],'kryptok'=>[],'flattop'=>[],'progressive'=>[]];
+    $lensByCat    = ['singlevision'=>[],'kryptok'=>[],'flattop'=>[],'progressive'=>[]];
     $cylSeverity  = ['None (0)'=>0,'Mild (<-1)'=>0,'Moderate (<-2)'=>0,'Severe (≥-2)'=>0,'Unknown'=>0];
     $visionNeeds  = ['Distance Only'=>0,'Near Only'=>0,'Intermediate'=>0,'Multifocal (2+)'=>0];
     $addCount     = 0; // has ADD value
@@ -148,12 +150,79 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
         $monthlyData[$ym]['count']++;
         $monthlyData[$ym]['label'] = !empty($o['order_date']) ? date('M Y', strtotime($o['order_date'])) : 'Unknown';
 
-        // Lens
-        $lname = trim($o['lens_name'] ?? '—');
+        // Lens — split into 4 separate categories
+        $lnameRaw = trim($o['lens_name'] ?? '');
+        $lCatKey  = ''; // reset per order
+        if ($lnameRaw !== '') {
+            // Detect category: check if lens_name STARTS WITH known category keyword
+            // More robust than splitting — handles any separator/encoding variant
+            $lUpper = strtoupper($lnameRaw);
+            if (strpos($lUpper, 'SINGLE VISION') === 0) {
+                $lCatRaw = 'SINGLE VISION';
+                // Strip 'SINGLE VISION' prefix + any separator to get variant
+                $lVar = trim(preg_replace('/^SINGLE\s+VISION\s*[^A-Z0-9]*/i', '', $lnameRaw));
+            } elseif (strpos($lUpper, 'PROGRESSIVE') === 0) {
+                $lCatRaw = 'PROGRESSIVE';
+                $lVar = trim(preg_replace('/^PROGRESSIVE\s*[^A-Z0-9]*/i', '', $lnameRaw));
+            } elseif (strpos($lUpper, 'KRYPTOK') === 0) {
+                $lCatRaw = 'KRYPTOK';
+                $lVar = trim(preg_replace('/^KRYPTOK\s*[^A-Z0-9]*/i', '', $lnameRaw));
+            } elseif (strpos($lUpper, 'FLATTOP') === 0) {
+                $lCatRaw = 'FLATTOP';
+                $lVar = trim(preg_replace('/^FLATTOP\s*[^A-Z0-9]*/i', '', $lnameRaw));
+            } else {
+                $lCatRaw = strtoupper($lnameRaw);
+                $lVar = $lnameRaw;
+            }
+            if ($lVar === '') $lVar = $lnameRaw;
+            if (strpos($lCatRaw, 'PROGRESSIVE') !== false)  $lCatKey = 'progressive';
+            elseif (strpos($lCatRaw, 'KRYPTOK') !== false)  $lCatKey = 'kryptok';
+            elseif (strpos($lCatRaw, 'FLATTOP') !== false)  $lCatKey = 'flattop';
+            else                                              $lCatKey = 'singlevision';
+            // Progressive: keep full name; others: variant only
+            $lkey = ($lCatKey === 'progressive') ? $lnameRaw : $lVar;
+            if (!isset($lensByCat[$lCatKey][$lkey])) {
+                $lensByCat[$lCatKey][$lkey] = ['count'=>0,'revenue'=>0,'profit'=>0];
+            }
+            $lensByCat[$lCatKey][$lkey]['count']++;
+            $lensByCat[$lCatKey][$lkey]['revenue'] += $amt;
+            $lensByCat[$lCatKey][$lkey]['profit']  += $profit;
+        }
+        // Keep flat lensCount for existing analytics
+        $lname = ($lnameRaw !== '') ? $lnameRaw : '—';
         if (!isset($lensCount[$lname])) { $lensCount[$lname]=0; $lensRevenue[$lname]=0; $lensProfit[$lname]=0; }
         $lensCount[$lname]++;
         $lensRevenue[$lname] += $amt;
         $lensProfit[$lname]  += $profit;
+
+        // Lens size per category — one key per ORDER (R + L combined)
+        // Convention: if abs(value) > 20, stored as centesimal (e.g. -50 means -0.50)
+        $rS = trim($o['new_r_sph'] ?? ''); $rC = trim($o['new_r_cyl'] ?? '');
+        $lS = trim($o['new_l_sph'] ?? ''); $lC = trim($o['new_l_cyl'] ?? '');
+        if (($rS !== '' || $lS !== '') && $lCatKey !== '') {
+            $rxBuild = function($s, $c) {
+                if ($s === '') return null;
+                $sV = floatval($s); $cV = ($c !== '') ? floatval($c) : 0;
+                if (abs($sV) > 20) $sV /= 100;
+                if (abs($cV) > 20) $cV /= 100;
+                $sF = ($sV > 0 ? '+' : '') . number_format($sV, 2);
+                $cF = ($cV != 0) ? ' / CYL ' . ($cV > 0 ? '+' : '') . number_format($cV, 2) : '';
+                return 'SPH ' . $sF . $cF;
+            };
+            $rPart = $rxBuild($rS, $rC);
+            $lPart = $rxBuild($lS, $lC);
+            if ($rPart !== null && $lPart !== null && $rPart !== $lPart) {
+                $rxKey = 'R: ' . $rPart . '  |  L: ' . $lPart;
+            } elseif ($rPart !== null && $lPart !== null) {
+                $rxKey = $rPart . ' (R & L)';
+            } elseif ($rPart !== null) {
+                $rxKey = 'R: ' . $rPart;
+            } else {
+                $rxKey = 'L: ' . $lPart;
+            }
+            if (!isset($lensRxCount[$lCatKey][$rxKey])) $lensRxCount[$lCatKey][$rxKey] = 0;
+            $lensRxCount[$lCatKey][$rxKey]++;
+        }
 
         // Frame
         $fu = trim($o['frame_ufc'] ?? '—');
@@ -257,13 +326,56 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
             'margin'=>($lensRevenue[$name]>0 ? round($lensProfit[$name]/$lensRevenue[$name]*100) : 0)];
     }
 
-    arsort($frameCount);
-    $topFrames = [];
-    $i = 0;
-    foreach ($frameCount as $ufc => $cnt) {
-        if ($i++ >= 8) break;
-        $topFrames[] = ['ufc'=>$ufc,'count'=>$cnt,'revenue'=>$frameRevenue[$ufc]];
+    // Build per-category sorted lens arrays
+    $lensCatOut = [];
+    foreach ($lensByCat as $catKey => $items) {
+        uasort($items, function($a,$b){ return $b['count'] - $a['count']; });
+        $catArr = [];
+        foreach ($items as $vname => $d) {
+            $catArr[] = [
+                'name'   => $vname,
+                'count'  => $d['count'],
+                'margin' => ($d['revenue']>0 ? round($d['profit']/$d['revenue']*100) : 0),
+            ];
+        }
+        $lensCatOut[$catKey] = $catArr;
     }
+
+    // Frame shape & size analytics — join ordered UFCs back to frames_main
+    $shapeCount    = [];
+    $sizeCount     = [];
+    $brandCount    = [];
+    $structCount   = [];
+
+    // Build lookup: ufc => [lens_shape, size_range, brand, structure] from frames_main + staging
+    $frameAttrMap  = [];
+    $rfa = $conn->query("SELECT ufc, lens_shape, size_range, brand, structure FROM frames_main");
+    if ($rfa) { while ($row = $rfa->fetch_assoc()) { $frameAttrMap[strtoupper(trim($row['ufc']))] = $row; } $rfa->free(); }
+    $rfa = $conn->query("SELECT ufc, lens_shape, size_range, brand, structure FROM frame_staging");
+    if ($rfa) { while ($row = $rfa->fetch_assoc()) { $k = strtoupper(trim($row['ufc'])); if (!isset($frameAttrMap[$k])) $frameAttrMap[$k] = $row; } $rfa->free(); }
+
+    foreach ($frameCount as $ufc => $cnt) {
+        $k    = strtoupper(trim($ufc));
+        $attr = $frameAttrMap[$k] ?? null;
+        $shape  = trim($attr['lens_shape'] ?? 'Unknown');
+        $size   = trim($attr['size_range'] ?? 'Unknown');
+        $brand  = trim($attr['brand']      ?? 'Unknown');
+        $struct = trim($attr['structure']  ?? 'Unknown');
+        if ($shape  === '') $shape  = 'Unknown';
+        if ($size   === '') $size   = 'Unknown';
+        if ($brand  === '') $brand  = 'Unknown';
+        if ($struct === '') $struct = 'Unknown';
+        if (!isset($shapeCount[$shape]))  $shapeCount[$shape]  = 0;
+        if (!isset($sizeCount[$size]))    $sizeCount[$size]    = 0;
+        if (!isset($brandCount[$brand]))  $brandCount[$brand]  = 0;
+        if (!isset($structCount[$struct]))$structCount[$struct] = 0;
+        $shapeCount[$shape]  += $cnt;
+        $sizeCount[$size]    += $cnt;
+        $brandCount[$brand]  += $cnt;
+        $structCount[$struct]+= $cnt;
+    }
+    arsort($shapeCount); arsort($sizeCount); arsort($brandCount); arsort($structCount);
+    $topBrands = $brandCount; // all brands, JS handles display limit
 
     uasort($custCount, function($a,$b) { return $b['count'] - $a['count']; });
     $topCust = [];
@@ -278,10 +390,12 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
     }
 
     // Frame inventory stats
-    $stockAge   = ['very old'=>0,'old'=>0,'new'=>0,'null'=>0];
-    $materials  = [];
-    $structures = ['full-rim'=>0,'semi-rimless'=>0,'rimless'=>0];
-    $genderCat  = ['men'=>0,'female'=>0,'unisex'=>0];
+    $stockAge      = ['very old'=>0,'old'=>0,'new'=>0,'null'=>0];
+    $materials     = [];
+    $structures    = ['full-rim'=>0,'semi-rimless'=>0,'rimless'=>0];
+    $genderCat     = ['men'=>0,'female'=>0,'unisex'=>0];
+    $stockByShape  = ['all'=>[],'standar'=>[],'menengah'=>[],'menengah_atas'=>[],'premium'=>[],'other'=>[]];
+    $stockByGender = ['all'=>[],'standar'=>[],'menengah'=>[],'menengah_atas'=>[],'premium'=>[],'other'=>[]];
     $totalFrameStock = 0;
     $framesMissingBuy = 0;
     foreach ($frameInventory as $f) {
@@ -295,6 +409,29 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
         if (isset($structures[$st])) $structures[$st]++;
         $gc2 = strtolower($f['gender_category'] ?? '');
         if (isset($genderCat[$gc2])) $genderCat[$gc2]++;
+        // Price tier
+        $sp = (float)($f['sell_price'] ?? 0);
+        if      ($sp >= 350001)                    $tier = 'premium';
+        elseif  ($sp >= 201000)                    $tier = 'menengah_atas';
+        elseif  ($sp >= 101000)                    $tier = 'menengah';
+        elseif  ($sp >= 50000)                     $tier = 'standar';
+        else                                        $tier = 'other';
+
+        // Stock by lens_shape — normalize to Title Case to merge duplicates
+        $sh = trim($f['lens_shape'] ?? '');
+        $sh = ($sh === '') ? 'Belum Diisi' : ucwords(strtolower($sh));
+        if (!isset($stockByShape['all'][$sh]))           $stockByShape['all'][$sh]           = 0;
+        if (!isset($stockByShape[$tier][$sh]))           $stockByShape[$tier][$sh]           = 0;
+        $stockByShape['all'][$sh]           += (int)($f['stock'] ?? 0);
+        $stockByShape[$tier][$sh]           += (int)($f['stock'] ?? 0);
+
+        // Stock by gender_category
+        $gcKey = strtolower(trim($f['gender_category'] ?? ''));
+        if ($gcKey === '') $gcKey = 'unknown';
+        if (!isset($stockByGender['all'][$gcKey]))       $stockByGender['all'][$gcKey]       = 0;
+        if (!isset($stockByGender[$tier][$gcKey]))       $stockByGender[$tier][$gcKey]       = 0;
+        $stockByGender['all'][$gcKey]       += (int)($f['stock'] ?? 0);
+        $stockByGender[$tier][$gcKey]       += (int)($f['stock'] ?? 0);
         $totalFrameStock += (int)($f['stock'] ?? 0);
         if ((float)($f['buy_price'] ?? 0) == 0) $framesMissingBuy++;
     }
@@ -343,7 +480,12 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
         ],
         'monthly'        => array_values($monthlyData),
         'topLenses'      => $topLenses,
-        'topFrames'      => $topFrames,
+        'lensCatOut'     => $lensCatOut,
+        'lensRxCount'    => $lensRxCount, // nested by category
+        'shapeCount'     => $shapeCount,
+        'sizeCount'      => $sizeCount,
+        'structCount'    => $structCount,
+        'topBrands'      => $topBrands,
         'genderCount'    => $genderCount,
         'ageGroups'      => $ageGroups,
         'dowCount'       => $dowCount,
@@ -356,6 +498,18 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
         'cylSeverity'    => $cylSeverity,
         'visionNeeds'    => $visionNeeds,
         'stockAge'       => $stockAge,
+        'stockByShape'   => $stockByShape,
+        'stockByGender'  => $stockByGender,
+        'frameRawList'   => array_map(function($f) {
+            return [
+                'shape'   => (trim($f['lens_shape']??'')==='' ? 'Belum Diisi' : ucwords(strtolower(trim($f['lens_shape'])))),
+                'gender'  => strtolower(trim($f['gender_category']??'unknown')),
+                'material'=> ucwords(strtolower(trim($f['material']??'Unknown'))),
+                'struct'  => strtolower(trim($f['structure']??'unknown')),
+                'stock'   => (int)($f['stock']??0),
+                'sell'    => (float)($f['sell_price']??0),
+            ];
+        }, $frameInventory),
         'topMaterials'   => $topMaterials,
         'structures'     => $structures,
         'genderCat'      => $genderCat,
@@ -519,6 +673,102 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
         .sa-rx-table .rx-val.changed { color:var(--sa-green); font-weight:700; }
         .sa-rx-table .rx-val.empty { color:rgba(255,255,255,0.2); }
 
+        /* ── Stock modal ── */
+        .sa-modal-overlay {
+            position:fixed; inset:0; background:rgba(0,0,0,0.65);
+            display:flex; align-items:center; justify-content:center;
+            z-index:9998; backdrop-filter:blur(4px);
+            animation:sa-fadein 0.18s ease;
+        }
+        @keyframes sa-fadein { from{opacity:0} to{opacity:1} }
+        .sa-modal {
+            background:var(--bg-color); border-radius:20px; padding:24px 26px;
+            width:90%; max-width:480px; max-height:80vh; overflow-y:auto;
+            box-shadow:12px 12px 28px var(--shadow-dark),-12px -12px 28px var(--shadow-light);
+            border:1px solid rgba(255,255,255,0.06); position:relative;
+        }
+        .sa-modal-title { font-size:1rem; font-weight:800; color:var(--text-main); margin-bottom:4px; }
+        .sa-modal-sub   { font-size:0.65rem; color:var(--text-muted); letter-spacing:0.6px; text-transform:uppercase; margin-bottom:20px; }
+        .sa-modal-close {
+            position:absolute; top:16px; right:18px; background:none; border:none;
+            color:var(--text-muted); font-size:1.2rem; cursor:pointer; line-height:1;
+            padding:4px 8px; border-radius:8px; transition:color 0.15s;
+        }
+        .sa-modal-close:hover { color:var(--text-main); }
+        .sa-modal-sec { margin-bottom:20px; }
+        .sa-modal-sec-title {
+            font-size:0.62rem; font-weight:700; letter-spacing:1px; text-transform:uppercase;
+            color:var(--text-muted); margin-bottom:10px; padding-bottom:6px;
+            border-bottom:1px solid rgba(255,255,255,0.06);
+        }
+        .sa-kpi.clickable { cursor:pointer; transition:transform 0.15s, box-shadow 0.15s; }
+        .sa-kpi.clickable:hover { transform:translateY(-2px); box-shadow:8px 8px 18px var(--shadow-dark),-8px -8px 18px var(--shadow-light); }
+
+        /* Modal select dropdowns */
+        .sa-mselect {
+            width: 100%;
+            background: var(--bg-color);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 10px;
+            color: var(--text-main);
+            font-size: 0.72rem;
+            font-weight: 600;
+            padding: 8px 10px;
+            cursor: pointer;
+            font-family: inherit;
+            outline: none;
+            box-shadow: inset 2px 2px 5px var(--shadow-dark), inset -2px -2px 5px var(--shadow-light);
+            transition: border-color 0.15s;
+            -webkit-appearance: none;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='rgba(255,255,255,0.3)'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 10px center;
+            padding-right: 28px;
+        }
+        .sa-mselect:focus { border-color: rgba(0,207,255,0.4); }
+        .sa-mselect option { background: #1a1a2e; color: var(--text-main); }
+
+        /* Filter chips (kept for other uses) */
+        .sa-mchip {
+            background: var(--bg-color);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 20px;
+            color: var(--text-muted);
+            font-size: 0.67rem; font-weight: 700;
+            padding: 5px 12px;
+            cursor: pointer; font-family: inherit;
+            box-shadow: 3px 3px 6px var(--shadow-dark), -3px -3px 6px var(--shadow-light);
+            transition: all 0.15s; letter-spacing: 0.3px;
+            white-space: nowrap;
+        }
+        .sa-mchip em { font-style:normal; opacity:0.55; font-weight:400; margin-left:4px; font-size:0.6rem; }
+        .sa-mchip:hover { border-color: rgba(255,255,255,0.22); color: var(--text-main); }
+        .sa-mchip.active { background: rgba(0,207,255,0.1); border-color: rgba(0,207,255,0.35); color: var(--sa-blue); }
+        .sa-modal-sec-title { font-size:0.58rem; font-weight:700; letter-spacing:1px; text-transform:uppercase; color:var(--text-muted); }
+
+        /* ── Expand button ── */
+        .sa-expand-btn {
+            margin-top: 10px;
+            background: var(--bg-color);
+            border: 1px solid rgba(255,255,255,0.09);
+            border-radius: 20px;
+            color: var(--text-muted);
+            font-size: 0.67rem;
+            font-weight: 700;
+            padding: 5px 14px;
+            cursor: pointer;
+            font-family: inherit;
+            letter-spacing: 0.4px;
+            box-shadow: 3px 3px 6px var(--shadow-dark), -3px -3px 6px var(--shadow-light);
+            transition: all 0.18s;
+            display: block;
+            width: 100%;
+            text-align: center;
+        }
+        .sa-expand-btn:hover { border-color: rgba(255,255,255,0.2); color: var(--text-main); }
+        .sa-expand-btn.expanded { border-color: rgba(255,107,107,0.25); color: var(--sa-red); }
+
         /* ── Pill tags ── */
         .sa-pill { background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.08); border-radius:20px; padding:4px 11px; font-size:0.67rem; color:var(--text-main); font-weight:600; }
 
@@ -579,14 +829,30 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
 
             <!-- ══ PRODUCT MIX ════════════════════════════════════ -->
             <div class="sa-section-title">🔭 Product Mix</div>
-            <div class="sa-2col">
-                <div class="sa-card">
-                    <div class="sa-card-title">🔭 Top Lenses — Volume & Margin</div>
-                    <div class="sa-bar-list" id="sa-top-lenses"></div>
-                </div>
-                <div class="sa-card">
-                    <div class="sa-card-title">🖼 Top Frames — Volume & Revenue</div>
-                    <div class="sa-bar-list" id="sa-top-frames"></div>
+
+            <!-- Lenses — 4 separate cards -->
+            <div id="sa-lens-cards"></div>
+
+            <!-- Frame Shape & Size — 4-col grid below lenses -->
+            <div class="sa-card">
+                <div class="sa-card-title">🖼 Frame Shape & Size (Purchased)</div>
+                <div class="sa-4col" style="margin-top:4px;">
+                    <div>
+                        <div class="sa-card-title" style="margin-bottom:10px;">Bentuk Lensa</div>
+                        <div class="sa-bar-list" id="sa-shape-bars"></div>
+                    </div>
+                    <div>
+                        <div class="sa-card-title" style="margin-bottom:10px;">Ukuran Frame</div>
+                        <div class="sa-bar-list" id="sa-size-bars"></div>
+                    </div>
+                    <div>
+                        <div class="sa-card-title" style="margin-bottom:10px;">Struktur</div>
+                        <div class="sa-bar-list" id="sa-struct-bars"></div>
+                    </div>
+                    <div>
+                        <div class="sa-card-title" style="margin-bottom:10px;">Top Brand</div>
+                        <div class="sa-bar-list" id="sa-brand-bars"></div>
+                    </div>
                 </div>
             </div>
 
@@ -756,6 +1022,53 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
 </div>
 
 <!-- Loading -->
+<!-- Stock detail modal -->
+<div id="sa-stock-modal-overlay" style="display:none;" class="sa-modal-overlay" onclick="saModalClose(event)">
+    <div class="sa-modal" style="max-width:540px;">
+        <button class="sa-modal-close" onclick="saModalClose(null,true)">&times;</button>
+        <div class="sa-modal-title">&#128444; Frame Stock Detail</div>
+        <div class="sa-modal-sub" id="sa-modal-total"></div>
+
+        <!-- 3-col filter dropdowns -->
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin:16px 0 20px;">
+            <div>
+                <div class="sa-modal-sec-title" style="margin-bottom:6px;">Harga Jual</div>
+                <select id="sa-mf-price" class="sa-mselect" onchange="saModalApplyFilters()">
+                    <option value="all">Semua</option>
+                    <option value="standar">Standar (50–99rb)</option>
+                    <option value="menengah">Menengah (100–200rb)</option>
+                    <option value="menengah_atas">Menengah Atas (201–350rb)</option>
+                    <option value="premium">Premium (&gt;350rb)</option>
+                </select>
+            </div>
+            <div>
+                <div class="sa-modal-sec-title" style="margin-bottom:6px;">Material</div>
+                <select id="sa-mf-material" class="sa-mselect" onchange="saModalApplyFilters()">
+                    <option value="all">Semua</option>
+                </select>
+            </div>
+            <div>
+                <div class="sa-modal-sec-title" style="margin-bottom:6px;">Struktur</div>
+                <select id="sa-mf-struct" class="sa-mselect" onchange="saModalApplyFilters()">
+                    <option value="all">Semua</option>
+                    <option value="full-rim">Full-Rim</option>
+                    <option value="semi-rimless">Semi-Rimless</option>
+                    <option value="rimless">Rimless</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="sa-modal-sec" style="margin-bottom:16px;">
+            <div class="sa-modal-sec-title" style="margin-bottom:10px;">Bentuk Lensa</div>
+            <div id="sa-modal-shape-list"></div>
+        </div>
+        <div class="sa-modal-sec">
+            <div class="sa-modal-sec-title" style="margin-bottom:10px;">Gender Category</div>
+            <div id="sa-modal-gender-list"></div>
+        </div>
+    </div>
+</div>
+
 <div id="sa-loading">
     <div class="sa-loader-box">
         <div class="sa-loader-spinner"></div>
@@ -788,6 +1101,104 @@ function saTab(btn, id) {
 }
 
 // ── Main load ───────────────────────────────────────────────────
+function saModalClose(e, force) {
+    if (force || (e && e.target === document.getElementById('sa-stock-modal-overlay'))) {
+        document.getElementById('sa-stock-modal-overlay').style.display = 'none';
+    }
+}
+
+function saRenderModalBars(listId, dataObj, color) {
+    var el = document.getElementById(listId);
+    if (!el) return;
+    var entries = Object.entries(dataObj)
+        .filter(function(e){ return e[1] > 0; })
+        .sort(function(a,b){ return b[1]-a[1]; });
+    if (!entries.length) {
+        el.innerHTML = '<div style="font-size:.72rem;color:var(--text-muted);font-style:italic;">Tidak ada frame untuk filter ini.</div>';
+        return;
+    }
+    var mx = entries[0][1];
+    el.innerHTML = entries.map(function(e) {
+        var lbl = String(e[0]).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+        var pct = Math.round(e[1]/mx*100);
+        return '<div class="sa-bar-item" style="margin-bottom:8px;">' +
+               '<div class="sa-bar-row">' +
+               '<span class="sa-bar-name">'+lbl+'</span>' +
+               '<span class="sa-bar-meta">'+e[1]+' unit</span>' +
+               '</div>' +
+               '<div class="sa-bar-track"><div class="sa-bar-fill" style="--bc:'+color+';width:'+pct+'%"></div></div>' +
+               '</div>';
+    }).join('');
+}
+
+function saModalApplyFilters() {
+    var frames = (_stockData.frameRawList || []);
+    var price    = document.getElementById('sa-mf-price')    ? document.getElementById('sa-mf-price').value    : 'all';
+    var material = document.getElementById('sa-mf-material') ? document.getElementById('sa-mf-material').value : 'all';
+    var struct   = document.getElementById('sa-mf-struct')   ? document.getElementById('sa-mf-struct').value   : 'all';
+
+    var filtered = frames.filter(function(fr) {
+        if (price !== 'all') {
+            var s = fr.sell;
+            var ok = (price==='standar'       && s>=50000  && s<=100000) ||
+                     (price==='menengah'       && s>=101000 && s<=200000) ||
+                     (price==='menengah_atas'  && s>=201000 && s<=350000) ||
+                     (price==='premium'        && s>350000);
+            if (!ok) return false;
+        }
+        if (material !== 'all' && fr.material.toLowerCase() !== material.toLowerCase()) return false;
+        if (struct   !== 'all' && fr.struct !== struct) return false;
+        return true;
+    });
+
+    var byShape = {}, byGender = {}, total = 0;
+    filtered.forEach(function(fr) {
+        byShape[fr.shape]   = (byShape[fr.shape]   || 0) + fr.stock;
+        byGender[fr.gender] = (byGender[fr.gender] || 0) + fr.stock;
+        total += fr.stock;
+    });
+
+    var parts = [];
+    var priceLabels = {standar:'Standar',menengah:'Menengah',menengah_atas:'Menengah Atas',premium:'Premium'};
+    if (price    !== 'all') parts.push(priceLabels[price] || price);
+    if (material !== 'all') parts.push(material);
+    if (struct   !== 'all') parts.push(struct);
+    var label = parts.length ? parts.join(' + ') : 'Semua';
+    document.getElementById('sa-modal-total').textContent =
+        label + ' \u2014 ' + total.toLocaleString('id-ID') + ' unit';
+
+    saRenderModalBars('sa-modal-shape-list',  byShape,  '#00cfff');
+    saRenderModalBars('sa-modal-gender-list', byGender, '#aa88ff');
+}
+
+function saStockModalOpen() {
+    var frames = (_stockData.frameRawList || []);
+
+    // Build material dropdown options
+    var matSel = document.getElementById('sa-mf-material');
+    if (matSel) {
+        var materials = {};
+        frames.forEach(function(fr){ materials[fr.material] = (materials[fr.material]||0) + fr.stock; });
+        var matEntries = Object.entries(materials).sort(function(a,b){ return b[1]-a[1]; });
+        matSel.innerHTML = '<option value="all">Semua</option>';
+        matEntries.forEach(function(e) {
+            var opt = document.createElement('option');
+            opt.value = e[0];
+            opt.textContent = e[0];
+            matSel.appendChild(opt);
+        });
+    }
+
+    // Reset selects
+    ['sa-mf-price','sa-mf-material','sa-mf-struct'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) el.value = 'all';
+    });
+
+    saModalApplyFilters();
+    document.getElementById('sa-stock-modal-overlay').style.display = 'flex';
+}
+
 function saLoad() {
     const btn = document.getElementById('sa-reload-btn');
     btn.disabled = true; btn.textContent = '⟳ Loading…';
@@ -808,7 +1219,10 @@ function saLoad() {
         });
 }
 
+var _stockData = {};
+
 function renderAll(d) {
+    _stockData = { byShape: d.stockByShape||{}, byGender: d.stockByGender||{}, total: (d.summary||{}).totalFrameStock||0, frameRawList: d.frameRawList||[] };
     renderTopAlerts(d);
     renderKPIs(d);
     renderMonthly(d);
@@ -858,18 +1272,21 @@ function renderKPIs(d) {
         { icon:'👁',  label:'High Myopia (≤-6)', val: s.highMyopia,                          color: C.pink },
         { icon:'🔬', label:'Presbyopia (ADD)',  val: s.presbyopia,                          color: C.purple },
         { icon:'✏️', label:'Rx Modified',       val: s.rxModCount,                          color: C.amber },
-        { icon:'🖼', label:'Frame Stock (SKU)', val: s.totalFrameStock.toLocaleString('id-ID'), color: C.blue },
+        { icon:'🖼', label:'Frame Stock', val: s.totalFrameStock.toLocaleString('id-ID'), color: C.blue, clickable: true },
         { icon:'⚠️', label:'Frames No Cost',    val: s.framesMissingBuy,                    color: s.framesMissingBuy>0?C.red:C.teal,
             badge: s.framesMissingBuy>0?{cls:'down',txt:'Missing'}:{cls:'up',txt:'✓ OK'} },
         { icon:'🔄', label:'Resep Diubah',      val: s.modifiedOrders,                      color: C.teal },
     ];
-    document.getElementById('sa-kpi-grid').innerHTML = kpis.map(k => `
-        <div class="sa-kpi" style="--kc:${k.color}">
-            <div class="sa-kpi-icon">${k.icon}</div>
-            <div class="sa-kpi-val ${String(k.val).length>9?'sm':''}">${k.val}</div>
-            <div class="sa-kpi-label">${k.label}</div>
-            ${k.badge?`<div class="sa-badge ${k.badge.cls}">${k.badge.txt}</div>`:''}
-        </div>`).join('');
+    document.getElementById('sa-kpi-grid').innerHTML = kpis.map(k => {
+        var cls     = 'sa-kpi' + (k.clickable ? ' clickable' : '');
+        var onclick = k.clickable ? ' onclick="saStockModalOpen()"' : '';
+        return '<div class="'+cls+'" style="--kc:'+k.color+'"'+onclick+'>' +
+            '<div class="sa-kpi-icon">'+k.icon+'</div>' +
+            '<div class="sa-kpi-val '+(String(k.val).length>9?'sm':'')+'">'+k.val+'</div>' +
+            '<div class="sa-kpi-label">'+k.label+'</div>' +
+            (k.badge?'<div class="sa-badge '+k.badge.cls+'">'+k.badge.txt+'</div>':'') +
+            '</div>';
+    }).join('');
 }
 
 // ── Monthly chart ────────────────────────────────────────────────
@@ -907,36 +1324,229 @@ function renderMonthly(d) {
     });
 }
 
-// ── Top lenses ───────────────────────────────────────────────────
+// ── Top lenses + lens size ───────────────────────────────────────
+var _rxExpandData = {};
+
+function makeExpandList(containerId, entries, color, metaFn) {
+    var SHOW = 5;
+    var el = document.getElementById(containerId);
+    if (!el) return;
+    el.innerHTML = '';
+    if (!entries.length) {
+        el.innerHTML = '<div style="font-size:.75rem;color:var(--text-muted)">No data</div>';
+        return;
+    }
+    var mx = entries[0][1];
+
+    function makeRow(e) {
+        var label = String(e[0]).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        var pct   = Math.round(e[1] / mx * 100);
+        var meta  = metaFn ? metaFn(e) : e[1] + 'x';
+        return '<div class="sa-bar-item">' +
+               '<div class="sa-bar-row">' +
+               '<span class="sa-bar-name" title="' + label + '">' + label + '</span>' +
+               '<span class="sa-bar-meta">' + meta + '</span>' +
+               '</div>' +
+               '<div class="sa-bar-track">' +
+               '<div class="sa-bar-fill" style="--bc:' + color + ';width:' + pct + '%"></div>' +
+               '</div></div>';
+    }
+
+    var visible = entries.slice(0, SHOW);
+    var hidden  = entries.slice(SHOW);
+
+    var visDiv = document.createElement('div');
+    visDiv.className = 'sa-bar-list';
+    visDiv.innerHTML = visible.map(makeRow).join('');
+    el.appendChild(visDiv);
+
+    if (hidden.length > 0) {
+        _rxExpandData[containerId] = hidden.length;
+
+        var hidDiv = document.createElement('div');
+        hidDiv.id  = containerId + '-hid';
+        hidDiv.style.display = 'none';
+        var hidList = document.createElement('div');
+        hidList.className = 'sa-bar-list';
+        hidList.style.marginTop = '8px';
+        hidList.innerHTML = hidden.map(makeRow).join('');
+        hidDiv.appendChild(hidList);
+        el.appendChild(hidDiv);
+
+        var btn = document.createElement('button');
+        btn.className = 'sa-expand-btn';
+        btn.textContent = 'Lihat ' + hidden.length + ' lainnya';
+        btn.setAttribute('data-cid', containerId);
+        btn.addEventListener('click', function() {
+            var cid   = this.getAttribute('data-cid');
+            var hDiv  = document.getElementById(cid + '-hid');
+            var isOpen = hDiv.style.display !== 'none';
+            hDiv.style.display = isOpen ? 'none' : 'block';
+            this.textContent = isOpen ? ('Lihat ' + _rxExpandData[cid] + ' lainnya') : 'Tutup';
+            this.classList.toggle('open', !isOpen);
+        });
+        el.appendChild(btn);
+    }
+}
+
 function renderTopLenses(d) {
-    const el = document.getElementById('sa-top-lenses');
-    if (!d.topLenses.length) { el.innerHTML='<div style="font-size:.75rem;color:var(--text-muted)">No data</div>'; return; }
-    const mx = d.topLenses[0].count;
-    el.innerHTML = d.topLenses.map(l => `
-        <div class="sa-bar-item">
-            <div class="sa-bar-row">
-                <span class="sa-bar-name" title="${l.name}">${l.name}</span>
-                <span class="sa-bar-meta">${l.count}× · ${l.margin}% margin</span>
-            </div>
-            <div class="sa-bar-track"><div class="sa-bar-fill" style="--bc:${C.blue};width:${Math.round(l.count/mx*100)}%"></div></div>
-        </div>`).join('');
+    var cats = d.lensCatOut || {};
+    var rxCounts = d.lensRxCount || {};
+    var catDefs = [
+        { key:'singlevision', label:'Single Vision', color:C.blue   },
+        { key:'kryptok',      label:'Kryptok',       color:C.teal   },
+        { key:'flattop',      label:'Flattop',       color:C.purple },
+        { key:'progressive',  label:'Progressive',   color:C.amber  },
+    ];
+    var container = document.getElementById('sa-lens-cards');
+    if (!container) return;
+    container.innerHTML = '';
+
+    catDefs.forEach(function(cat) {
+        var lensEntries = (cats[cat.key] || []).map(function(l){ return [l.name, l.count, l]; });
+        var rxAll       = Object.entries(rxCounts[cat.key] || {}).sort(function(a,b){ return b[1]-a[1]; });
+        var rxEntries   = rxAll.filter(function(e){ return e[1] > 1; });
+
+        // Hide card entirely if no lens data at all
+        if (lensEntries.length === 0) return;
+
+        // Build card
+        var card = document.createElement('div');
+        card.className = 'sa-card';
+        card.style.marginBottom = '12px';
+
+        // Card header
+        var hdr = document.createElement('div');
+        hdr.className = 'sa-card-title';
+        hdr.style.color = cat.color;
+        hdr.style.fontSize = '0.75rem';
+        hdr.style.marginBottom = '12px';
+        hdr.textContent = cat.label;
+        card.appendChild(hdr);
+
+        // Jenis lensa sub-label
+        var lbl1 = document.createElement('div');
+        lbl1.className = 'sa-card-title';
+        lbl1.style.marginBottom = '8px';
+        lbl1.textContent = 'Jenis Lensa';
+        card.appendChild(lbl1);
+
+        // Jenis lensa list
+        var lensDiv = document.createElement('div');
+        lensDiv.id = 'sa-lens-' + cat.key + '-type';
+        card.appendChild(lensDiv);
+
+        // Ukuran sub-label
+        var lbl2 = document.createElement('div');
+        lbl2.className = 'sa-card-title';
+        lbl2.style.marginTop = '16px';
+        lbl2.style.marginBottom = '8px';
+        lbl2.textContent = 'Ukuran Terbeli (SPH & CYL)';
+        card.appendChild(lbl2);
+
+        // Ukuran list
+        var rxDiv = document.createElement('div');
+        rxDiv.id = 'sa-lens-' + cat.key + '-rx';
+        card.appendChild(rxDiv);
+
+        // Append card to DOM FIRST so getElementById works
+        container.appendChild(card);
+
+        // Now populate lists (elements are in DOM)
+        makeExpandList('sa-lens-' + cat.key + '-type', lensEntries, cat.color, function(e) {
+            return e[1] + 'x \u00b7 ' + e[2].margin + '% margin';
+        });
+
+        if (rxEntries.length === 0) {
+            rxDiv.innerHTML = '<div style="font-size:.72rem;color:var(--text-muted);font-style:italic;">'
+                + (rxAll.length === 0
+                    ? 'Belum ada order ' + cat.label.toLowerCase() + '.'
+                    : 'Semua ukuran masih unik &mdash; belum ada 2 customer dengan ukuran yang sama.')
+                + '</div>';
+        } else {
+            makeExpandList('sa-lens-' + cat.key + '-rx', rxEntries, cat.color, function(e) {
+                return e[1] + ' customer';
+            });
+        }
+    });
 }
 
-// ── Top frames ───────────────────────────────────────────────────
+// ── Frame shape / size analytics ──────────────────────────────
+var _saExpandData = {};
+
 function renderTopFrames(d) {
-    const el = document.getElementById('sa-top-frames');
-    if (!d.topFrames.length) { el.innerHTML='<div style="font-size:.75rem;color:var(--text-muted)">No data</div>'; return; }
-    const mx = d.topFrames[0].count;
-    el.innerHTML = d.topFrames.map(f => `
-        <div class="sa-bar-item">
-            <div class="sa-bar-row">
-                <span class="sa-bar-name" title="${f.ufc}">${f.ufc}</span>
-                <span class="sa-bar-meta">${f.count}× · ${fmt(f.revenue)}</span>
-            </div>
-            <div class="sa-bar-track"><div class="sa-bar-fill" style="--bc:${C.purple};width:${Math.round(f.count/mx*100)}%"></div></div>
-        </div>`).join('');
+    var SHOW = 5;
+
+    function barList(elId, obj, color) {
+        var el = document.getElementById(elId);
+        if (!el) return;
+        var entries = Object.entries(obj).sort(function(a,b){ return b[1]-a[1]; });
+        if (!entries.length) {
+            el.innerHTML = '<div style="font-size:.72rem;color:var(--text-muted)">No data</div>';
+            return;
+        }
+        var mx = entries[0][1];
+
+        function makeRow(e) {
+            var label = (e[0] || 'Unknown').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+            var pct   = Math.round(e[1] / mx * 100);
+            return '<div class="sa-bar-item">' +
+                     '<div class="sa-bar-row">' +
+                       '<span class="sa-bar-name">' + label + '</span>' +
+                       '<span class="sa-bar-meta">' + e[1] + '\xd7</span>' +
+                     '</div>' +
+                     '<div class="sa-bar-track">' +
+                       '<div class="sa-bar-fill" style="--bc:' + color + ';width:' + pct + '%"></div>' +
+                     '</div>' +
+                   '</div>';
+        }
+
+        var visible = entries.slice(0, SHOW);
+        var hidden  = entries.slice(SHOW);
+
+        el.innerHTML = '<div class="sa-bar-list" id="' + elId + '-vis">' +
+                           visible.map(makeRow).join('') +
+                       '</div>';
+
+        if (hidden.length > 0) {
+            _saExpandData[elId] = { rows: hidden.map(makeRow).join(''), count: hidden.length };
+
+            var hiddenDiv = document.createElement('div');
+            hiddenDiv.id = elId + '-hidden';
+            hiddenDiv.style.display = 'none';
+            var innerList = document.createElement('div');
+            innerList.className = 'sa-bar-list';
+            innerList.style.marginTop = '8px';
+            innerList.innerHTML = _saExpandData[elId].rows;
+            hiddenDiv.appendChild(innerList);
+            el.appendChild(hiddenDiv);
+
+            var btn = document.createElement('button');
+            btn.id = elId + '-btn';
+            btn.className = 'sa-expand-btn';
+            btn.textContent = 'Lihat ' + hidden.length + ' lainnya \u25be';
+            btn.setAttribute('data-elid', elId);
+            btn.onclick = function() { saToggleExpand(this.getAttribute('data-elid')); };
+            el.appendChild(btn);
+        }
+    }
+
+    barList('sa-shape-bars',  d.shapeCount,  C.blue);
+    barList('sa-size-bars',   d.sizeCount,   C.teal);
+    barList('sa-struct-bars', d.structCount, C.purple);
+    barList('sa-brand-bars',  d.topBrands,   C.amber);
 }
 
+function saToggleExpand(elId) {
+    var hidden = document.getElementById(elId + '-hidden');
+    var btn    = document.getElementById(elId + '-btn');
+    var data   = _saExpandData[elId] || {};
+    if (!hidden || !btn) return;
+    var isOpen = hidden.style.display !== 'none';
+    hidden.style.display = isOpen ? 'none' : 'block';
+    btn.textContent      = isOpen ? ('Lihat ' + (data.count || '') + ' lainnya \u25be') : 'Tutup \u25b4';
+    btn.classList.toggle('expanded', !isOpen);
+}
 // ── Profitability ────────────────────────────────────────────────
 function renderProfitability(d) {
     const s = d.summary;
