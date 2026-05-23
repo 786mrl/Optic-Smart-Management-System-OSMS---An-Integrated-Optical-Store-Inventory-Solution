@@ -1022,6 +1022,21 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
 </div>
 
 <!-- Loading -->
+<!-- Generic KPI info modal -->
+<div id="sa-kpi-modal-overlay" style="display:none;" class="sa-modal-overlay" onclick="saKpiModalClose(event)">
+    <div class="sa-modal" style="max-width:480px;">
+        <button class="sa-modal-close" onclick="saKpiModalClose(null,true)">&times;</button>
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px;">
+            <div id="sa-kpi-modal-icon" style="font-size:2rem;line-height:1;"></div>
+            <div>
+                <div class="sa-modal-title" id="sa-kpi-modal-title"></div>
+                <div class="sa-modal-sub" id="sa-kpi-modal-val"></div>
+            </div>
+        </div>
+        <div id="sa-kpi-modal-body" style="margin-top:16px;"></div>
+    </div>
+</div>
+
 <!-- Stock detail modal -->
 <div id="sa-stock-modal-overlay" style="display:none;" class="sa-modal-overlay" onclick="saModalClose(event)">
     <div class="sa-modal" style="max-width:540px;">
@@ -1101,6 +1116,48 @@ function saTab(btn, id) {
 }
 
 // ── Main load ───────────────────────────────────────────────────
+function saKpiModalClose(e, force) {
+    if (force || (e && e.target === document.getElementById('sa-kpi-modal-overlay'))) {
+        document.getElementById('sa-kpi-modal-overlay').style.display = 'none';
+    }
+}
+
+function saKpiModalOpen(idx) {
+    var k = (window._kpiDefs || [])[idx];
+    if (!k || !k.modal) return;
+    var m = k.modal;
+
+    document.getElementById('sa-kpi-modal-icon').textContent  = k.icon;
+    document.getElementById('sa-kpi-modal-title').textContent = m.title;
+    document.getElementById('sa-kpi-modal-val').textContent   = k.label + ': ' + k.val;
+
+    var html = '';
+    // Description
+    html += '<div style="font-size:.78rem;color:var(--text-main);line-height:1.6;margin-bottom:16px;padding:12px 14px;background:rgba(255,255,255,0.03);border-radius:12px;border:1px solid rgba(255,255,255,0.06);">' + m.desc + '</div>';
+
+    // Details table
+    if (m.details && m.details.length) {
+        html += '<div style="display:flex;flex-direction:column;gap:0;">';
+        m.details.forEach(function(d, i) {
+            var bg = i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent';
+            html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 12px;background:'+bg+';border-radius:8px;">' +
+                    '<span style="font-size:.72rem;color:var(--text-muted);">'+d.label+'</span>' +
+                    '<span style="font-size:.78rem;font-weight:700;font-family:monospace;color:var(--text-main);">'+d.val+'</span>' +
+                    '</div>';
+        });
+        html += '</div>';
+    }
+
+    // Warning
+    if (m.warn) {
+        html += '<div style="margin-top:14px;background:rgba(255,170,0,0.07);border:1px solid rgba(255,170,0,0.2);border-radius:12px;padding:10px 14px;font-size:.72rem;color:var(--sa-amber);">' +
+                '⚠️ ' + m.warn + '</div>';
+    }
+
+    document.getElementById('sa-kpi-modal-body').innerHTML = html;
+    document.getElementById('sa-kpi-modal-overlay').style.display = 'flex';
+}
+
 function saModalClose(e, force) {
     if (force || (e && e.target === document.getElementById('sa-stock-modal-overlay'))) {
         document.getElementById('sa-stock-modal-overlay').style.display = 'none';
@@ -1204,8 +1261,17 @@ function saLoad() {
     btn.disabled = true; btn.textContent = '⟳ Loading…';
     document.getElementById('sa-loading').classList.remove('hidden');
     fetch('smart_analysis.php?ajax=1')
-        .then(r => r.json())
-        .then(data => {
+        .then(r => r.text())
+        .then(txt => {
+            var data;
+            try { data = JSON.parse(txt); }
+            catch(e) {
+                document.getElementById('sa-loading').classList.add('hidden');
+                btn.disabled = false; btn.textContent = '↻ Refresh';
+                document.getElementById('sa-top-alerts').innerHTML =
+                    '<div class="sa-alert" style="margin-bottom:12px;">PHP/JSON Error:<br><pre style="font-size:.62rem;margin-top:6px;white-space:pre-wrap;overflow:auto;max-height:200px;">'+txt.replace(/</g,'&lt;').substring(0,800)+'</pre></div>';
+                return;
+            }
             renderAll(data);
             document.getElementById('sa-loading').classList.add('hidden');
             btn.disabled = false; btn.textContent = '⟳ Refresh';
@@ -1257,36 +1323,107 @@ function renderTopAlerts(d) {
 
 // ── KPIs ────────────────────────────────────────────────────────
 function renderKPIs(d) {
-    const s = d.summary;
-    const margin = s.totalRevenue > 0 ? Math.round(s.totalProfit / s.totalRevenue * 100) : 0;
-    const kpis = [
-        { icon:'🏁', label:'Total Orders',      val: s.totalOrders.toLocaleString('id-ID'), color: C.blue },
-        { icon:'💰', label:'Total Revenue',     val: fmt(s.totalRevenue),                   color: C.amber },
-        { icon:'💹', label:'Net Profit',        val: fmt(s.totalProfit),                    color: s.totalProfit>=0?C.green:C.red,
-            badge: s.totalProfit>=0?null:{cls:'down',txt:'Rugi'} },
-        { icon:'📊', label:'Overall Margin',    val: margin+'%',                            color: margin>30?C.green:margin>15?C.amber:C.red,
-            badge: margin>30?{cls:'up',txt:'✓ Sehat'}:margin>15?{cls:'neu',txt:'⚡ Moderat'}:{cls:'down',txt:'⚠ Rendah'} },
-        { icon:'🛒', label:'Avg Order Value',   val: fmt(s.avgOrderValue),                  color: C.purple },
-        { icon:'⏱',  label:'Avg Process Days',  val: s.avgProcessDays+'d',                  color: C.teal,
-            badge: s.avgProcessDays<=5?{cls:'up',txt:'Cepat'}:s.avgProcessDays<=10?{cls:'neu',txt:'Normal'}:{cls:'down',txt:'Lambat'} },
-        { icon:'👁',  label:'High Myopia (≤-6)', val: s.highMyopia,                          color: C.pink },
-        { icon:'🔬', label:'Presbyopia (ADD)',  val: s.presbyopia,                          color: C.purple },
-        { icon:'✏️', label:'Rx Modified',       val: s.rxModCount,                          color: C.amber },
-        { icon:'🖼', label:'Frame Stock', val: s.totalFrameStock.toLocaleString('id-ID'), color: C.blue, clickable: true },
-        { icon:'⚠️', label:'Frames No Cost',    val: s.framesMissingBuy,                    color: s.framesMissingBuy>0?C.red:C.teal,
-            badge: s.framesMissingBuy>0?{cls:'down',txt:'Missing'}:{cls:'up',txt:'✓ OK'} },
-        { icon:'🔄', label:'Resep Diubah',      val: s.modifiedOrders,                      color: C.teal },
+    var s = d.summary;
+    var margin = s.totalRevenue > 0 ? Math.round(s.totalProfit / s.totalRevenue * 100) : 0;
+    var fmtFull2 = function(n){ return (n<0?'- ':'')+'IDR '+Math.abs(n).toLocaleString('id-ID'); };
+    var kpis = [
+        { icon:'🏁', label:'Total Orders', val: s.totalOrders.toLocaleString('id-ID'), color: C.blue,
+            modal:{ title:'Total Orders', desc:'Jumlah order yang sudah selesai (status = 5).', details:[
+                {label:'Total order selesai', val: s.totalOrders.toLocaleString('id-ID')+' order'},
+                {label:'Revenue rata-rata/order', val: fmtFull2(s.avgOrderValue)},
+                {label:'Rata-rata proses', val: s.avgProcessDays+' hari'},
+            ]}},
+        { icon:'💰', label:'Total Revenue', val: fmt(s.totalRevenue), color: C.amber,
+            modal:{ title:'Total Revenue', desc:'Total pendapatan kotor dari semua order yang selesai.', details:[
+                {label:'Total revenue', val: fmtFull2(s.totalRevenue)},
+                {label:'Bulan ini', val: fmtFull2(s.thisMonthRev)},
+                {label:'Bulan lalu', val: fmtFull2(s.lastMonthRev)},
+                {label:'Selisih MoM', val: s.momChange !== null ? (s.momChange>0?'+':'')+s.momChange+'%' : 'N/A'},
+            ]}},
+        { icon:'💹', label:'Net Profit', val: fmt(s.totalProfit), color: s.totalProfit>=0?C.green:C.red,
+            badge: s.totalProfit>=0?null:{cls:'down',txt:'Rugi'},
+            modal:{ title:'Net Profit', desc:'Laba bersih = Total Revenue dikurangi COGS (harga beli lensa + frame + packaging).', details:[
+                {label:'Total revenue', val: fmtFull2(s.totalRevenue)},
+                {label:'Total COGS', val: fmtFull2(s.totalCost)},
+                {label:'Net profit', val: fmtFull2(s.totalProfit)},
+                {label:'Margin keseluruhan', val: Math.round(s.totalProfit/Math.max(s.totalRevenue,1)*100)+'%'},
+            ], warn: s.framesMissingBuy>0 ? s.framesMissingBuy+' frame belum ada buy_price, profit mungkin lebih tinggi dari aktual.' : null }},
+        { icon:'📊', label:'Overall Margin', val: margin+'%', color: margin>30?C.green:margin>15?C.amber:C.red,
+            badge: margin>30?{cls:'up',txt:'✓ Sehat'}:margin>15?{cls:'neu',txt:'⚡ Moderat'}:{cls:'down',txt:'⚠ Rendah'},
+            modal:{ title:'Overall Margin', desc:'Persentase laba bersih dari total revenue. Margin sehat untuk optik umumnya di atas 30%.', details:[
+                {label:'Overall margin', val: Math.round(s.totalProfit/Math.max(s.totalRevenue,1)*100)+'%'},
+                {label:'Avg margin per order', val: s.avgMargin+'%'},
+                {label:'Target sehat', val: '> 30%'},
+                {label:'Status', val: margin>30?'Sehat ✓':margin>15?'Moderat':'Rendah ⚠'},
+            ]}},
+        { icon:'🛒', label:'Avg Order Value', val: fmt(s.avgOrderValue), color: C.purple,
+            modal:{ title:'Avg Order Value', desc:'Rata-rata nilai transaksi per order yang selesai.', details:[
+                {label:'Avg order value', val: fmtFull2(s.avgOrderValue)},
+                {label:'Total orders', val: s.totalOrders+' order'},
+                {label:'Total revenue', val: fmtFull2(s.totalRevenue)},
+            ]}},
+        { icon:'⏱', label:'Avg Process Days', val: s.avgProcessDays+'d', color: C.teal,
+            badge: s.avgProcessDays<=5?{cls:'up',txt:'Cepat'}:s.avgProcessDays<=10?{cls:'neu',txt:'Normal'}:{cls:'down',txt:'Lambat'},
+            modal:{ title:'Avg Process Days', desc:'Rata-rata hari dari tanggal order (order_date) ke tanggal jadi (due_date).', details:[
+                {label:'Rata-rata proses', val: s.avgProcessDays+' hari'},
+                {label:'Target cepat', val: '≤ 5 hari'},
+                {label:'Status', val: s.avgProcessDays<=5?'Cepat ✓':s.avgProcessDays<=10?'Normal':'Lambat ⚠'},
+            ]}},
+        { icon:'👁', label:'High Myopia (≤0-6)', val: s.highMyopia, color: C.pink,
+            modal:{ title:'High Myopia', desc:'Jumlah pasien dengan nilai SPH rata-rata ≤ -6.00 (miopia tinggi). Pasien ini membutuhkan lensa khusus high-index.', details:[
+                {label:'Jumlah pasien high myopia', val: s.highMyopia+' pasien'},
+                {label:'Total pasien diperiksa', val: s.totalOrders+' order'},
+                {label:'Persentase', val: Math.round(s.highMyopia/Math.max(s.totalOrders,1)*100)+'%'},
+                {label:'Rekomendasi lensa', val: 'High-index 1.67 / Superblock'},
+            ]}},
+        { icon:'🔬', label:'Presbyopia (ADD)', val: s.presbyopia, color: C.purple,
+            modal:{ title:'Presbyopia', desc:'Jumlah pasien yang memiliki nilai ADD (penambahan untuk baca) — mengindikasikan presbyopia dan butuh lensa progresif atau kryptok.', details:[
+                {label:'Jumlah pasien presbyopia', val: s.presbyopia+' pasien'},
+                {label:'Total pasien diperiksa', val: s.totalOrders+' order'},
+                {label:'Persentase', val: Math.round(s.presbyopia/Math.max(s.totalOrders,1)*100)+'%'},
+                {label:'Rekomendasi lensa', val: 'Progressive / Kryptok / Flattop'},
+            ]}},
+        { icon:'✏️', label:'Rx Modified', val: s.rxModCount, color: C.amber,
+            modal:{ title:'Rx Modified', desc:'Jumlah kali resep dimodifikasi dari hasil pemeriksaan asli, tercatat di tabel prescription_modifications.', details:[
+                {label:'Total modifikasi resep', val: s.rxModCount+' kali'},
+                {label:'Order dengan flag is_modified', val: s.modifiedOrders+' order'},
+            ]}},
+        { icon:'🖼', label:'Frame Stock', val: s.totalFrameStock.toLocaleString('id-ID'), color: C.blue, clickable: true, stockModal: true },
+        { icon:'⚠️', label:'Frames No Cost', val: s.framesMissingBuy, color: s.framesMissingBuy>0?C.red:C.teal,
+            badge: s.framesMissingBuy>0?{cls:'down',txt:'Missing'}:{cls:'up',txt:'✓ OK'},
+            modal:{ title:'Frames No Cost', desc:'Frame di tabel frames_main yang belum memiliki buy_price (harga beli = 0 atau NULL). Ini menyebabkan perhitungan profit tidak akurat.', details:[
+                {label:'Frame tanpa buy_price', val: s.framesMissingBuy+' frame'},
+                {label:'Status profit', val: s.framesMissingBuy>0?'Tidak akurat ⚠':'Akurat ✓'},
+            ], warn: s.framesMissingBuy>0 ? 'Isi buy_price di halaman manajemen frame untuk akurasi profit.' : null }},
+        { icon:'🔄', label:'Resep Diubah', val: s.modifiedOrders, color: C.teal,
+            modal:{ title:'Order dengan Resep Diubah', desc:'Jumlah order yang memiliki flag is_modified = 1, artinya ukuran resep di order berbeda dari hasil pemeriksaan asli customer.', details:[
+                {label:'Order dimodifikasi', val: s.modifiedOrders+' order'},
+                {label:'Total order selesai', val: s.totalOrders+' order'},
+                {label:'Persentase', val: Math.round(s.modifiedOrders/Math.max(s.totalOrders,1)*100)+'%'},
+            ]}},
     ];
-    document.getElementById('sa-kpi-grid').innerHTML = kpis.map(k => {
-        var cls     = 'sa-kpi' + (k.clickable ? ' clickable' : '');
-        var onclick = k.clickable ? ' onclick="saStockModalOpen()"' : '';
+    // Store KPI data for modal reference
+    window._kpiData = { summary: s };
+
+    document.getElementById('sa-kpi-grid').innerHTML = kpis.map(function(k, idx) {
+        var hasClick = k.stockModal || k.modal;
+        var cls = 'sa-kpi' + (hasClick ? ' clickable' : '');
+        var onclick = k.stockModal
+            ? ' onclick="saStockModalOpen()"'
+            : k.modal
+                ? ' onclick="saKpiModalOpen('+idx+')"'
+                : '';
         return '<div class="'+cls+'" style="--kc:'+k.color+'"'+onclick+'>' +
             '<div class="sa-kpi-icon">'+k.icon+'</div>' +
             '<div class="sa-kpi-val '+(String(k.val).length>9?'sm':'')+'">'+k.val+'</div>' +
             '<div class="sa-kpi-label">'+k.label+'</div>' +
             (k.badge?'<div class="sa-badge '+k.badge.cls+'">'+k.badge.txt+'</div>':'') +
+            (hasClick?'<div style="font-size:.55rem;color:rgba(255,255,255,0.2);margin-top:2px;letter-spacing:.5px;">TAP FOR DETAIL</div>':'') +
             '</div>';
     }).join('');
+
+    // Store kpis for modal
+    window._kpiDefs = kpis;
 }
 
 // ── Monthly chart ────────────────────────────────────────────────
