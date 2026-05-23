@@ -1463,6 +1463,16 @@ function saToggleSection(id) {
     var header = body ? body.previousElementSibling : null;
     if (!body || !header) return;
     var isOpen = body.classList.contains('open');
+    // Close all other sections first
+    if (!isOpen) {
+        document.querySelectorAll('.sa-section-body.open').forEach(function(b) {
+            if (b.id !== id) {
+                b.classList.remove('open');
+                var h = b.previousElementSibling;
+                if (h) h.classList.remove('open');
+            }
+        });
+    }
     body.classList.toggle('open', !isOpen);
     header.classList.toggle('open', !isOpen);
 }
@@ -1624,7 +1634,7 @@ function saLoad() {
     var yr = document.getElementById('sa-filter-year')  ? document.getElementById('sa-filter-year').value  : '0';
     var mo = document.getElementById('sa-filter-month') ? document.getElementById('sa-filter-month').value : '0';
     var qs = 'ajax=1' + (yr!=='0'?'&year='+yr:'') + (mo!=='0'?'&month='+mo:'');
-    fetch('smart_analysis.php?' + qs)
+    fetch('bi_report.php?' + qs)
         .then(r => r.text())
         .then(txt => {
             var data;

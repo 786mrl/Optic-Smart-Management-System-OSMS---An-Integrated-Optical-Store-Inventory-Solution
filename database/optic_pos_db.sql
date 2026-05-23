@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: May 21, 2026 at 09:35 AM
+-- Generation Time: May 23, 2026 at 06:03 PM
 -- Server version: 10.1.38-MariaDB
 -- PHP Version: 7.3.2
 
@@ -68,23 +68,6 @@ CREATE TABLE `customer_examinations` (
   `need_near` tinyint(1) NOT NULL DEFAULT '0' COMMENT '1=Yes, 0=No — Kebutuhan jarak dekat'
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
---
--- Dumping data for table `customer_examinations`
---
-
-INSERT INTO `customer_examinations` (`id`, `examination_date`, `examination_code`, `customer_name`, `gender`, `age`, `symptoms`, `old_r_sph`, `old_r_cyl`, `old_r_ax`, `old_r_add`, `old_l_sph`, `old_l_cyl`, `old_l_ax`, `old_l_add`, `new_r_sph`, `new_r_cyl`, `new_r_ax`, `new_r_add`, `new_r_visus`, `new_l_sph`, `new_l_cyl`, `new_l_ax`, `new_l_add`, `new_l_visus`, `pd_dist`, `created_at`, `invoice_number`, `exam_notes`, `visual_habit`, `digital_usage`, `ucva_r`, `ucva_l`, `lens_modification`, `need_distance`, `need_intermediate`, `need_near`) VALUES
-(1, '2026-05-07', 'LZ/EC/001/V/2026', 'RAIS', 'MALE', 30, 'MYOPIA, ASTIGMATISM, HEADACHE', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '0.00', '-50', '-25', '75', '0.00', '20/20', '-25', '-25', '5', '0.00', '20/20', '62', '2026-05-07 03:30:53', '001', 'Lensa suka berembun', 3, 3, '20/50', '20/50', 1, 0, 0, 0),
-(2, '2026-05-08', 'LZ/EC/002/V/2026', 'RAIS', 'MALE', 30, 'MYOPIA, ASTIGMATISM, HEADACHE', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '0.00', '-50', '-25', '75', '0.00', '20/20', '-25', '0.00', '0', '0.00', '20/20', '62', '2026-05-08 04:02:35', '002', '', 3, 3, '20/50', '20/50', 0, 0, 0, 0),
-(3, '2026-05-21', 'LZ/EC/003/V/2026', 'NAINA', 'FEMALE', 22, 'MYOPIA', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '0.00', '-50', '0.00', '0', '0.00', '20/20', '-50', '0.00', '0', '0.00', '20/20', '62', '2026-05-21 06:33:05', '003', '', 1, 1, '20/50', '20/50', 0, 0, 0, 0),
-(7, '2026-05-21', 'LZ/EC/000-004/V/2026', 'IBNU', 'MALE', 29, 'DIRECT SALE', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '0.00', '20/20', '0.00', '0.00', '0', '0.00', '20/20', '62', '2026-05-21 06:54:27', '004', 'Direct sale — Lens from customer.', 1, 1, '20/20', '20/20', 0, 0, 0, 0),
-(9, '2026-05-21', 'LZ/EC/004/V/2026', 'ZAHRA', 'FEMALE', 21, 'MYOPIA, HEADACHE', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '0.00', '-50', '0.00', '0', '0.00', '20/20', '-25', '0.00', '0', '0.00', '20/20', '62', '2026-05-21 07:07:48', '005', '', 1, 3, '20/50', '20/50', 1, 0, 0, 0),
-(11, '2026-05-21', 'LZ/EC/000-006/V/2026', 'RIDWAN', 'FEMALE', 27, 'DIRECT SALE, HEADACHE', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '0.00', '-50', '0.00', '0', '0.00', '20/20', '-50', '0.00', '0', '0.00', '20/20', '62', '2026-05-21 07:20:05', '006', 'Direct sale — Lens from customer.', 3, 2, '20/20', '20/20', 0, 0, 0, 0),
-(12, '2026-05-21', 'LZ/EC/000-007/V/2026', 'IBNU', 'MALE', 40, 'DIRECT SALE', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '+1.00', '20/20', '0.00', '0.00', '0', '+1.00', '20/20', '62', '2026-05-21 07:29:35', '007', 'Direct sale — Lens from customer.', 1, 1, '20/20', '20/20', 0, 1, 0, 1),
-(13, '2026-05-21', 'LZ/EC/000-008/V/2026', 'IBNU', 'MALE', 40, 'DIRECT SALE', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '0.00', '20/20', '0.00', '0.00', '0', '0.00', '20/20', '62', '2026-05-21 07:32:22', '008', 'Direct sale — Lens from customer.', 1, 1, '20/20', '20/20', 0, 1, 0, 1),
-(14, '2026-05-21', 'LZ/EC/000-009/V/2026', 'IBNU', 'MALE', 45, 'DIRECT SALE', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '+1.00', '20/20', '0.00', '0.00', '0', '+1.00', '20/20', '62', '2026-05-21 07:33:30', '009', 'Direct sale — Lens from customer.', 1, 1, '20/20', '20/20', 0, 1, 0, 1),
-(15, '2026-05-21', 'LZ/EC/000-010/V/2026', 'IBNU', 'MALE', 45, 'DIRECT SALE', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '+1.50', '20/20', '0.00', '0.00', '0', '+1.50', '20/20', '62', '2026-05-21 07:34:20', '010', 'Direct sale — Lens from customer.', 1, 1, '20/20', '20/20', 0, 1, 1, 1),
-(16, '2026-05-21', 'LZ/EC/000-011/V/2026', 'IBNU', 'MALE', 45, 'DIRECT SALE', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '0.00', '20/20', '0.00', '0.00', '0', '0.00', '20/20', '62', '2026-05-21 07:34:36', '011', 'Direct sale — Lens from customer.', 1, 1, '20/20', '20/20', 0, 1, 0, 1);
-
 -- --------------------------------------------------------
 
 --
@@ -110,16 +93,6 @@ CREATE TABLE `customer_orders` (
   `packaging_cost` int(11) NOT NULL DEFAULT '19500'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Confirmed purchase orders — saved when operator clicks Yes Shopping';
 
---
--- Dumping data for table `customer_orders`
---
-
-INSERT INTO `customer_orders` (`id`, `customer_number`, `invoice_number`, `is_modified`, `frame_ufc`, `lens_name`, `customer_phone`, `customer_address`, `total_amount`, `amount_paid`, `order_date`, `due_date`, `order_status`, `created_at`, `updated_at`, `packaging_cost`) VALUES
-(1, '1/LZ-C/16.31/001/V/26', '001', 1, 'TAKEYAMA-TAKE700-52-15-140-col.4', 'SINGLE VISION — ONE-DRIVE', '+62 812 6764 6916', 'JL. APEL RAYA NO. 51', '700000.00', '300000.00', '2026-05-07', '2026-05-09', 5, '2026-05-07 03:32:39', '2026-05-20 14:37:55', 26500),
-(2, '2/LZ-C/16.32/002/V/26', '002', 0, '51-32-144+08/05+brenden', 'SINGLE VISION — ONE-DRIVE', '+62 812 6764 6916', NULL, '550000.00', '200000.00', '2026-05-08', '2026-05-10', 5, '2026-05-08 04:03:22', '2026-05-20 14:00:19', 26500),
-(3, '3/LZ-C/16.33/000/V/26', '004', 0, 'TAKEYAMA-TAKE700-52-15-140-col.4', NULL, '+62 812 6764 6916', 'JL. MANGGA RAYA', '200000.00', '150000.00', '2026-05-21', '2026-05-22', 1, '2026-05-21 06:59:54', '2026-05-21 06:59:54', 19500),
-(4, '4/LZ-C/16.34/004/V/26', '005', 1, '50-23-137+21/05+ladies', 'SINGLE VISION — SUPERBLOCK (STOCK) (3)', '+62 812 6764 6916', 'APEL', '500000.00', '200000.00', '2026-05-21', '2026-05-31', 1, '2026-05-21 07:09:38', '2026-05-21 07:09:38', 19500);
-
 -- --------------------------------------------------------
 
 --
@@ -135,14 +108,6 @@ CREATE TABLE `custom_frames` (
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `buy_price` decimal(12,2) NOT NULL DEFAULT '0.00'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Frame custom yang tidak ada di frames_main maupun frame_staging';
-
---
--- Dumping data for table `custom_frames`
---
-
-INSERT INTO `custom_frames` (`id`, `invoice_number`, `brand_key`, `sell_price`, `is_purchased`, `created_at`, `buy_price`) VALUES
-(1, '002', '51-32-144+08/05+brenden', '160000.00', 1, '2026-05-08 04:03:02', '33000.00'),
-(2, '005', '50-23-137+21/05+ladies', '220000.00', 1, '2026-05-21 07:09:02', '54000.00');
 
 -- --------------------------------------------------------
 
@@ -168,50 +133,6 @@ CREATE TABLE `frames_main` (
   `stock_age` enum('very old','old','new') DEFAULT NULL,
   `created_at` datetime DEFAULT NULL,
   `updated_at` datetime DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=latin1;
-
---
--- Dumping data for table `frames_main`
---
-
-INSERT INTO `frames_main` (`ufc`, `brand`, `frame_code`, `frame_size`, `color_code`, `material`, `lens_shape`, `structure`, `size_range`, `gender_category`, `buy_price`, `sell_price`, `price_secret_code`, `stock`, `stock_age`, `created_at`, `updated_at`) VALUES
-('BRENDEN-BR-3543-52-20-143-C1', 'BRENDEN', 'BR-3543', '52-20-143', 'C1', 'METAL', 'SQUARE', 'full-rim', 'medium', 'men', '36000.00', '165000.00', 'IH15LZ', 0, 'old', '2026-01-24 17:52:01', '2026-01-24 17:52:01'),
-('BVLGARI-1303-49-17-138-COL.4', 'BVLGARI', '1303', '49-17-138', 'COL.4', 'PLASTIC', 'WAYFARER', 'full-rim', 'small', 'unisex', '68000.00', '330000.00', 'K30LZ', 1, 'very old', '2026-01-24 17:50:04', '2026-01-24 17:50:04'),
-('BVLGARI-1376-50-23-137-COL.7', 'BVLGARI', '1376', '50-23-137', 'COL.7', 'TR90', 'WAYFARER', 'rimless', 'large', 'female', '58000.00', '265000.00', 'JH15LZ', 1, 'very old', '2026-01-23 16:50:03', '2026-01-23 16:50:03'),
-('CEVIRO-lz-786-00-00-786-col.1', 'CEVIRO', 'lz-786', '00-00-786', 'col.1', 'METAL', 'Aviator', 'full-rim', 'medium', 'unisex', '30000.00', '135000.00', 'I35LZ', 0, 'new', '2026-01-21 21:50:31', '2026-01-21 21:50:31'),
-('CHANEL-58472-52-16-145-c5', 'CHANEL', '58472', '52-16-145', 'c5', 'PRC', 'AVIATOR', 'semi-rimless', 'medium', 'unisex', '45000.00', '205000.00', 'J05LZ', 10, 'new', '2026-01-21 21:50:31', '2026-01-22 14:16:40'),
-('DIOR-AT1021-50-20-150-C6', 'DIOR', 'AT1021', '50-20-150', 'C6', 'PLASTIC', 'RECTANGLE', 'full-rim', 'medium', 'unisex', '30000.00', '135000.00', 'I35LZ', 1, 'old', '2026-01-22 17:32:06', '2026-01-22 17:32:06'),
-('EYEWEAR-TAKE648-52-16-145-COL.MBLK', 'EYE WEAR', 'TAKE 648', '52-16-145', 'COL. MBLK', 'TR', 'CAT-EYE', 'semi-rimless', 'medium', 'men', '78000.00', '390000.00', 'KH40LZ', 1, 'old', '2026-01-23 17:01:48', '2026-01-23 17:01:48'),
-('GNA-G083543-52-20-143-COL.9', 'GNA', 'G08 3543', '52-20-143', 'COL.9', 'B TITANIUM', 'SQUARE', 'full-rim', 'medium', 'unisex', '105000.00', '665000.00', 'NH15LZ', 0, 'old', '2026-01-22 14:16:40', '2026-01-22 14:16:40'),
-('HANSHA-9384-50-22-143-C08', 'HAN SHA', '9384', '50-22-143', 'C08', 'PLASTIC', 'ROUND', 'full-rim', 'medium', 'unisex', '38000.00', '175000.00', 'IH25LZ', 1, 'very old', '2026-01-22 17:32:06', '2026-01-22 17:32:06'),
-('HUMANSKULL-H1520-45-23-140-C2', 'HUMAN SKULL', 'H1520', '45-23-140', 'C2', 'PLASTIC', 'Oval', 'full-rim', 'medium', 'female', '38000.00', '175000.00', 'IH25LZ', 6, 'new', '2026-01-21 21:50:31', '2026-01-21 22:21:15'),
-('MARTINJOY-23235-48-22-143-COL.02', 'MARTIN JOY', '23235', '48-22-143', 'COL. 02', 'PLASTIC', 'ROUND', 'full-rim', 'medium', 'men', '59000.00', '270000.00', 'JH20LZ', 1, 'old', '2026-01-22 17:32:06', '2026-01-22 17:32:06'),
-('MARXSTUDIO-Mstm-161-50-18-C5', 'MARX STUDIO', 'Mst m-161', '50-18', 'C5', 'PLASTIC', 'Square', 'full-rim', 'medium', 'unisex', '105000.00', '630000.00', 'MI30LZ', 1, 'new', '2026-01-21 21:50:31', '2026-01-21 21:50:31'),
-('MISSMAGDA-2518-52-20-142-COL.10', 'MISS MAGDA', '2518', '52-20-142', 'COL.10', 'METAL', 'SQUARE', 'full-rim', 'medium', 'men', '38000.00', '175000.00', 'IH25LZ', 1, 'new', '2026-01-22 17:32:06', '2026-01-22 17:32:06'),
-('MISSMAGDA-m99-19-51-18-145-C6', 'MISSMAGDA', 'M99-19', '51-18-145', 'c6', 'METAL', 'SQUARE', 'full-rim', 'medium', 'unisex', '35000.00', '160000.00', 'IH10LZ', 2, 'new', '2026-01-21 21:50:31', '2026-01-21 21:50:31'),
-('PLAYKIDS-T181250-47-17-125-M.BLK', 'PLAY KIDS', 'T18 1250', '47-17-125', 'M.BLK', 'PLASTIC', 'ROUND', 'full-rim', 'small', 'unisex', '38000.00', '175000.00', 'IH25LZ', 1, 'very old', '2026-01-22 17:32:06', '2026-01-22 17:32:06'),
-('PORSCHEDESIGN-OR7294-52-18-140-C5', 'PORSCHE DESIGN', 'OR 7294', '52-18-140', 'C5', 'METAL', 'SQUARE', 'semi-rimless', 'medium', 'men', '58000.00', '265000.00', 'JH15LZ', 1, 'old', '2026-01-24 19:51:00', '2026-01-24 19:51:00'),
-('PORSCHEDESIGN-Pd8517-57-16-140-col.8', 'PORSCHE DESIGN', 'Pd8517', '57-16-140', 'col.8', 'TITANIUM', 'SQUARE', 'semi-rimless', 'medium', 'female', '56000.00', '255000.00', 'JH05LZ', 1, 'old', '2026-01-22 14:16:40', '2026-01-22 14:16:40'),
-('RAIS-Umi-786-00-00-786-C1', 'RAIS', 'Umi-786', '00-00-786', 'C1', 'METAL', 'SQUARE', 'full-rim', 'medium', 'unisex', '120000.00', '760000.00', 'NIH10LZ', 1, 'new', '2026-01-21 21:50:31', '2026-01-21 21:50:31'),
-('REDSMART-RS16062-50-18-138-COL.12', 'RED SMART', 'RS16062', '50-18-138', 'COL.12', 'METAL', 'OVAL', 'full-rim', 'medium', 'unisex', '36000.00', '165000.00', 'IH15LZ', 1, 'new', '2026-01-22 17:32:06', '2026-01-22 17:32:06'),
-('SOOPER-5004-53-17-139-COL.11', 'SOOPER', '5004', '53-17-139', 'COL.11', 'PLASTIC', 'BUTTERFLY', 'full-rim', 'medium', 'female', '36000.00', '165000.00', 'IH15LZ', 1, 'new', '2026-01-22 17:32:06', '2026-01-22 17:32:06'),
-('SWAROVSKI-1515-50-17-138-COL.4', 'SWAROVSKI', '1515', '50-17-138', 'COL.4', 'PLASTIC', 'OVAL', 'full-rim', 'medium', 'unisex', '62000.00', '300000.00', 'K00LZ', 2, 'very old', '2026-01-22 17:32:06', '2026-01-22 17:32:06'),
-('TAKEYAMA-TAKE648-52-15-140-C4', 'TAKEYAMA', 'TAKE 648', '52-15-140', 'C4', 'METAL', 'BUTTERFLY', 'full-rim', 'medium', 'female', '36000.00', '165000.00', 'IH15LZ', 0, 'old', '2026-01-24 19:05:48', '2026-01-24 19:05:48'),
-('TAKEYAMA-TAKE648-52-15-140-C5', 'TAKEYAMA', 'TAKE 648', '52-15-140', 'C5', 'OPTYL', 'OVAL', 'semi-rimless', 'medium', 'unisex', '38000.00', '175000.00', 'IH25LZ', 2, 'old', '2026-01-23 17:01:48', '2026-01-23 17:01:48'),
-('TAKEYAMA-TAKE700-52-15-140-col.4', 'TAKEYAMA', 'TAKE 700', '52-15-140', 'col.4', 'METAL', 'SQUARE', 'semi-rimless', 'medium', 'female', '45000.00', '205000.00', 'IH15LZ', 3, 'old', '2026-01-21 21:50:31', '2026-01-21 22:16:08'),
-('Z-GENERATION-ZG-437235-53-17-148-C16', 'Z-GENERATION', 'ZG-437235', '53-17-148', 'C16', 'METAL', 'GEOMETRIC', 'full-rim', 'medium', 'female', '58000.00', '265000.00', 'JH15LZ', 3, 'very old', '2026-01-24 19:51:00', '2026-01-24 19:51:00');
-
--- --------------------------------------------------------
-
---
--- Table structure for table `frame_sales`
---
-
-CREATE TABLE `frame_sales` (
-  `id` int(11) NOT NULL,
-  `ufc` varchar(100) DEFAULT NULL,
-  `customer_code` varchar(30) DEFAULT NULL,
-  `sale_date` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 -- --------------------------------------------------------
@@ -240,21 +161,6 @@ CREATE TABLE `frame_staging` (
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
---
--- Dumping data for table `frame_staging`
---
-
-INSERT INTO `frame_staging` (`ufc`, `brand`, `frame_code`, `frame_size`, `color_code`, `material`, `lens_shape`, `structure`, `size_range`, `gender_category`, `buy_price`, `sell_price`, `price_secret_code`, `stock`, `stock_age`, `created_at`, `updated_at`) VALUES
-('ELEGANT-EG-9069-52-19-140-C6', 'ELEGANT', 'EG-9069', '52-19-140', 'C6', 'METAL-PLASTIC', 'CAT-EYE', 'full-rim', 'medium', 'female', '50000.00', '225000.00', 'J25LZ', 1, 'very old', '2026-03-29 12:26:10', '2026-03-29 12:26:10'),
-('EYEWEAR-TAKE700-52-16-145-COL.6', 'EYE WEAR', 'TAKE 700', '52-16-145', 'COL.6', 'METAL-PLASTIC', 'SQUARE', 'semi-rimless', 'medium', 'female', '36000.00', '165000.00', 'IH15LZ', 5, 'old', '2026-01-26 14:07:35', '2026-02-25 12:12:36'),
-('KELLYS-03-52-17-142-COL.16', 'KELLYS', '03', '52-17-142', 'COL.16', 'METAL', 'WAYFARER', 'full-rim', 'medium', 'female', '45000.00', '205000.00', 'J05LZ', 1, 'very old', '2026-03-29 12:27:21', '2026-03-29 12:27:21'),
-('KERASTATE-W156000-52-19-142-COL.13', 'KERASTATE', 'W15 6000', '52-19-142', 'COL.13', 'TR90', 'GEOMETRIC', 'full-rim', 'large', 'female', '80000.00', '400000.00', 'L00LZ', 1, 'new', '2026-03-29 12:20:16', '2026-03-29 12:20:16'),
-('KERASTATE-W156002-51-17-142-COL.15', 'KERASTATE', 'W15 6002', '51-17-142', 'COL.15', 'TR90', 'ROUND', 'full-rim', 'large', 'female', '80000.00', '400000.00', 'L00LZ', 1, 'new', '2026-03-29 12:23:02', '2026-03-29 12:23:02'),
-('MAXUYA-MAT8875-51-19-145-C4', 'MAXUYA', 'MAT8875', '51-19-145', 'C4', 'METAL', 'GEOMETRIC', 'full-rim', 'medium', 'female', '60000.00', '290000.00', 'JH40LZ', 1, 'very old', '2026-03-29 12:28:17', '2026-03-29 12:28:17'),
-('MIABELLOS-MB-2809-52-19-144-C3', 'MIA BELLOS', 'MB-2809', '52-19-144', 'C3', 'METAL-PLASTIC', 'BUTTERFLY', 'full-rim', 'large', 'female', '86000.00', '430000.00', 'L30LZ', 1, 'old', '2026-03-29 12:24:24', '2026-03-29 12:24:24'),
-('ROSALITE-JL2251-52-16-145-COL.14', 'ROSALITE', 'JL 2251', '52-16-145', 'COL.14', 'METAL', 'BUTTERFLY', 'full-rim', 'medium', 'female', '65000.00', '315000.00', 'K15LZ', 1, 'new', '2026-03-29 12:21:56', '2026-03-29 12:21:56'),
-('SAMEIR-18060-50-20-148-C5', 'SAMEIR', '18060', '50-20-148', 'C5', 'PLASTIC', 'ROUND', 'full-rim', 'large', 'female', '55000.00', '250000.00', 'JH00LZ', 1, 'old', '2026-03-29 12:25:10', '2026-03-29 12:25:10');
-
 -- --------------------------------------------------------
 
 --
@@ -274,14 +180,6 @@ CREATE TABLE `prescription_modifications` (
   `os_add` varchar(10) DEFAULT NULL,
   `modified_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
-
---
--- Dumping data for table `prescription_modifications`
---
-
-INSERT INTO `prescription_modifications` (`modification_id`, `invoice_number`, `od_sph`, `od_cyl`, `od_axis`, `od_add`, `os_sph`, `os_cyl`, `os_axis`, `os_add`, `modified_at`) VALUES
-(1, '001', '-50', '-25', '75', '0.00', '-25', '-50', '5', '0.00', '2026-05-07 03:31:18'),
-(3, '005', '-50', '0.00', '0', '0.00', '-50', '0.00', '0', '0.00', '2026-05-21 07:08:18');
 
 -- --------------------------------------------------------
 
@@ -380,13 +278,6 @@ ALTER TABLE `frames_main`
   ADD PRIMARY KEY (`ufc`);
 
 --
--- Indexes for table `frame_sales`
---
-ALTER TABLE `frame_sales`
-  ADD PRIMARY KEY (`id`),
-  ADD KEY `ufc` (`ufc`);
-
---
 -- Indexes for table `frame_staging`
 --
 ALTER TABLE `frame_staging`
@@ -420,31 +311,25 @@ ALTER TABLE `users`
 -- AUTO_INCREMENT for table `customer_examinations`
 --
 ALTER TABLE `customer_examinations`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=17;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT for table `customer_orders`
 --
 ALTER TABLE `customer_orders`
-  MODIFY `id` int(11) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
+  MODIFY `id` int(11) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT for table `custom_frames`
 --
 ALTER TABLE `custom_frames`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
-
---
--- AUTO_INCREMENT for table `frame_sales`
---
-ALTER TABLE `frame_sales`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT for table `prescription_modifications`
 --
 ALTER TABLE `prescription_modifications`
-  MODIFY `modification_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+  MODIFY `modification_id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT for table `users`
@@ -455,12 +340,6 @@ ALTER TABLE `users`
 --
 -- Constraints for dumped tables
 --
-
---
--- Constraints for table `frame_sales`
---
-ALTER TABLE `frame_sales`
-  ADD CONSTRAINT `frame_sales_ibfk_1` FOREIGN KEY (`ufc`) REFERENCES `frames_main` (`ufc`);
 
 --
 -- Constraints for table `prescription_modifications`
