@@ -49,7 +49,7 @@ $STORE_NAME = $GLOBALS['SYSTEM_CONFIG']['store_name'] ?? 'LENZA OPTIC';
 $BRAND_IMAGE_PATH = $GLOBALS['SYSTEM_CONFIG']['brand_image_location'] ?? 'image/brand_image.png';
 $STORE_ADDRESS = $GLOBALS['SYSTEM_CONFIG']['store_address'] ?? 'Default Store Address'; // NEW: Store Address
 $COPYRIGHT_FOOTER = $GLOBALS['SYSTEM_CONFIG']['copyright_footer'] ?? '&copy; 2026 Optical Store POS'; // NEW: Add this
-define('GEMINI_API_KEY', 'AIzaSyAnPVeqt_SzFxC3kthdLQwiNqL9hceGmQQ');
+define('GEMINI_API_KEY', 'AIzaSyAk6hcNpnlq8Pb3YNb6GKtsKtyfaQmBPL4');
 
 // Note: Ensure the connection is closed in the main file (e.g., index.php)
 ?>
