@@ -63,12 +63,6 @@
                             Purchase History
                             <div class="led"></div>
                         </button>
-
-                        <button class="neu-button" data-url="smart_analysis.php" onclick="handleButtonClick(this)">
-                            <span class="icon">💡</span>
-                            Smart Analysis
-                            <div class="led"></div>
-                        </button>
                     <?php endif; ?>
                 
                     <?php if ($role === 'staff'): ?>
