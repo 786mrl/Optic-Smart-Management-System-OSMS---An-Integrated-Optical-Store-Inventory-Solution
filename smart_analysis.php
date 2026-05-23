@@ -1331,7 +1331,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
                 </div>
             </div>
             <div style="background:rgba(0,207,255,0.05);border-radius:12px;padding:12px 14px;border:1px solid rgba(0,207,255,0.15);">
-                <div style="font-size:.7rem;color:var(--sa-blue);line-height:1.6;">&#9432; <strong>Catatan:</strong> Akurasi COGS bergantung pada kelengkapan data buy_price di tabel frame. Frame tanpa buy_price dihitung sebagai IDR 0.</div>
+                <div style="font-size:.7rem;color:var(--sa-blue);line-height:1.6;">&#9432; <strong>Note:</strong> Akurasi COGS bergantung pada kelengkapan data buy_price di tabel frame. Frame tanpa buy_price dihitung sebagai IDR 0.</div>
             </div>
         </div>
     </div>
@@ -1532,7 +1532,7 @@ function saRenderModalBars(listId, dataObj, color) {
         .filter(function(e){ return e[1] > 0; })
         .sort(function(a,b){ return b[1]-a[1]; });
     if (!entries.length) {
-        el.innerHTML = '<div style="font-size:.72rem;color:var(--text-muted);font-style:italic;">Tidak ada frame untuk filter ini.</div>';
+        el.innerHTML = '<div style="font-size:.72rem;color:var(--text-muted);font-style:italic;">No frames match this filter.</div>';
         return;
     }
     var mx = entries[0][1];
@@ -1708,7 +1708,7 @@ function renderTopAlerts(d) {
     if (s.pendingFrameCount > 0)
         html += `<div class="sa-alert amber" style="margin-bottom:10px;">⚠️ <strong>${s.pendingFrameCount}</strong> frame tanpa buy_price — profit calculation mungkin kurang akurat.</div>`;
     if (s.stagingCount > 0)
-        html += `<div class="sa-alert amber" style="margin-bottom:10px;">📦 <strong>${s.stagingCount}</strong> frame masih di staging (belum masuk frames_main).</div>`;
+        html += `<div class="sa-alert amber" style="margin-bottom:10px;">📦 <strong>${s.stagingCount}</strong> frames still in staging (not yet in frames_main).</div>`;
     document.getElementById('sa-top-alerts').innerHTML = html;
 }
 
@@ -1740,7 +1740,7 @@ function renderKPIs(d) {
                 {label:'Overall margin', val: Math.round(s.totalProfit/Math.max(s.totalRevenue,1)*100)+'%'},
             ], warn: s.framesMissingBuy>0 ? s.framesMissingBuy+' frame(s) missing buy_price — profit figures may be understated.' : null }},
         { icon:'📊', label:'Overall Margin', val: margin+'%', color: margin>30?C.green:margin>15?C.amber:C.red,
-            badge: margin>30?{cls:'up',txt:'✓ Sehat'}:margin>15?{cls:'neu',txt:'⚡ Moderat'}:{cls:'down',txt:'⚠ Rendah'},
+            badge: margin>30?{cls:'up',txt:'✓ Healthy'}:margin>15?{cls:'neu',txt:'⚡ Moderate'}:{cls:'down',txt:'⚠ Low'},
             modal:{ title:'Overall Margin', desc:'Net profit percentage from total revenue. A healthy margin for optics is above 30%.', details:[
                 {label:'Overall margin', val: Math.round(s.totalProfit/Math.max(s.totalRevenue,1)*100)+'%'},
                 {label:'Avg margin per order', val: s.avgMargin+'%'},
@@ -1774,9 +1774,9 @@ function renderKPIs(d) {
                 {label:'Percentage', val: Math.round(s.presbyopia/Math.max(s.totalOrders,1)*100)+'%'},
                 {label:'Lens recommendation', val: 'Progressive / Kryptok / Flattop'},
             ]}},
-        { icon:'✏️', label:'Rx Diubah (Log)', val: s.rxModCount, color: C.amber,
+        { icon:'✏️', label:'Rx Modified (Log)', val: s.rxModCount, color: C.amber,
             modal:{ title:'Rx Modified', desc:'Number of times prescriptions were modified from original exam results, recorded in prescription_modifications.', details:[
-                {label:'Total rx modifications', val: s.rxModCount+' kali'},
+                {label:'Total rx modifications', val: s.rxModCount+' times'},
                 {label:'Orders with is_modified flag', val: s.modifiedOrders+' order'},
             ]}},
         { icon:'🖼', label:'Frame Stock', val: s.totalFrameStock.toLocaleString('id-ID'), color: C.blue, clickable: true, stockModal: true },
@@ -1786,8 +1786,8 @@ function renderKPIs(d) {
                 {label:'Frames without buy_price', val: s.framesMissingBuy+' frame'},
                 {label:'Profit accuracy', val: s.framesMissingBuy>0?'Inaccurate ⚠':'Accurate ✓'},
             ], warn: s.framesMissingBuy>0 ? 'Isi buy_price di halaman manajemen frame untuk akurasi profit.' : null }},
-        { icon:'🔄', label:'Order Dimodifikasi', val: s.modifiedOrders, color: C.teal,
-            modal:{ title:'Order dengan Resep Diubah', desc:'Orders with is_modified = 1, meaning the prescription in the order differs from the original exam result.', details:[
+        { icon:'🔄', label:'Modified Orders', val: s.modifiedOrders, color: C.teal,
+            modal:{ title:'Orders with Modified Rx', desc:'Orders with is_modified = 1, meaning the prescription in the order differs from the original exam result.', details:[
                 {label:'Modified orders', val: s.modifiedOrders+' order'},
                 {label:'Total completed orders', val: s.totalOrders+' order'},
                 {label:'Percentage', val: Math.round(s.modifiedOrders/Math.max(s.totalOrders,1)*100)+'%'},
@@ -1967,19 +1967,19 @@ function renderTopLenses(d) {
         hdr.textContent = cat.label;
         card.appendChild(hdr);
 
-        // Jenis lensa sub-label
+        // Lens type sub-label
         var lbl1 = document.createElement('div');
         lbl1.className = 'sa-card-title';
         lbl1.style.marginBottom = '8px';
         lbl1.textContent = 'Lens Type';
         card.appendChild(lbl1);
 
-        // Jenis lensa list
+        // Lens type list
         var lensDiv = document.createElement('div');
         lensDiv.id = 'sa-lens-' + cat.key + '-type';
         card.appendChild(lensDiv);
 
-        // Ukuran sub-label
+        // Size sub-label
         var lbl2 = document.createElement('div');
         lbl2.className = 'sa-card-title';
         lbl2.style.marginTop = '16px';
@@ -1987,7 +1987,7 @@ function renderTopLenses(d) {
         lbl2.textContent = 'Purchased Size (SPH & CYL)';
         card.appendChild(lbl2);
 
-        // Ukuran list
+        // Size list
         var rxDiv = document.createElement('div');
         rxDiv.id = 'sa-lens-' + cat.key + '-rx';
         card.appendChild(rxDiv);
@@ -2004,7 +2004,7 @@ function renderTopLenses(d) {
             rxDiv.innerHTML = '<div style="font-size:.72rem;color:var(--text-muted);font-style:italic;">'
                 + (rxAll.length === 0
                     ? 'No orders for ' + cat.label + ' yet.'
-                    : 'All sizes are unique — no 2 customers share the same prescription.')
+                    : 'All sizes unique — no 2 customers share the same rx.')
                 + '</div>';
         } else {
             makeExpandList('sa-lens-' + cat.key + '-rx', rxEntries, cat.color, function(e) {
@@ -2130,9 +2130,9 @@ function renderProfitability(d) {
     });
     const avgM = d.summary.avgMargin;
     const pills = [];
-    if (avgM < 20)  pills.push({txt:'⚠ Rata-rata margin rendah ('+avgM+'%)', cls:'down'});
-    if (avgM >= 35) pills.push({txt:'✓ Margin sehat ('+avgM+'%)', cls:'up'});
-    if (d.summary.modifiedOrders > 0) pills.push({txt:'✏ '+d.summary.modifiedOrders+' order resepnya diubah', cls:'neu'});
+    if (avgM < 20)  pills.push({txt:'⚠ Avg margin is low ('+avgM+'%)', cls:'down'});
+    if (avgM >= 35) pills.push({txt:'✓ Margin is healthy ('+avgM+'%)', cls:'up'});
+    if (d.summary.modifiedOrders > 0) pills.push({txt:'✏ '+d.summary.modifiedOrders+' order(s) had rx modified', cls:'neu'});
     document.getElementById('sa-margin-pills').innerHTML = pills.map(p=>`<span class="sa-badge ${p.cls}" style="padding:4px 10px;">${p.txt}</span>`).join('');
 }
 
@@ -2389,16 +2389,16 @@ function renderDataAlerts(d) {
     let html = '';
     if (d.pendingFrames && d.pendingFrames.length > 0) {
         html += `<div class="sa-alert amber" style="flex-direction:column;align-items:flex-start;gap:8px;margin-bottom:10px;">
-            <div>⚠️ <strong>${d.pendingFrames.length}</strong> frame di <code>frames_main</code> tidak punya buy_price:</div>
+            <div>⚠️ <strong>${d.pendingFrames.length}</strong> frames in <code>frames_main</code> without buy_price:</div>
             <div style="display:flex;flex-wrap:wrap;gap:6px;">${d.pendingFrames.map(f=>`<span class="sa-pill">${f.ufc}</span>`).join('')}</div>
         </div>`;
     }
     if (s.stagingCount > 0)
-        html += `<div class="sa-alert amber" style="margin-bottom:10px;">📦 <strong>${s.stagingCount}</strong> frame di <code>frame_staging</code> belum dipindah ke <code>frames_main</code>.</div>`;
+        html += `<div class="sa-alert amber" style="margin-bottom:10px;">📦 <strong>${s.stagingCount}</strong> frames in <code>frame_staging</code> not yet moved to <code>frames_main</code>.</div>`;
     if (s.rxModCount > 0)
-        html += `<div class="sa-alert blue" style="margin-bottom:10px;">🔬 Total <strong>${s.rxModCount}</strong> resep telah dimodifikasi dari hasil pemeriksaan asli (tercatat di prescription_modifications).</div>`;
+        html += `<div class="sa-alert blue" style="margin-bottom:10px;">🔬 Total <strong>${s.rxModCount}</strong> prescriptions have been modified from original exam results (logged in prescription_modifications).</div>`;
     if (s.modifiedOrders > 0)
-        html += `<div class="sa-alert" style="background:rgba(170,136,255,0.07);border-color:rgba(170,136,255,0.2);color:var(--sa-purple);margin-bottom:10px;">✏️ <strong>${s.modifiedOrders}</strong> order memiliki flag <code>is_modified = 1</code> pada customer_orders.</div>`;
+        html += `<div class="sa-alert" style="background:rgba(170,136,255,0.07);border-color:rgba(170,136,255,0.2);color:var(--sa-purple);margin-bottom:10px;">✏️ <strong>${s.modifiedOrders}</strong> orders have <code>is_modified = 1</code> flag in customer_orders.</div>`;
     if (!html) html = '<div class="sa-alert green">✅ No data quality alerts found.</div>';
     document.getElementById('sa-data-alerts').innerHTML = html;
 }
