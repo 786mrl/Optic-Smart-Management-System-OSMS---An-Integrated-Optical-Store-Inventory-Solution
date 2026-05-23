@@ -9,7 +9,23 @@ if (!isset($_SESSION['user_id'])) { header("Location: index.php"); exit(); }
 //  AJAX: Return all analysis data as JSON
 // ══════════════════════════════════════════════════════════════════
 if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
+    error_reporting(0);
+    ob_start();
     header('Content-Type: application/json');
+
+    // Date filter - safely parse params
+    $filterYear  = (isset($_GET['year'])  && ctype_digit(strval($_GET['year']))  && (int)$_GET['year']  > 2000) ? (int)$_GET['year']  : 0;
+    $filterMonth = (isset($_GET['month']) && ctype_digit(strval($_GET['month'])) && (int)$_GET['month'] >= 1 && (int)$_GET['month'] <= 12) ? (int)$_GET['month'] : 0;
+    $dateWhere = '';
+    if ($filterYear > 0 && $filterMonth > 0)
+        $dateWhere = " AND YEAR(co.order_date)=" . $filterYear . " AND MONTH(co.order_date)=" . $filterMonth;
+    elseif ($filterYear > 0)
+        $dateWhere = " AND YEAR(co.order_date)=" . $filterYear;
+
+    // Available years for dropdown
+    $availableYears = [];
+    $ry = $conn->query("SELECT DISTINCT YEAR(order_date) AS yr FROM customer_orders WHERE order_status=5 ORDER BY yr DESC");
+    if ($ry) { while ($row=$ry->fetch_assoc()) { $availableYears[]=(int)$row['yr']; } $ry->free(); }
 
     // ── Lens cost map ──────────────────────────────────────────────
     $lensJsonPath = __DIR__ . '/data_json/lense_prices.json';
@@ -55,7 +71,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
         FROM customer_orders co
         LEFT JOIN customer_examinations ce
             ON co.invoice_number = ce.invoice_number AND co.invoice_number != '00'
-        WHERE co.order_status = 5
+        WHERE co.order_status = 5$dateWhere
         ORDER BY co.order_date ASC
     ";
     $result = $conn->query($sql);
@@ -457,6 +473,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
     $lastMonthRev   = $monthlyData[$lastYM]['revenue'] ?? 0;
     $momChange      = $lastMonthRev > 0 ? round(($thisMonthRev-$lastMonthRev)/$lastMonthRev*100,1) : null;
 
+    ob_clean();
     echo json_encode([
         'summary' => [
             'totalOrders'     => $totalOrders,
@@ -478,6 +495,8 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
             'totalFrameStock' => $totalFrameStock,
             'framesMissingBuy'=> $framesMissingBuy,
         ],
+        'availableYears' => $availableYears,
+        'activeFilter'   => ['year'=>$filterYear,'month'=>$filterMonth],
         'monthly'        => array_values($monthlyData),
         'topLenses'      => $topLenses,
         'lensCatOut'     => $lensCatOut,
@@ -814,6 +833,25 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
             </div>
 
             <!-- Top alerts -->
+            <!-- Global date filter bar -->
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px;padding:12px 18px;background:var(--bg-color);border-radius:16px;box-shadow:6px 6px 14px var(--shadow-dark),-6px -6px 14px var(--shadow-light);border:1px solid rgba(255,255,255,0.04);">
+                <span style="font-size:.63rem;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--text-muted);white-space:nowrap;">&#128197; Filter Periode</span>
+                <select id="sa-filter-year" class="sa-mselect" style="width:130px;" onchange="saFilterChange()">
+                    <option value="0">Semua Tahun</option>
+                </select>
+                <select id="sa-filter-month" class="sa-mselect" style="width:150px;" onchange="saFilterChange()">
+                    <option value="0">Semua Bulan</option>
+                    <option value="1">Januari</option><option value="2">Februari</option>
+                    <option value="3">Maret</option><option value="4">April</option>
+                    <option value="5">Mei</option><option value="6">Juni</option>
+                    <option value="7">Juli</option><option value="8">Agustus</option>
+                    <option value="9">September</option><option value="10">Oktober</option>
+                    <option value="11">November</option><option value="12">Desember</option>
+                </select>
+                <div id="sa-filter-badge" style="display:none;background:rgba(0,207,255,0.1);border:1px solid rgba(0,207,255,0.3);border-radius:20px;padding:4px 12px;font-size:.68rem;font-weight:700;color:var(--sa-blue);"></div>
+                <button id="sa-filter-reset" style="display:none;background:none;border:1px solid rgba(255,107,107,0.25);border-radius:20px;color:var(--sa-red);font-size:.68rem;font-weight:700;padding:5px 12px;cursor:pointer;font-family:inherit;" onclick="saFilterReset()">&#10005; Reset Filter</button>
+            </div>
+
             <div id="sa-top-alerts"></div>
 
             <!-- ══ KPIs ══════════════════════════════════════════ -->
@@ -824,7 +862,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
             <div class="sa-section-title">📈 Revenue & Profit Trend</div>
             <div class="sa-card">
                 <div class="sa-card-title">Monthly Revenue · COGS · Net Profit (last 18 months)</div>
-                <div class="sa-chart-wrap" style="height:220px;"><canvas id="ch-monthly"></canvas></div>
+                <div class="sa-chart-wrap" data-chart="monthly" style="height:220px;"><canvas id="ch-monthly"></canvas></div>
             </div>
 
             <!-- ══ PRODUCT MIX ════════════════════════════════════ -->
@@ -1103,6 +1141,20 @@ Chart.defaults.font.size = 11;
 
 const _charts = {};
 function killChart(id) { if (_charts[id]) { _charts[id].destroy(); delete _charts[id]; } }
+
+function saGetCtx(canvasId) {
+    var el = document.getElementById(canvasId);
+    if (!el) {
+        // Canvas might have been replaced — try to restore from parent
+        // Find wrapper by data-canvas attr
+        var wrap = document.querySelector('[data-canvas="'+canvasId+'"]');
+        if (wrap) {
+            wrap.innerHTML = '<canvas id="'+canvasId+'"></canvas>';
+            el = document.getElementById(canvasId);
+        }
+    }
+    return el ? el.getContext('2d') : null;
+}
 function fmt(n)     { n=Math.abs(n); if(n>=1e9)return'IDR '+(n/1e9).toFixed(1)+'M'; if(n>=1e6)return'IDR '+(n/1e6).toFixed(1)+'jt'; if(n>=1e3)return'IDR '+Math.round(n/1e3)+'rb'; return'IDR '+n.toLocaleString('id-ID'); }
 function fmtFull(n) { return (n<0?'−':'')+'IDR '+Math.abs(n).toLocaleString('id-ID'); }
 
@@ -1116,6 +1168,16 @@ function saTab(btn, id) {
 }
 
 // ── Main load ───────────────────────────────────────────────────
+function saFilterChange() { saLoad(); }
+
+function saFilterReset() {
+    var yr = document.getElementById('sa-filter-year');
+    var mo = document.getElementById('sa-filter-month');
+    if (yr) yr.value = '0';
+    if (mo) mo.value = '0';
+    saLoad();
+}
+
 function saKpiModalClose(e, force) {
     if (force || (e && e.target === document.getElementById('sa-kpi-modal-overlay'))) {
         document.getElementById('sa-kpi-modal-overlay').style.display = 'none';
@@ -1257,10 +1319,13 @@ function saStockModalOpen() {
 }
 
 function saLoad() {
-    const btn = document.getElementById('sa-reload-btn');
+    var btn = document.getElementById('sa-reload-btn');
     btn.disabled = true; btn.textContent = '⟳ Loading…';
     document.getElementById('sa-loading').classList.remove('hidden');
-    fetch('smart_analysis.php?ajax=1')
+    var yr = document.getElementById('sa-filter-year')  ? document.getElementById('sa-filter-year').value  : '0';
+    var mo = document.getElementById('sa-filter-month') ? document.getElementById('sa-filter-month').value : '0';
+    var qs = 'ajax=1' + (yr!=='0'?'&year='+yr:'') + (mo!=='0'?'&month='+mo:'');
+    fetch('smart_analysis.php?' + qs)
         .then(r => r.text())
         .then(txt => {
             var data;
@@ -1288,6 +1353,33 @@ function saLoad() {
 var _stockData = {};
 
 function renderAll(d) {
+    // Populate year dropdown from available years
+    var yearSel = document.getElementById('sa-filter-year');
+    if (yearSel && d.availableYears) {
+        var curYr = yearSel.value;
+        yearSel.innerHTML = '<option value="0">Semua Tahun</option>';
+        (d.availableYears || []).forEach(function(y) {
+            var opt = document.createElement('option');
+            opt.value = y; opt.textContent = y;
+            if (String(y) === String(curYr)) opt.selected = true;
+            yearSel.appendChild(opt);
+        });
+    }
+    // Filter badge
+    var af = d.activeFilter || {};
+    var badge = document.getElementById('sa-filter-badge');
+    var resetBtn = document.getElementById('sa-filter-reset');
+    var months = ['','Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+    if (badge) {
+        if (af.year > 0) {
+            badge.textContent = (af.year) + (af.month > 0 ? ' - ' + months[af.month] : '');
+            badge.style.display = 'inline-block';
+            if (resetBtn) resetBtn.style.display = 'inline-block';
+        } else {
+            badge.style.display = 'none';
+            if (resetBtn) resetBtn.style.display = 'none';
+        }
+    }
     _stockData = { byShape: d.stockByShape||{}, byGender: d.stockByGender||{}, total: (d.summary||{}).totalFrameStock||0, frameRawList: d.frameRawList||[] };
     renderTopAlerts(d);
     renderKPIs(d);
@@ -1369,7 +1461,7 @@ function renderKPIs(d) {
                 {label:'Target cepat', val: '≤ 5 hari'},
                 {label:'Status', val: s.avgProcessDays<=5?'Cepat ✓':s.avgProcessDays<=10?'Normal':'Lambat ⚠'},
             ]}},
-        { icon:'👁', label:'High Myopia (≤0-6)', val: s.highMyopia, color: C.pink,
+        { icon:'👁', label:'High Myopia', val: s.highMyopia, color: C.pink,
             modal:{ title:'High Myopia', desc:'Jumlah pasien dengan nilai SPH rata-rata ≤ -6.00 (miopia tinggi). Pasien ini membutuhkan lensa khusus high-index.', details:[
                 {label:'Jumlah pasien high myopia', val: s.highMyopia+' pasien'},
                 {label:'Total pasien diperiksa', val: s.totalOrders+' order'},
@@ -1383,7 +1475,7 @@ function renderKPIs(d) {
                 {label:'Persentase', val: Math.round(s.presbyopia/Math.max(s.totalOrders,1)*100)+'%'},
                 {label:'Rekomendasi lensa', val: 'Progressive / Kryptok / Flattop'},
             ]}},
-        { icon:'✏️', label:'Rx Modified', val: s.rxModCount, color: C.amber,
+        { icon:'✏️', label:'Rx Diubah (Log)', val: s.rxModCount, color: C.amber,
             modal:{ title:'Rx Modified', desc:'Jumlah kali resep dimodifikasi dari hasil pemeriksaan asli, tercatat di tabel prescription_modifications.', details:[
                 {label:'Total modifikasi resep', val: s.rxModCount+' kali'},
                 {label:'Order dengan flag is_modified', val: s.modifiedOrders+' order'},
@@ -1395,7 +1487,7 @@ function renderKPIs(d) {
                 {label:'Frame tanpa buy_price', val: s.framesMissingBuy+' frame'},
                 {label:'Status profit', val: s.framesMissingBuy>0?'Tidak akurat ⚠':'Akurat ✓'},
             ], warn: s.framesMissingBuy>0 ? 'Isi buy_price di halaman manajemen frame untuk akurasi profit.' : null }},
-        { icon:'🔄', label:'Resep Diubah', val: s.modifiedOrders, color: C.teal,
+        { icon:'🔄', label:'Order Dimodifikasi', val: s.modifiedOrders, color: C.teal,
             modal:{ title:'Order dengan Resep Diubah', desc:'Jumlah order yang memiliki flag is_modified = 1, artinya ukuran resep di order berbeda dari hasil pemeriksaan asli customer.', details:[
                 {label:'Order dimodifikasi', val: s.modifiedOrders+' order'},
                 {label:'Total order selesai', val: s.totalOrders+' order'},
@@ -1429,13 +1521,28 @@ function renderKPIs(d) {
 // ── Monthly chart ────────────────────────────────────────────────
 function renderMonthly(d) {
     killChart('monthly');
-    const m = d.monthly;
+    // Always restore canvas wrapper (may have been replaced by empty-state div)
+    var wrap = document.querySelector('.sa-chart-wrap[data-chart="monthly"]') ||
+               (function(){
+                   var el = document.getElementById('ch-monthly');
+                   return el ? el.parentElement : null;
+               })();
+    if (wrap) {
+        // Ensure canvas exists
+        if (!document.getElementById('ch-monthly')) {
+            wrap.innerHTML = '<canvas id="ch-monthly"></canvas>';
+        }
+    }
+    var m = d.monthly || [];
     if (!m.length) {
-        document.getElementById('ch-monthly').parentElement.innerHTML =
-            '<div style="display:flex;align-items:center;justify-content:center;height:220px;font-size:.75rem;color:var(--text-muted);">Belum ada data order selesai.</div>';
+        var wrapEl = document.getElementById('ch-monthly');
+        if (wrapEl) wrapEl.parentElement.innerHTML =
+            '<div style="display:flex;align-items:center;justify-content:center;height:220px;font-size:.75rem;color:var(--text-muted);">Tidak ada data untuk periode ini.</div>';
         return;
     }
-    const ctx = document.getElementById('ch-monthly').getContext('2d');
+    var canvasEl = document.getElementById('ch-monthly');
+    if (!canvasEl) return;
+    var ctx = canvasEl.getContext('2d');
     _charts['monthly'] = new Chart(ctx, {
         type: 'bar',
         data: {
@@ -1713,7 +1820,7 @@ function renderProfitability(d) {
     killChart('margin');
     const mb = d.marginBuckets;
     const mL = Object.keys(mb); const mV = mL.map(k=>mb[k]);
-    _charts['margin'] = new Chart(document.getElementById('ch-margin').getContext('2d'), {
+    var _ctx = saGetCtx('ch-margin'); if (_ctx) _charts['margin'] = new Chart(_ctx, {
         type:'bar',
         data:{ labels:mL, datasets:[{ data:mV,
             backgroundColor: mL.map(l=>parseInt(l)>=40?'rgba(0,255,136,0.32)':parseInt(l)>=20?'rgba(255,170,0,0.28)':'rgba(255,107,107,0.28)'),
@@ -1742,7 +1849,7 @@ function renderRxAnalytics(d) {
         if (l.includes('+')) return 'rgba(255,170,0,0.45)';
         return 'rgba(255,255,255,0.2)';
     });
-    _charts['sph'] = new Chart(document.getElementById('ch-sph').getContext('2d'), {
+    var _ctx = saGetCtx('ch-sph'); if (_ctx) _charts['sph'] = new Chart(_ctx, {
         type:'bar',
         data:{ labels:sphL, datasets:[{ data:sphV, backgroundColor:sphColors, borderColor:sphColors.map(c=>c.replace('0.45','0.9').replace('0.7','1').replace('0.2','0.5')), borderWidth:1.5, borderRadius:3 }] },
         options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false},tooltip:{callbacks:{label:function(c){return ' '+c.parsed.y+' pasien';}}}}, scales:{x:{grid:{display:false}},y:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{stepSize:1}}} }
@@ -1770,7 +1877,7 @@ function renderRxAnalytics(d) {
     const cyl = d.cylSeverity;
     const cylL = Object.keys(cyl), cylV = cylL.map(k=>cyl[k]);
     const cylCols = [C.muted, C.teal, C.amber, C.red, 'rgba(255,255,255,0.1)'];
-    _charts['cyl'] = new Chart(document.getElementById('ch-cyl').getContext('2d'), {
+    var _ctx = saGetCtx('ch-cyl'); if (_ctx) _charts['cyl'] = new Chart(_ctx, {
         type:'doughnut',
         data:{ labels:cylL, datasets:[{ data:cylV, backgroundColor:cylCols, borderColor:'transparent', borderWidth:0, hoverOffset:4 }] },
         options:{ responsive:false, cutout:'65%', plugins:{legend:{display:false},tooltip:{callbacks:{label:function(c){return ' '+c.label+': '+c.parsed;}}}} }
@@ -1800,7 +1907,7 @@ function renderRxAnalytics(d) {
     const vn = d.visionNeeds;
     const vnL = Object.keys(vn), vnV = vnL.map(k=>vn[k]);
     const vnCols = [C.blue, C.amber, C.teal, C.purple];
-    _charts['need'] = new Chart(document.getElementById('ch-need').getContext('2d'), {
+    var _ctx = saGetCtx('ch-need'); if (_ctx) _charts['need'] = new Chart(_ctx, {
         type:'doughnut',
         data:{ labels:vnL, datasets:[{ data:vnV, backgroundColor:vnCols, borderColor:'transparent', borderWidth:0, hoverOffset:4 }] },
         options:{ responsive:false, cutout:'65%', plugins:{legend:{display:false}} }
@@ -1832,7 +1939,7 @@ function renderDemographics(d) {
     const gc = d.genderCount;
     const gL = ['MALE','FEMALE','Unknown'], gV = gL.map(k=>gc[k]||0), gC = [C.blue, C.pink, C.muted];
     const gTot = gV.reduce((a,b)=>a+b,0)||1;
-    _charts['gender'] = new Chart(document.getElementById('ch-gender').getContext('2d'), {
+    var _ctx = saGetCtx('ch-gender'); if (_ctx) _charts['gender'] = new Chart(_ctx, {
         type:'doughnut',
         data:{ labels:['Male 👨','Female 👩','Unknown'], datasets:[{ data:gV, backgroundColor:gC, borderColor:'transparent', borderWidth:0, hoverOffset:4 }] },
         options:{ responsive:false, cutout:'65%', plugins:{ legend:{display:false}, tooltip:{callbacks:{label:function(c){return ' '+c.label+': '+c.parsed+' ('+Math.round(c.parsed/gTot*100)+'%)'}}} } }
@@ -1856,7 +1963,7 @@ function renderDemographics(d) {
     // Avg order by age
     killChart('age-avg');
     const aba = d.avgByAge, aL = Object.keys(aba), aV = aL.map(k=>aba[k]);
-    _charts['age-avg'] = new Chart(document.getElementById('ch-age-avg').getContext('2d'), {
+    var _ctx = saGetCtx('ch-age-avg'); if (_ctx) _charts['age-avg'] = new Chart(_ctx, {
         type:'bar',
         data:{ labels:aL, datasets:[{ data:aV, backgroundColor:'rgba(255,170,0,0.25)', borderColor:C.amber, borderWidth:1.5, borderRadius:4, barPercentage:0.5, categoryPercentage:0.65 }] },
         options:{ responsive:true, maintainAspectRatio:false,
@@ -1901,7 +2008,7 @@ function renderFrameInventory(d) {
     const sa = d.stockAge;
     const saL = ['new','old','very old'], saV = saL.map(k=>sa[k]||0);
     const saC = [C.green, C.amber, C.red];
-    _charts['stockage'] = new Chart(document.getElementById('ch-stockage').getContext('2d'), {
+    var _ctx = saGetCtx('ch-stockage'); if (_ctx) _charts['stockage'] = new Chart(_ctx, {
         type:'doughnut',
         data:{ labels:['New','Old','Very Old'], datasets:[{ data:saV, backgroundColor:saC, borderColor:'transparent', borderWidth:0, hoverOffset:4 }] },
         options:{ responsive:false, cutout:'65%', plugins:{legend:{display:false}} }
