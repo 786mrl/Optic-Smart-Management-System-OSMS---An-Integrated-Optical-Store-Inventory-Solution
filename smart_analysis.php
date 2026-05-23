@@ -435,7 +435,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
 
         // Stock by lens_shape — normalize to Title Case to merge duplicates
         $sh = trim($f['lens_shape'] ?? '');
-        $sh = ($sh === '') ? 'Belum Diisi' : ucwords(strtolower($sh));
+        $sh = ($sh === '') ? 'Not Filled' : ucwords(strtolower($sh));
         if (!isset($stockByShape['all'][$sh]))           $stockByShape['all'][$sh]           = 0;
         if (!isset($stockByShape[$tier][$sh]))           $stockByShape[$tier][$sh]           = 0;
         $stockByShape['all'][$sh]           += (int)($f['stock'] ?? 0);
@@ -521,7 +521,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
         'stockByGender'  => $stockByGender,
         'frameRawList'   => array_map(function($f) {
             return [
-                'shape'   => (trim($f['lens_shape']??'')==='' ? 'Belum Diisi' : ucwords(strtolower(trim($f['lens_shape'])))),
+                'shape'   => (trim($f['lens_shape']??'')==='' ? 'Not Filled' : ucwords(strtolower(trim($f['lens_shape'])))),
                 'gender'  => strtolower(trim($f['gender_category']??'unknown')),
                 'material'=> ucwords(strtolower(trim($f['material']??'Unknown'))),
                 'struct'  => strtolower(trim($f['structure']??'unknown')),
@@ -797,10 +797,74 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
         .sa-tab.active { border-color:rgba(0,255,136,0.3); color:var(--sa-green); background:rgba(0,255,136,0.06); }
         .sa-tab-panel { display:none; } .sa-tab-panel.active { display:block; }
 
+        /* ── Collapsible sections ── */
+        .sa-section-wrap { margin-bottom: 8px; }
+        .sa-section-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 20px;
+            background: var(--bg-color);
+            border-radius: 16px;
+            cursor: pointer;
+            box-shadow: 5px 5px 12px var(--shadow-dark), -5px -5px 12px var(--shadow-light);
+            border: 1px solid rgba(255,255,255,0.05);
+            user-select: none;
+            transition: border-color 0.2s;
+            margin-bottom: 0;
+        }
+        .sa-section-header:hover { border-color: rgba(255,255,255,0.12); }
+        .sa-section-header.open  { border-radius: 16px 16px 0 0; border-color: rgba(255,255,255,0.08); border-bottom-color: transparent; }
+        .sa-section-left {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.75rem;
+            font-weight: 800;
+            letter-spacing: 0.8px;
+            text-transform: uppercase;
+            color: var(--text-main);
+        }
+        .sa-section-icon { font-size: 1.1rem; }
+        .sa-section-chevron {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            transition: transform 0.25s ease;
+        }
+        .sa-section-header.open .sa-section-chevron { transform: rotate(180deg); }
+        .sa-section-body {
+            display: none;
+            padding: 14px 0 4px;
+            background: var(--bg-color);
+            border-radius: 0 0 16px 16px;
+            border: 1px solid rgba(255,255,255,0.08);
+            border-top: none;
+            padding: 16px;
+        }
+        .sa-section-body.open { display: block; }
+        /* KPI section always open on load */
+        .sa-section-header.always-open { cursor: default; }
+        .sa-section-header.always-open .sa-section-chevron { display: none; }
+
+        /* Center all content */
+        .sa-body { text-align: center; }
+        .sa-body > * { text-align: left; }
+        .sa-page-header { justify-content: center; text-align: center; }
+        .sa-page-title  { text-align: center; }
+        .sa-page-sub    { text-align: center; }
+
         @media (max-width:480px) {
             .sa-kpi-grid { grid-template-columns:1fr 1fr; }
             .sa-kpi-val  { font-size:1rem; }
-            .sa-rx-table { grid-template-columns:auto repeat(4,1fr); font-size:0.62rem; gap:3px 6px; }
+            .sa-rx-table { grid-template-columns:auto repeat(4,1fr); font-size:.62rem; gap:3px 6px; }
+            .sa-section-header { padding:12px 14px; }
+            .sa-section-body   { padding:12px; }
+            .sa-section-left   { font-size:.68rem; }
+            .sa-2col, .sa-3col, .sa-4col { grid-template-columns:1fr; }
+            .sa-modal { padding:18px 16px; }
+        }
+        @media (max-width:360px) {
+            .sa-section-icon { display:none; }
         }
     </style>
 </head>
@@ -821,7 +885,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
         <div class="sa-body">
 
             <!-- Page Header -->
-            <div class="sa-page-header">
+            <div class="sa-page-header" style="justify-content:center;flex-direction:column;align-items:center;text-align:center;">
                 <div>
                     <div class="sa-page-title">📊 Smart Analysis</div>
                     <div class="sa-page-sub">Business Intelligence — Completed Orders (Status 5)</div>
@@ -834,19 +898,19 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
 
             <!-- Top alerts -->
             <!-- Global date filter bar -->
-            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px;padding:12px 18px;background:var(--bg-color);border-radius:16px;box-shadow:6px 6px 14px var(--shadow-dark),-6px -6px 14px var(--shadow-light);border:1px solid rgba(255,255,255,0.04);">
-                <span style="font-size:.63rem;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--text-muted);white-space:nowrap;">&#128197; Filter Periode</span>
+            <div style="display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;margin-bottom:16px;padding:12px 18px;background:var(--bg-color);border-radius:16px;box-shadow:6px 6px 14px var(--shadow-dark),-6px -6px 14px var(--shadow-light);border:1px solid rgba(255,255,255,0.04);">
+                <span style="font-size:.63rem;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--text-muted);white-space:nowrap;">&#128197; Filter Period</span>
                 <select id="sa-filter-year" class="sa-mselect" style="width:130px;" onchange="saFilterChange()">
-                    <option value="0">Semua Tahun</option>
+                    <option value="0">All Years</option>
                 </select>
                 <select id="sa-filter-month" class="sa-mselect" style="width:150px;" onchange="saFilterChange()">
-                    <option value="0">Semua Bulan</option>
-                    <option value="1">Januari</option><option value="2">Februari</option>
-                    <option value="3">Maret</option><option value="4">April</option>
-                    <option value="5">Mei</option><option value="6">Juni</option>
-                    <option value="7">Juli</option><option value="8">Agustus</option>
-                    <option value="9">September</option><option value="10">Oktober</option>
-                    <option value="11">November</option><option value="12">Desember</option>
+                    <option value="0">All Months</option>
+                    <option value="1">January</option><option value="2">February</option>
+                    <option value="3">March</option><option value="4">April</option>
+                    <option value="5">May</option><option value="6">June</option>
+                    <option value="7">July</option><option value="8">August</option>
+                    <option value="9">September</option><option value="10">October</option>
+                    <option value="11">November</option><option value="12">December</option>
                 </select>
                 <div id="sa-filter-badge" style="display:none;background:rgba(0,207,255,0.1);border:1px solid rgba(0,207,255,0.3);border-radius:20px;padding:4px 12px;font-size:.68rem;font-weight:700;color:var(--sa-blue);"></div>
                 <button id="sa-filter-reset" style="display:none;background:none;border:1px solid rgba(255,107,107,0.25);border-radius:20px;color:var(--sa-red);font-size:.68rem;font-weight:700;padding:5px 12px;cursor:pointer;font-family:inherit;" onclick="saFilterReset()">&#10005; Reset Filter</button>
@@ -854,198 +918,296 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
 
             <div id="sa-top-alerts"></div>
 
-            <!-- ══ KPIs ══════════════════════════════════════════ -->
-            <div class="sa-section-title">📌 Key Performance Indicators</div>
-            <div class="sa-kpi-grid" id="sa-kpi-grid"></div>
 
-            <!-- ══ REVENUE TREND ════════════════════════════════ -->
-            <div class="sa-section-title">📈 Revenue & Profit Trend</div>
-            <div class="sa-card">
-                <div class="sa-card-title">Monthly Revenue · COGS · Net Profit (last 18 months)</div>
-                <div class="sa-chart-wrap" data-chart="monthly" style="height:220px;"><canvas id="ch-monthly"></canvas></div>
+            <div class="sa-section-wrap">
+                <div class="sa-section-header open" onclick="saToggleSection('sec-kpi')">
+                    <div class="sa-section-left">
+                        <span class="sa-section-icon">📌</span>
+                        <span>Key Performance Indicators</span>
+                    </div>
+                    <span class="sa-section-chevron">&#9660;</span>
+                </div>
+                <div class="sa-section-body open" id="sec-kpi">
+
+                <div class="sa-kpi-grid" id="sa-kpi-grid"></div>
+                </div>
             </div>
+            <div class="sa-section-wrap">
+                <div class="sa-section-header" onclick="saToggleSection('sec-trend')">
+                    <div class="sa-section-left">
+                        <span class="sa-section-icon">📈</span>
+                        <span>Revenue & Profit Trend</span>
+                    </div>
+                    <span class="sa-section-chevron">&#9660;</span>
+                </div>
+                <div class="sa-section-body" id="sec-trend">
 
-            <!-- ══ PRODUCT MIX ════════════════════════════════════ -->
-            <div class="sa-section-title">🔭 Product Mix</div>
+                <div class="sa-card">
+                <div class="sa-card-title" style="display:flex;justify-content:space-between;align-items:center;">
+                <span>Monthly Revenue · COGS · Net Profit (last 18 months)</span>
+                <button onclick="saTrendModalOpen()" style="background:rgba(0,207,255,0.08);border:1px solid rgba(0,207,255,0.2);border-radius:20px;color:var(--sa-blue);font-size:.62rem;font-weight:700;padding:4px 12px;cursor:pointer;font-family:inherit;letter-spacing:.4px;white-space:nowrap;">&#9432; Penjelasan</button>
+                </div>
+                <div class="sa-chart-wrap" data-chart="monthly" style="height:220px;"><canvas id="ch-monthly"></canvas></div>
+                </div>
+                </div>
+            </div>
+            <div class="sa-section-wrap">
+                <div class="sa-section-header" onclick="saToggleSection('sec-mix')">
+                    <div class="sa-section-left">
+                        <span class="sa-section-icon">🔭</span>
+                        <span>Product Mix</span>
+                    </div>
+                    <span class="sa-section-chevron">&#9660;</span>
+                </div>
+                <div class="sa-section-body" id="sec-mix">
 
-            <!-- Lenses — 4 separate cards -->
-            <div id="sa-lens-cards"></div>
 
-            <!-- Frame Shape & Size — 4-col grid below lenses -->
-            <div class="sa-card">
+                <!-- Lenses — 4 separate cards -->
+                <div id="sa-lens-cards"></div>
+
+                <!-- Frame Shape & Size — 4-col grid below lenses -->
+                <div class="sa-card">
                 <div class="sa-card-title">🖼 Frame Shape & Size (Purchased)</div>
                 <div class="sa-4col" style="margin-top:4px;">
-                    <div>
-                        <div class="sa-card-title" style="margin-bottom:10px;">Bentuk Lensa</div>
-                        <div class="sa-bar-list" id="sa-shape-bars"></div>
-                    </div>
-                    <div>
-                        <div class="sa-card-title" style="margin-bottom:10px;">Ukuran Frame</div>
-                        <div class="sa-bar-list" id="sa-size-bars"></div>
-                    </div>
-                    <div>
-                        <div class="sa-card-title" style="margin-bottom:10px;">Struktur</div>
-                        <div class="sa-bar-list" id="sa-struct-bars"></div>
-                    </div>
-                    <div>
-                        <div class="sa-card-title" style="margin-bottom:10px;">Top Brand</div>
-                        <div class="sa-bar-list" id="sa-brand-bars"></div>
-                    </div>
+                <div>
+                <div class="sa-card-title" style="margin-bottom:10px;">Lens Shape</div>
+                <div class="sa-bar-list" id="sa-shape-bars"></div>
+                </div>
+                <div>
+                <div class="sa-card-title" style="margin-bottom:10px;">Frame Size</div>
+                <div class="sa-bar-list" id="sa-size-bars"></div>
+                </div>
+                <div>
+                <div class="sa-card-title" style="margin-bottom:10px;">Structure</div>
+                <div class="sa-bar-list" id="sa-struct-bars"></div>
+                </div>
+                <div>
+                <div class="sa-card-title" style="margin-bottom:10px;">Top Brand</div>
+                <div class="sa-bar-list" id="sa-brand-bars"></div>
+                </div>
+                </div>
+                </div>
                 </div>
             </div>
+            <div class="sa-section-wrap">
+                <div class="sa-section-header" onclick="saToggleSection('sec-profit')">
+                    <div class="sa-section-left">
+                        <span class="sa-section-icon">💹</span>
+                        <span>Profitability</span>
+                    </div>
+                    <span class="sa-section-chevron">&#9660;</span>
+                </div>
+                <div class="sa-section-body" id="sec-profit">
 
-            <!-- ══ PROFITABILITY ══════════════════════════════════ -->
-            <div class="sa-section-title">💹 Profitability</div>
-            <div class="sa-2col">
+                <div class="sa-2col">
                 <div class="sa-card">
-                    <div class="sa-card-title">Avg Net Margin & Cost Split</div>
-                    <div class="sa-ring-wrap" id="sa-ring-wrap">
-                        <svg width="100" height="100" viewBox="0 0 100 100" style="flex-shrink:0">
-                            <circle cx="50" cy="50" r="38" fill="none" stroke="rgba(255,255,255,0.05)" stroke-width="10"/>
-                            <circle id="sa-ring-c" cx="50" cy="50" r="38" fill="none" stroke="#00ff88"
-                                    stroke-width="10" stroke-linecap="round"
-                                    stroke-dasharray="0 239" transform="rotate(-90 50 50)"
-                                    style="transition:stroke-dasharray 1.1s ease"/>
-                        </svg>
-                        <div>
-                            <div class="sa-ring-val" id="sa-ring-val" style="color:var(--sa-green)">—%</div>
-                            <div class="sa-ring-sub">AVG NET MARGIN</div>
-                            <div class="sa-ring-sub" id="sa-ring-sub2" style="margin-top:6px;"></div>
-                        </div>
-                    </div>
-                    <div style="margin-top:18px;">
-                        <div class="sa-card-title">Revenue vs Cost vs Profit</div>
-                        <div class="sa-bar-list" id="sa-cost-split"></div>
-                    </div>
+                <div class="sa-card-title">Avg Net Margin & Cost Split</div>
+                <div class="sa-ring-wrap" id="sa-ring-wrap">
+                <svg width="100" height="100" viewBox="0 0 100 100" style="flex-shrink:0">
+                <circle cx="50" cy="50" r="38" fill="none" stroke="rgba(255,255,255,0.05)" stroke-width="10"/>
+                <circle id="sa-ring-c" cx="50" cy="50" r="38" fill="none" stroke="#00ff88"
+                stroke-width="10" stroke-linecap="round"
+                stroke-dasharray="0 239" transform="rotate(-90 50 50)"
+                style="transition:stroke-dasharray 1.1s ease"/>
+                </svg>
+                <div>
+                <div class="sa-ring-val" id="sa-ring-val" style="color:var(--sa-green)">—%</div>
+                <div class="sa-ring-sub">AVG NET MARGIN</div>
+                <div class="sa-ring-sub" id="sa-ring-sub2" style="margin-top:6px;"></div>
+                </div>
+                </div>
+                <div style="margin-top:18px;">
+                <div class="sa-card-title">Revenue vs Cost vs Profit</div>
+                <div class="sa-bar-list" id="sa-cost-split"></div>
+                </div>
                 </div>
                 <div class="sa-card">
-                    <div class="sa-card-title">Margin Distribution per Order</div>
-                    <div class="sa-chart-wrap" style="height:150px;"><canvas id="ch-margin"></canvas></div>
-                    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:12px;" id="sa-margin-pills"></div>
+                <div class="sa-card-title" style="display:flex;justify-content:space-between;align-items:center;">
+                <span>Margin Distribution per Order</span>
+                <button onclick="saMarginModalOpen()" style="background:rgba(0,207,255,0.08);border:1px solid rgba(0,207,255,0.2);border-radius:20px;color:var(--sa-blue);font-size:.62rem;font-weight:700;padding:4px 12px;cursor:pointer;font-family:inherit;white-space:nowrap;">&#9432; Penjelasan</button>
+                </div>
+                <div class="sa-chart-wrap" style="height:150px;"><canvas id="ch-margin"></canvas></div>
+                <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:12px;" id="sa-margin-pills"></div>
+                </div>
+                </div>
                 </div>
             </div>
+            <div class="sa-section-wrap">
+                <div class="sa-section-header" onclick="saToggleSection('sec-rx')">
+                    <div class="sa-section-left">
+                        <span class="sa-section-icon">👁</span>
+                        <span>Prescription Analytics</span>
+                    </div>
+                    <span class="sa-section-chevron">&#9660;</span>
+                </div>
+                <div class="sa-section-body" id="sec-rx">
 
-            <!-- ══ PRESCRIPTION ANALYTICS ════════════════════════ -->
-            <div class="sa-section-title">👁 Prescription Analytics</div>
-            <div class="sa-tabs">
+                <div class="sa-tabs">
                 <button class="sa-tab active" onclick="saTab(this,'rx-sph')">SPH Distribution</button>
                 <button class="sa-tab" onclick="saTab(this,'rx-cyl')">Astigmatism (CYL)</button>
                 <button class="sa-tab" onclick="saTab(this,'rx-need')">Vision Needs</button>
-            </div>
+                </div>
 
-            <div class="sa-tab-panel active" id="tab-rx-sph">
+                <div class="sa-tab-panel active" id="tab-rx-sph">
                 <div class="sa-2col">
-                    <div class="sa-card">
-                        <div class="sa-card-title">Spherical Power (SPH) Buckets</div>
-                        <div class="sa-chart-wrap" style="height:160px;"><canvas id="ch-sph"></canvas></div>
-                    </div>
-                    <div class="sa-card">
-                        <div class="sa-card-title">Vision Category Insights</div>
-                        <div id="sa-rx-insights" class="sa-bar-list"></div>
-                    </div>
+                <div class="sa-card">
+                <div class="sa-card-title">Spherical Power (SPH) Buckets</div>
+                <div class="sa-chart-wrap" style="height:160px;"><canvas id="ch-sph"></canvas></div>
                 </div>
-            </div>
+                <div class="sa-card">
+                <div class="sa-card-title">Vision Category Insights</div>
+                <div id="sa-rx-insights" class="sa-bar-list"></div>
+                </div>
+                </div>
+                </div>
 
-            <div class="sa-tab-panel" id="tab-rx-cyl">
+                <div class="sa-tab-panel" id="tab-rx-cyl">
                 <div class="sa-2col">
-                    <div class="sa-card">
-                        <div class="sa-card-title">Astigmatism Severity (CYL)</div>
-                        <div class="sa-donut-wrap" style="padding-top:6px;">
-                            <canvas id="ch-cyl" width="110" height="110" style="flex-shrink:0;width:110px!important;height:110px!important;"></canvas>
-                            <div class="sa-donut-legend" id="sa-cyl-legend"></div>
-                        </div>
-                    </div>
-                    <div class="sa-card">
-                        <div class="sa-card-title" style="margin-bottom:10px;">CYL Severity Notes</div>
-                        <div id="sa-cyl-notes" class="sa-bar-list"></div>
-                    </div>
+                <div class="sa-card">
+                <div class="sa-card-title">Astigmatism Severity (CYL)</div>
+                <div class="sa-donut-wrap" style="padding-top:6px;">
+                <canvas id="ch-cyl" width="110" height="110" style="flex-shrink:0;width:110px!important;height:110px!important;"></canvas>
+                <div class="sa-donut-legend" id="sa-cyl-legend"></div>
                 </div>
-            </div>
+                </div>
+                <div class="sa-card">
+                <div class="sa-card-title" style="margin-bottom:10px;">CYL Severity Notes</div>
+                <div id="sa-cyl-notes" class="sa-bar-list"></div>
+                </div>
+                </div>
+                </div>
 
-            <div class="sa-tab-panel" id="tab-rx-need">
+                <div class="sa-tab-panel" id="tab-rx-need">
                 <div class="sa-2col">
-                    <div class="sa-card">
-                        <div class="sa-card-title">Vision Need Profile</div>
-                        <div class="sa-donut-wrap" style="padding-top:6px;">
-                            <canvas id="ch-need" width="110" height="110" style="flex-shrink:0;width:110px!important;height:110px!important;"></canvas>
-                            <div class="sa-donut-legend" id="sa-need-legend"></div>
-                        </div>
-                    </div>
-                    <div class="sa-card">
-                        <div class="sa-card-title">Lens Category Recommendations</div>
-                        <div id="sa-need-notes" class="sa-bar-list"></div>
-                    </div>
+                <div class="sa-card">
+                <div class="sa-card-title">Vision Need Profile</div>
+                <div class="sa-donut-wrap" style="padding-top:6px;">
+                <canvas id="ch-need" width="110" height="110" style="flex-shrink:0;width:110px!important;height:110px!important;"></canvas>
+                <div class="sa-donut-legend" id="sa-need-legend"></div>
+                </div>
+                </div>
+                <div class="sa-card">
+                <div class="sa-card-title">Lens Category Recommendations</div>
+                <div id="sa-need-notes" class="sa-bar-list"></div>
+                </div>
+                </div>
+                </div>
                 </div>
             </div>
-
-            <!-- ══ DEMOGRAPHICS ═══════════════════════════════════ -->
-            <div class="sa-section-title">👥 Customer Demographics</div>
-            <div class="sa-3col">
-                <div class="sa-card">
-                    <div class="sa-card-title">Gender Split</div>
-                    <div class="sa-donut-wrap">
-                        <canvas id="ch-gender" width="100" height="100" style="flex-shrink:0;width:100px!important;height:100px!important;"></canvas>
-                        <div class="sa-donut-legend" id="sa-gender-legend"></div>
+            <div class="sa-section-wrap">
+                <div class="sa-section-header" onclick="saToggleSection('sec-demo')">
+                    <div class="sa-section-left">
+                        <span class="sa-section-icon">👥</span>
+                        <span>Customer Demographics</span>
                     </div>
+                    <span class="sa-section-chevron">&#9660;</span>
+                </div>
+                <div class="sa-section-body" id="sec-demo">
+
+                <div class="sa-3col">
+                <div class="sa-card">
+                <div class="sa-card-title">Gender Split</div>
+                <div class="sa-donut-wrap">
+                <canvas id="ch-gender" width="100" height="100" style="flex-shrink:0;width:100px!important;height:100px!important;"></canvas>
+                <div class="sa-donut-legend" id="sa-gender-legend"></div>
+                </div>
                 </div>
                 <div class="sa-card">
-                    <div class="sa-card-title">Age Group Distribution</div>
-                    <div class="sa-bar-list" id="sa-age-bars"></div>
+                <div class="sa-card-title">Age Group Distribution</div>
+                <div class="sa-bar-list" id="sa-age-bars"></div>
                 </div>
                 <div class="sa-card">
-                    <div class="sa-card-title">Avg Order Value by Age</div>
-                    <div class="sa-chart-wrap" style="height:150px;"><canvas id="ch-age-avg"></canvas></div>
+                <div class="sa-card-title">Avg Order Value by Age</div>
+                <div class="sa-chart-wrap" style="height:150px;"><canvas id="ch-age-avg"></canvas></div>
+                </div>
+                </div>
                 </div>
             </div>
-
-            <!-- ══ OPERATIONS ══════════════════════════════════════ -->
-            <div class="sa-section-title">⚙️ Operations</div>
-            <div class="sa-2col">
-                <div class="sa-card">
-                    <div class="sa-card-title">Busiest Days of the Week</div>
-                    <div class="sa-dow-grid" id="sa-dow-grid"></div>
-                </div>
-                <div class="sa-card">
-                    <div class="sa-card-title">🏆 Top Customers (Repeat Visits)</div>
-                    <table class="sa-tbl">
-                        <thead><tr><th>#</th><th>Name</th><th>Visits</th><th>Revenue</th></tr></thead>
-                        <tbody id="sa-top-cust"></tbody>
-                    </table>
-                </div>
-            </div>
-
-            <!-- ══ FRAME INVENTORY ═════════════════════════════════ -->
-            <div class="sa-section-title">🖼 Frame Inventory Intelligence</div>
-            <div class="sa-3col">
-                <div class="sa-card">
-                    <div class="sa-card-title">Stock Age (units)</div>
-                    <div class="sa-donut-wrap">
-                        <canvas id="ch-stockage" width="100" height="100" style="flex-shrink:0;width:100px!important;height:100px!important;"></canvas>
-                        <div class="sa-donut-legend" id="sa-stockage-legend"></div>
+            <div class="sa-section-wrap">
+                <div class="sa-section-header" onclick="saToggleSection('sec-ops')">
+                    <div class="sa-section-left">
+                        <span class="sa-section-icon">⚙️</span>
+                        <span>Operations</span>
                     </div>
+                    <span class="sa-section-chevron">&#9660;</span>
+                </div>
+                <div class="sa-section-body" id="sec-ops">
+
+                <div class="sa-2col">
+                <div class="sa-card">
+                <div class="sa-card-title">Busiest Days of the Week</div>
+                <div class="sa-dow-grid" id="sa-dow-grid"></div>
                 </div>
                 <div class="sa-card">
-                    <div class="sa-card-title">Frame Structure Split</div>
-                    <div class="sa-bar-list" id="sa-structure-bars"></div>
-                    <div style="margin-top:14px;"><div class="sa-card-title">Gender Category</div>
-                    <div class="sa-bar-list" id="sa-gendercat-bars"></div></div>
+                <div class="sa-card-title">🏆 Top Customers (Repeat Visits)</div>
+                <table class="sa-tbl">
+                <thead><tr><th>#</th><th>Name</th><th>Visits</th><th>Revenue</th></tr></thead>
+                <tbody id="sa-top-cust"></tbody>
+                </table>
                 </div>
-                <div class="sa-card">
-                    <div class="sa-card-title">Top Materials (SKU count)</div>
-                    <div class="sa-bar-list" id="sa-material-bars"></div>
+                </div>
                 </div>
             </div>
+            <div class="sa-section-wrap">
+                <div class="sa-section-header" onclick="saToggleSection('sec-inv')">
+                    <div class="sa-section-left">
+                        <span class="sa-section-icon">🖼</span>
+                        <span>Frame Inventory Intelligence</span>
+                    </div>
+                    <span class="sa-section-chevron">&#9660;</span>
+                </div>
+                <div class="sa-section-body" id="sec-inv">
 
-            <!-- ══ PRESCRIPTION MODIFICATIONS ═══════════════════ -->
-            <div class="sa-section-title">🔬 Prescription Modifications (Rx Changes)</div>
-            <div class="sa-card">
+                <div class="sa-3col">
+                <div class="sa-card">
+                <div class="sa-card-title">Stock Age (units)</div>
+                <div class="sa-donut-wrap">
+                <canvas id="ch-stockage" width="100" height="100" style="flex-shrink:0;width:100px!important;height:100px!important;"></canvas>
+                <div class="sa-donut-legend" id="sa-stockage-legend"></div>
+                </div>
+                </div>
+                <div class="sa-card">
+                <div class="sa-card-title">Frame Structure</div>
+                <div class="sa-bar-list" id="sa-structure-bars"></div>
+                <div style="margin-top:14px;"><div class="sa-card-title">Gender Category</div>
+                <div class="sa-bar-list" id="sa-gendercat-bars"></div></div>
+                </div>
+                <div class="sa-card">
+                <div class="sa-card-title">Top Materials (SKU count)</div>
+                <div class="sa-bar-list" id="sa-material-bars"></div>
+                </div>
+                </div>
+                </div>
+            </div>
+            <div class="sa-section-wrap">
+                <div class="sa-section-header" onclick="saToggleSection('sec-mods')">
+                    <div class="sa-section-left">
+                        <span class="sa-section-icon">🔬</span>
+                        <span>Prescription Modifications (Rx Changes)</span>
+                    </div>
+                    <span class="sa-section-chevron">&#9660;</span>
+                </div>
+                <div class="sa-section-body" id="sec-mods">
+
+                <div class="sa-card">
                 <div class="sa-card-title" style="margin-bottom:16px;">Recent Modified Prescriptions — OD (Right) & OS (Left)</div>
                 <div class="sa-rx-grid" id="sa-rx-grid"></div>
+                </div>
+                </div>
             </div>
+            <div class="sa-section-wrap">
+                <div class="sa-section-header" onclick="saToggleSection('sec-alerts')">
+                    <div class="sa-section-left">
+                        <span class="sa-section-icon">⚠️</span>
+                        <span>Data Quality Alerts</span>
+                    </div>
+                    <span class="sa-section-chevron">&#9660;</span>
+                </div>
+                <div class="sa-section-body" id="sec-alerts">
 
-            <!-- ══ DATA ALERTS ════════════════════════════════════ -->
-            <div class="sa-section-title">⚠️ Data Quality Alerts</div>
-            <div id="sa-data-alerts"></div>
+                <div id="sa-data-alerts"></div>
+                </div>
+            </div>
 
         </div><!-- .sa-body -->
         </div><!-- .main-card -->
@@ -1075,6 +1237,106 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
     </div>
 </div>
 
+<!-- Margin Distribution info modal -->
+<div id="sa-margin-modal-overlay" style="display:none;" class="sa-modal-overlay" onclick="if(event.target===this)this.style.display='none'">
+    <div class="sa-modal" style="max-width:500px;">
+        <button class="sa-modal-close" onclick="document.getElementById('sa-margin-modal-overlay').style.display='none'">&times;</button>
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+            <div style="font-size:2rem;">&#128202;</div>
+            <div>
+                <div class="sa-modal-title">Margin Distribution per Order</div>
+                <div class="sa-modal-sub">Profit margin distribution histogram</div>
+            </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+            <div style="background:rgba(255,255,255,0.03);border-radius:12px;padding:14px 16px;border:1px solid rgba(255,255,255,0.06);">
+                <div style="font-size:.75rem;color:var(--text-muted);line-height:1.7;">
+                    Histogram ini mengelompokkan setiap order berdasarkan <strong style="color:var(--text-main);">persentase margin bersihnya</strong>
+                    dan menampilkan berapa banyak order yang jatuh di setiap rentang margin.
+                </div>
+            </div>
+
+            <div style="background:rgba(255,255,255,0.03);border-radius:12px;padding:14px 16px;border:1px solid rgba(255,255,255,0.06);">
+                <div style="font-size:.72rem;font-weight:700;color:var(--text-main);margin-bottom:10px;">How to Read</div>
+                <div style="display:grid;grid-template-columns:auto 1fr;gap:6px 12px;font-size:.72rem;">
+                    <span style="color:var(--text-muted);white-space:nowrap;">X-Axis</span>
+                    <span style="color:var(--text-main);">Rentang margin (0-10%, 10-20%, dst.)</span>
+                    <span style="color:var(--text-muted);white-space:nowrap;">Y-Axis</span>
+                    <span style="color:var(--text-main);">Jumlah order di rentang tersebut</span>
+                    <span style="color:var(--text-muted);white-space:nowrap;">Green Bar</span>
+                    <span style="color:var(--sa-green);">Margin baik (&ge; 40%)</span>
+                    <span style="color:var(--text-muted);white-space:nowrap;">Yellow Bar</span>
+                    <span style="color:var(--sa-amber);">Margin moderat (20&ndash;40%)</span>
+                    <span style="color:var(--text-muted);white-space:nowrap;">Red Bar</span>
+                    <span style="color:var(--sa-red);">Margin rendah (&lt; 20%)</span>
+                </div>
+            </div>
+
+            <div style="background:rgba(255,255,255,0.03);border-radius:12px;padding:14px 16px;border:1px solid rgba(255,255,255,0.06);">
+                <div style="font-size:.72rem;font-weight:700;color:var(--text-main);margin-bottom:8px;">How Margin is Calculated</div>
+                <div style="background:rgba(0,0,0,0.2);border-radius:8px;padding:10px 14px;font-family:monospace;font-size:.72rem;color:var(--sa-green);line-height:2;">
+                    Margin = (Revenue &minus; COGS) &divide; Revenue &times; 100%<br>
+                    <span style="color:var(--text-muted);">COGS = Harga beli lensa + harga beli frame + packaging</span>
+                </div>
+            </div>
+
+            <div style="background:rgba(0,207,255,0.05);border-radius:12px;padding:12px 14px;border:1px solid rgba(0,207,255,0.15);">
+                <div style="font-size:.7rem;color:var(--sa-blue);line-height:1.6;">
+                    &#9432; <strong>Ideal:</strong> Most bars should be in the green area (&ge; 40%). If many bars are red, review sell prices or negotiate better buy prices with suppliers.
+                </div>
+            </div>
+
+            <div id="sa-margin-modal-stats" style="background:rgba(255,255,255,0.03);border-radius:12px;padding:14px 16px;border:1px solid rgba(255,255,255,0.06);"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Revenue Trend info modal -->
+<div id="sa-trend-modal-overlay" style="display:none;" class="sa-modal-overlay" onclick="if(event.target===this)this.style.display='none'">
+    <div class="sa-modal" style="max-width:500px;">
+        <button class="sa-modal-close" onclick="document.getElementById('sa-trend-modal-overlay').style.display='none'">&times;</button>
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+            <div style="font-size:2rem;">&#128200;</div>
+            <div>
+                <div class="sa-modal-title">Revenue &amp; Profit Trend</div>
+                <div class="sa-modal-sub">Monthly chart explanation</div>
+            </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+            <div style="background:rgba(255,255,255,0.03);border-radius:12px;padding:14px 16px;border:1px solid rgba(255,255,255,0.06);">
+                <div style="font-size:.72rem;font-weight:700;color:var(--text-main);margin-bottom:6px;">&#128200; About This Chart</div>
+                <div style="font-size:.75rem;color:var(--text-muted);line-height:1.7;">Chart ini menampilkan performa keuangan per bulan dari semua order yang sudah <strong style="color:var(--text-main);">selesai (status = 5)</strong>. Gunakan filter periode di atas untuk mempersempit rentang waktu.</div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:8px;">
+                <div style="display:flex;align-items:flex-start;gap:12px;background:rgba(255,170,0,0.06);border-radius:12px;padding:12px 14px;border:1px solid rgba(255,170,0,0.15);">
+                    <div style="width:12px;height:12px;border-radius:3px;background:#ffaa00;flex-shrink:0;margin-top:2px;"></div>
+                    <div>
+                        <div style="font-size:.72rem;font-weight:700;color:var(--sa-amber);">Revenue (Yellow Bar)</div>
+                        <div style="font-size:.7rem;color:var(--text-muted);margin-top:3px;line-height:1.6;">Total pendapatan kotor dari semua order selesai di bulan tersebut. Ini adalah nilai <code>total_amount</code> dari <code>customer_orders</code>.</div>
+                    </div>
+                </div>
+                <div style="display:flex;align-items:flex-start;gap:12px;background:rgba(255,107,107,0.06);border-radius:12px;padding:12px 14px;border:1px solid rgba(255,107,107,0.15);">
+                    <div style="width:12px;height:12px;border-radius:3px;background:#ff6b6b;flex-shrink:0;margin-top:2px;"></div>
+                    <div>
+                        <div style="font-size:.72rem;font-weight:700;color:var(--sa-red);">COGS / Cost of Goods Sold (Red Bar)</div>
+                        <div style="font-size:.7rem;color:var(--text-muted);margin-top:3px;line-height:1.6;">Total biaya yang dikeluarkan: <strong style="color:var(--text-main);">harga beli lensa + harga beli frame + biaya packaging</strong>. Diambil dari <code>lense_prices.json</code>, <code>frames_main</code>, dan <code>packaging_cost</code>.</div>
+                    </div>
+                </div>
+                <div style="display:flex;align-items:flex-start;gap:12px;background:rgba(0,255,136,0.06);border-radius:12px;padding:12px 14px;border:1px solid rgba(0,255,136,0.15);">
+                    <div style="width:3px;height:14px;border-radius:2px;background:#00ff88;flex-shrink:0;margin-top:1px;"></div>
+                    <div>
+                        <div style="font-size:.72rem;font-weight:700;color:var(--sa-green);">Net Profit (Green Line)</div>
+                        <div style="font-size:.7rem;color:var(--text-muted);margin-top:3px;line-height:1.6;">Laba bersih = Revenue &minus; COGS. Jika line berada di bawah nol, artinya bulan tersebut merugi.</div>
+                    </div>
+                </div>
+            </div>
+            <div style="background:rgba(0,207,255,0.05);border-radius:12px;padding:12px 14px;border:1px solid rgba(0,207,255,0.15);">
+                <div style="font-size:.7rem;color:var(--sa-blue);line-height:1.6;">&#9432; <strong>Catatan:</strong> Akurasi COGS bergantung pada kelengkapan data buy_price di tabel frame. Frame tanpa buy_price dihitung sebagai IDR 0.</div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Stock detail modal -->
 <div id="sa-stock-modal-overlay" style="display:none;" class="sa-modal-overlay" onclick="saModalClose(event)">
     <div class="sa-modal" style="max-width:540px;">
@@ -1085,25 +1347,25 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
         <!-- 3-col filter dropdowns -->
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin:16px 0 20px;">
             <div>
-                <div class="sa-modal-sec-title" style="margin-bottom:6px;">Harga Jual</div>
+                <div class="sa-modal-sec-title" style="margin-bottom:6px;">Sell Price</div>
                 <select id="sa-mf-price" class="sa-mselect" onchange="saModalApplyFilters()">
-                    <option value="all">Semua</option>
-                    <option value="standar">Standar (50–99rb)</option>
-                    <option value="menengah">Menengah (100–200rb)</option>
-                    <option value="menengah_atas">Menengah Atas (201–350rb)</option>
-                    <option value="premium">Premium (&gt;350rb)</option>
+                    <option value="all">All</option>
+                    <option value="standar">Standard (50–100K)</option>
+                    <option value="menengah">Mid-Range (100–200K)</option>
+                    <option value="menengah_atas">Upper-Mid (201–350K)</option>
+                    <option value="premium">Premium (&gt;350K)</option>
                 </select>
             </div>
             <div>
                 <div class="sa-modal-sec-title" style="margin-bottom:6px;">Material</div>
                 <select id="sa-mf-material" class="sa-mselect" onchange="saModalApplyFilters()">
-                    <option value="all">Semua</option>
+                    <option value="all">All</option>
                 </select>
             </div>
             <div>
-                <div class="sa-modal-sec-title" style="margin-bottom:6px;">Struktur</div>
+                <div class="sa-modal-sec-title" style="margin-bottom:6px;">Structure</div>
                 <select id="sa-mf-struct" class="sa-mselect" onchange="saModalApplyFilters()">
-                    <option value="all">Semua</option>
+                    <option value="all">All</option>
                     <option value="full-rim">Full-Rim</option>
                     <option value="semi-rimless">Semi-Rimless</option>
                     <option value="rimless">Rimless</option>
@@ -1112,7 +1374,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
         </div>
 
         <div class="sa-modal-sec" style="margin-bottom:16px;">
-            <div class="sa-modal-sec-title" style="margin-bottom:10px;">Bentuk Lensa</div>
+            <div class="sa-modal-sec-title" style="margin-bottom:10px;">Lens Shape</div>
             <div id="sa-modal-shape-list"></div>
         </div>
         <div class="sa-modal-sec">
@@ -1155,7 +1417,7 @@ function saGetCtx(canvasId) {
     }
     return el ? el.getContext('2d') : null;
 }
-function fmt(n)     { n=Math.abs(n); if(n>=1e9)return'IDR '+(n/1e9).toFixed(1)+'M'; if(n>=1e6)return'IDR '+(n/1e6).toFixed(1)+'jt'; if(n>=1e3)return'IDR '+Math.round(n/1e3)+'rb'; return'IDR '+n.toLocaleString('id-ID'); }
+function fmt(n)     { n=Math.abs(n); if(n>=1e9)return'IDR '+(n/1e9).toFixed(2)+'B'; if(n>=1e6)return'IDR '+(n/1e6).toFixed(2)+'M'; if(n>=1e3)return'IDR '+(n/1e3).toFixed(1)+'K'; return'IDR '+n.toLocaleString('id-ID'); }
 function fmtFull(n) { return (n<0?'−':'')+'IDR '+Math.abs(n).toLocaleString('id-ID'); }
 
 // ── Tabs ────────────────────────────────────────────────────────
@@ -1168,6 +1430,43 @@ function saTab(btn, id) {
 }
 
 // ── Main load ───────────────────────────────────────────────────
+function saMarginModalOpen() {
+    // Populate live stats
+    var statsEl = document.getElementById('sa-margin-modal-stats');
+    if (statsEl && window._kpiData && window._kpiData.summary) {
+        var s = window._kpiData.summary;
+        var overall = s.totalRevenue > 0 ? Math.round(s.totalProfit / s.totalRevenue * 100) : 0;
+        statsEl.innerHTML =
+            '<div style="font-size:.72rem;font-weight:700;color:var(--text-main);margin-bottom:10px;">Current Statistics</div>' +
+            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">' +
+            '<div style="background:rgba(0,0,0,0.15);border-radius:8px;padding:10px 12px;text-align:center;">' +
+            '<div style="font-size:1.4rem;font-weight:800;font-family:monospace;color:'+(overall>=40?'var(--sa-green)':overall>=20?'var(--sa-amber)':'var(--sa-red)')+';">'+overall+'%</div>' +
+            '<div style="font-size:.6rem;color:var(--text-muted);letter-spacing:.5px;text-transform:uppercase;margin-top:2px;">Overall Margin</div>' +
+            '</div>' +
+            '<div style="background:rgba(0,0,0,0.15);border-radius:8px;padding:10px 12px;text-align:center;">' +
+            '<div style="font-size:1.4rem;font-weight:800;font-family:monospace;color:var(--sa-blue);">'+s.avgMargin+'%</div>' +
+            '<div style="font-size:.6rem;color:var(--text-muted);letter-spacing:.5px;text-transform:uppercase;margin-top:2px;">Avg per Order</div>' +
+            '</div>' +
+            '</div>';
+    } else {
+        if (statsEl) statsEl.style.display = 'none';
+    }
+    document.getElementById('sa-margin-modal-overlay').style.display = 'flex';
+}
+
+function saTrendModalOpen() {
+    document.getElementById('sa-trend-modal-overlay').style.display = 'flex';
+}
+
+function saToggleSection(id) {
+    var body   = document.getElementById(id);
+    var header = body ? body.previousElementSibling : null;
+    if (!body || !header) return;
+    var isOpen = body.classList.contains('open');
+    body.classList.toggle('open', !isOpen);
+    header.classList.toggle('open', !isOpen);
+}
+
 function saFilterChange() { saLoad(); }
 
 function saFilterReset() {
@@ -1243,7 +1542,7 @@ function saRenderModalBars(listId, dataObj, color) {
         return '<div class="sa-bar-item" style="margin-bottom:8px;">' +
                '<div class="sa-bar-row">' +
                '<span class="sa-bar-name">'+lbl+'</span>' +
-               '<span class="sa-bar-meta">'+e[1]+' unit</span>' +
+               '<span class="sa-bar-meta">'+e[1]+' units</span>' +
                '</div>' +
                '<div class="sa-bar-track"><div class="sa-bar-fill" style="--bc:'+color+';width:'+pct+'%"></div></div>' +
                '</div>';
@@ -1278,13 +1577,13 @@ function saModalApplyFilters() {
     });
 
     var parts = [];
-    var priceLabels = {standar:'Standar',menengah:'Menengah',menengah_atas:'Menengah Atas',premium:'Premium'};
+    var priceLabels = {standar:'Standard',menengah:'Mid-Range',menengah_atas:'Upper-Mid',premium:'Premium'};
     if (price    !== 'all') parts.push(priceLabels[price] || price);
     if (material !== 'all') parts.push(material);
     if (struct   !== 'all') parts.push(struct);
-    var label = parts.length ? parts.join(' + ') : 'Semua';
+    var label = parts.length ? parts.join(' + ') : 'All';
     document.getElementById('sa-modal-total').textContent =
-        label + ' \u2014 ' + total.toLocaleString('id-ID') + ' unit';
+        label + ' \u2014 ' + total.toLocaleString('id-ID') + ' unitss';
 
     saRenderModalBars('sa-modal-shape-list',  byShape,  '#00cfff');
     saRenderModalBars('sa-modal-gender-list', byGender, '#aa88ff');
@@ -1299,7 +1598,7 @@ function saStockModalOpen() {
         var materials = {};
         frames.forEach(function(fr){ materials[fr.material] = (materials[fr.material]||0) + fr.stock; });
         var matEntries = Object.entries(materials).sort(function(a,b){ return b[1]-a[1]; });
-        matSel.innerHTML = '<option value="all">Semua</option>';
+        matSel.innerHTML = '<option value="all">All</option>';
         matEntries.forEach(function(e) {
             var opt = document.createElement('option');
             opt.value = e[0];
@@ -1345,7 +1644,7 @@ function saLoad() {
         .catch(err => {
             document.getElementById('sa-loading').classList.add('hidden');
             btn.disabled = false; btn.textContent = '⟳ Refresh';
-            document.getElementById('sa-top-alerts').innerHTML = '<div class="sa-alert" style="margin-bottom:12px;">❌ Gagal memuat data. Periksa koneksi atau log server.</div>';
+            document.getElementById('sa-top-alerts').innerHTML = '<div class="sa-alert" style="margin-bottom:12px;">❌ Failed to load data. Check connection or server log.</div>';
             console.error(err);
         });
 }
@@ -1357,7 +1656,7 @@ function renderAll(d) {
     var yearSel = document.getElementById('sa-filter-year');
     if (yearSel && d.availableYears) {
         var curYr = yearSel.value;
-        yearSel.innerHTML = '<option value="0">Semua Tahun</option>';
+        yearSel.innerHTML = '<option value="0">All Years</option>';
         (d.availableYears || []).forEach(function(y) {
             var opt = document.createElement('option');
             opt.value = y; opt.textContent = y;
@@ -1369,7 +1668,7 @@ function renderAll(d) {
     var af = d.activeFilter || {};
     var badge = document.getElementById('sa-filter-badge');
     var resetBtn = document.getElementById('sa-filter-reset');
-    var months = ['','Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+    var months = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
     if (badge) {
         if (af.year > 0) {
             badge.textContent = (af.year) + (af.month > 0 ? ' - ' + months[af.month] : '');
@@ -1402,8 +1701,8 @@ function renderTopAlerts(d) {
     if (s.momChange !== null) {
         const up = s.momChange >= 0;
         html += `<div class="sa-alert ${up?'green':'amber'}" style="margin-bottom:10px;">
-            ${up?'📈':'📉'} Revenue bulan ini <strong>${fmtFull(s.thisMonthRev)}</strong> —
-            ${up?'naik':'turun'} <strong>${Math.abs(s.momChange)}%</strong> vs bulan lalu (${fmtFull(s.lastMonthRev)}).
+            ${up?'📈':'📉'} Revenue this month <strong>${fmtFull(s.thisMonthRev)}</strong> —
+            ${up?'up':'down'} <strong>${Math.abs(s.momChange)}%</strong> vs last month (${fmtFull(s.lastMonthRev)}).
         </div>`;
     }
     if (s.pendingFrameCount > 0)
@@ -1420,78 +1719,78 @@ function renderKPIs(d) {
     var fmtFull2 = function(n){ return (n<0?'- ':'')+'IDR '+Math.abs(n).toLocaleString('id-ID'); };
     var kpis = [
         { icon:'🏁', label:'Total Orders', val: s.totalOrders.toLocaleString('id-ID'), color: C.blue,
-            modal:{ title:'Total Orders', desc:'Jumlah order yang sudah selesai (status = 5).', details:[
-                {label:'Total order selesai', val: s.totalOrders.toLocaleString('id-ID')+' order'},
-                {label:'Revenue rata-rata/order', val: fmtFull2(s.avgOrderValue)},
-                {label:'Rata-rata proses', val: s.avgProcessDays+' hari'},
+            modal:{ title:'Total Orders', desc:'Total completed orders (status = 5).', details:[
+                {label:'Total completed orders', val: s.totalOrders.toLocaleString('id-ID')+' order'},
+                {label:'Avg revenue per order', val: fmtFull2(s.avgOrderValue)},
+                {label:'Avg processing time', val: s.avgProcessDays+' hari'},
             ]}},
         { icon:'💰', label:'Total Revenue', val: fmt(s.totalRevenue), color: C.amber,
-            modal:{ title:'Total Revenue', desc:'Total pendapatan kotor dari semua order yang selesai.', details:[
+            modal:{ title:'Total Revenue', desc:'Total gross revenue from all completed orders.', details:[
                 {label:'Total revenue', val: fmtFull2(s.totalRevenue)},
-                {label:'Bulan ini', val: fmtFull2(s.thisMonthRev)},
-                {label:'Bulan lalu', val: fmtFull2(s.lastMonthRev)},
-                {label:'Selisih MoM', val: s.momChange !== null ? (s.momChange>0?'+':'')+s.momChange+'%' : 'N/A'},
+                {label:'This month', val: fmtFull2(s.thisMonthRev)},
+                {label:'Last month', val: fmtFull2(s.lastMonthRev)},
+                {label:'MoM Change', val: s.momChange !== null ? (s.momChange>0?'+':'')+s.momChange+'%' : 'N/A'},
             ]}},
         { icon:'💹', label:'Net Profit', val: fmt(s.totalProfit), color: s.totalProfit>=0?C.green:C.red,
-            badge: s.totalProfit>=0?null:{cls:'down',txt:'Rugi'},
-            modal:{ title:'Net Profit', desc:'Laba bersih = Total Revenue dikurangi COGS (harga beli lensa + frame + packaging).', details:[
+            badge: s.totalProfit>=0?null:{cls:'down',txt:'Loss'},
+            modal:{ title:'Net Profit', desc:'Net profit = Total Revenue minus COGS (lens cost + frame cost + packaging).', details:[
                 {label:'Total revenue', val: fmtFull2(s.totalRevenue)},
                 {label:'Total COGS', val: fmtFull2(s.totalCost)},
                 {label:'Net profit', val: fmtFull2(s.totalProfit)},
-                {label:'Margin keseluruhan', val: Math.round(s.totalProfit/Math.max(s.totalRevenue,1)*100)+'%'},
-            ], warn: s.framesMissingBuy>0 ? s.framesMissingBuy+' frame belum ada buy_price, profit mungkin lebih tinggi dari aktual.' : null }},
+                {label:'Overall margin', val: Math.round(s.totalProfit/Math.max(s.totalRevenue,1)*100)+'%'},
+            ], warn: s.framesMissingBuy>0 ? s.framesMissingBuy+' frame(s) missing buy_price — profit figures may be understated.' : null }},
         { icon:'📊', label:'Overall Margin', val: margin+'%', color: margin>30?C.green:margin>15?C.amber:C.red,
             badge: margin>30?{cls:'up',txt:'✓ Sehat'}:margin>15?{cls:'neu',txt:'⚡ Moderat'}:{cls:'down',txt:'⚠ Rendah'},
-            modal:{ title:'Overall Margin', desc:'Persentase laba bersih dari total revenue. Margin sehat untuk optik umumnya di atas 30%.', details:[
+            modal:{ title:'Overall Margin', desc:'Net profit percentage from total revenue. A healthy margin for optics is above 30%.', details:[
                 {label:'Overall margin', val: Math.round(s.totalProfit/Math.max(s.totalRevenue,1)*100)+'%'},
                 {label:'Avg margin per order', val: s.avgMargin+'%'},
-                {label:'Target sehat', val: '> 30%'},
+                {label:'Healthy target', val: '> 30%'},
                 {label:'Status', val: margin>30?'Sehat ✓':margin>15?'Moderat':'Rendah ⚠'},
             ]}},
         { icon:'🛒', label:'Avg Order Value', val: fmt(s.avgOrderValue), color: C.purple,
-            modal:{ title:'Avg Order Value', desc:'Rata-rata nilai transaksi per order yang selesai.', details:[
+            modal:{ title:'Avg Order Value', desc:'Average transaction value per completed order.', details:[
                 {label:'Avg order value', val: fmtFull2(s.avgOrderValue)},
                 {label:'Total orders', val: s.totalOrders+' order'},
                 {label:'Total revenue', val: fmtFull2(s.totalRevenue)},
             ]}},
         { icon:'⏱', label:'Avg Process Days', val: s.avgProcessDays+'d', color: C.teal,
-            badge: s.avgProcessDays<=5?{cls:'up',txt:'Cepat'}:s.avgProcessDays<=10?{cls:'neu',txt:'Normal'}:{cls:'down',txt:'Lambat'},
-            modal:{ title:'Avg Process Days', desc:'Rata-rata hari dari tanggal order (order_date) ke tanggal jadi (due_date).', details:[
-                {label:'Rata-rata proses', val: s.avgProcessDays+' hari'},
-                {label:'Target cepat', val: '≤ 5 hari'},
-                {label:'Status', val: s.avgProcessDays<=5?'Cepat ✓':s.avgProcessDays<=10?'Normal':'Lambat ⚠'},
+            badge: s.avgProcessDays<=5?{cls:'up',txt:'Fast'}:s.avgProcessDays<=10?{cls:'neu',txt:'Normal'}:{cls:'down',txt:'Slow'},
+            modal:{ title:'Avg Process Days', desc:'Average days from order date to due date.', details:[
+                {label:'Avg processing time', val: s.avgProcessDays+' hari'},
+                {label:'Fast target', val: '≤ 5 hari'},
+                {label:'Status', val: s.avgProcessDays<=5?'Fast ✓':s.avgProcessDays<=10?'Normal':'Slow ⚠'},
             ]}},
         { icon:'👁', label:'High Myopia', val: s.highMyopia, color: C.pink,
-            modal:{ title:'High Myopia', desc:'Jumlah pasien dengan nilai SPH rata-rata ≤ -6.00 (miopia tinggi). Pasien ini membutuhkan lensa khusus high-index.', details:[
-                {label:'Jumlah pasien high myopia', val: s.highMyopia+' pasien'},
-                {label:'Total pasien diperiksa', val: s.totalOrders+' order'},
-                {label:'Persentase', val: Math.round(s.highMyopia/Math.max(s.totalOrders,1)*100)+'%'},
-                {label:'Rekomendasi lensa', val: 'High-index 1.67 / Superblock'},
+            modal:{ title:'High Myopia', desc:'Patients with average SPH ≤ -6.00 (high myopia). These patients require high-index specialty lenses.', details:[
+                {label:'High myopia patients', val: s.highMyopia+' patients'},
+                {label:'Total patients examined', val: s.totalOrders+' order'},
+                {label:'Percentage', val: Math.round(s.highMyopia/Math.max(s.totalOrders,1)*100)+'%'},
+                {label:'Lens recommendation', val: 'High-index 1.67 / Superblock'},
             ]}},
         { icon:'🔬', label:'Presbyopia (ADD)', val: s.presbyopia, color: C.purple,
-            modal:{ title:'Presbyopia', desc:'Jumlah pasien yang memiliki nilai ADD (penambahan untuk baca) — mengindikasikan presbyopia dan butuh lensa progresif atau kryptok.', details:[
-                {label:'Jumlah pasien presbyopia', val: s.presbyopia+' pasien'},
-                {label:'Total pasien diperiksa', val: s.totalOrders+' order'},
-                {label:'Persentase', val: Math.round(s.presbyopia/Math.max(s.totalOrders,1)*100)+'%'},
-                {label:'Rekomendasi lensa', val: 'Progressive / Kryptok / Flattop'},
+            modal:{ title:'Presbyopia', desc:'Patients with ADD value (reading addition) — indicating presbyopia, needing progressive or kryptok lenses.', details:[
+                {label:'Presbyopia patients', val: s.presbyopia+' patients'},
+                {label:'Total patients examined', val: s.totalOrders+' order'},
+                {label:'Percentage', val: Math.round(s.presbyopia/Math.max(s.totalOrders,1)*100)+'%'},
+                {label:'Lens recommendation', val: 'Progressive / Kryptok / Flattop'},
             ]}},
         { icon:'✏️', label:'Rx Diubah (Log)', val: s.rxModCount, color: C.amber,
-            modal:{ title:'Rx Modified', desc:'Jumlah kali resep dimodifikasi dari hasil pemeriksaan asli, tercatat di tabel prescription_modifications.', details:[
-                {label:'Total modifikasi resep', val: s.rxModCount+' kali'},
-                {label:'Order dengan flag is_modified', val: s.modifiedOrders+' order'},
+            modal:{ title:'Rx Modified', desc:'Number of times prescriptions were modified from original exam results, recorded in prescription_modifications.', details:[
+                {label:'Total rx modifications', val: s.rxModCount+' kali'},
+                {label:'Orders with is_modified flag', val: s.modifiedOrders+' order'},
             ]}},
         { icon:'🖼', label:'Frame Stock', val: s.totalFrameStock.toLocaleString('id-ID'), color: C.blue, clickable: true, stockModal: true },
         { icon:'⚠️', label:'Frames No Cost', val: s.framesMissingBuy, color: s.framesMissingBuy>0?C.red:C.teal,
             badge: s.framesMissingBuy>0?{cls:'down',txt:'Missing'}:{cls:'up',txt:'✓ OK'},
-            modal:{ title:'Frames No Cost', desc:'Frame di tabel frames_main yang belum memiliki buy_price (harga beli = 0 atau NULL). Ini menyebabkan perhitungan profit tidak akurat.', details:[
-                {label:'Frame tanpa buy_price', val: s.framesMissingBuy+' frame'},
-                {label:'Status profit', val: s.framesMissingBuy>0?'Tidak akurat ⚠':'Akurat ✓'},
+            modal:{ title:'Frames No Cost', desc:'Frames in frames_main without buy_price (cost = 0 or NULL). This causes inaccurate profit calculations.', details:[
+                {label:'Frames without buy_price', val: s.framesMissingBuy+' frame'},
+                {label:'Profit accuracy', val: s.framesMissingBuy>0?'Inaccurate ⚠':'Accurate ✓'},
             ], warn: s.framesMissingBuy>0 ? 'Isi buy_price di halaman manajemen frame untuk akurasi profit.' : null }},
         { icon:'🔄', label:'Order Dimodifikasi', val: s.modifiedOrders, color: C.teal,
-            modal:{ title:'Order dengan Resep Diubah', desc:'Jumlah order yang memiliki flag is_modified = 1, artinya ukuran resep di order berbeda dari hasil pemeriksaan asli customer.', details:[
-                {label:'Order dimodifikasi', val: s.modifiedOrders+' order'},
-                {label:'Total order selesai', val: s.totalOrders+' order'},
-                {label:'Persentase', val: Math.round(s.modifiedOrders/Math.max(s.totalOrders,1)*100)+'%'},
+            modal:{ title:'Order dengan Resep Diubah', desc:'Orders with is_modified = 1, meaning the prescription in the order differs from the original exam result.', details:[
+                {label:'Modified orders', val: s.modifiedOrders+' order'},
+                {label:'Total completed orders', val: s.totalOrders+' order'},
+                {label:'Percentage', val: Math.round(s.modifiedOrders/Math.max(s.totalOrders,1)*100)+'%'},
             ]}},
     ];
     // Store KPI data for modal reference
@@ -1537,7 +1836,7 @@ function renderMonthly(d) {
     if (!m.length) {
         var wrapEl = document.getElementById('ch-monthly');
         if (wrapEl) wrapEl.parentElement.innerHTML =
-            '<div style="display:flex;align-items:center;justify-content:center;height:220px;font-size:.75rem;color:var(--text-muted);">Tidak ada data untuk periode ini.</div>';
+            '<div style="display:flex;align-items:center;justify-content:center;height:220px;font-size:.75rem;color:var(--text-muted);">No data for this period.</div>';
         return;
     }
     var canvasEl = document.getElementById('ch-monthly');
@@ -1619,14 +1918,14 @@ function makeExpandList(containerId, entries, color, metaFn) {
 
         var btn = document.createElement('button');
         btn.className = 'sa-expand-btn';
-        btn.textContent = 'Lihat ' + hidden.length + ' lainnya';
+        btn.textContent = 'Show ' + hidden.length + ' more';
         btn.setAttribute('data-cid', containerId);
         btn.addEventListener('click', function() {
             var cid   = this.getAttribute('data-cid');
             var hDiv  = document.getElementById(cid + '-hid');
             var isOpen = hDiv.style.display !== 'none';
             hDiv.style.display = isOpen ? 'none' : 'block';
-            this.textContent = isOpen ? ('Lihat ' + _rxExpandData[cid] + ' lainnya') : 'Tutup';
+            this.textContent = isOpen ? ('Show ' + _rxExpandData[cid] + ' more') : 'Hide';
             this.classList.toggle('open', !isOpen);
         });
         el.appendChild(btn);
@@ -1672,7 +1971,7 @@ function renderTopLenses(d) {
         var lbl1 = document.createElement('div');
         lbl1.className = 'sa-card-title';
         lbl1.style.marginBottom = '8px';
-        lbl1.textContent = 'Jenis Lensa';
+        lbl1.textContent = 'Lens Type';
         card.appendChild(lbl1);
 
         // Jenis lensa list
@@ -1685,7 +1984,7 @@ function renderTopLenses(d) {
         lbl2.className = 'sa-card-title';
         lbl2.style.marginTop = '16px';
         lbl2.style.marginBottom = '8px';
-        lbl2.textContent = 'Ukuran Terbeli (SPH & CYL)';
+        lbl2.textContent = 'Purchased Size (SPH & CYL)';
         card.appendChild(lbl2);
 
         // Ukuran list
@@ -1704,12 +2003,12 @@ function renderTopLenses(d) {
         if (rxEntries.length === 0) {
             rxDiv.innerHTML = '<div style="font-size:.72rem;color:var(--text-muted);font-style:italic;">'
                 + (rxAll.length === 0
-                    ? 'Belum ada order ' + cat.label.toLowerCase() + '.'
-                    : 'Semua ukuran masih unik &mdash; belum ada 2 customer dengan ukuran yang sama.')
+                    ? 'No orders for ' + cat.label + ' yet.'
+                    : 'All sizes are unique — no 2 customers share the same prescription.')
                 + '</div>';
         } else {
             makeExpandList('sa-lens-' + cat.key + '-rx', rxEntries, cat.color, function(e) {
-                return e[1] + ' customer';
+                return e[1] + ' customers';
             });
         }
     });
@@ -1768,7 +2067,7 @@ function renderTopFrames(d) {
             var btn = document.createElement('button');
             btn.id = elId + '-btn';
             btn.className = 'sa-expand-btn';
-            btn.textContent = 'Lihat ' + hidden.length + ' lainnya \u25be';
+            btn.textContent = 'Show ' + hidden.length + ' more \u25be';
             btn.setAttribute('data-elid', elId);
             btn.onclick = function() { saToggleExpand(this.getAttribute('data-elid')); };
             el.appendChild(btn);
@@ -1788,7 +2087,7 @@ function saToggleExpand(elId) {
     if (!hidden || !btn) return;
     var isOpen = hidden.style.display !== 'none';
     hidden.style.display = isOpen ? 'none' : 'block';
-    btn.textContent      = isOpen ? ('Lihat ' + (data.count || '') + ' lainnya \u25be') : 'Tutup \u25b4';
+    btn.textContent      = isOpen ? ('Show ' + (data.count || '') + ' more \u25be') : 'Hide \u25b4';
     btn.classList.toggle('expanded', !isOpen);
 }
 // ── Profitability ────────────────────────────────────────────────
@@ -1852,7 +2151,7 @@ function renderRxAnalytics(d) {
     var _ctx = saGetCtx('ch-sph'); if (_ctx) _charts['sph'] = new Chart(_ctx, {
         type:'bar',
         data:{ labels:sphL, datasets:[{ data:sphV, backgroundColor:sphColors, borderColor:sphColors.map(c=>c.replace('0.45','0.9').replace('0.7','1').replace('0.2','0.5')), borderWidth:1.5, borderRadius:3 }] },
-        options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false},tooltip:{callbacks:{label:function(c){return ' '+c.parsed.y+' pasien';}}}}, scales:{x:{grid:{display:false}},y:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{stepSize:1}}} }
+        options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false},tooltip:{callbacks:{label:function(c){return ' '+c.parsed.y+' patients';}}}}, scales:{x:{grid:{display:false}},y:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{stepSize:1}}} }
     });
     // Insights
     const s = d.summary;
@@ -1921,7 +2220,7 @@ function renderRxAnalytics(d) {
     const needNotes = {
         'Distance Only':  { note:'Single vision — jarak', color:C.blue },
         'Near Only':      { note:'Single vision — baca', color:C.amber },
-        'Intermediate':   { note:'Lensa komputer/office', color:C.teal },
+        'Intermediate':   { note:'Computer/office lens', color:C.teal },
         'Multifocal (2+)':{ note:'Progressive / bifocal',  color:C.purple },
     };
     const mxN = Math.max(...vnV, 1);
@@ -1956,7 +2255,7 @@ function renderDemographics(d) {
     const mxA = Math.max(...Object.values(ag), 1);
     document.getElementById('sa-age-bars').innerHTML = Object.entries(ag).map(([k,v]) => `
         <div class="sa-bar-item">
-            <div class="sa-bar-row"><span class="sa-bar-name">${k} tahun</span><span class="sa-bar-meta">${v} pasien</span></div>
+            <div class="sa-bar-row"><span class="sa-bar-name">${k} yrs</span><span class="sa-bar-meta">${v} patients</span></div>
             <div class="sa-bar-track"><div class="sa-bar-fill" style="--bc:${C.teal};width:${Math.round(v/mxA*100)}%"></div></div>
         </div>`).join('');
 
@@ -2018,7 +2317,7 @@ function renderFrameInventory(d) {
         <div class="sa-legend-row">
             <div class="sa-legend-dot" style="background:${saC[i]}"></div>
             <span class="sa-legend-label">${l}</span>
-            <span class="sa-legend-val">${saV[i]} unit</span>
+            <span class="sa-legend-val">${saV[i]} units</span>
         </div>`).join('');
 
     // Structure
@@ -2053,7 +2352,7 @@ function renderFrameInventory(d) {
 function renderRxMods(d) {
     const el = document.getElementById('sa-rx-grid');
     if (!d.rxMods.length) {
-        el.innerHTML = '<div style="font-size:.75rem;color:var(--text-muted);">Belum ada modifikasi resep tercatat.</div>';
+        el.innerHTML = '<div style="font-size:.75rem;color:var(--text-muted);">No prescription modifications recorded.</div>';
         return;
     }
     function rxVal(v) {
@@ -2100,7 +2399,7 @@ function renderDataAlerts(d) {
         html += `<div class="sa-alert blue" style="margin-bottom:10px;">🔬 Total <strong>${s.rxModCount}</strong> resep telah dimodifikasi dari hasil pemeriksaan asli (tercatat di prescription_modifications).</div>`;
     if (s.modifiedOrders > 0)
         html += `<div class="sa-alert" style="background:rgba(170,136,255,0.07);border-color:rgba(170,136,255,0.2);color:var(--sa-purple);margin-bottom:10px;">✏️ <strong>${s.modifiedOrders}</strong> order memiliki flag <code>is_modified = 1</code> pada customer_orders.</div>`;
-    if (!html) html = '<div class="sa-alert green">✅ Tidak ada data quality alert ditemukan.</div>';
+    if (!html) html = '<div class="sa-alert green">✅ No data quality alerts found.</div>';
     document.getElementById('sa-data-alerts').innerHTML = html;
 }
 
