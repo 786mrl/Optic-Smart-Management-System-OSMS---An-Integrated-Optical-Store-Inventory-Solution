@@ -1,5 +1,6 @@
 <?php
-// pwa_head.php — Include di dalam <head> semua file PHP
+// pwa_head.php — versi terbaru (Fase 1 + Fase 2)
+// Include di dalam <head> semua file PHP Anda
 ?>
 
 <!-- PWA: Manifest -->
@@ -11,15 +12,19 @@
 <!-- PWA: iOS support -->
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="OpticPOS">
+<meta name="apple-mobile-web-app-title" content="LenZa">
 <link rel="apple-touch-icon" href="/optic_pos/image/icon-192.png">
+
+<!-- Fase 2: IndexedDB local database -->
+<script src="/optic_pos/js/db_local.js"></script>
+
+<!-- Fase 2: Sync Manager (HP ↔ PC) -->
+<script src="/optic_pos/js/sync_manager.js"></script>
 
 <!-- PWA: Registrasi Service Worker -->
 <script>
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', function() {
-      // sw.js HARUS didaftarkan dari path /optic_pos/sw.js
-      // agar scope-nya mencakup seluruh folder /optic_pos/
       navigator.serviceWorker.register('/optic_pos/sw.js', {
         scope: '/optic_pos/'
       }).then(function(reg) {
@@ -29,4 +34,13 @@
       });
     });
   }
+
+  // Auto sync saat halaman pertama kali dibuka
+  window.addEventListener('DOMContentLoaded', function() {
+    setTimeout(function() {
+      if (typeof SyncManager !== 'undefined') {
+        SyncManager.autoSync(true);
+      }
+    }, 2000);
+  });
 </script>

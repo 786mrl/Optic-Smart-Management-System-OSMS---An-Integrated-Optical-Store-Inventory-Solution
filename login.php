@@ -51,7 +51,11 @@ close_db_connection($conn);
 <head>
     <meta charset="UTF-8">
     <?php include 'pwa_head.php'; ?>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Sembunyikan badge sync di halaman login -->
+    <style>
+    #sync-status-badge { display: none !important; }
+    </style>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
@@ -101,6 +105,12 @@ close_db_connection($conn);
             // Optional: Provide a small message or leave it as is to feel like a logged-out application
             console.log("Back button disabled after logout.");
         };
+        window.addEventListener('DOMContentLoaded', function() {
+            setTimeout(function() {
+            var badge = document.getElementById('sync-status-badge');
+            if (badge) badge.style.display = 'none';
+            }, 100);
+        });
     </script>
 </body>
 </html>

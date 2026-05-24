@@ -46,7 +46,8 @@ self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
 
   const url = new URL(event.request.url);
-  if (!url.pathname.startsWith('/optic_pos/')) return;
+  if (url.hostname !== self.location.hostname) return;
+  if (!url.pathname.startsWith("/optic_pos/")) return;
 
   // Aset statis → Cache First
   if (/\.(css|js|png|jpg|jpeg|gif|svg|ico|woff2?|ttf)(\?.*)?$/.test(url.pathname)) {

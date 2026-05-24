@@ -33,12 +33,30 @@ $redirect_time_ms = 3500;
             <div class="loader-fill"></div>
         </div>
     </div>
-    <script>        
-        // Simulate redirect to main page after 3.5 seconds
-        setTimeout(function() {
-            console.log("Redirecting to Dashboard...");
-            window.location.href = 'index.php';
-        }, <?php echo $redirect_time_ms; ?>);
+    <script>
+        // Tunggu sync selesai, baru redirect
+        // Maksimal tunggu 6 detik, kalau belum selesai tetap redirect
+        const MAX_WAIT = 6000;
+        const start = Date.now();
+
+        function checkAndRedirect() {
+            const elapsed = Date.now() - start;
+            
+            // Cek apakah sync sudah selesai atau timeout
+            if (typeof SyncManager === 'undefined' || elapsed >= MAX_WAIT) {
+                window.location.href = 'index.php';
+                return;
+            }
+
+            SyncManager.autoSync(false).then(() => {
+                window.location.href = 'index.php';
+            }).catch(() => {
+                window.location.href = 'index.php';
+            });
+        }
+
+        // Mulai setelah 1.5 detik (biar welcome screen keliatan)
+        setTimeout(checkAndRedirect, 1500);
     </script>
 </body>
 </html>
