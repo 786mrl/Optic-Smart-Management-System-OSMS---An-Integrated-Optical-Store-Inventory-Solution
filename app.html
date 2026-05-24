@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LenZa Optic</title>
+  <link rel="manifest" href="/optic_pos/manifest.json">
+  <meta name="theme-color" content="#1a1a2e">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="LenZa">
+  <link rel="apple-touch-icon" href="/optic_pos/image/icon-192.png">
+  <script src="/optic_pos/js/db_local.js"></script>
+  <script>
+    // Daftarkan Service Worker
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/optic_pos/sw.js", { scope: "/optic_pos/" })
+        .then(r => console.log("[SW] Registered:", r.scope))
+        .catch(e => console.warn("[SW] Failed:", e));
+    }
+  </script>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body {
+      background: #1a1a2e;
+      color: #e0e0e0;
+      font-family: 'Segoe UI', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .card {
+      background: #16213e;
+      border-radius: 24px;
+      padding: 40px 32px;
+      width: 90%;
+      max-width: 360px;
+      box-shadow: 8px 8px 20px #0d1220, -8px -8px 20px #1f2f5c;
+      text-align: center;
+    }
+    .logo { font-size: 56px; margin-bottom: 8px; }
+    h2 { font-size: 22px; font-weight: 700; color: #fff; margin-bottom: 4px; }
+    .subtitle { font-size: 13px; color: #8892a4; margin-bottom: 20px; }
+    .status-bar {
+      background: rgba(255,255,255,0.05);
+      border-radius: 10px;
+      padding: 8px 14px;
+      font-size: 12px;
+      color: #8892a4;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .dot { width:8px; height:8px; border-radius:50%; background:#e53e3e; flex-shrink:0; }
+    .dot.online  { background:#38a169; }
+    .dot.syncing { background:#d69e2e; animation:pulse 1s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+    .sync-btn {
+      width: 100%;
+      background: rgba(74,127,203,0.15);
+      border: 1px solid rgba(74,127,203,0.3);
+      color: #7eb8f7;
+      border-radius: 10px;
+      padding: 9px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-bottom: 16px;
+      display: none;
+    }
+    .sync-btn.visible { display: block; }
+
+    .input-group { margin-bottom: 16px; text-align: left; }
+    .input-group label { font-size: 12px; color: #8892a4; margin-bottom: 6px; display: block; }
+    .input-group input {
+      width: 100%;
+      background: #0d1220;
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 12px;
+      padding: 13px 16px;
+      color: #fff;
+      font-size: 15px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .input-group input:focus { border-color: #4a7fcb; }
+    .btn-login {
+      width: 100%;
+      background: linear-gradient(135deg, #0f3460, #533483);
+      color: white;
+      border: none;
+      border-radius: 12px;
+      padding: 14px;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      letter-spacing: 1px;
+      margin-top: 4px;
+      transition: opacity 0.2s;
+    }
+    .btn-login:disabled { opacity: 0.5; cursor: not-allowed; }
+    .message {
+      margin-top: 14px;
+      font-size: 13px;
+      padding: 10px 14px;
+      border-radius: 8px;
+      display: none;
+      text-align: left;
+    }
+    .message.error   { background:rgba(220,50,50,0.15);  color:#ff6b6b; display:block; }
+    .message.success { background:rgba(56,161,105,0.15); color:#68d391; display:block; }
+    .message.info    { background:rgba(74,127,203,0.15); color:#7eb8f7; display:block; }
+
+    .exit-btn {
+      position:fixed; top:16px; right:16px;
+      background:transparent;
+      border:1px solid rgba(255,255,255,0.12);
+      color:rgba(255,255,255,0.35);
+      border-radius:10px; padding:7px 14px;
+      font-size:12px; cursor:pointer; z-index:999;
+    }
+    .modal-overlay {
+      display:none; position:fixed; inset:0;
+      background:rgba(0,0,0,0.6); z-index:9999;
+      align-items:center; justify-content:center;
+    }
+    .modal-overlay.show { display:flex; }
+    .modal {
+      background:#16213e; border-radius:16px;
+      padding:32px 28px; max-width:300px; width:90%;
+      text-align:center; border:1px solid rgba(255,255,255,0.08);
+    }
+    .modal p { color:#c0c8d8; margin-bottom:24px; line-height:1.5; }
+    .modal-btns { display:flex; gap:12px; }
+    .modal-btns button {
+      flex:1; padding:11px 0; border-radius:10px;
+      border:none; font-size:14px; font-weight:600; cursor:pointer;
+    }
+    .btn-cancel { background:rgba(255,255,255,0.08); color:#a0aab8; }
+    .btn-exit   { background:linear-gradient(135deg,#c0392b,#922b21); color:white; }
+  </style>
+</head>
+<body>
+
+  <button class="exit-btn" onclick="showExit()">✕ Exit</button>
+
+  <div class="modal-overlay" id="exitModal">
+    <div class="modal">
+      <p>Exit the application?</p>
+      <div class="modal-btns">
+        <button class="btn-cancel" onclick="hideExit()">Cancel</button>
+        <button class="btn-exit" onclick="doExit()">Exit</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="logo">👓</div>
+    <h2>LenZa Optic</h2>
+    <p class="subtitle">Please login to continue</p>
+
+    <div class="status-bar">
+      <span class="dot" id="statusDot"></span>
+      <span id="statusText">Checking connection...</span>
+    </div>
+
+    <!-- Tombol sync muncul saat online -->
+    <button class="sync-btn" id="syncBtn" onclick="doForceSync()">
+      ⟳ Sync data to this device
+    </button>
+
+    <div class="input-group">
+      <label>Username</label>
+      <input type="text" id="username" placeholder="Enter username" autocomplete="username">
+    </div>
+    <div class="input-group">
+      <label>Password</label>
+      <input type="password" id="password" placeholder="Enter password" autocomplete="current-password">
+    </div>
+
+    <button class="btn-login" id="loginBtn" onclick="doLogin()">LOGIN TO SYSTEM</button>
+    <div class="message" id="message"></div>
+  </div>
+
+  <script>
+    // Auto-detect server URL dari origin halaman ini
+    const PC_URL      = window.location.origin + '/optic_pos';
+    const API_URL     = PC_URL + '/api_local_sync.php';
+    const TABLES      = ['settings','users','frames_main','frame_staging',
+                         'customer_examinations','customer_orders',
+                         'custom_frames','prescription_modifications'];
+    let connectionMode = 'offline'; // 'local' | 'offline'
+
+    // ── Cek koneksi ───────────────────────────────────────────
+    async function checkConnection() {
+      const dot  = document.getElementById('statusDot');
+      const text = document.getElementById('statusText');
+      const sBtn = document.getElementById('syncBtn');
+
+      dot.className = 'dot syncing';
+      text.textContent = 'Checking connection...';
+
+      try {
+        const r = await fetch(API_URL + '?action=status', {
+          signal: AbortSignal.timeout(3000),
+          credentials: 'include'
+        });
+        if (r.ok) {
+          connectionMode = 'local';
+          dot.className  = 'dot online';
+          text.textContent = 'Connected to local server';
+          sBtn.classList.add('visible');
+          return;
+        }
+      } catch {}
+
+      connectionMode = 'offline';
+      dot.className  = 'dot';
+      text.textContent = 'Offline — using local data';
+      sBtn.classList.remove('visible');
+    }
+
+    // ── Force sync semua tabel ────────────────────────────────
+    async function doForceSync() {
+      const btn  = document.getElementById('syncBtn');
+      const orig = btn.textContent;
+      btn.textContent = '⟳ Syncing...';
+      btn.disabled    = true;
+      showMsg('Syncing data, please wait...', 'info');
+
+      let total = 0;
+      let errors = [];
+
+      for (const table of TABLES) {
+        try {
+          const r    = await fetch(`${API_URL}?action=pull&table=${table}`, {
+            credentials: 'include'
+          });
+          const json = await r.json();
+
+          if (json.success && json.data && json.data.length > 0) {
+            await LocalDB.saveMany(table, json.data);
+            total += json.data.length;
+            console.log(`[Sync] ${table}: ${json.data.length} records`);
+          }
+        } catch(e) {
+          errors.push(table);
+          console.warn(`[Sync] ${table} failed:`, e);
+        }
+      }
+
+      btn.textContent = orig;
+      btn.disabled    = false;
+
+      // Cek apakah users berhasil
+      const users = await LocalDB.getAll('users');
+      if (users && users.length > 0) {
+        showMsg(`✓ Sync done! ${total} records saved. You can now use offline.`, 'success');
+      } else {
+        showMsg(`⚠ Sync done (${total} records) but users not saved. Please login to PHP first, then sync.`, 'error');
+      }
+    }
+
+    // ── Login ─────────────────────────────────────────────────
+    async function doLogin() {
+      const username = document.getElementById('username').value.trim();
+      const password = document.getElementById('password').value;
+      const btn      = document.getElementById('loginBtn');
+
+      if (!username || !password) {
+        showMsg('Please enter username and password.', 'error');
+        return;
+      }
+
+      btn.disabled    = true;
+      btn.textContent = 'Logging in...';
+
+      // Kalau server lokal tersedia → login PHP langsung
+      if (connectionMode === 'local') {
+        try {
+          const form = new FormData();
+          form.append('username', username);
+          form.append('password', password);
+
+          const r = await fetch(PC_URL + '/login.php', {
+            method: 'POST',
+            body: form,
+            credentials: 'include',
+            redirect: 'follow'
+          });
+
+          if (r.url.includes('welcome.php') || r.url.includes('index.php')) {
+            window.location.href = r.url;
+            return;
+          }
+
+          // Cek response body untuk pesan error
+          const html = await r.text();
+          if (html.includes('Invalid username') || html.includes('pending')) {
+            showMsg('Invalid username or password.', 'error');
+            btn.disabled = false;
+            btn.textContent = 'LOGIN TO SYSTEM';
+            return;
+          }
+
+          // Berhasil — redirect
+          window.location.href = PC_URL + '/index.php';
+          return;
+
+        } catch(e) {
+          console.warn('PHP login failed, trying offline:', e);
+        }
+      }
+
+      // Offline login via IndexedDB
+      await offlineLogin(username, password, btn);
+    }
+
+    async function offlineLogin(username, password, btn) {
+      try {
+        await LocalDB.init();
+        const allUsers = await LocalDB.getAll('users');
+        console.log('[Login] Users in IndexedDB:', allUsers ? allUsers.length : 0);
+
+        if (!allUsers || allUsers.length === 0) {
+          showMsg('No local data found. Please connect to server and tap "Sync data to this device" first.', 'error');
+          btn.disabled    = false;
+          btn.textContent = 'LOGIN TO SYSTEM';
+          return;
+        }
+
+        // Cari user berdasarkan username (case-insensitive)
+        const user = allUsers.find(u =>
+          u.username && u.username.toLowerCase() === username.toLowerCase()
+        );
+
+        if (!user) {
+          showMsg(`User "${username}" not found. Available: ${allUsers.map(u=>u.username).join(', ')}`, 'error');
+          btn.disabled    = false;
+          btn.textContent = 'LOGIN TO SYSTEM';
+          return;
+        }
+
+        if (!user.is_approved) {
+          showMsg('Account pending approval.', 'error');
+          btn.disabled    = false;
+          btn.textContent = 'LOGIN TO SYSTEM';
+          return;
+        }
+
+        // Simpan session offline
+        localStorage.setItem('offline_session', JSON.stringify({
+          user_id:  user.user_id,
+          username: user.username,
+          role:     user.role,
+          login_at: new Date().toISOString()
+        }));
+
+        showMsg('Login successful! Loading...', 'success');
+        setTimeout(() => {
+          window.location.href = '/optic_pos/index.php';
+        }, 800);
+
+      } catch(err) {
+        showMsg('Login error: ' + err.message, 'error');
+        btn.disabled    = false;
+        btn.textContent = 'LOGIN TO SYSTEM';
+      }
+    }
+
+    function showMsg(text, type) {
+      const el = document.getElementById('message');
+      el.textContent  = text;
+      el.className    = 'message ' + type;
+    }
+
+    // ── Exit ──────────────────────────────────────────────────
+    function showExit() { document.getElementById('exitModal').classList.add('show'); }
+    function hideExit() {
+      document.getElementById('exitModal').classList.remove('show');
+      history.pushState({}, '', location.href);
+    }
+    function doExit() {
+      window.location.href = 'intent:#Intent;action=android.intent.action.MAIN;category=android.intent.category.HOME;end';
+    }
+
+    history.pushState({ page: 'login' },  '', location.href);
+    history.pushState({ page: 'active' }, '', location.href);
+    window.addEventListener('popstate', () => {
+      showExit();
+      history.pushState({ page: 'active' }, '', location.href);
+    });
+
+    document.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+
+    // Init
+    LocalDB.init().then(() => checkConnection());
+  </script>
+</body>
+</html>

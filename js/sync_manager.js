@@ -12,10 +12,10 @@
 const SyncManager = (() => {
 
   // ── Konfigurasi ────────────────────────────────────────────────────────────
-  // Otomatis pakai protokol yang sama dengan browser (http atau https)
-  const _protocol     = window.location.protocol; // 'http:' atau 'https:'
-  const PC_BASE_URL   = `${_protocol}//192.168.18.10/optic_pos`;
-  const API_ENDPOINT  = `${PC_BASE_URL}/api_local_sync.php`;
+  // Auto-detect: pakai origin dari URL yang sedang dibuka
+  // Ini otomatis cocok baik pakai IP lokal, ngrok, maupun domain apapun
+  const PC_BASE_URL   = window.location.origin + '/optic_pos';
+  const API_ENDPOINT  = PC_BASE_URL + '/api_local_sync.php';
 
   // Tabel yang di-pull dari PC ke HP (urutan penting: settings dulu)
   const PULL_TABLES = [
