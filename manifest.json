@@ -1,0 +1,26 @@
+{
+  "name": "LenZa Optic System",
+  "short_name": "LenZa",
+  "description": "Optical Store Management System",
+  "start_url": "/optic_pos/login.php",
+  "scope": "/optic_pos/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#1a1a2e",
+  "theme_color": "#1a1a2e",
+  "lang": "id",
+  "icons": [
+    {
+      "src": "/optic_pos/image/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/optic_pos/image/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -1,545 +1,546 @@
 <?php
-session_start();
-include 'db_config.php';
-include 'config_helper.php';
+    session_start();
+    include 'db_config.php';
+    include 'config_helper.php';
 
-if (!isset($_SESSION['user_id'])) { header("Location: index.php"); exit(); }
+    if (!isset($_SESSION['user_id'])) { header("Location: index.php"); exit(); }
 
-// ══════════════════════════════════════════════════════════════════
-//  AJAX: Return all analysis data as JSON
-// ══════════════════════════════════════════════════════════════════
-if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
-    error_reporting(0);
-    ob_start();
-    header('Content-Type: application/json');
+    // ══════════════════════════════════════════════════════════════════
+    //  AJAX: Return all analysis data as JSON
+    // ══════════════════════════════════════════════════════════════════
+    if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
+        error_reporting(0);
+        ob_start();
+        header('Content-Type: application/json');
 
-    // Date filter - safely parse params
-    $filterYear  = (isset($_GET['year'])  && ctype_digit(strval($_GET['year']))  && (int)$_GET['year']  > 2000) ? (int)$_GET['year']  : 0;
-    $filterMonth = (isset($_GET['month']) && ctype_digit(strval($_GET['month'])) && (int)$_GET['month'] >= 1 && (int)$_GET['month'] <= 12) ? (int)$_GET['month'] : 0;
-    $dateWhere = '';
-    if ($filterYear > 0 && $filterMonth > 0)
-        $dateWhere = " AND YEAR(co.order_date)=" . $filterYear . " AND MONTH(co.order_date)=" . $filterMonth;
-    elseif ($filterYear > 0)
-        $dateWhere = " AND YEAR(co.order_date)=" . $filterYear;
+        // Date filter - safely parse params
+        $filterYear  = (isset($_GET['year'])  && ctype_digit(strval($_GET['year']))  && (int)$_GET['year']  > 2000) ? (int)$_GET['year']  : 0;
+        $filterMonth = (isset($_GET['month']) && ctype_digit(strval($_GET['month'])) && (int)$_GET['month'] >= 1 && (int)$_GET['month'] <= 12) ? (int)$_GET['month'] : 0;
+        $dateWhere = '';
+        if ($filterYear > 0 && $filterMonth > 0)
+            $dateWhere = " AND YEAR(co.order_date)=" . $filterYear . " AND MONTH(co.order_date)=" . $filterMonth;
+        elseif ($filterYear > 0)
+            $dateWhere = " AND YEAR(co.order_date)=" . $filterYear;
 
-    // Available years for dropdown
-    $availableYears = [];
-    $ry = $conn->query("SELECT DISTINCT YEAR(order_date) AS yr FROM customer_orders WHERE order_status=5 ORDER BY yr DESC");
-    if ($ry) { while ($row=$ry->fetch_assoc()) { $availableYears[]=(int)$row['yr']; } $ry->free(); }
+        // Available years for dropdown
+        $availableYears = [];
+        $ry = $conn->query("SELECT DISTINCT YEAR(order_date) AS yr FROM customer_orders WHERE order_status=5 ORDER BY yr DESC");
+        if ($ry) { while ($row=$ry->fetch_assoc()) { $availableYears[]=(int)$row['yr']; } $ry->free(); }
 
-    // ── Lens cost map ──────────────────────────────────────────────
-    $lensJsonPath = __DIR__ . '/data_json/lense_prices.json';
-    $lensCostMap  = [];
-    if (file_exists($lensJsonPath)) {
-        $lj = json_decode(file_get_contents($lensJsonPath), true);
-        foreach (['stock','lab'] as $lt) {
-            if (!empty($lj[$lt])) {
-                foreach ($lj[$lt] as $cat => $types) {
-                    foreach ($types as $typeName => $info) {
-                        $k = strtoupper(trim($cat) . ' / ' . trim($typeName));
-                        $lensCostMap[$k] = (int)($info['cost'] ?? 0);
+        // ── Lens cost map ──────────────────────────────────────────────
+        $lensJsonPath = __DIR__ . '/data_json/lense_prices.json';
+        $lensCostMap  = [];
+        if (file_exists($lensJsonPath)) {
+            $lj = json_decode(file_get_contents($lensJsonPath), true);
+            foreach (['stock','lab'] as $lt) {
+                if (!empty($lj[$lt])) {
+                    foreach ($lj[$lt] as $cat => $types) {
+                        foreach ($types as $typeName => $info) {
+                            $k = strtoupper(trim($cat) . ' / ' . trim($typeName));
+                            $lensCostMap[$k] = (int)($info['cost'] ?? 0);
+                        }
                     }
                 }
             }
         }
-    }
 
-    // ── Frame cost maps ────────────────────────────────────────────
-    $frameCostMap = [];
-    $r = $conn->query("SELECT ufc, buy_price FROM frames_main WHERE buy_price IS NOT NULL AND buy_price > 0");
-    if ($r) { while ($row = $r->fetch_assoc()) { $frameCostMap[strtoupper(trim($row['ufc']))] = (int)$row['buy_price']; } $r->free(); }
-    $r = $conn->query("SELECT ufc, buy_price FROM frame_staging WHERE buy_price IS NOT NULL AND buy_price > 0");
-    if ($r) { while ($row = $r->fetch_assoc()) { $k = strtoupper(trim($row['ufc'])); if (!isset($frameCostMap[$k])) $frameCostMap[$k] = (int)$row['buy_price']; } $r->free(); }
+        // ── Frame cost maps ────────────────────────────────────────────
+        $frameCostMap = [];
+        $r = $conn->query("SELECT ufc, buy_price FROM frames_main WHERE buy_price IS NOT NULL AND buy_price > 0");
+        if ($r) { while ($row = $r->fetch_assoc()) { $frameCostMap[strtoupper(trim($row['ufc']))] = (int)$row['buy_price']; } $r->free(); }
+        $r = $conn->query("SELECT ufc, buy_price FROM frame_staging WHERE buy_price IS NOT NULL AND buy_price > 0");
+        if ($r) { while ($row = $r->fetch_assoc()) { $k = strtoupper(trim($row['ufc'])); if (!isset($frameCostMap[$k])) $frameCostMap[$k] = (int)$row['buy_price']; } $r->free(); }
 
-    $customFrameMap = [];
-    $r = $conn->query("SELECT invoice_number, buy_price FROM custom_frames");
-    if ($r) { while ($row = $r->fetch_assoc()) { $customFrameMap[$row['invoice_number']] = (int)$row['buy_price']; } $r->free(); }
+        $customFrameMap = [];
+        $r = $conn->query("SELECT invoice_number, buy_price FROM custom_frames");
+        if ($r) { while ($row = $r->fetch_assoc()) { $customFrameMap[$row['invoice_number']] = (int)$row['buy_price']; } $r->free(); }
 
-    // ── Fetch all finished orders joined with examinations ─────────
-    $sql = "
-        SELECT
-            co.id, co.invoice_number, co.frame_ufc, co.lens_name,
-            co.total_amount, co.order_date, co.due_date, co.is_modified,
-            COALESCE(co.packaging_cost, 19500) AS packaging_cost,
-            ce.customer_name, ce.age, ce.gender, ce.examination_code,
-            ce.new_r_sph, ce.new_r_cyl, ce.new_r_ax, ce.new_r_add,
-            ce.new_l_sph, ce.new_l_cyl, ce.new_l_ax, ce.new_l_add,
-            ce.new_r_visus, ce.new_l_visus,
-            ce.need_distance, ce.need_near, ce.need_intermediate,
-            ce.visual_habit, ce.digital_usage, ce.lens_modification,
-            ce.symptoms, ce.pd_dist
-        FROM customer_orders co
-        LEFT JOIN customer_examinations ce
-            ON co.invoice_number = ce.invoice_number AND co.invoice_number != '00'
-        WHERE co.order_status = 5$dateWhere
-        ORDER BY co.order_date ASC
-    ";
-    $result = $conn->query($sql);
-    $orders = [];
-    if ($result) { while ($row = $result->fetch_assoc()) { $orders[] = $row; } }
+        // ── Fetch all finished orders joined with examinations ─────────
+        $sql = "
+            SELECT
+                co.id, co.invoice_number, co.frame_ufc, co.lens_name,
+                co.total_amount, co.order_date, co.due_date, co.is_modified,
+                COALESCE(co.packaging_cost, 19500) AS packaging_cost,
+                ce.customer_name, ce.age, ce.gender, ce.examination_code,
+                ce.new_r_sph, ce.new_r_cyl, ce.new_r_ax, ce.new_r_add,
+                ce.new_l_sph, ce.new_l_cyl, ce.new_l_ax, ce.new_l_add,
+                ce.new_r_visus, ce.new_l_visus,
+                ce.need_distance, ce.need_near, ce.need_intermediate,
+                ce.visual_habit, ce.digital_usage, ce.lens_modification,
+                ce.symptoms, ce.pd_dist
+            FROM customer_orders co
+            LEFT JOIN customer_examinations ce
+                ON co.invoice_number = ce.invoice_number AND co.invoice_number != '00'
+            WHERE co.order_status = 5$dateWhere
+            ORDER BY co.order_date ASC
+        ";
+        $result = $conn->query($sql);
+        $orders = [];
+        if ($result) { while ($row = $result->fetch_assoc()) { $orders[] = $row; } }
 
-    // ── prescription_modifications ────────────────────────────────
-    $rxMods = [];
-    $r = $conn->query("
-        SELECT pm.*, co.frame_ufc, co.lens_name,
-               ce.customer_name, ce.gender, ce.age
-        FROM prescription_modifications pm
-        LEFT JOIN customer_orders co ON pm.invoice_number = co.invoice_number
-        LEFT JOIN customer_examinations ce ON pm.invoice_number = ce.invoice_number
-        ORDER BY pm.modified_at DESC
-        LIMIT 15
-    ");
-    if ($r) { while ($row = $r->fetch_assoc()) { $rxMods[] = $row; } $r->free(); }
-    $rxModCount = 0;
-    $r2 = $conn->query("SELECT COUNT(*) AS cnt FROM prescription_modifications");
-    if ($r2) { $rxModCount = (int)($r2->fetch_assoc()['cnt'] ?? 0); $r2->free(); }
+        // ── prescription_modifications ────────────────────────────────
+        $rxMods = [];
+        $r = $conn->query("
+            SELECT pm.*, co.frame_ufc, co.lens_name,
+                ce.customer_name, ce.gender, ce.age
+            FROM prescription_modifications pm
+            LEFT JOIN customer_orders co ON pm.invoice_number = co.invoice_number
+            LEFT JOIN customer_examinations ce ON pm.invoice_number = ce.invoice_number
+            ORDER BY pm.modified_at DESC
+            LIMIT 15
+        ");
+        if ($r) { while ($row = $r->fetch_assoc()) { $rxMods[] = $row; } $r->free(); }
+        $rxModCount = 0;
+        $r2 = $conn->query("SELECT COUNT(*) AS cnt FROM prescription_modifications");
+        if ($r2) { $rxModCount = (int)($r2->fetch_assoc()['cnt'] ?? 0); $r2->free(); }
 
-    // ── Frame inventory analysis ───────────────────────────────────
-    $frameInventory = [];
-    $r = $conn->query("
-        SELECT brand, material, structure, size_range, gender_category,
-               stock_age, stock, buy_price, sell_price, lens_shape
-        FROM frames_main
-    ");
-    if ($r) { while ($row = $r->fetch_assoc()) { $frameInventory[] = $row; } $r->free(); }
-    $stagingCount = 0;
-    $r = $conn->query("SELECT COUNT(*) AS cnt FROM frame_staging");
-    if ($r) { $stagingCount = (int)($r->fetch_assoc()['cnt'] ?? 0); $r->free(); }
+        // ── Frame inventory analysis ───────────────────────────────────
+        $frameInventory = [];
+        $r = $conn->query("
+            SELECT brand, material, structure, size_range, gender_category,
+                stock_age, stock, buy_price, sell_price, lens_shape
+            FROM frames_main
+        ");
+        if ($r) { while ($row = $r->fetch_assoc()) { $frameInventory[] = $row; } $r->free(); }
+        $stagingCount = 0;
+        $r = $conn->query("SELECT COUNT(*) AS cnt FROM frame_staging");
+        if ($r) { $stagingCount = (int)($r->fetch_assoc()['cnt'] ?? 0); $r->free(); }
 
-    // ── Frames missing buy_price ───────────────────────────────────
-    $pendingFrames = [];
-    $r = $conn->query("SELECT ufc, sell_price FROM frames_main WHERE buy_price = 0 OR buy_price IS NULL LIMIT 20");
-    if ($r) { while ($row = $r->fetch_assoc()) { $pendingFrames[] = $row; } $r->free(); }
+        // ── Frames missing buy_price ───────────────────────────────────
+        $pendingFrames = [];
+        $r = $conn->query("SELECT ufc, sell_price FROM frames_main WHERE buy_price = 0 OR buy_price IS NULL LIMIT 20");
+        if ($r) { while ($row = $r->fetch_assoc()) { $pendingFrames[] = $row; } $r->free(); }
 
-    // ══ COMPUTE PER-ORDER ═════════════════════════════════════════
-    $totalRevenue = 0; $totalCost = 0; $totalProfit = 0;
-    $monthlyData  = [];
-    $lensCount    = []; $lensRevenue = []; $lensProfit = [];
-    $frameCount   = []; $frameRevenue = [];
-    $genderCount  = ['MALE'=>0,'FEMALE'=>0,'Unknown'=>0];
-    $ageGroups    = ['0–17'=>0,'18–30'=>0,'31–45'=>0,'46–60'=>0,'61+'=>0];
-    $dowCount     = array_fill(0, 7, 0);
-    $processDays  = [];
-    $profitMargins= [];
-    $avgByAge     = [];
-    $custCount    = [];
-    $modifiedCount= 0;
+        // ══ COMPUTE PER-ORDER ═════════════════════════════════════════
+        $totalRevenue = 0; $totalCost = 0; $totalProfit = 0;
+        $monthlyData  = [];
+        $lensCount    = []; $lensRevenue = []; $lensProfit = [];
+        $frameCount   = []; $frameRevenue = [];
+        $genderCount  = ['MALE'=>0,'FEMALE'=>0,'Unknown'=>0];
+        $ageGroups    = ['0–17'=>0,'18–30'=>0,'31–45'=>0,'46–60'=>0,'61+'=>0];
+        $dowCount     = array_fill(0, 7, 0);
+        $processDays  = [];
+        $profitMargins= [];
+        $avgByAge     = [];
+        $custCount    = [];
+        $modifiedCount= 0;
 
-    // Prescription analytics
-    $sphBuckets   = ['≤-6'=>0,'-6 to -3'=>0,'-3 to 0'=>0,'0 to +3'=>0,'+3 to +6'=>0,'>+6'=>0,'Unknown'=>0];
-    $lensRxCount  = ['singlevision'=>[],'kryptok'=>[],'flattop'=>[],'progressive'=>[]];
-    $lensByCat    = ['singlevision'=>[],'kryptok'=>[],'flattop'=>[],'progressive'=>[]];
-    $cylSeverity  = ['None (0)'=>0,'Mild (<-1)'=>0,'Moderate (<-2)'=>0,'Severe (≥-2)'=>0,'Unknown'=>0];
-    $visionNeeds  = ['Distance Only'=>0,'Near Only'=>0,'Intermediate'=>0,'Multifocal (2+)'=>0];
-    $addCount     = 0; // has ADD value
-    $highMyopiaCount = 0; // SPH <= -6
-    $presbyopiaCount = 0; // has ADD
+        // Prescription analytics
+        $sphBuckets   = ['≤-6'=>0,'-6 to -3'=>0,'-3 to 0'=>0,'0 to +3'=>0,'+3 to +6'=>0,'>+6'=>0,'Unknown'=>0];
+        $lensRxCount  = ['singlevision'=>[],'kryptok'=>[],'flattop'=>[],'progressive'=>[]];
+        $lensByCat    = ['singlevision'=>[],'kryptok'=>[],'flattop'=>[],'progressive'=>[]];
+        $cylSeverity  = ['None (0)'=>0,'Mild (<-1)'=>0,'Moderate (<-2)'=>0,'Severe (≥-2)'=>0,'Unknown'=>0];
+        $visionNeeds  = ['Distance Only'=>0,'Near Only'=>0,'Intermediate'=>0,'Multifocal (2+)'=>0];
+        $addCount     = 0; // has ADD value
+        $highMyopiaCount = 0; // SPH <= -6
+        $presbyopiaCount = 0; // has ADD
 
-    foreach ($orders as $o) {
-        $amt = (int)$o['total_amount'];
-        $pkg = (int)($o['packaging_cost'] ?? 19500);
-        // Lens cost
-        $ln  = preg_replace('/\s*[\x{2014}\x{2013}\/]\s*/u', ' / ', trim($o['lens_name'] ?? ''));
-        $lk  = strtoupper($ln);
-        $lc  = $lensCostMap[$lk] ?? 0;
-        // Frame cost
-        $ufc = strtoupper(trim($o['frame_ufc'] ?? ''));
-        $fc  = 0;
-        if (strlen($ufc) > 0 && is_numeric($ufc[0])) {
-            $fc = $customFrameMap[$o['invoice_number'] ?? ''] ?? 0;
-        } else {
-            $fc = $frameCostMap[$ufc] ?? 0;
-        }
-        $cost   = $lc + $fc + $pkg;
-        $profit = $amt - $cost;
-
-        $totalRevenue += $amt;
-        $totalCost    += $cost;
-        $totalProfit  += $profit;
-
-        // Monthly
-        $ym = !empty($o['order_date']) ? date('Y-m', strtotime($o['order_date'])) : 'unknown';
-        if (!isset($monthlyData[$ym])) $monthlyData[$ym] = ['revenue'=>0,'cost'=>0,'profit'=>0,'count'=>0,'label'=>''];
-        $monthlyData[$ym]['revenue'] += $amt;
-        $monthlyData[$ym]['cost']    += $cost;
-        $monthlyData[$ym]['profit']  += $profit;
-        $monthlyData[$ym]['count']++;
-        $monthlyData[$ym]['label'] = !empty($o['order_date']) ? date('M Y', strtotime($o['order_date'])) : 'Unknown';
-
-        // Lens — split into 4 separate categories
-        $lnameRaw = trim($o['lens_name'] ?? '');
-        $lCatKey  = ''; // reset per order
-        if ($lnameRaw !== '') {
-            // Detect category: check if lens_name STARTS WITH known category keyword
-            // More robust than splitting — handles any separator/encoding variant
-            $lUpper = strtoupper($lnameRaw);
-            if (strpos($lUpper, 'SINGLE VISION') === 0) {
-                $lCatRaw = 'SINGLE VISION';
-                // Strip 'SINGLE VISION' prefix + any separator to get variant
-                $lVar = trim(preg_replace('/^SINGLE\s+VISION\s*[^A-Z0-9]*/i', '', $lnameRaw));
-            } elseif (strpos($lUpper, 'PROGRESSIVE') === 0) {
-                $lCatRaw = 'PROGRESSIVE';
-                $lVar = trim(preg_replace('/^PROGRESSIVE\s*[^A-Z0-9]*/i', '', $lnameRaw));
-            } elseif (strpos($lUpper, 'KRYPTOK') === 0) {
-                $lCatRaw = 'KRYPTOK';
-                $lVar = trim(preg_replace('/^KRYPTOK\s*[^A-Z0-9]*/i', '', $lnameRaw));
-            } elseif (strpos($lUpper, 'FLATTOP') === 0) {
-                $lCatRaw = 'FLATTOP';
-                $lVar = trim(preg_replace('/^FLATTOP\s*[^A-Z0-9]*/i', '', $lnameRaw));
+        foreach ($orders as $o) {
+            $amt = (int)$o['total_amount'];
+            $pkg = (int)($o['packaging_cost'] ?? 19500);
+            // Lens cost
+            $ln  = preg_replace('/\s*[\x{2014}\x{2013}\/]\s*/u', ' / ', trim($o['lens_name'] ?? ''));
+            $lk  = strtoupper($ln);
+            $lc  = $lensCostMap[$lk] ?? 0;
+            // Frame cost
+            $ufc = strtoupper(trim($o['frame_ufc'] ?? ''));
+            $fc  = 0;
+            if (strlen($ufc) > 0 && is_numeric($ufc[0])) {
+                $fc = $customFrameMap[$o['invoice_number'] ?? ''] ?? 0;
             } else {
-                $lCatRaw = strtoupper($lnameRaw);
-                $lVar = $lnameRaw;
+                $fc = $frameCostMap[$ufc] ?? 0;
             }
-            if ($lVar === '') $lVar = $lnameRaw;
-            if (strpos($lCatRaw, 'PROGRESSIVE') !== false)  $lCatKey = 'progressive';
-            elseif (strpos($lCatRaw, 'KRYPTOK') !== false)  $lCatKey = 'kryptok';
-            elseif (strpos($lCatRaw, 'FLATTOP') !== false)  $lCatKey = 'flattop';
-            else                                              $lCatKey = 'singlevision';
-            // Progressive: keep full name; others: variant only
-            $lkey = ($lCatKey === 'progressive') ? $lnameRaw : $lVar;
-            if (!isset($lensByCat[$lCatKey][$lkey])) {
-                $lensByCat[$lCatKey][$lkey] = ['count'=>0,'revenue'=>0,'profit'=>0];
-            }
-            $lensByCat[$lCatKey][$lkey]['count']++;
-            $lensByCat[$lCatKey][$lkey]['revenue'] += $amt;
-            $lensByCat[$lCatKey][$lkey]['profit']  += $profit;
-        }
-        // Keep flat lensCount for existing analytics
-        $lname = ($lnameRaw !== '') ? $lnameRaw : '—';
-        if (!isset($lensCount[$lname])) { $lensCount[$lname]=0; $lensRevenue[$lname]=0; $lensProfit[$lname]=0; }
-        $lensCount[$lname]++;
-        $lensRevenue[$lname] += $amt;
-        $lensProfit[$lname]  += $profit;
+            $cost   = $lc + $fc + $pkg;
+            $profit = $amt - $cost;
 
-        // Lens size per category — one key per ORDER (R + L combined)
-        // Convention: if abs(value) > 20, stored as centesimal (e.g. -50 means -0.50)
-        $rS = trim($o['new_r_sph'] ?? ''); $rC = trim($o['new_r_cyl'] ?? '');
-        $lS = trim($o['new_l_sph'] ?? ''); $lC = trim($o['new_l_cyl'] ?? '');
-        if (($rS !== '' || $lS !== '') && $lCatKey !== '') {
-            $rxBuild = function($s, $c) {
-                if ($s === '') return null;
-                $sV = floatval($s); $cV = ($c !== '') ? floatval($c) : 0;
-                if (abs($sV) > 20) $sV /= 100;
-                if (abs($cV) > 20) $cV /= 100;
-                $sF = ($sV > 0 ? '+' : '') . number_format($sV, 2);
-                $cF = ($cV != 0) ? ' / CYL ' . ($cV > 0 ? '+' : '') . number_format($cV, 2) : '';
-                return 'SPH ' . $sF . $cF;
-            };
-            $rPart = $rxBuild($rS, $rC);
-            $lPart = $rxBuild($lS, $lC);
-            if ($rPart !== null && $lPart !== null && $rPart !== $lPart) {
-                $rxKey = 'R: ' . $rPart . '  |  L: ' . $lPart;
-            } elseif ($rPart !== null && $lPart !== null) {
-                $rxKey = $rPart . ' (R & L)';
-            } elseif ($rPart !== null) {
-                $rxKey = 'R: ' . $rPart;
+            $totalRevenue += $amt;
+            $totalCost    += $cost;
+            $totalProfit  += $profit;
+
+            // Monthly
+            $ym = !empty($o['order_date']) ? date('Y-m', strtotime($o['order_date'])) : 'unknown';
+            if (!isset($monthlyData[$ym])) $monthlyData[$ym] = ['revenue'=>0,'cost'=>0,'profit'=>0,'count'=>0,'label'=>''];
+            $monthlyData[$ym]['revenue'] += $amt;
+            $monthlyData[$ym]['cost']    += $cost;
+            $monthlyData[$ym]['profit']  += $profit;
+            $monthlyData[$ym]['count']++;
+            $monthlyData[$ym]['label'] = !empty($o['order_date']) ? date('M Y', strtotime($o['order_date'])) : 'Unknown';
+
+            // Lens — split into 4 separate categories
+            $lnameRaw = trim($o['lens_name'] ?? '');
+            $lCatKey  = ''; // reset per order
+            if ($lnameRaw !== '') {
+                // Detect category: check if lens_name STARTS WITH known category keyword
+                // More robust than splitting — handles any separator/encoding variant
+                $lUpper = strtoupper($lnameRaw);
+                if (strpos($lUpper, 'SINGLE VISION') === 0) {
+                    $lCatRaw = 'SINGLE VISION';
+                    // Strip 'SINGLE VISION' prefix + any separator to get variant
+                    $lVar = trim(preg_replace('/^SINGLE\s+VISION\s*[^A-Z0-9]*/i', '', $lnameRaw));
+                } elseif (strpos($lUpper, 'PROGRESSIVE') === 0) {
+                    $lCatRaw = 'PROGRESSIVE';
+                    $lVar = trim(preg_replace('/^PROGRESSIVE\s*[^A-Z0-9]*/i', '', $lnameRaw));
+                } elseif (strpos($lUpper, 'KRYPTOK') === 0) {
+                    $lCatRaw = 'KRYPTOK';
+                    $lVar = trim(preg_replace('/^KRYPTOK\s*[^A-Z0-9]*/i', '', $lnameRaw));
+                } elseif (strpos($lUpper, 'FLATTOP') === 0) {
+                    $lCatRaw = 'FLATTOP';
+                    $lVar = trim(preg_replace('/^FLATTOP\s*[^A-Z0-9]*/i', '', $lnameRaw));
+                } else {
+                    $lCatRaw = strtoupper($lnameRaw);
+                    $lVar = $lnameRaw;
+                }
+                if ($lVar === '') $lVar = $lnameRaw;
+                if (strpos($lCatRaw, 'PROGRESSIVE') !== false)  $lCatKey = 'progressive';
+                elseif (strpos($lCatRaw, 'KRYPTOK') !== false)  $lCatKey = 'kryptok';
+                elseif (strpos($lCatRaw, 'FLATTOP') !== false)  $lCatKey = 'flattop';
+                else                                              $lCatKey = 'singlevision';
+                // Progressive: keep full name; others: variant only
+                $lkey = ($lCatKey === 'progressive') ? $lnameRaw : $lVar;
+                if (!isset($lensByCat[$lCatKey][$lkey])) {
+                    $lensByCat[$lCatKey][$lkey] = ['count'=>0,'revenue'=>0,'profit'=>0];
+                }
+                $lensByCat[$lCatKey][$lkey]['count']++;
+                $lensByCat[$lCatKey][$lkey]['revenue'] += $amt;
+                $lensByCat[$lCatKey][$lkey]['profit']  += $profit;
+            }
+            // Keep flat lensCount for existing analytics
+            $lname = ($lnameRaw !== '') ? $lnameRaw : '—';
+            if (!isset($lensCount[$lname])) { $lensCount[$lname]=0; $lensRevenue[$lname]=0; $lensProfit[$lname]=0; }
+            $lensCount[$lname]++;
+            $lensRevenue[$lname] += $amt;
+            $lensProfit[$lname]  += $profit;
+
+            // Lens size per category — one key per ORDER (R + L combined)
+            // Convention: if abs(value) > 20, stored as centesimal (e.g. -50 means -0.50)
+            $rS = trim($o['new_r_sph'] ?? ''); $rC = trim($o['new_r_cyl'] ?? '');
+            $lS = trim($o['new_l_sph'] ?? ''); $lC = trim($o['new_l_cyl'] ?? '');
+            if (($rS !== '' || $lS !== '') && $lCatKey !== '') {
+                $rxBuild = function($s, $c) {
+                    if ($s === '') return null;
+                    $sV = floatval($s); $cV = ($c !== '') ? floatval($c) : 0;
+                    if (abs($sV) > 20) $sV /= 100;
+                    if (abs($cV) > 20) $cV /= 100;
+                    $sF = ($sV > 0 ? '+' : '') . number_format($sV, 2);
+                    $cF = ($cV != 0) ? ' / CYL ' . ($cV > 0 ? '+' : '') . number_format($cV, 2) : '';
+                    return 'SPH ' . $sF . $cF;
+                };
+                $rPart = $rxBuild($rS, $rC);
+                $lPart = $rxBuild($lS, $lC);
+                if ($rPart !== null && $lPart !== null && $rPart !== $lPart) {
+                    $rxKey = 'R: ' . $rPart . '  |  L: ' . $lPart;
+                } elseif ($rPart !== null && $lPart !== null) {
+                    $rxKey = $rPart . ' (R & L)';
+                } elseif ($rPart !== null) {
+                    $rxKey = 'R: ' . $rPart;
+                } else {
+                    $rxKey = 'L: ' . $lPart;
+                }
+                if (!isset($lensRxCount[$lCatKey][$rxKey])) $lensRxCount[$lCatKey][$rxKey] = 0;
+                $lensRxCount[$lCatKey][$rxKey]++;
+            }
+
+            // Frame
+            $fu = trim($o['frame_ufc'] ?? '—');
+            if (!isset($frameCount[$fu])) { $frameCount[$fu]=0; $frameRevenue[$fu]=0; }
+            $frameCount[$fu]++;
+            $frameRevenue[$fu] += $amt;
+
+            // Gender
+            $g = strtoupper(trim($o['gender'] ?? ''));
+            if ($g === 'MALE')        $genderCount['MALE']++;
+            elseif ($g === 'FEMALE')  $genderCount['FEMALE']++;
+            else                      $genderCount['Unknown']++;
+
+            // Age
+            $age = (int)($o['age'] ?? 0);
+            if ($age > 0) {
+                $ag = $age <= 17 ? '0–17' : ($age <= 30 ? '18–30' : ($age <= 45 ? '31–45' : ($age <= 60 ? '46–60' : '61+')));
+                $ageGroups[$ag]++;
+                if (!isset($avgByAge[$ag])) $avgByAge[$ag] = ['sum'=>0,'cnt'=>0];
+                $avgByAge[$ag]['sum'] += $amt;
+                $avgByAge[$ag]['cnt']++;
+            }
+
+            // DOW
+            if (!empty($o['order_date'])) $dowCount[(int)date('w', strtotime($o['order_date']))]++;
+
+            // Processing days
+            if (!empty($o['order_date']) && !empty($o['due_date'])) {
+                $diff = (int)round((strtotime($o['due_date']) - strtotime($o['order_date'])) / 86400);
+                if ($diff >= 0 && $diff <= 60) $processDays[] = $diff;
+            }
+
+            // Margin
+            if ($amt > 0) $profitMargins[] = round($profit / $amt * 100);
+
+            // Customers
+            $n = trim($o['customer_name'] ?? '—');
+            if (!isset($custCount[$n])) $custCount[$n] = ['count'=>0,'revenue'=>0];
+            $custCount[$n]['count']++;
+            $custCount[$n]['revenue'] += $amt;
+
+            // is_modified
+            if ((int)($o['is_modified'] ?? 0) === 1) $modifiedCount++;
+
+            // ── Prescription analytics ──────────────────────────────
+            $rSph = floatval($o['new_r_sph'] ?? 0);
+            $lSph = floatval($o['new_l_sph'] ?? 0);
+            $rCyl = floatval($o['new_r_cyl'] ?? 0);
+            $lCyl = floatval($o['new_l_cyl'] ?? 0);
+            $rAdd = trim($o['new_r_add'] ?? '');
+            $lAdd = trim($o['new_l_add'] ?? '');
+
+            $hasSph = !empty(trim($o['new_r_sph'] ?? '')) || !empty(trim($o['new_l_sph'] ?? ''));
+            if ($hasSph) {
+                $avgSph = ($rSph + $lSph) / 2;
+                if ($avgSph <= -6)        $sphBuckets['≤-6']++;
+                elseif ($avgSph <= -3)    $sphBuckets['-6 to -3']++;
+                elseif ($avgSph < 0)      $sphBuckets['-3 to 0']++;
+                elseif ($avgSph <= 3)     $sphBuckets['0 to +3']++;
+                elseif ($avgSph <= 6)     $sphBuckets['+3 to +6']++;
+                else                       $sphBuckets['>+6']++;
+                if ($avgSph <= -6) $highMyopiaCount++;
             } else {
-                $rxKey = 'L: ' . $lPart;
+                $sphBuckets['Unknown']++;
             }
-            if (!isset($lensRxCount[$lCatKey][$rxKey])) $lensRxCount[$lCatKey][$rxKey] = 0;
-            $lensRxCount[$lCatKey][$rxKey]++;
+
+            $hasCyl = !empty(trim($o['new_r_cyl'] ?? '')) || !empty(trim($o['new_l_cyl'] ?? ''));
+            if ($hasCyl) {
+                $maxCyl = min($rCyl, $lCyl); // more negative = worse
+                if ($maxCyl >= 0)         $cylSeverity['None (0)']++;
+                elseif ($maxCyl > -1)     $cylSeverity['Mild (<-1)']++;
+                elseif ($maxCyl > -2)     $cylSeverity['Moderate (<-2)']++;
+                else                       $cylSeverity['Severe (≥-2)']++;
+            } else {
+                $cylSeverity['Unknown']++;
+            }
+
+            $hasAdd = (!empty($rAdd) && $rAdd !== '0') || (!empty($lAdd) && $lAdd !== '0');
+            if ($hasAdd) { $presbyopiaCount++; }
+
+            // Vision needs (flags from examination)
+            $nd  = (int)($o['need_distance']     ?? 0);
+            $nn  = (int)($o['need_near']         ?? 0);
+            $ni  = (int)($o['need_intermediate'] ?? 0);
+            $sum = $nd + $nn + $ni;
+            if ($sum >= 2)        $visionNeeds['Multifocal (2+)']++;
+            elseif ($ni)          $visionNeeds['Intermediate']++;
+            elseif ($nn && !$nd)  $visionNeeds['Near Only']++;
+            else                   $visionNeeds['Distance Only']++;
         }
 
-        // Frame
-        $fu = trim($o['frame_ufc'] ?? '—');
-        if (!isset($frameCount[$fu])) { $frameCount[$fu]=0; $frameRevenue[$fu]=0; }
-        $frameCount[$fu]++;
-        $frameRevenue[$fu] += $amt;
+        ksort($monthlyData);
+        $monthlyData = array_slice($monthlyData, -18, 18, true);
 
-        // Gender
-        $g = strtoupper(trim($o['gender'] ?? ''));
-        if ($g === 'MALE')        $genderCount['MALE']++;
-        elseif ($g === 'FEMALE')  $genderCount['FEMALE']++;
-        else                      $genderCount['Unknown']++;
-
-        // Age
-        $age = (int)($o['age'] ?? 0);
-        if ($age > 0) {
-            $ag = $age <= 17 ? '0–17' : ($age <= 30 ? '18–30' : ($age <= 45 ? '31–45' : ($age <= 60 ? '46–60' : '61+')));
-            $ageGroups[$ag]++;
-            if (!isset($avgByAge[$ag])) $avgByAge[$ag] = ['sum'=>0,'cnt'=>0];
-            $avgByAge[$ag]['sum'] += $amt;
-            $avgByAge[$ag]['cnt']++;
+        arsort($lensCount);
+        $topLenses = [];
+        $i = 0;
+        foreach ($lensCount as $name => $cnt) {
+            if ($i++ >= 8) break;
+            $topLenses[] = ['name'=>$name,'count'=>$cnt,'revenue'=>$lensRevenue[$name],'profit'=>$lensProfit[$name],
+                'margin'=>($lensRevenue[$name]>0 ? round($lensProfit[$name]/$lensRevenue[$name]*100) : 0)];
         }
 
-        // DOW
-        if (!empty($o['order_date'])) $dowCount[(int)date('w', strtotime($o['order_date']))]++;
-
-        // Processing days
-        if (!empty($o['order_date']) && !empty($o['due_date'])) {
-            $diff = (int)round((strtotime($o['due_date']) - strtotime($o['order_date'])) / 86400);
-            if ($diff >= 0 && $diff <= 60) $processDays[] = $diff;
+        // Build per-category sorted lens arrays
+        $lensCatOut = [];
+        foreach ($lensByCat as $catKey => $items) {
+            uasort($items, function($a,$b){ return $b['count'] - $a['count']; });
+            $catArr = [];
+            foreach ($items as $vname => $d) {
+                $catArr[] = [
+                    'name'   => $vname,
+                    'count'  => $d['count'],
+                    'margin' => ($d['revenue']>0 ? round($d['profit']/$d['revenue']*100) : 0),
+                ];
+            }
+            $lensCatOut[$catKey] = $catArr;
         }
 
-        // Margin
-        if ($amt > 0) $profitMargins[] = round($profit / $amt * 100);
+        // Frame shape & size analytics — join ordered UFCs back to frames_main
+        $shapeCount    = [];
+        $sizeCount     = [];
+        $brandCount    = [];
+        $structCount   = [];
 
-        // Customers
-        $n = trim($o['customer_name'] ?? '—');
-        if (!isset($custCount[$n])) $custCount[$n] = ['count'=>0,'revenue'=>0];
-        $custCount[$n]['count']++;
-        $custCount[$n]['revenue'] += $amt;
+        // Build lookup: ufc => [lens_shape, size_range, brand, structure] from frames_main + staging
+        $frameAttrMap  = [];
+        $rfa = $conn->query("SELECT ufc, lens_shape, size_range, brand, structure FROM frames_main");
+        if ($rfa) { while ($row = $rfa->fetch_assoc()) { $frameAttrMap[strtoupper(trim($row['ufc']))] = $row; } $rfa->free(); }
+        $rfa = $conn->query("SELECT ufc, lens_shape, size_range, brand, structure FROM frame_staging");
+        if ($rfa) { while ($row = $rfa->fetch_assoc()) { $k = strtoupper(trim($row['ufc'])); if (!isset($frameAttrMap[$k])) $frameAttrMap[$k] = $row; } $rfa->free(); }
 
-        // is_modified
-        if ((int)($o['is_modified'] ?? 0) === 1) $modifiedCount++;
+        foreach ($frameCount as $ufc => $cnt) {
+            $k    = strtoupper(trim($ufc));
+            $attr = $frameAttrMap[$k] ?? null;
+            $shape  = trim($attr['lens_shape'] ?? 'Unknown');
+            $size   = trim($attr['size_range'] ?? 'Unknown');
+            $brand  = trim($attr['brand']      ?? 'Unknown');
+            $struct = trim($attr['structure']  ?? 'Unknown');
+            if ($shape  === '') $shape  = 'Unknown';
+            if ($size   === '') $size   = 'Unknown';
+            if ($brand  === '') $brand  = 'Unknown';
+            if ($struct === '') $struct = 'Unknown';
+            if (!isset($shapeCount[$shape]))  $shapeCount[$shape]  = 0;
+            if (!isset($sizeCount[$size]))    $sizeCount[$size]    = 0;
+            if (!isset($brandCount[$brand]))  $brandCount[$brand]  = 0;
+            if (!isset($structCount[$struct]))$structCount[$struct] = 0;
+            $shapeCount[$shape]  += $cnt;
+            $sizeCount[$size]    += $cnt;
+            $brandCount[$brand]  += $cnt;
+            $structCount[$struct]+= $cnt;
+        }
+        arsort($shapeCount); arsort($sizeCount); arsort($brandCount); arsort($structCount);
+        $topBrands = $brandCount; // all brands, JS handles display limit
 
-        // ── Prescription analytics ──────────────────────────────
-        $rSph = floatval($o['new_r_sph'] ?? 0);
-        $lSph = floatval($o['new_l_sph'] ?? 0);
-        $rCyl = floatval($o['new_r_cyl'] ?? 0);
-        $lCyl = floatval($o['new_l_cyl'] ?? 0);
-        $rAdd = trim($o['new_r_add'] ?? '');
-        $lAdd = trim($o['new_l_add'] ?? '');
-
-        $hasSph = !empty(trim($o['new_r_sph'] ?? '')) || !empty(trim($o['new_l_sph'] ?? ''));
-        if ($hasSph) {
-            $avgSph = ($rSph + $lSph) / 2;
-            if ($avgSph <= -6)        $sphBuckets['≤-6']++;
-            elseif ($avgSph <= -3)    $sphBuckets['-6 to -3']++;
-            elseif ($avgSph < 0)      $sphBuckets['-3 to 0']++;
-            elseif ($avgSph <= 3)     $sphBuckets['0 to +3']++;
-            elseif ($avgSph <= 6)     $sphBuckets['+3 to +6']++;
-            else                       $sphBuckets['>+6']++;
-            if ($avgSph <= -6) $highMyopiaCount++;
-        } else {
-            $sphBuckets['Unknown']++;
+        uasort($custCount, function($a,$b) { return $b['count'] - $a['count']; });
+        $topCust = [];
+        foreach (array_slice($custCount, 0, 6, true) as $n => $d2) {
+            $topCust[] = ['name'=>$n,'count'=>$d2['count'],'revenue'=>$d2['revenue']];
         }
 
-        $hasCyl = !empty(trim($o['new_r_cyl'] ?? '')) || !empty(trim($o['new_l_cyl'] ?? ''));
-        if ($hasCyl) {
-            $maxCyl = min($rCyl, $lCyl); // more negative = worse
-            if ($maxCyl >= 0)         $cylSeverity['None (0)']++;
-            elseif ($maxCyl > -1)     $cylSeverity['Mild (<-1)']++;
-            elseif ($maxCyl > -2)     $cylSeverity['Moderate (<-2)']++;
-            else                       $cylSeverity['Severe (≥-2)']++;
-        } else {
-            $cylSeverity['Unknown']++;
+        // Avg by age
+        $avgByAgeOut = [];
+        foreach ($avgByAge as $ag => $d2) {
+            $avgByAgeOut[$ag] = $d2['cnt'] > 0 ? (int)round($d2['sum']/$d2['cnt']) : 0;
         }
 
-        $hasAdd = (!empty($rAdd) && $rAdd !== '0') || (!empty($lAdd) && $lAdd !== '0');
-        if ($hasAdd) { $presbyopiaCount++; }
+        // Frame inventory stats
+        $stockAge      = ['very old'=>0,'old'=>0,'new'=>0,'null'=>0];
+        $materials     = [];
+        $structures    = ['full-rim'=>0,'semi-rimless'=>0,'rimless'=>0];
+        $genderCat     = ['men'=>0,'female'=>0,'unisex'=>0];
+        $stockByShape  = ['all'=>[],'standar'=>[],'menengah'=>[],'menengah_atas'=>[],'premium'=>[],'other'=>[]];
+        $stockByGender = ['all'=>[],'standar'=>[],'menengah'=>[],'menengah_atas'=>[],'premium'=>[],'other'=>[]];
+        $totalFrameStock = 0;
+        $framesMissingBuy = 0;
+        foreach ($frameInventory as $f) {
+            $sa = strtolower($f['stock_age'] ?? '');
+            if (isset($stockAge[$sa])) $stockAge[$sa] += (int)($f['stock'] ?? 0);
+            else $stockAge['null'] += (int)($f['stock'] ?? 0);
+            $mat = trim($f['material'] ?? 'Unknown');
+            if (!isset($materials[$mat])) $materials[$mat] = 0;
+            $materials[$mat]++;
+            $st = strtolower($f['structure'] ?? '');
+            if (isset($structures[$st])) $structures[$st]++;
+            $gc2 = strtolower($f['gender_category'] ?? '');
+            if (isset($genderCat[$gc2])) $genderCat[$gc2]++;
+            // Price tier
+            $sp = (float)($f['sell_price'] ?? 0);
+            if      ($sp >= 350001)                    $tier = 'premium';
+            elseif  ($sp >= 201000)                    $tier = 'menengah_atas';
+            elseif  ($sp >= 101000)                    $tier = 'menengah';
+            elseif  ($sp >= 50000)                     $tier = 'standar';
+            else                                        $tier = 'other';
 
-        // Vision needs (flags from examination)
-        $nd  = (int)($o['need_distance']     ?? 0);
-        $nn  = (int)($o['need_near']         ?? 0);
-        $ni  = (int)($o['need_intermediate'] ?? 0);
-        $sum = $nd + $nn + $ni;
-        if ($sum >= 2)        $visionNeeds['Multifocal (2+)']++;
-        elseif ($ni)          $visionNeeds['Intermediate']++;
-        elseif ($nn && !$nd)  $visionNeeds['Near Only']++;
-        else                   $visionNeeds['Distance Only']++;
-    }
+            // Stock by lens_shape — normalize to Title Case to merge duplicates
+            $sh = trim($f['lens_shape'] ?? '');
+            $sh = ($sh === '') ? 'Not Filled' : ucwords(strtolower($sh));
+            if (!isset($stockByShape['all'][$sh]))           $stockByShape['all'][$sh]           = 0;
+            if (!isset($stockByShape[$tier][$sh]))           $stockByShape[$tier][$sh]           = 0;
+            $stockByShape['all'][$sh]           += (int)($f['stock'] ?? 0);
+            $stockByShape[$tier][$sh]           += (int)($f['stock'] ?? 0);
 
-    ksort($monthlyData);
-    $monthlyData = array_slice($monthlyData, -18, 18, true);
-
-    arsort($lensCount);
-    $topLenses = [];
-    $i = 0;
-    foreach ($lensCount as $name => $cnt) {
-        if ($i++ >= 8) break;
-        $topLenses[] = ['name'=>$name,'count'=>$cnt,'revenue'=>$lensRevenue[$name],'profit'=>$lensProfit[$name],
-            'margin'=>($lensRevenue[$name]>0 ? round($lensProfit[$name]/$lensRevenue[$name]*100) : 0)];
-    }
-
-    // Build per-category sorted lens arrays
-    $lensCatOut = [];
-    foreach ($lensByCat as $catKey => $items) {
-        uasort($items, function($a,$b){ return $b['count'] - $a['count']; });
-        $catArr = [];
-        foreach ($items as $vname => $d) {
-            $catArr[] = [
-                'name'   => $vname,
-                'count'  => $d['count'],
-                'margin' => ($d['revenue']>0 ? round($d['profit']/$d['revenue']*100) : 0),
-            ];
+            // Stock by gender_category
+            $gcKey = strtolower(trim($f['gender_category'] ?? ''));
+            if ($gcKey === '') $gcKey = 'unknown';
+            if (!isset($stockByGender['all'][$gcKey]))       $stockByGender['all'][$gcKey]       = 0;
+            if (!isset($stockByGender[$tier][$gcKey]))       $stockByGender[$tier][$gcKey]       = 0;
+            $stockByGender['all'][$gcKey]       += (int)($f['stock'] ?? 0);
+            $stockByGender[$tier][$gcKey]       += (int)($f['stock'] ?? 0);
+            $totalFrameStock += (int)($f['stock'] ?? 0);
+            if ((float)($f['buy_price'] ?? 0) == 0) $framesMissingBuy++;
         }
-        $lensCatOut[$catKey] = $catArr;
+        arsort($materials);
+        $topMaterials = array_slice($materials, 0, 6, true);
+
+        // Margin histogram
+        $marginBuckets = [];
+        foreach ($profitMargins as $m) {
+            $b = min(9, (int)floor(max(0,$m)/10));
+            $label = ($b*10).'–'.($b*10+10).'%';
+            if (!isset($marginBuckets[$label])) $marginBuckets[$label] = 0;
+            $marginBuckets[$label]++;
+        }
+
+        $totalOrders    = count($orders);
+        $avgOrderValue  = $totalOrders > 0 ? (int)round($totalRevenue/$totalOrders) : 0;
+        $avgProcessDays = count($processDays) > 0 ? round(array_sum($processDays)/count($processDays),1) : 0;
+        $avgMargin      = count($profitMargins) > 0 ? round(array_sum($profitMargins)/count($profitMargins),1) : 0;
+        $thisYM         = date('Y-m');
+        $lastYM         = date('Y-m', strtotime('-1 month'));
+        $thisMonthRev   = $monthlyData[$thisYM]['revenue'] ?? 0;
+        $lastMonthRev   = $monthlyData[$lastYM]['revenue'] ?? 0;
+        $momChange      = $lastMonthRev > 0 ? round(($thisMonthRev-$lastMonthRev)/$lastMonthRev*100,1) : null;
+
+        ob_clean();
+        echo json_encode([
+            'summary' => [
+                'totalOrders'     => $totalOrders,
+                'totalRevenue'    => $totalRevenue,
+                'totalCost'       => $totalCost,
+                'totalProfit'     => $totalProfit,
+                'avgMargin'       => $avgMargin,
+                'avgOrderValue'   => $avgOrderValue,
+                'avgProcessDays'  => $avgProcessDays,
+                'thisMonthRev'    => $thisMonthRev,
+                'lastMonthRev'    => $lastMonthRev,
+                'momChange'       => $momChange,
+                'rxModCount'      => $rxModCount,
+                'stagingCount'    => $stagingCount,
+                'pendingFrameCount'=> count($pendingFrames),
+                'modifiedOrders'  => $modifiedCount,
+                'highMyopia'      => $highMyopiaCount,
+                'presbyopia'      => $presbyopiaCount,
+                'totalFrameStock' => $totalFrameStock,
+                'framesMissingBuy'=> $framesMissingBuy,
+            ],
+            'availableYears' => $availableYears,
+            'activeFilter'   => ['year'=>$filterYear,'month'=>$filterMonth],
+            'monthly'        => array_values($monthlyData),
+            'topLenses'      => $topLenses,
+            'lensCatOut'     => $lensCatOut,
+            'lensRxCount'    => $lensRxCount, // nested by category
+            'shapeCount'     => $shapeCount,
+            'sizeCount'      => $sizeCount,
+            'structCount'    => $structCount,
+            'topBrands'      => $topBrands,
+            'genderCount'    => $genderCount,
+            'ageGroups'      => $ageGroups,
+            'dowCount'       => $dowCount,
+            'avgByAge'       => $avgByAgeOut,
+            'marginBuckets'  => $marginBuckets,
+            'topCustomers'   => $topCust,
+            'rxMods'         => $rxMods,
+            'pendingFrames'  => $pendingFrames,
+            'sphBuckets'     => $sphBuckets,
+            'cylSeverity'    => $cylSeverity,
+            'visionNeeds'    => $visionNeeds,
+            'stockAge'       => $stockAge,
+            'stockByShape'   => $stockByShape,
+            'stockByGender'  => $stockByGender,
+            'frameRawList'   => array_map(function($f) {
+                return [
+                    'shape'   => (trim($f['lens_shape']??'')==='' ? 'Not Filled' : ucwords(strtolower(trim($f['lens_shape'])))),
+                    'gender'  => strtolower(trim($f['gender_category']??'unknown')),
+                    'material'=> ucwords(strtolower(trim($f['material']??'Unknown'))),
+                    'struct'  => strtolower(trim($f['structure']??'unknown')),
+                    'stock'   => (int)($f['stock']??0),
+                    'sell'    => (float)($f['sell_price']??0),
+                ];
+            }, $frameInventory),
+            'topMaterials'   => $topMaterials,
+            'structures'     => $structures,
+            'genderCat'      => $genderCat,
+        ]);
+        exit();
     }
-
-    // Frame shape & size analytics — join ordered UFCs back to frames_main
-    $shapeCount    = [];
-    $sizeCount     = [];
-    $brandCount    = [];
-    $structCount   = [];
-
-    // Build lookup: ufc => [lens_shape, size_range, brand, structure] from frames_main + staging
-    $frameAttrMap  = [];
-    $rfa = $conn->query("SELECT ufc, lens_shape, size_range, brand, structure FROM frames_main");
-    if ($rfa) { while ($row = $rfa->fetch_assoc()) { $frameAttrMap[strtoupper(trim($row['ufc']))] = $row; } $rfa->free(); }
-    $rfa = $conn->query("SELECT ufc, lens_shape, size_range, brand, structure FROM frame_staging");
-    if ($rfa) { while ($row = $rfa->fetch_assoc()) { $k = strtoupper(trim($row['ufc'])); if (!isset($frameAttrMap[$k])) $frameAttrMap[$k] = $row; } $rfa->free(); }
-
-    foreach ($frameCount as $ufc => $cnt) {
-        $k    = strtoupper(trim($ufc));
-        $attr = $frameAttrMap[$k] ?? null;
-        $shape  = trim($attr['lens_shape'] ?? 'Unknown');
-        $size   = trim($attr['size_range'] ?? 'Unknown');
-        $brand  = trim($attr['brand']      ?? 'Unknown');
-        $struct = trim($attr['structure']  ?? 'Unknown');
-        if ($shape  === '') $shape  = 'Unknown';
-        if ($size   === '') $size   = 'Unknown';
-        if ($brand  === '') $brand  = 'Unknown';
-        if ($struct === '') $struct = 'Unknown';
-        if (!isset($shapeCount[$shape]))  $shapeCount[$shape]  = 0;
-        if (!isset($sizeCount[$size]))    $sizeCount[$size]    = 0;
-        if (!isset($brandCount[$brand]))  $brandCount[$brand]  = 0;
-        if (!isset($structCount[$struct]))$structCount[$struct] = 0;
-        $shapeCount[$shape]  += $cnt;
-        $sizeCount[$size]    += $cnt;
-        $brandCount[$brand]  += $cnt;
-        $structCount[$struct]+= $cnt;
-    }
-    arsort($shapeCount); arsort($sizeCount); arsort($brandCount); arsort($structCount);
-    $topBrands = $brandCount; // all brands, JS handles display limit
-
-    uasort($custCount, function($a,$b) { return $b['count'] - $a['count']; });
-    $topCust = [];
-    foreach (array_slice($custCount, 0, 6, true) as $n => $d2) {
-        $topCust[] = ['name'=>$n,'count'=>$d2['count'],'revenue'=>$d2['revenue']];
-    }
-
-    // Avg by age
-    $avgByAgeOut = [];
-    foreach ($avgByAge as $ag => $d2) {
-        $avgByAgeOut[$ag] = $d2['cnt'] > 0 ? (int)round($d2['sum']/$d2['cnt']) : 0;
-    }
-
-    // Frame inventory stats
-    $stockAge      = ['very old'=>0,'old'=>0,'new'=>0,'null'=>0];
-    $materials     = [];
-    $structures    = ['full-rim'=>0,'semi-rimless'=>0,'rimless'=>0];
-    $genderCat     = ['men'=>0,'female'=>0,'unisex'=>0];
-    $stockByShape  = ['all'=>[],'standar'=>[],'menengah'=>[],'menengah_atas'=>[],'premium'=>[],'other'=>[]];
-    $stockByGender = ['all'=>[],'standar'=>[],'menengah'=>[],'menengah_atas'=>[],'premium'=>[],'other'=>[]];
-    $totalFrameStock = 0;
-    $framesMissingBuy = 0;
-    foreach ($frameInventory as $f) {
-        $sa = strtolower($f['stock_age'] ?? '');
-        if (isset($stockAge[$sa])) $stockAge[$sa] += (int)($f['stock'] ?? 0);
-        else $stockAge['null'] += (int)($f['stock'] ?? 0);
-        $mat = trim($f['material'] ?? 'Unknown');
-        if (!isset($materials[$mat])) $materials[$mat] = 0;
-        $materials[$mat]++;
-        $st = strtolower($f['structure'] ?? '');
-        if (isset($structures[$st])) $structures[$st]++;
-        $gc2 = strtolower($f['gender_category'] ?? '');
-        if (isset($genderCat[$gc2])) $genderCat[$gc2]++;
-        // Price tier
-        $sp = (float)($f['sell_price'] ?? 0);
-        if      ($sp >= 350001)                    $tier = 'premium';
-        elseif  ($sp >= 201000)                    $tier = 'menengah_atas';
-        elseif  ($sp >= 101000)                    $tier = 'menengah';
-        elseif  ($sp >= 50000)                     $tier = 'standar';
-        else                                        $tier = 'other';
-
-        // Stock by lens_shape — normalize to Title Case to merge duplicates
-        $sh = trim($f['lens_shape'] ?? '');
-        $sh = ($sh === '') ? 'Not Filled' : ucwords(strtolower($sh));
-        if (!isset($stockByShape['all'][$sh]))           $stockByShape['all'][$sh]           = 0;
-        if (!isset($stockByShape[$tier][$sh]))           $stockByShape[$tier][$sh]           = 0;
-        $stockByShape['all'][$sh]           += (int)($f['stock'] ?? 0);
-        $stockByShape[$tier][$sh]           += (int)($f['stock'] ?? 0);
-
-        // Stock by gender_category
-        $gcKey = strtolower(trim($f['gender_category'] ?? ''));
-        if ($gcKey === '') $gcKey = 'unknown';
-        if (!isset($stockByGender['all'][$gcKey]))       $stockByGender['all'][$gcKey]       = 0;
-        if (!isset($stockByGender[$tier][$gcKey]))       $stockByGender[$tier][$gcKey]       = 0;
-        $stockByGender['all'][$gcKey]       += (int)($f['stock'] ?? 0);
-        $stockByGender[$tier][$gcKey]       += (int)($f['stock'] ?? 0);
-        $totalFrameStock += (int)($f['stock'] ?? 0);
-        if ((float)($f['buy_price'] ?? 0) == 0) $framesMissingBuy++;
-    }
-    arsort($materials);
-    $topMaterials = array_slice($materials, 0, 6, true);
-
-    // Margin histogram
-    $marginBuckets = [];
-    foreach ($profitMargins as $m) {
-        $b = min(9, (int)floor(max(0,$m)/10));
-        $label = ($b*10).'–'.($b*10+10).'%';
-        if (!isset($marginBuckets[$label])) $marginBuckets[$label] = 0;
-        $marginBuckets[$label]++;
-    }
-
-    $totalOrders    = count($orders);
-    $avgOrderValue  = $totalOrders > 0 ? (int)round($totalRevenue/$totalOrders) : 0;
-    $avgProcessDays = count($processDays) > 0 ? round(array_sum($processDays)/count($processDays),1) : 0;
-    $avgMargin      = count($profitMargins) > 0 ? round(array_sum($profitMargins)/count($profitMargins),1) : 0;
-    $thisYM         = date('Y-m');
-    $lastYM         = date('Y-m', strtotime('-1 month'));
-    $thisMonthRev   = $monthlyData[$thisYM]['revenue'] ?? 0;
-    $lastMonthRev   = $monthlyData[$lastYM]['revenue'] ?? 0;
-    $momChange      = $lastMonthRev > 0 ? round(($thisMonthRev-$lastMonthRev)/$lastMonthRev*100,1) : null;
-
-    ob_clean();
-    echo json_encode([
-        'summary' => [
-            'totalOrders'     => $totalOrders,
-            'totalRevenue'    => $totalRevenue,
-            'totalCost'       => $totalCost,
-            'totalProfit'     => $totalProfit,
-            'avgMargin'       => $avgMargin,
-            'avgOrderValue'   => $avgOrderValue,
-            'avgProcessDays'  => $avgProcessDays,
-            'thisMonthRev'    => $thisMonthRev,
-            'lastMonthRev'    => $lastMonthRev,
-            'momChange'       => $momChange,
-            'rxModCount'      => $rxModCount,
-            'stagingCount'    => $stagingCount,
-            'pendingFrameCount'=> count($pendingFrames),
-            'modifiedOrders'  => $modifiedCount,
-            'highMyopia'      => $highMyopiaCount,
-            'presbyopia'      => $presbyopiaCount,
-            'totalFrameStock' => $totalFrameStock,
-            'framesMissingBuy'=> $framesMissingBuy,
-        ],
-        'availableYears' => $availableYears,
-        'activeFilter'   => ['year'=>$filterYear,'month'=>$filterMonth],
-        'monthly'        => array_values($monthlyData),
-        'topLenses'      => $topLenses,
-        'lensCatOut'     => $lensCatOut,
-        'lensRxCount'    => $lensRxCount, // nested by category
-        'shapeCount'     => $shapeCount,
-        'sizeCount'      => $sizeCount,
-        'structCount'    => $structCount,
-        'topBrands'      => $topBrands,
-        'genderCount'    => $genderCount,
-        'ageGroups'      => $ageGroups,
-        'dowCount'       => $dowCount,
-        'avgByAge'       => $avgByAgeOut,
-        'marginBuckets'  => $marginBuckets,
-        'topCustomers'   => $topCust,
-        'rxMods'         => $rxMods,
-        'pendingFrames'  => $pendingFrames,
-        'sphBuckets'     => $sphBuckets,
-        'cylSeverity'    => $cylSeverity,
-        'visionNeeds'    => $visionNeeds,
-        'stockAge'       => $stockAge,
-        'stockByShape'   => $stockByShape,
-        'stockByGender'  => $stockByGender,
-        'frameRawList'   => array_map(function($f) {
-            return [
-                'shape'   => (trim($f['lens_shape']??'')==='' ? 'Not Filled' : ucwords(strtolower(trim($f['lens_shape'])))),
-                'gender'  => strtolower(trim($f['gender_category']??'unknown')),
-                'material'=> ucwords(strtolower(trim($f['material']??'Unknown'))),
-                'struct'  => strtolower(trim($f['structure']??'unknown')),
-                'stock'   => (int)($f['stock']??0),
-                'sell'    => (float)($f['sell_price']??0),
-            ];
-        }, $frameInventory),
-        'topMaterials'   => $topMaterials,
-        'structures'     => $structures,
-        'genderCat'      => $genderCat,
-    ]);
-    exit();
-}
 ?>
 <!DOCTYPE html>
 <html lang="id">
 <head>
     <meta charset="UTF-8">
+    <?php include 'pwa_head.php'; ?>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
     <title>Smart Analysis</title>
     <link rel="stylesheet" href="style.css">

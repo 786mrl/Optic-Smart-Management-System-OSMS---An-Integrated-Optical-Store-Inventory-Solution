@@ -23,6 +23,7 @@ echo "
 <html>
 <head>
     <title>Logging Out...</title>
+    <?php include 'pwa_head.php'; ?>
 </head>
 <body>
     <script>

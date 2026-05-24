@@ -299,6 +299,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <?php include 'pwa_head.php'; ?>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Direct Sale - <?php echo htmlspecialchars($STORE_NAME); ?></title>
     <link rel="stylesheet" href="style.css">
@@ -1481,6 +1482,7 @@ function dsUpdateVisionNeed(age) {
 <html lang="en">
     <head>
         <meta charset="UTF-8">
+        <?php include 'pwa_head.php'; ?>
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
         <title>Invoice - <?php echo $data['examination_code']; ?></title>
         <link rel="stylesheet" href="style.css">

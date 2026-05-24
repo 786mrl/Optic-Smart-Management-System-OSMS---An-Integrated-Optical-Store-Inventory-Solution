@@ -50,6 +50,7 @@ close_db_connection($conn);
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <?php include 'pwa_head.php'; ?>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">

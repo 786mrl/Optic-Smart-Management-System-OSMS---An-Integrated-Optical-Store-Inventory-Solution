@@ -124,6 +124,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <?php include 'pwa_head.php'; ?>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Manage User Roles</title>
     <link rel="stylesheet" href="style.css">
