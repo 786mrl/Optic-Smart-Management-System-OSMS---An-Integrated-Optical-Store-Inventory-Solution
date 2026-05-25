@@ -6,6 +6,8 @@
   <title>LenZa Optic</title>
   <link rel="manifest" href="/optic_pos/manifest.json">
   <meta name="theme-color" content="#1a1a2e">
+  <!-- Cache control: simpan halaman ini di browser cache -->
+  <meta http-equiv="Cache-Control" content="max-age=604800">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="LenZa">
   <link rel="apple-touch-icon" href="/optic_pos/image/icon-192.png">
@@ -186,12 +188,36 @@
 
   <script>
     // Auto-detect server URL dari origin halaman ini
-    const PC_URL      = window.location.origin + '/optic_pos';
-    const API_URL     = PC_URL + '/api_local_sync.php';
+    const PC_URL        = window.location.origin + '/optic_pos';
+    const API_URL       = PC_URL + '/api_local_sync.php';
+    const SUPABASE_URL  = 'https://rnuyhoxlmpivkoxwyxln.supabase.co';
+    const SUPABASE_KEY  = 'sb_publishable_dTU5WLDoTWdLhN68x8Pn6g_SwJvFeRs';
+    const SUPA_HEADERS  = {
+      'apikey': SUPABASE_KEY,
+      'Authorization': 'Bearer ' + SUPABASE_KEY
+    };
     const TABLES      = ['settings','users','frames_main','frame_staging',
                          'customer_examinations','customer_orders',
                          'custom_frames','prescription_modifications'];
-    let connectionMode = 'offline'; // 'local' | 'offline'
+    let connectionMode = 'offline'; // 'local' | 'supabase' | 'offline'
+
+    // ── Auto-login jika sudah ada session ──────────────────────
+    function checkExistingSession() {
+      const session = localStorage.getItem('offline_session');
+      if (!session) return false;
+      try {
+        const s = JSON.parse(session);
+        // Session valid max 24 jam
+        const loginTime = new Date(s.login_at);
+        const now = new Date();
+        const hours = (now - loginTime) / (1000 * 60 * 60);
+        if (hours < 24 && s.username) {
+          return s;
+        }
+      } catch(e) {}
+      localStorage.removeItem('offline_session');
+      return false;
+    }
 
     // ── Cek koneksi ───────────────────────────────────────────
     async function checkConnection() {
@@ -216,6 +242,21 @@
         }
       } catch {}
 
+      // Coba Supabase cloud
+      try {
+        const rs = await fetch(SUPABASE_URL + '/rest/v1/users?select=username&limit=1', {
+          headers: SUPA_HEADERS,
+          signal: AbortSignal.timeout(5000)
+        });
+        if (rs.ok || rs.status === 406) {
+          connectionMode = 'supabase';
+          dot.className  = 'dot online';
+          text.textContent = 'Connected via cloud';
+          sBtn.classList.add('visible');
+          return;
+        }
+      } catch {}
+
       connectionMode = 'offline';
       dot.className  = 'dot';
       text.textContent = 'Offline — using local data';
@@ -235,15 +276,28 @@
 
       for (const table of TABLES) {
         try {
-          const r    = await fetch(`${API_URL}?action=pull&table=${table}`, {
-            credentials: 'include'
-          });
-          const json = await r.json();
+          let records = [];
 
-          if (json.success && json.data && json.data.length > 0) {
-            await LocalDB.saveMany(table, json.data);
-            total += json.data.length;
-            console.log(`[Sync] ${table}: ${json.data.length} records`);
+          if (connectionMode === 'local') {
+            // Sync dari PC lokal
+            const r    = await fetch(`${API_URL}?action=pull&table=${table}`, {
+              credentials: 'include'
+            });
+            const json = await r.json();
+            if (json.success && json.data) records = json.data;
+
+          } else if (connectionMode === 'supabase') {
+            // Sync dari Supabase cloud
+            const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}?select=*`, {
+              headers: SUPA_HEADERS
+            });
+            if (r.ok) records = await r.json();
+          }
+
+          if (records.length > 0) {
+            await LocalDB.saveMany(table, records);
+            total += records.length;
+            console.log(`[Sync] ${table}: ${records.length} records`);
           }
         } catch(e) {
           errors.push(table);
@@ -360,7 +414,13 @@
 
         showMsg('Login successful! Loading...', 'success');
         setTimeout(() => {
-          window.location.href = '/optic_pos/index.php';
+          // Coba ke index.php dulu, kalau gagal tetap di app.html
+          if (connectionMode === 'local') {
+            window.location.href = window.location.origin + '/optic_pos/index.php';
+          } else {
+            // Cloud/offline mode - simpan session dan reload
+            window.location.href = window.location.origin + '/optic_pos/app.html?loggedin=1';
+          }
         }, 800);
 
       } catch(err) {
@@ -396,7 +456,34 @@
     document.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
 
     // Init
-    LocalDB.init().then(() => checkConnection());
+    LocalDB.init().then(() => {
+      // Cek existing session dulu
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('loggedin')) {
+        // Baru saja login, tampilkan dashboard sederhana
+        showLoggedInState();
+        return;
+      }
+      checkConnection();
+    });
+
+    function showLoggedInState() {
+      const session = checkExistingSession();
+      if (!session) { checkConnection(); return; }
+
+      // Tampilkan menu sederhana
+      document.querySelector('.card').innerHTML = `
+        <div style="font-size:48px;margin-bottom:12px">👓</div>
+        <h2>LenZa Optic</h2>
+        <p style="color:#8892a4;margin-bottom:24px">Welcome, ${session.username}</p>
+        <div style="display:flex;flex-direction:column;gap:12px">
+          <a href="${window.location.origin}/optic_pos/index.php" style="background:linear-gradient(135deg,#0f3460,#533483);color:white;padding:14px;border-radius:12px;text-decoration:none;font-weight:700;text-align:center">🏠 Main Menu</a>
+          <a href="${window.location.origin}/optic_pos/inventory.php" style="background:rgba(255,255,255,0.05);color:#e0e0e0;padding:14px;border-radius:12px;text-decoration:none;text-align:center">🏬 Inventory</a>
+          <a href="${window.location.origin}/optic_pos/customer.php" style="background:rgba(255,255,255,0.05);color:#e0e0e0;padding:14px;border-radius:12px;text-decoration:none;text-align:center">📇 Customers</a>
+          <button onclick="localStorage.removeItem('offline_session');window.location.href=window.location.origin+'/optic_pos/app.html'" style="background:rgba(220,50,50,0.15);color:#ff6b6b;padding:12px;border-radius:12px;border:none;cursor:pointer;font-size:14px;margin-top:8px">Logout</button>
+        </div>
+      `;
+    }
   </script>
 </body>
 </html>
