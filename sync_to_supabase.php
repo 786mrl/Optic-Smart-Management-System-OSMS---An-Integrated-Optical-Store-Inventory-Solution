@@ -1,6 +1,5 @@
 <?php
 // sync_to_supabase.php
-session_start();
 include 'db_config.php';
 
 define('SUPABASE_URL', 'https://rnuyhoxlmpivkoxwyxln.supabase.co');
