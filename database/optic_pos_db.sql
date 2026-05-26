@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: May 23, 2026 at 06:03 PM
+-- Generation Time: May 26, 2026 at 02:34 PM
 -- Server version: 10.1.38-MariaDB
 -- PHP Version: 7.3.2
 
@@ -108,6 +108,24 @@ CREATE TABLE `custom_frames` (
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `buy_price` decimal(12,2) NOT NULL DEFAULT '0.00'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Frame custom yang tidak ada di frames_main maupun frame_staging';
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `deletion_queue`
+--
+
+CREATE TABLE `deletion_queue` (
+  `id` int(11) NOT NULL,
+  `target_table` varchar(100) NOT NULL,
+  `target_id_col` varchar(100) NOT NULL,
+  `target_id_val` varchar(255) NOT NULL,
+  `total_users` int(11) NOT NULL DEFAULT '1',
+  `confirmed_count` int(11) NOT NULL DEFAULT '0',
+  `confirmed_by` text,
+  `deleted_by` varchar(100) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 -- --------------------------------------------------------
 
@@ -272,6 +290,12 @@ ALTER TABLE `custom_frames`
   ADD KEY `idx_is_purchased` (`is_purchased`);
 
 --
+-- Indexes for table `deletion_queue`
+--
+ALTER TABLE `deletion_queue`
+  ADD PRIMARY KEY (`id`);
+
+--
 -- Indexes for table `frames_main`
 --
 ALTER TABLE `frames_main`
@@ -323,6 +347,12 @@ ALTER TABLE `customer_orders`
 -- AUTO_INCREMENT for table `custom_frames`
 --
 ALTER TABLE `custom_frames`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `deletion_queue`
+--
+ALTER TABLE `deletion_queue`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
