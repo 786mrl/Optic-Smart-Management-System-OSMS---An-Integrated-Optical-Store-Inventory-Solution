@@ -1213,8 +1213,8 @@
         </div><!-- .sa-body -->
         </div><!-- .main-card -->
 
-        <div class="btn-group">
-            <button type="button" class="back-main" onclick="window.history.back()">BACK TO PREVIOUS PAGE</button>
+        <div class="btn-group" style="width:100%;display:block;">
+            <button type="button" class="back-main" onclick="window.history.back()" style="width:100%;display:block;">BACK TO PREVIOUS PAGE</button>
         </div>
         <footer class="footer-container">
             <p class="footer-text"><?php echo $COPYRIGHT_FOOTER; ?></p>
