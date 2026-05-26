@@ -344,9 +344,9 @@ if (!$is_admin) {
 
         </div>
 
-        <!-- Back button outside card, centered -->
-        <div style="text-align: center; margin: 16px 0;">
-            <button type="button" class="back-main" onclick="window.location.href='index.php'">
+        <!-- Back button outside card, full width -->
+        <div style="padding: 0 16px 16px;">
+            <button type="button" class="back-main" style="width: 100%;" onclick="window.location.href='index.php'">
                 BACK TO MAIN MENU
             </button>
         </div>
