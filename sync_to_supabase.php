@@ -15,10 +15,24 @@ define('SUPABASE_KEY', 'sb_publishable_dTU5WLDoTWdLhN68x8Pn6g_SwJvFeRs');
 
 $tables = [
     'settings', 'users', 'frames_main', 'frame_staging',
-    'customer_examinations', 'customer_orders', 'custom_frames', 'prescription_modifications'
+    'customer_examinations', 'customer_orders', 'custom_frames',
+    'prescription_modifications', 'deletion_queue'
 ];
 
 $exclude_columns = ['users' => ['password_hash']];
+
+// Auto-create deletion_queue if not exists
+$conn->query("CREATE TABLE IF NOT EXISTS deletion_queue (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    target_table VARCHAR(100) NOT NULL,
+    target_id_col VARCHAR(100) NOT NULL,
+    target_id_val VARCHAR(255) NOT NULL,
+    total_users INT NOT NULL DEFAULT 1,
+    confirmed_count INT NOT NULL DEFAULT 0,
+    confirmed_by TEXT DEFAULT NULL,
+    deleted_by VARCHAR(100) DEFAULT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)");
 
 $pk_map = [
     'customer_examinations'      => 'id',
@@ -29,6 +43,7 @@ $pk_map = [
     'prescription_modifications' => 'modification_id',
     'users'                      => 'user_id',
     'settings'                   => 'setting_key',
+    'deletion_queue'             => 'id',
 ];
 
 function supabase_request($path, $method, $body = null) {
@@ -67,13 +82,50 @@ function check_supabase() {
     return $res['status'] >= 200 && $res['status'] < 500;
 }
 
-// Handle delete (admin only)
+// Handle delete (admin only) — add to deletion queue
 if ($is_admin && isset($_POST['action']) && $_POST['action'] === 'delete') {
-    $t = $_POST['table'] ?? '';
-    $c = $_POST['id_col'] ?? '';
-    $v = $_POST['id_val'] ?? '';
-    $res = supabase_request("/rest/v1/{$t}?{$c}=eq." . urlencode($v), 'DELETE');
-    echo json_encode(['success' => ($res['status'] >= 200 && $res['status'] < 300)]);
+    $t        = $conn->real_escape_string($_POST['table'] ?? '');
+    $c        = $conn->real_escape_string($_POST['id_col'] ?? '');
+    $v        = $conn->real_escape_string($_POST['id_val'] ?? '');
+    $by       = $conn->real_escape_string($_SESSION['username'] ?? 'admin');
+    $device   = $_SERVER['HTTP_HOST'] ?? 'unknown';
+
+    // Get total approved users
+    $ur = $conn->query("SELECT COUNT(*) as total FROM users WHERE is_approved = 1");
+    $total_users = $ur ? (int)$ur->fetch_assoc()['total'] : 1;
+
+    // Check if already in queue
+    $existing = $conn->query("SELECT id FROM deletion_queue WHERE target_table='$t' AND target_id_col='$c' AND target_id_val='$v'");
+    if ($existing && $existing->num_rows > 0) {
+        echo json_encode(['success' => false, 'message' => 'Already in deletion queue']);
+        exit();
+    }
+
+    // Add to deletion queue locally
+    $conn->query("INSERT INTO deletion_queue (target_table, target_id_col, target_id_val, total_users, confirmed_count, confirmed_by, deleted_by)
+        VALUES ('$t', '$c', '$v', $total_users, 1, '$device', '$by')");
+
+    // Add to Supabase deletion_queue
+    supabase_request('/rest/v1/deletion_queue', 'POST', [[
+        'target_table'    => $t,
+        'target_id_col'   => $c,
+        'target_id_val'   => $v,
+        'total_users'     => $total_users,
+        'confirmed_count' => 1,
+        'confirmed_by'    => $device,
+        'deleted_by'      => $by
+    ]]);
+
+    // Delete from local MySQL immediately (this device confirmed)
+    $conn->query("DELETE FROM `$t` WHERE `$c` = '$v'");
+
+    // If only 1 user total → delete from Supabase immediately
+    if ($total_users <= 1) {
+        supabase_request("/rest/v1/{$t}?{$c}=eq." . urlencode($v), 'DELETE');
+        $conn->query("DELETE FROM deletion_queue WHERE target_table='$t' AND target_id_col='$c' AND target_id_val='$v'");
+    }
+
+    echo json_encode(['success' => true, 'message' => 'Queued for deletion on all devices']);
     exit();
 }
 
