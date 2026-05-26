@@ -6,7 +6,6 @@ include 'db_config.php';
 define('SUPABASE_URL', 'https://rnuyhoxlmpivkoxwyxln.supabase.co');
 define('SUPABASE_KEY', 'sb_publishable_dTU5WLDoTWdLhN68x8Pn6g_SwJvFeRs');
 
-// Semua tabel di-sync dari mana pun (PC atau HP)
 $tables = [
     'settings',
     'users',
@@ -18,15 +17,12 @@ $tables = [
     'prescription_modifications'
 ];
 
-// Kolom sensitif tidak di-upload
 $exclude_columns = [
     'users' => ['password_hash']
 ];
 
-function supabase_upsert($table, $data) {
-    if (empty($data)) return ['success' => true, 'count' => 0, 'note' => 'empty'];
-
-    $url = SUPABASE_URL . '/rest/v1/' . $table;
+function supabase_request($path, $method, $body = null) {
+    $url = SUPABASE_URL . $path;
     $headers = [
         'Content-Type: application/json',
         'apikey: ' . SUPABASE_KEY,
@@ -34,48 +30,55 @@ function supabase_upsert($table, $data) {
         'Prefer: resolution=merge-duplicates,return=minimal'
     ];
 
+    $opts = [
+        'http' => [
+            'method'        => $method,
+            'header'        => implode("\r\n", $headers),
+            'ignore_errors' => true,
+            'timeout'       => 30
+        ],
+        'ssl' => [
+            'verify_peer'      => false,
+            'verify_peer_name' => false
+        ]
+    ];
+
+    if ($body !== null) {
+        $opts['http']['content'] = json_encode($body);
+    }
+
+    $context  = stream_context_create($opts);
+    $response = @file_get_contents($url, false, $context);
+    $status   = 0;
+
+    if (isset($http_response_header)) {
+        preg_match('/HTTP\/\S+\s+(\d+)/', $http_response_header[0], $m);
+        $status = intval($m[1] ?? 0);
+    }
+
+    return ['body' => $response, 'status' => $status];
+}
+
+function supabase_upsert($table, $data) {
+    if (empty($data)) return ['success' => true, 'count' => 0, 'note' => 'empty'];
+
     $batches = array_chunk($data, 50);
     $total   = 0;
 
     foreach ($batches as $batch) {
-        $ch = curl_init($url);
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_POST           => true,
-            CURLOPT_POSTFIELDS     => json_encode($batch),
-            CURLOPT_HTTPHEADER     => $headers,
-            CURLOPT_SSL_VERIFYPEER => false,
-            CURLOPT_TIMEOUT        => 30
-        ]);
-        $response = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $curlError = curl_error($ch);
-        curl_close($ch);
-
-        if ($curlError) return ['success' => false, 'error' => 'cURL: ' . $curlError];
-        if ($httpCode >= 200 && $httpCode < 300) {
+        $res = supabase_request('/rest/v1/' . $table, 'POST', $batch);
+        if ($res['status'] >= 200 && $res['status'] < 300) {
             $total += count($batch);
         } else {
-            return ['success' => false, 'error' => $response, 'code' => $httpCode];
+            return ['success' => false, 'error' => $res['body'], 'code' => $res['status']];
         }
     }
     return ['success' => true, 'count' => $total];
 }
 
 function check_supabase() {
-    $ch = curl_init(SUPABASE_URL . '/rest/v1/settings?limit=1');
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_HTTPHEADER     => ['apikey: ' . SUPABASE_KEY, 'Authorization: Bearer ' . SUPABASE_KEY],
-        CURLOPT_SSL_VERIFYPEER => false,
-        CURLOPT_TIMEOUT        => 10
-    ]);
-    curl_exec($ch);
-    $httpCode  = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $curlError = curl_error($ch);
-    curl_close($ch);
-    if ($curlError) return ['ok' => false, 'error' => $curlError];
-    return ['ok' => ($httpCode >= 200 && $httpCode < 500)];
+    $res = supabase_request('/rest/v1/settings?limit=1', 'GET');
+    return ['ok' => ($res['status'] >= 200 && $res['status'] < 500)];
 }
 
 $results     = [];
@@ -146,11 +149,10 @@ close_db_connection($conn);
 
     <?php if (!$supabase_ok['ok']): ?>
     <div class="status-box offline">
-        ✗ Tidak bisa konek ke Supabase. Pastikan terhubung ke internet.<br>
-        <?= htmlspecialchars($supabase_ok['error'] ?? '') ?>
+        ✗ Tidak bisa konek ke Supabase. Pastikan terhubung ke internet.
     </div>
     <?php else: ?>
-    <div class="status-box online">✓ Supabase terjangkau — sync berhasil</div>
+    <div class="status-box online">✓ Supabase terjangkau — sync berjalan</div>
 
     <table>
         <tr><th>Tabel</th><th>Records</th><th>Uploaded</th><th>Status</th></tr>
