@@ -342,7 +342,10 @@ if (!$is_admin) {
 
             <?php endif; ?>
 
-            <!-- Back button -->
+        </div>
+
+        <!-- Back button outside card, centered -->
+        <div style="text-align: center; margin: 16px 0;">
             <button type="button" class="back-main" onclick="window.location.href='index.php'">
                 BACK TO MAIN MENU
             </button>
