@@ -45,6 +45,7 @@ function supabase_request($path, $method, $body = null) {
     $context  = stream_context_create($opts);
     $response = @file_get_contents(SUPABASE_URL . $path, false, $context);
     $status   = 0;
+    if (function_exists('http_get_last_response_headers')) { $http_response_header = http_get_last_response_headers() ?? []; }
     if (isset($http_response_header)) {
         preg_match('/HTTP\/\S+\s+(\d+)/', $http_response_header[0], $m);
         $status = intval($m[1] ?? 0);
