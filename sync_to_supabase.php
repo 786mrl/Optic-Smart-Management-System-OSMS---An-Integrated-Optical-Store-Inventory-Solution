@@ -16,7 +16,8 @@ define('SUPABASE_KEY', 'sb_publishable_dTU5WLDoTWdLhN68x8Pn6g_SwJvFeRs');
 $tables = [
     'settings', 'users', 'frames_main', 'frame_staging',
     'customer_examinations', 'customer_orders', 'custom_frames',
-    'prescription_modifications', 'deletion_queue'
+    'prescription_modifications'
+    // deletion_queue intentionally excluded from sync
 ];
 
 $exclude_columns = ['users' => ['password_hash']];
@@ -31,7 +32,8 @@ $conn->query("CREATE TABLE IF NOT EXISTS deletion_queue (
     confirmed_count INT NOT NULL DEFAULT 0,
     confirmed_by TEXT DEFAULT NULL,
     deleted_by VARCHAR(100) DEFAULT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP DEFAULT NULL
 )");
 
 $pk_map = [
@@ -43,7 +45,6 @@ $pk_map = [
     'prescription_modifications' => 'modification_id',
     'users'                      => 'user_id',
     'settings'                   => 'setting_key',
-    'deletion_queue'             => 'id',
 ];
 
 function supabase_request($path, $method, $body = null) {
@@ -84,15 +85,17 @@ function check_supabase() {
 
 // Handle delete (admin only) — add to deletion queue
 if ($is_admin && isset($_POST['action']) && $_POST['action'] === 'delete') {
-    $t        = $conn->real_escape_string($_POST['table'] ?? '');
-    $c        = $conn->real_escape_string($_POST['id_col'] ?? '');
-    $v        = $conn->real_escape_string($_POST['id_val'] ?? '');
-    $by       = $conn->real_escape_string($_SESSION['username'] ?? 'admin');
-    $device   = $_SERVER['HTTP_HOST'] ?? 'unknown';
+    $t   = $conn->real_escape_string($_POST['table'] ?? '');
+    $c   = $conn->real_escape_string($_POST['id_col'] ?? '');
+    $v   = $conn->real_escape_string($_POST['id_val'] ?? '');
+    $by  = $conn->real_escape_string($_SESSION['username'] ?? 'admin');
+    $expires = date('Y-m-d H:i:s', strtotime('+30 days'));
 
-    // Get total approved users
-    $ur = $conn->query("SELECT COUNT(*) as total FROM users WHERE is_approved = 1");
-    $total_users = $ur ? (int)$ur->fetch_assoc()['total'] : 1;
+    // Get all approved usernames
+    $ur = $conn->query("SELECT username FROM users WHERE is_approved = 1");
+    $all_users = [];
+    while ($row = $ur->fetch_assoc()) $all_users[] = $row['username'];
+    $total_users = count($all_users);
 
     // Check if already in queue
     $existing = $conn->query("SELECT id FROM deletion_queue WHERE target_table='$t' AND target_id_col='$c' AND target_id_val='$v'");
@@ -101,9 +104,13 @@ if ($is_admin && isset($_POST['action']) && $_POST['action'] === 'delete') {
         exit();
     }
 
-    // Add to deletion queue locally
-    $conn->query("INSERT INTO deletion_queue (target_table, target_id_col, target_id_val, total_users, confirmed_count, confirmed_by, deleted_by)
-        VALUES ('$t', '$c', '$v', $total_users, 1, '$device', '$by')");
+    // Current user is first to confirm — use JSON array for confirmed_by
+    $confirmed_list = json_encode([$by]);
+
+    // Add to local MySQL deletion_queue
+    $conn->query("INSERT INTO deletion_queue
+        (target_table, target_id_col, target_id_val, total_users, confirmed_count, confirmed_by, deleted_by, expires_at)
+        VALUES ('$t', '$c', '$v', $total_users, 1, '$confirmed_list', '$by', '$expires')");
 
     // Add to Supabase deletion_queue
     supabase_request('/rest/v1/deletion_queue', 'POST', [[
@@ -112,17 +119,19 @@ if ($is_admin && isset($_POST['action']) && $_POST['action'] === 'delete') {
         'target_id_val'   => $v,
         'total_users'     => $total_users,
         'confirmed_count' => 1,
-        'confirmed_by'    => $device,
-        'deleted_by'      => $by
+        'confirmed_by'    => $confirmed_list,
+        'deleted_by'      => $by,
+        'expires_at'      => $expires
     ]]);
 
-    // Delete from local MySQL immediately (this device confirmed)
+    // Delete from local MySQL immediately (this user confirmed)
     $conn->query("DELETE FROM `$t` WHERE `$c` = '$v'");
 
-    // If only 1 user total → delete from Supabase immediately
+    // If only 1 user total → delete from Supabase immediately, clean queue
     if ($total_users <= 1) {
         supabase_request("/rest/v1/{$t}?{$c}=eq." . urlencode($v), 'DELETE');
-        $conn->query("DELETE FROM deletion_queue WHERE target_table='$t' AND target_id_col='$c' AND target_id_val='$v'");
+        supabase_request('/rest/v1/deletion_queue?target_table=eq.' . urlencode($t) . '&target_id_val=eq.' . urlencode($v), 'DELETE');
+        $conn->query("DELETE FROM deletion_queue WHERE target_table='$t' AND target_id_val='$v'");
     }
 
     echo json_encode(['success' => true, 'message' => 'Queued for deletion on all devices']);

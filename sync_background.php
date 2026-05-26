@@ -1,24 +1,28 @@
 <?php
 // sync_background.php
-// Dipanggil secara background saat staff/admin login atau logout
 error_reporting(0);
 ini_set('display_errors', 0);
 ob_start();
 include 'db_config.php';
 ob_clean();
 
+session_start();
+$current_username = $_SESSION['username'] ?? null;
+if (!$current_username) exit();
+
 define('SUPABASE_URL', 'https://rnuyhoxlmpivkoxwyxln.supabase.co');
 define('SUPABASE_KEY', 'sb_publishable_dTU5WLDoTWdLhN68x8Pn6g_SwJvFeRs');
 
-$tables = [
+// Tabel yang di-sync (deletion_queue TIDAK di-sync otomatis)
+$sync_tables = [
     'settings', 'users', 'frames_main', 'frame_staging',
     'customer_examinations', 'customer_orders', 'custom_frames',
-    'prescription_modifications', 'deletion_queue'
+    'prescription_modifications'
 ];
 
 $exclude_columns = ['users' => ['password_hash']];
 
-// ── Auto-create deletion_queue if not exists ──────────────────
+// ── Auto-create deletion_queue ────────────────────────────────
 $conn->query("CREATE TABLE IF NOT EXISTS deletion_queue (
     id INT AUTO_INCREMENT PRIMARY KEY,
     target_table VARCHAR(100) NOT NULL,
@@ -28,7 +32,8 @@ $conn->query("CREATE TABLE IF NOT EXISTS deletion_queue (
     confirmed_count INT NOT NULL DEFAULT 0,
     confirmed_by TEXT DEFAULT NULL,
     deleted_by VARCHAR(100) DEFAULT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP DEFAULT NULL
 )");
 
 function supabase_request($path, $method, $body = null) {
@@ -58,54 +63,74 @@ function check_supabase() {
 
 if (!check_supabase()) exit();
 
-// ── Process deletion queue ────────────────────────────────────
-// Get current device identifier (use server host as device ID)
-$device_id = $_SERVER['HTTP_HOST'] ?? 'unknown';
+// ── Get all approved usernames from local MySQL ───────────────
+$ur = $conn->query("SELECT username FROM users WHERE is_approved = 1");
+$all_users = [];
+while ($row = $ur->fetch_assoc()) $all_users[] = $row['username'];
+$total_users = count($all_users);
 
-// Get pending deletions from Supabase
-$res = supabase_request('/rest/v1/deletion_queue?order=created_at.asc', 'GET');
+// ── Process expired queue items (30 days) ────────────────────
+// Cleanup expired locally
+$conn->query("DELETE FROM deletion_queue WHERE expires_at IS NOT NULL AND expires_at < NOW()");
+
+// Cleanup expired in Supabase
+supabase_request('/rest/v1/deletion_queue?expires_at=lt.' . urlencode(date('Y-m-d\TH:i:s')), 'DELETE');
+
+// ── Process active deletion queue from Supabase ──────────────
+$res = supabase_request('/rest/v1/deletion_queue?order=created_at.asc&expires_at=gt.' . urlencode(date('Y-m-d\TH:i:s')), 'GET');
+
 if ($res['status'] === 200 && !empty($res['body'])) {
     $queue = json_decode($res['body'], true) ?? [];
-
-    // Get total approved users from local MySQL
-    $user_result = $conn->query("SELECT COUNT(*) as total FROM users WHERE is_approved = 1");
-    $total_users = $user_result ? (int)$user_result->fetch_assoc()['total'] : 1;
 
     foreach ($queue as $item) {
         $q_id      = $item['id'];
         $q_table   = $item['target_table'];
         $q_id_col  = $item['target_id_col'];
         $q_id_val  = $item['target_id_val'];
-        $confirmed = $item['confirmed_count'] ?? 0;
-        $confirmed_by = $item['confirmed_by'] ?? '';
+        $confirmed = (int)($item['confirmed_count'] ?? 0);
+        $confirmed_by_raw = $item['confirmed_by'] ?? '';
 
-        // Check if this device already confirmed
-        $already_confirmed = !empty($confirmed_by) && strpos($confirmed_by, $device_id) !== false;
+        // Parse confirmed_by as JSON array for reliable check
+        $confirmed_list = json_decode($confirmed_by_raw, true);
+        if (!is_array($confirmed_list)) $confirmed_list = [];
+
+        // Check if current user already confirmed
+        $already_confirmed = in_array($current_username, $confirmed_list);
 
         if (!$already_confirmed) {
             // Delete from local MySQL
-            $conn->query("DELETE FROM `{$q_table}` WHERE `{$q_id_col}` = '" . $conn->real_escape_string($q_id_val) . "'");
+            $safe_val = $conn->real_escape_string($q_id_val);
+            $conn->query("DELETE FROM `{$q_table}` WHERE `{$q_id_col}` = '{$safe_val}'");
 
-            // Update confirmed count in Supabase
-            $new_count = $confirmed + 1;
-            $new_confirmed_by = trim($confirmed_by . ',' . $device_id, ',');
+            // Add current user to confirmed list
+            $confirmed_list[] = $current_username;
+            $new_count = count($confirmed_list);
+            $new_confirmed_by = json_encode($confirmed_list);
 
-            supabase_request('/rest/v1/deletion_queue?id=eq.' . $q_id, 'PATCH', [
+            // Atomic update — only update if confirmed_count matches what we read
+            // This prevents race condition
+            supabase_request('/rest/v1/deletion_queue?id=eq.' . $q_id . '&confirmed_count=eq.' . $confirmed, 'PATCH', [
                 'confirmed_count' => $new_count,
                 'confirmed_by'    => $new_confirmed_by
             ]);
 
-            // If all users confirmed → delete from Supabase target table + remove from queue
-            if ($new_count >= $total_users) {
+            // Check if all approved users have confirmed
+            $all_confirmed = count(array_intersect($confirmed_list, $all_users)) >= $total_users;
+
+            if ($all_confirmed) {
+                // Delete from Supabase target table
                 supabase_request('/rest/v1/' . $q_table . '?' . $q_id_col . '=eq.' . urlencode($q_id_val), 'DELETE');
+                // Remove from Supabase deletion_queue
                 supabase_request('/rest/v1/deletion_queue?id=eq.' . $q_id, 'DELETE');
+                // Remove from local deletion_queue
+                $conn->query("DELETE FROM deletion_queue WHERE id = " . (int)$q_id);
             }
         }
     }
 }
 
 // ── Sync all tables to Supabase ───────────────────────────────
-foreach ($tables as $table) {
+foreach ($sync_tables as $table) {
     $result = $conn->query("SELECT * FROM `$table`");
     if (!$result) continue;
     $rows = [];
