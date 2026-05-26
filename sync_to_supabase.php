@@ -3,6 +3,7 @@ error_reporting(0);
 ini_set('display_errors', 0);
 ob_start();
 include 'db_config.php';
+include 'config_helper.php';
 ob_clean();
 
 session_start();
@@ -45,11 +46,8 @@ function supabase_request($path, $method, $body = null) {
     $context  = stream_context_create($opts);
     $response = @file_get_contents(SUPABASE_URL . $path, false, $context);
     $status   = 0;
-    $headers_arr = function_exists('http_get_last_response_headers') ? (http_get_last_response_headers() ?? []) : ($http_response_header ?? []);
-    if (!empty($headers_arr)) {
-        preg_match('/HTTP\/\S+\s+(\d+)/', $headers_arr[0], $m);
-        $status = intval($m[1] ?? 0);
-    }
+    $hdrs = function_exists('http_get_last_response_headers') ? (http_get_last_response_headers() ?? []) : ($http_response_header ?? []);
+    if (!empty($hdrs)) { preg_match('/HTTP\/\S+\s+(\d+)/', $hdrs[0], $m); $status = intval($m[1] ?? 0); }
     return ['body' => $response, 'status' => $status];
 }
 
@@ -110,61 +108,25 @@ if (!$is_admin) {
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <?php include 'pwa_head.php'; ?>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sync to Supabase</title>
+    <title>Cloud Sync — Supabase</title>
     <link rel="stylesheet" href="style.css">
     <style>
-        body { background: #1e2022; min-height: 100vh; padding: 0; margin: 0; }
-
-        .page-wrapper {
-            max-width: 780px;
-            margin: 0 auto;
-            padding: 24px 16px 40px;
-        }
-
-        /* Header */
-        .page-header {
-            background: #25282a;
-            border-radius: 16px;
-            padding: 20px 24px;
-            margin-bottom: 20px;
-            box-shadow: 5px 5px 10px #1a1c1d, -3px -3px 8px #2e3234;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 12px;
-        }
-        .page-title { font-size: 18px; font-weight: 700; color: #e0e0e0; letter-spacing: 0.3px; }
-        .page-sub   { font-size: 12px; color: #666; margin-top: 2px; }
-        .back-btn {
-            background: #1e2022;
-            border: none;
-            border-radius: 10px;
-            padding: 10px 18px;
-            color: #aaa;
-            font-size: 13px;
-            cursor: pointer;
-            text-decoration: none;
-            box-shadow: 3px 3px 7px #1a1c1d, -2px -2px 5px #2e3234;
-            transition: all 0.2s;
-        }
-        .back-btn:hover { box-shadow: inset 2px 2px 5px #1a1c1d; color: #ccc; }
-
         /* Status badge */
-        .status-badge {
+        .sync-status {
             display: flex;
             align-items: center;
             gap: 8px;
-            padding: 12px 18px;
+            padding: 12px 16px;
             border-radius: 12px;
             font-size: 13px;
             font-weight: 600;
             margin-bottom: 20px;
             box-shadow: inset 2px 2px 5px rgba(0,0,0,0.3);
         }
-        .status-online  { background: #1a2c1e; color: #00ff88; border: 1px solid rgba(0,255,136,0.15); }
-        .status-offline { background: #2c1a1a; color: #ff6b6b; border: 1px solid rgba(255,107,107,0.15); }
+        .sync-online  { background: #1a2c1e; color: #00ff88; border: 1px solid rgba(0,255,136,0.15); }
+        .sync-offline { background: #2c1a1a; color: #ff6b6b; border: 1px solid rgba(255,107,107,0.15); }
         .status-dot {
             width: 8px; height: 8px; border-radius: 50%;
             background: currentColor;
@@ -172,85 +134,54 @@ if (!$is_admin) {
             flex-shrink: 0;
         }
 
-        /* Summary table card */
-        .summary-card {
-            background: #25282a;
-            border-radius: 16px;
-            padding: 0;
-            margin-bottom: 24px;
-            box-shadow: 5px 5px 10px #1a1c1d, -3px -3px 8px #2e3234;
-            overflow: hidden;
-        }
-        .summary-card-header {
-            padding: 14px 20px;
-            border-bottom: 1px solid rgba(255,255,255,0.04);
-            font-size: 12px;
-            font-weight: 700;
-            color: #00ccff;
-            text-transform: uppercase;
-            letter-spacing: 0.8px;
-        }
-        table.sync-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        /* Summary table */
+        .sync-table-wrap { overflow-x: auto; margin-bottom: 20px; }
+        table.sync-table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 420px; }
         .sync-table th {
-            padding: 10px 16px;
-            text-align: left;
-            color: #666;
-            font-size: 11px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            border-bottom: 1px solid rgba(255,255,255,0.04);
+            padding: 10px 14px; text-align: left;
+            color: #666; font-size: 11px; font-weight: 700;
+            text-transform: uppercase; letter-spacing: 0.5px;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
         }
         .sync-table td {
-            padding: 12px 16px;
-            border-bottom: 1px solid rgba(255,255,255,0.03);
-            color: #ccc;
+            padding: 11px 14px;
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+            color: #ccc; font-size: 13px;
         }
         .sync-table tr:last-child td { border-bottom: none; }
         .sync-table tr:hover td { background: rgba(255,255,255,0.02); }
-        .badge-ok  { color: #00ff88; font-weight: 600; }
-        .badge-err { color: #ff6b6b; font-weight: 600; }
+        .badge-ok    { color: #00ff88; font-weight: 700; }
+        .badge-err   { color: #ff6b6b; font-weight: 700; }
         .badge-empty { color: #444; font-style: italic; font-size: 12px; }
+        .total-line  { padding: 12px 14px; font-size: 13px; color: #888; border-top: 1px solid rgba(255,255,255,0.06); }
+        .total-line span { color: #00ff88; font-weight: 700; font-size: 15px; }
 
-        .detail-btn {
+        .view-btn {
             background: #1e2022;
-            border: none;
-            border-radius: 8px;
-            padding: 5px 12px;
-            color: #00ccff;
-            font-size: 11px;
-            cursor: pointer;
+            border: none; border-radius: 8px;
+            padding: 5px 12px; color: #00ccff;
+            font-size: 11px; cursor: pointer;
             box-shadow: 2px 2px 5px #1a1c1d, -1px -1px 3px #2e3234;
-            transition: all 0.15s;
-            white-space: nowrap;
+            white-space: nowrap; transition: all 0.15s;
         }
-        .detail-btn:hover { box-shadow: inset 2px 2px 4px #1a1c1d; }
-
-        /* Total row */
-        .total-row { padding: 14px 20px; border-top: 1px solid rgba(255,255,255,0.06); }
-        .total-row span { color: #00ff88; font-weight: 700; font-size: 14px; }
+        .view-btn:hover { box-shadow: inset 2px 2px 4px #1a1c1d; }
 
         /* Records section */
-        .records-section { display: none; margin-bottom: 20px; }
+        .records-section { display: none; margin-bottom: 24px; }
         .records-section.open { display: block; }
 
-        .section-header {
-            background: #25282a;
-            border-radius: 12px 12px 0 0;
-            padding: 12px 18px;
-            font-size: 12px;
-            font-weight: 700;
-            color: #00ccff;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            box-shadow: 5px 0 10px #1a1c1d, -3px 0 8px #2e3234;
+        .section-title {
+            font-size: 11px; font-weight: 700; color: #00ccff;
+            text-transform: uppercase; letter-spacing: 0.8px;
+            padding: 10px 0 10px;
+            border-bottom: 1px solid rgba(0,204,255,0.1);
+            margin-bottom: 14px;
         }
 
         .cards-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
             gap: 14px;
-            padding: 14px 0;
         }
 
         .record-card {
@@ -259,175 +190,170 @@ if (!$is_admin) {
             padding: 16px;
             box-shadow: 4px 4px 9px #1a1c1d, -2px -2px 6px #2e3234;
             transition: box-shadow 0.2s;
-            position: relative;
         }
         .record-card:hover { box-shadow: 6px 6px 12px #1a1c1d, -3px -3px 8px #2e3234; }
 
         .card-top {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 12px;
+            display: flex; justify-content: space-between;
+            align-items: center; margin-bottom: 12px;
             padding-bottom: 10px;
             border-bottom: 1px solid rgba(255,255,255,0.05);
         }
         .card-pk {
-            font-size: 11px;
-            color: #555;
-            font-family: monospace;
-            background: #1e2022;
-            padding: 3px 8px;
-            border-radius: 6px;
-            box-shadow: inset 1px 1px 3px #1a1c1d;
+            font-size: 11px; color: #555; font-family: monospace;
+            background: #1e2022; padding: 3px 8px;
+            border-radius: 6px; box-shadow: inset 1px 1px 3px #1a1c1d;
         }
-
         .delete-btn {
-            background: #2c1a1a;
-            border: 1px solid rgba(255,107,107,0.2);
-            border-radius: 8px;
-            padding: 5px 10px;
-            color: #ff6b6b;
-            font-size: 11px;
-            cursor: pointer;
-            transition: all 0.15s;
-            box-shadow: 2px 2px 5px #1a1c1d;
+            background: #2c1a1a; border: 1px solid rgba(255,107,107,0.2);
+            border-radius: 8px; padding: 5px 10px;
+            color: #ff6b6b; font-size: 11px; cursor: pointer;
+            box-shadow: 2px 2px 5px #1a1c1d; transition: all 0.15s;
         }
         .delete-btn:hover { background: #3a1f1f; box-shadow: inset 2px 2px 4px #1a1c1d; }
 
         .card-fields { display: flex; flex-direction: column; gap: 7px; }
         .card-field  { display: flex; gap: 10px; align-items: flex-start; }
         .field-key   {
-            min-width: 120px;
-            flex-shrink: 0;
-            font-size: 11px;
-            color: #00ccff;
-            font-weight: 600;
-            padding-top: 1px;
-            opacity: 0.7;
+            min-width: 110px; flex-shrink: 0;
+            font-size: 11px; color: #00ccff;
+            font-weight: 600; padding-top: 1px; opacity: 0.7;
         }
-        .field-val {
-            font-size: 12px;
-            color: #ccc;
-            word-break: break-word;
-            line-height: 1.4;
-        }
+        .field-val { font-size: 12px; color: #ccc; word-break: break-word; line-height: 1.4; }
         .field-val.is-null { color: #3a3a3a; font-style: italic; font-size: 11px; }
-
-        .empty-state {
-            padding: 20px;
-            text-align: center;
-            color: #444;
-            font-size: 13px;
-            font-style: italic;
-        }
     </style>
 </head>
 <body>
-<div class="page-wrapper">
+<div class="main-wrapper">
+    <div class="content-area" style="flex-direction: column">
 
-    <!-- Header -->
-    <div class="page-header">
-        <div>
-            <div class="page-title">☁ Cloud Sync — Supabase</div>
-            <div class="page-sub">Synchronized on <?= date('d M Y, H:i:s') ?></div>
-        </div>
-        <a href="index.php" class="back-btn">← Back to Menu</a>
-    </div>
-
-    <!-- Status -->
-    <?php if (!$supabase_ok): ?>
-    <div class="status-badge status-offline">
-        <span class="status-dot"></span>
-        Supabase unreachable — check your internet connection
-    </div>
-    <?php else: ?>
-    <div class="status-badge status-online">
-        <span class="status-dot"></span>
-        Connected to Supabase — sync completed successfully
-    </div>
-
-    <!-- Summary Table -->
-    <div class="summary-card">
-        <div class="summary-card-header">Sync Summary</div>
-        <table class="sync-table">
-            <tr>
-                <th>Table</th>
-                <th>Local Records</th>
-                <th>Uploaded</th>
-                <th>Status</th>
-                <th></th>
-            </tr>
-            <?php
-            $grand_total = 0;
-            foreach ($results as $table => $res):
-                $mysql    = $res['mysql_count'] ?? 0;
-                $uploaded = $res['count'] ?? 0;
-                $grand_total += $uploaded;
-                $is_empty = isset($res['note']) && $res['note'] === 'empty';
-                $status_html = $res['success']
-                    ? '<span class="badge-ok">✓ OK</span>'
-                    : '<span class="badge-err">✗ Error</span>';
-                $uploaded_html = $is_empty
-                    ? '<span class="badge-empty">— empty</span>'
-                    : $uploaded;
-            ?>
-            <tr>
-                <td><?= $table ?></td>
-                <td><?= $mysql ?></td>
-                <td><?= $uploaded_html ?></td>
-                <td><?= $status_html ?></td>
-                <td>
-                    <?php if ($mysql > 0): ?>
-                    <button class="detail-btn" onclick="toggleRecords('<?= $table ?>', this)">▼ View</button>
-                    <?php endif; ?>
-                </td>
-            </tr>
-            <?php endforeach; ?>
-        </table>
-        <div class="total-row">
-            Total uploaded: <span><?= $grand_total ?> records</span>
-        </div>
-    </div>
-
-    <!-- Record Cards per Table -->
-    <?php foreach ($tables as $table):
-        $rows = $table_rows[$table] ?? [];
-        $pk   = $pk_map[$table] ?? 'id';
-        if (empty($rows)) continue;
-    ?>
-    <div class="records-section" id="records-<?= $table ?>">
-        <div class="section-header"><?= $table ?> — <?= count($rows) ?> records</div>
-        <div class="cards-grid">
-        <?php foreach ($rows as $row):
-            $pk_val = $row[$pk] ?? '';
-        ?>
-            <div class="record-card" id="card-<?= $table ?>-<?= htmlspecialchars($pk_val) ?>">
-                <div class="card-top">
-                    <span class="card-pk"><?= $pk ?>: <?= htmlspecialchars($pk_val) ?></span>
-                    <button class="delete-btn"
-                        onclick="deleteRecord('<?= $table ?>', '<?= $pk ?>', '<?= htmlspecialchars($pk_val) ?>')">
-                        🗑 Delete
-                    </button>
+        <!-- Header — same as customer_prescription.php -->
+        <div class="header-container" style="margin-left: auto; margin-right: auto; width: 100%;">
+            <button class="logout-btn" onclick="window.location.href='logout.php';">
+                <span>Logout</span>
+            </button>
+            <div class="brand-section">
+                <div class="logo-box">
+                    <img src="<?php echo htmlspecialchars($BRAND_IMAGE_PATH); ?>" alt="Brand Logo" style="height: 40px;">
                 </div>
-                <div class="card-fields">
-                <?php foreach ($row as $key => $val):
-                    if ($key === $pk) continue;
+                <h1 class="company-name"><?php echo htmlspecialchars($STORE_NAME); ?></h1>
+                <p class="company-address"><?php echo htmlspecialchars($STORE_ADDRESS); ?></p>
+            </div>
+        </div>
+
+        <!-- Main Card -->
+        <div class="main-card" style="margin-left: auto; margin-right: auto; width: 100%;">
+            <h2>CLOUD SYNC — SUPABASE</h2>
+            <p style="color: #666; font-size: 12px; margin-bottom: 20px;">
+                Synchronized on <?= date('d M Y, H:i:s') ?>
+            </p>
+
+            <!-- Status -->
+            <?php if (!$supabase_ok): ?>
+            <div class="sync-status sync-offline">
+                <span class="status-dot"></span>
+                Supabase unreachable — check your internet connection
+            </div>
+            <?php else: ?>
+            <div class="sync-status sync-online">
+                <span class="status-dot"></span>
+                Connected to Supabase — sync completed successfully
+            </div>
+
+            <!-- Summary Table -->
+            <div class="sync-table-wrap">
+                <table class="sync-table">
+                    <tr>
+                        <th>Table</th>
+                        <th>Local</th>
+                        <th>Uploaded</th>
+                        <th>Status</th>
+                        <th></th>
+                    </tr>
+                    <?php
+                    $grand_total = 0;
+                    foreach ($results as $table => $res):
+                        $mysql    = $res['mysql_count'] ?? 0;
+                        $uploaded = $res['count'] ?? 0;
+                        $grand_total += $uploaded;
+                        $is_empty = isset($res['note']) && $res['note'] === 'empty';
+                        $status_html = $res['success']
+                            ? '<span class="badge-ok">✓ OK</span>'
+                            : '<span class="badge-err">✗ Error</span>';
+                        $uploaded_html = $is_empty
+                            ? '<span class="badge-empty">— empty</span>'
+                            : $uploaded;
+                    ?>
+                    <tr>
+                        <td><?= $table ?></td>
+                        <td><?= $mysql ?></td>
+                        <td><?= $uploaded_html ?></td>
+                        <td><?= $status_html ?></td>
+                        <td>
+                            <?php if ($mysql > 0): ?>
+                            <button class="view-btn" onclick="toggleRecords('<?= $table ?>', this)">▼ View</button>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                </table>
+                <div class="total-line">
+                    Total uploaded: <span><?= $grand_total ?> records</span>
+                </div>
+            </div>
+
+            <!-- Record Cards per Table -->
+            <?php foreach ($tables as $table):
+                $rows = $table_rows[$table] ?? [];
+                $pk   = $pk_map[$table] ?? 'id';
+                if (empty($rows)) continue;
+            ?>
+            <div class="records-section" id="records-<?= $table ?>">
+                <div class="section-title"><?= $table ?> — <?= count($rows) ?> records</div>
+                <div class="cards-grid">
+                <?php foreach ($rows as $row):
+                    $pk_val = $row[$pk] ?? '';
                 ?>
-                    <div class="card-field">
-                        <span class="field-key"><?= htmlspecialchars($key) ?></span>
-                        <span class="field-val <?= $val === null ? 'is-null' : '' ?>">
-                            <?= $val === null ? '(null)' : htmlspecialchars($val) ?>
-                        </span>
+                    <div class="record-card" id="card-<?= $table ?>-<?= htmlspecialchars($pk_val) ?>">
+                        <div class="card-top">
+                            <span class="card-pk"><?= $pk ?>: <?= htmlspecialchars($pk_val) ?></span>
+                            <button class="delete-btn"
+                                onclick="deleteRecord('<?= $table ?>', '<?= $pk ?>', '<?= htmlspecialchars($pk_val) ?>')">
+                                🗑 Delete
+                            </button>
+                        </div>
+                        <div class="card-fields">
+                        <?php foreach ($row as $key => $val):
+                            if ($key === $pk) continue;
+                        ?>
+                            <div class="card-field">
+                                <span class="field-key"><?= htmlspecialchars($key) ?></span>
+                                <span class="field-val <?= $val === null ? 'is-null' : '' ?>">
+                                    <?= $val === null ? '(null)' : htmlspecialchars($val) ?>
+                                </span>
+                            </div>
+                        <?php endforeach; ?>
+                        </div>
                     </div>
                 <?php endforeach; ?>
                 </div>
             </div>
-        <?php endforeach; ?>
-        </div>
-    </div>
-    <?php endforeach; ?>
+            <?php endforeach; ?>
 
-    <?php endif; ?>
+            <?php endif; ?>
+
+            <!-- Back button -->
+            <button type="button" class="back-main" onclick="window.location.href='index.php'">
+                BACK TO MAIN MENU
+            </button>
+        </div>
+
+        <!-- Footer -->
+        <footer class="footer-container">
+            <p class="footer-text"><?php echo $COPYRIGHT_FOOTER; ?></p>
+        </footer>
+
+    </div>
 </div>
 
 <script>
