@@ -45,9 +45,9 @@ function supabase_request($path, $method, $body = null) {
     $context  = stream_context_create($opts);
     $response = @file_get_contents(SUPABASE_URL . $path, false, $context);
     $status   = 0;
-    if (function_exists('http_get_last_response_headers')) { $http_response_header = http_get_last_response_headers() ?? []; }
-    if (isset($http_response_header)) {
-        preg_match('/HTTP\/\S+\s+(\d+)/', $http_response_header[0], $m);
+    $headers_arr = function_exists('http_get_last_response_headers') ? (http_get_last_response_headers() ?? []) : ($http_response_header ?? []);
+    if (!empty($headers_arr)) {
+        preg_match('/HTTP\/\S+\s+(\d+)/', $headers_arr[0], $m);
         $status = intval($m[1] ?? 0);
     }
     return ['body' => $response, 'status' => $status];
@@ -69,7 +69,7 @@ function check_supabase() {
     return $res['status'] >= 200 && $res['status'] < 500;
 }
 
-// Handle hapus (admin only)
+// Handle delete (admin only)
 if ($is_admin && isset($_POST['action']) && $_POST['action'] === 'delete') {
     $t = $_POST['table'] ?? '';
     $c = $_POST['id_col'] ?? '';
@@ -79,8 +79,8 @@ if ($is_admin && isset($_POST['action']) && $_POST['action'] === 'delete') {
     exit();
 }
 
-$results    = [];
-$table_rows = [];
+$results     = [];
+$table_rows  = [];
 $supabase_ok = check_supabase();
 
 if ($supabase_ok) {
@@ -101,132 +101,313 @@ if ($supabase_ok) {
 }
 close_db_connection($conn);
 
-// Staff: redirect langsung
 if (!$is_admin) {
     header('Location: index.php');
     exit();
 }
 ?>
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sync ke Supabase</title>
+    <title>Sync to Supabase</title>
     <link rel="stylesheet" href="style.css">
     <style>
-        body { padding: 16px; }
-        .sync-wrap { max-width: 700px; margin: 0 auto; }
-        .sync-title { font-size: 20px; font-weight: bold; margin-bottom: 4px; }
-        .sync-sub { font-size: 13px; color: #888; margin-bottom: 20px; }
-        .status-box { padding: 12px 16px; border-radius: 10px; margin-bottom: 20px; font-size: 13px; }
-        .online  { background: rgba(126,255,160,0.1); color: #7effa0; border: 1px solid rgba(126,255,160,0.2); }
-        .offline { background: rgba(255,107,107,0.1); color: #ff6b6b; border: 1px solid rgba(255,107,107,0.2); }
+        body { background: #1e2022; min-height: 100vh; padding: 0; margin: 0; }
 
-        /* Summary table */
-        .summary-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 24px; }
-        .summary-table th { color: #7eb8f7; font-weight: 600; padding: 8px 12px; border-bottom: 1px solid rgba(255,255,255,0.1); }
-        .summary-table td { padding: 8px 12px; border-bottom: 1px solid rgba(255,255,255,0.05); }
-        .ok   { color: #7effa0; }
-        .err  { color: #ff6b6b; }
-        .warn { color: #f6e05e; }
-        .toggle-btn {
-            background: none; border: 1px solid rgba(126,184,247,0.3);
-            color: #7eb8f7; font-size: 11px; padding: 3px 10px;
-            border-radius: 6px; cursor: pointer;
+        .page-wrapper {
+            max-width: 780px;
+            margin: 0 auto;
+            padding: 24px 16px 40px;
         }
-        .toggle-btn:hover { background: rgba(126,184,247,0.1); }
 
-        /* Cards section */
-        .cards-section { display: none; margin-bottom: 24px; }
-        .cards-section.open { display: block; }
-        .section-label { font-size: 12px; color: #888; margin-bottom: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
-        .cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
-        .record-card {
-            background: rgba(255,255,255,0.04);
-            border: 1px solid rgba(255,255,255,0.08);
+        /* Header */
+        .page-header {
+            background: #25282a;
+            border-radius: 16px;
+            padding: 20px 24px;
+            margin-bottom: 20px;
+            box-shadow: 5px 5px 10px #1a1c1d, -3px -3px 8px #2e3234;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+        .page-title { font-size: 18px; font-weight: 700; color: #e0e0e0; letter-spacing: 0.3px; }
+        .page-sub   { font-size: 12px; color: #666; margin-top: 2px; }
+        .back-btn {
+            background: #1e2022;
+            border: none;
+            border-radius: 10px;
+            padding: 10px 18px;
+            color: #aaa;
+            font-size: 13px;
+            cursor: pointer;
+            text-decoration: none;
+            box-shadow: 3px 3px 7px #1a1c1d, -2px -2px 5px #2e3234;
+            transition: all 0.2s;
+        }
+        .back-btn:hover { box-shadow: inset 2px 2px 5px #1a1c1d; color: #ccc; }
+
+        /* Status badge */
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 18px;
             border-radius: 12px;
-            padding: 14px;
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            box-shadow: inset 2px 2px 5px rgba(0,0,0,0.3);
+        }
+        .status-online  { background: #1a2c1e; color: #00ff88; border: 1px solid rgba(0,255,136,0.15); }
+        .status-offline { background: #2c1a1a; color: #ff6b6b; border: 1px solid rgba(255,107,107,0.15); }
+        .status-dot {
+            width: 8px; height: 8px; border-radius: 50%;
+            background: currentColor;
+            box-shadow: 0 0 8px currentColor;
+            flex-shrink: 0;
+        }
+
+        /* Summary table card */
+        .summary-card {
+            background: #25282a;
+            border-radius: 16px;
+            padding: 0;
+            margin-bottom: 24px;
+            box-shadow: 5px 5px 10px #1a1c1d, -3px -3px 8px #2e3234;
+            overflow: hidden;
+        }
+        .summary-card-header {
+            padding: 14px 20px;
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+            font-size: 12px;
+            font-weight: 700;
+            color: #00ccff;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+        }
+        table.sync-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .sync-table th {
+            padding: 10px 16px;
+            text-align: left;
+            color: #666;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+        }
+        .sync-table td {
+            padding: 12px 16px;
+            border-bottom: 1px solid rgba(255,255,255,0.03);
+            color: #ccc;
+        }
+        .sync-table tr:last-child td { border-bottom: none; }
+        .sync-table tr:hover td { background: rgba(255,255,255,0.02); }
+        .badge-ok  { color: #00ff88; font-weight: 600; }
+        .badge-err { color: #ff6b6b; font-weight: 600; }
+        .badge-empty { color: #444; font-style: italic; font-size: 12px; }
+
+        .detail-btn {
+            background: #1e2022;
+            border: none;
+            border-radius: 8px;
+            padding: 5px 12px;
+            color: #00ccff;
+            font-size: 11px;
+            cursor: pointer;
+            box-shadow: 2px 2px 5px #1a1c1d, -1px -1px 3px #2e3234;
+            transition: all 0.15s;
+            white-space: nowrap;
+        }
+        .detail-btn:hover { box-shadow: inset 2px 2px 4px #1a1c1d; }
+
+        /* Total row */
+        .total-row { padding: 14px 20px; border-top: 1px solid rgba(255,255,255,0.06); }
+        .total-row span { color: #00ff88; font-weight: 700; font-size: 14px; }
+
+        /* Records section */
+        .records-section { display: none; margin-bottom: 20px; }
+        .records-section.open { display: block; }
+
+        .section-header {
+            background: #25282a;
+            border-radius: 12px 12px 0 0;
+            padding: 12px 18px;
+            font-size: 12px;
+            font-weight: 700;
+            color: #00ccff;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            box-shadow: 5px 0 10px #1a1c1d, -3px 0 8px #2e3234;
+        }
+
+        .cards-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 14px;
+            padding: 14px 0;
+        }
+
+        .record-card {
+            background: #25282a;
+            border-radius: 14px;
+            padding: 16px;
+            box-shadow: 4px 4px 9px #1a1c1d, -2px -2px 6px #2e3234;
+            transition: box-shadow 0.2s;
             position: relative;
         }
-        .record-card:hover { border-color: rgba(126,184,247,0.2); }
-        .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
-        .card-id { font-size: 11px; color: #555; font-family: monospace; }
-        .del-btn {
-            background: rgba(255,107,107,0.1); border: 1px solid rgba(255,107,107,0.2);
-            color: #ff6b6b; border-radius: 6px; padding: 4px 10px;
-            font-size: 11px; cursor: pointer; flex-shrink: 0;
-        }
-        .del-btn:hover { background: rgba(255,107,107,0.25); }
-        .card-fields { display: flex; flex-direction: column; gap: 6px; }
-        .card-field { display: flex; gap: 8px; font-size: 12px; }
-        .field-key { color: #7eb8f7; min-width: 110px; flex-shrink: 0; font-weight: 500; }
-        .field-val { color: #ccc; word-break: break-all; }
-        .field-val.null-val { color: #444; font-style: italic; }
-        .empty-note { color: #555; font-size: 13px; font-style: italic; padding: 12px 0; }
+        .record-card:hover { box-shadow: 6px 6px 12px #1a1c1d, -3px -3px 8px #2e3234; }
 
-        /* Total & back */
-        .total-box { padding: 14px 16px; background: rgba(255,255,255,0.04); border-radius: 10px; margin-bottom: 20px; }
-        .total-box strong { color: #7effa0; font-size: 15px; }
-        .back-btn {
-            display: inline-block; padding: 12px 24px;
-            background: rgba(255,255,255,0.07); border-radius: 12px;
-            color: #ccc; text-decoration: none; font-size: 14px;
-            border: 1px solid rgba(255,255,255,0.1);
+        .card-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
         }
-        .back-btn:hover { background: rgba(255,255,255,0.12); }
+        .card-pk {
+            font-size: 11px;
+            color: #555;
+            font-family: monospace;
+            background: #1e2022;
+            padding: 3px 8px;
+            border-radius: 6px;
+            box-shadow: inset 1px 1px 3px #1a1c1d;
+        }
+
+        .delete-btn {
+            background: #2c1a1a;
+            border: 1px solid rgba(255,107,107,0.2);
+            border-radius: 8px;
+            padding: 5px 10px;
+            color: #ff6b6b;
+            font-size: 11px;
+            cursor: pointer;
+            transition: all 0.15s;
+            box-shadow: 2px 2px 5px #1a1c1d;
+        }
+        .delete-btn:hover { background: #3a1f1f; box-shadow: inset 2px 2px 4px #1a1c1d; }
+
+        .card-fields { display: flex; flex-direction: column; gap: 7px; }
+        .card-field  { display: flex; gap: 10px; align-items: flex-start; }
+        .field-key   {
+            min-width: 120px;
+            flex-shrink: 0;
+            font-size: 11px;
+            color: #00ccff;
+            font-weight: 600;
+            padding-top: 1px;
+            opacity: 0.7;
+        }
+        .field-val {
+            font-size: 12px;
+            color: #ccc;
+            word-break: break-word;
+            line-height: 1.4;
+        }
+        .field-val.is-null { color: #3a3a3a; font-style: italic; font-size: 11px; }
+
+        .empty-state {
+            padding: 20px;
+            text-align: center;
+            color: #444;
+            font-size: 13px;
+            font-style: italic;
+        }
     </style>
 </head>
 <body>
-<div class="sync-wrap">
-    <div class="sync-title">☁️ Sync ke Supabase</div>
-    <div class="sync-sub">Sinkronisasi semua data ke cloud — <?= date('d/m/Y H:i:s') ?></div>
+<div class="page-wrapper">
 
+    <!-- Header -->
+    <div class="page-header">
+        <div>
+            <div class="page-title">☁ Cloud Sync — Supabase</div>
+            <div class="page-sub">Synchronized on <?= date('d M Y, H:i:s') ?></div>
+        </div>
+        <a href="index.php" class="back-btn">← Back to Menu</a>
+    </div>
+
+    <!-- Status -->
     <?php if (!$supabase_ok): ?>
-    <div class="status-box offline">✗ Tidak bisa konek ke Supabase. Pastikan terhubung ke internet.</div>
+    <div class="status-badge status-offline">
+        <span class="status-dot"></span>
+        Supabase unreachable — check your internet connection
+    </div>
     <?php else: ?>
-    <div class="status-box online">✓ Supabase terjangkau — sync berhasil</div>
+    <div class="status-badge status-online">
+        <span class="status-dot"></span>
+        Connected to Supabase — sync completed successfully
+    </div>
 
-    <table class="summary-table">
-        <tr><th>Tabel</th><th>Records</th><th>Uploaded</th><th>Status</th><th></th></tr>
-        <?php
-        $grand_total = 0;
-        foreach ($results as $table => $res):
-            $mysql    = $res['mysql_count'] ?? 0;
-            $uploaded = $res['count'] ?? 0;
-            $grand_total += $uploaded;
-            $note   = isset($res['note']) ? ' <span class="warn">(kosong)</span>' : '';
-            $status = $res['success'] ? '<span class="ok">✓ OK</span>' : '<span class="err">✗ Error</span>';
-        ?>
-        <tr>
-            <td><?= $table ?></td>
-            <td><?= $mysql ?></td>
-            <td><?= $uploaded ?><?= $note ?></td>
-            <td><?= $status ?></td>
-            <td>
-                <?php if ($mysql > 0): ?>
-                <button class="toggle-btn" onclick="toggleCards('<?= $table ?>', this)">▼ Detail</button>
-                <?php endif; ?>
-            </td>
-        </tr>
-        <?php endforeach; ?>
-    </table>
+    <!-- Summary Table -->
+    <div class="summary-card">
+        <div class="summary-card-header">Sync Summary</div>
+        <table class="sync-table">
+            <tr>
+                <th>Table</th>
+                <th>Local Records</th>
+                <th>Uploaded</th>
+                <th>Status</th>
+                <th></th>
+            </tr>
+            <?php
+            $grand_total = 0;
+            foreach ($results as $table => $res):
+                $mysql    = $res['mysql_count'] ?? 0;
+                $uploaded = $res['count'] ?? 0;
+                $grand_total += $uploaded;
+                $is_empty = isset($res['note']) && $res['note'] === 'empty';
+                $status_html = $res['success']
+                    ? '<span class="badge-ok">✓ OK</span>'
+                    : '<span class="badge-err">✗ Error</span>';
+                $uploaded_html = $is_empty
+                    ? '<span class="badge-empty">— empty</span>'
+                    : $uploaded;
+            ?>
+            <tr>
+                <td><?= $table ?></td>
+                <td><?= $mysql ?></td>
+                <td><?= $uploaded_html ?></td>
+                <td><?= $status_html ?></td>
+                <td>
+                    <?php if ($mysql > 0): ?>
+                    <button class="detail-btn" onclick="toggleRecords('<?= $table ?>', this)">▼ View</button>
+                    <?php endif; ?>
+                </td>
+            </tr>
+            <?php endforeach; ?>
+        </table>
+        <div class="total-row">
+            Total uploaded: <span><?= $grand_total ?> records</span>
+        </div>
+    </div>
 
+    <!-- Record Cards per Table -->
     <?php foreach ($tables as $table):
         $rows = $table_rows[$table] ?? [];
         $pk   = $pk_map[$table] ?? 'id';
         if (empty($rows)) continue;
     ?>
-    <div class="cards-section" id="cards-<?= $table ?>">
-        <div class="section-label"><?= $table ?> — <?= count($rows) ?> records</div>
+    <div class="records-section" id="records-<?= $table ?>">
+        <div class="section-header"><?= $table ?> — <?= count($rows) ?> records</div>
         <div class="cards-grid">
         <?php foreach ($rows as $row):
             $pk_val = $row[$pk] ?? '';
         ?>
             <div class="record-card" id="card-<?= $table ?>-<?= htmlspecialchars($pk_val) ?>">
-                <div class="card-header">
-                    <span class="card-id"><?= $pk ?>: <?= htmlspecialchars($pk_val) ?></span>
-                    <button class="del-btn" onclick="deleteRecord('<?= $table ?>', '<?= $pk ?>', '<?= htmlspecialchars($pk_val) ?>')">🗑 Hapus</button>
+                <div class="card-top">
+                    <span class="card-pk"><?= $pk ?>: <?= htmlspecialchars($pk_val) ?></span>
+                    <button class="delete-btn"
+                        onclick="deleteRecord('<?= $table ?>', '<?= $pk ?>', '<?= htmlspecialchars($pk_val) ?>')">
+                        🗑 Delete
+                    </button>
                 </div>
                 <div class="card-fields">
                 <?php foreach ($row as $key => $val):
@@ -234,7 +415,7 @@ if (!$is_admin) {
                 ?>
                     <div class="card-field">
                         <span class="field-key"><?= htmlspecialchars($key) ?></span>
-                        <span class="field-val <?= $val === null ? 'null-val' : '' ?>">
+                        <span class="field-val <?= $val === null ? 'is-null' : '' ?>">
                             <?= $val === null ? '(null)' : htmlspecialchars($val) ?>
                         </span>
                     </div>
@@ -246,28 +427,24 @@ if (!$is_admin) {
     </div>
     <?php endforeach; ?>
 
-    <div class="total-box">
-        <strong>Total: <?= $grand_total ?> records diupload</strong>
-    </div>
     <?php endif; ?>
-
-    <a href="index.php" class="back-btn">← Kembali</a>
 </div>
 
 <script>
-function toggleCards(table, btn) {
-    const section = document.getElementById('cards-' + table);
-    if (section.classList.contains('open')) {
-        section.classList.remove('open');
-        btn.textContent = '▼ Detail';
+function toggleRecords(table, btn) {
+    const sec = document.getElementById('records-' + table);
+    if (sec.classList.contains('open')) {
+        sec.classList.remove('open');
+        btn.textContent = '▼ View';
     } else {
-        section.classList.add('open');
-        btn.textContent = '▲ Tutup';
+        sec.classList.add('open');
+        btn.textContent = '▲ Hide';
+        sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 }
 
 function deleteRecord(table, idCol, idVal) {
-    if (!confirm('Hapus record "' + idVal + '" dari Supabase?')) return;
+    if (!confirm('Delete "' + idVal + '" from Supabase?\nThis cannot be undone.')) return;
     fetch('sync_to_supabase.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -278,12 +455,13 @@ function deleteRecord(table, idCol, idVal) {
         if (data.success) {
             const card = document.getElementById('card-' + table + '-' + idVal);
             if (card) {
-                card.style.opacity = '0.3';
-                card.style.pointerEvents = 'none';
-                setTimeout(() => card.remove(), 400);
+                card.style.transition = 'opacity 0.3s, transform 0.3s';
+                card.style.opacity = '0';
+                card.style.transform = 'scale(0.95)';
+                setTimeout(() => card.remove(), 300);
             }
         } else {
-            alert('Gagal hapus dari Supabase!');
+            alert('Failed to delete from Supabase.');
         }
     });
 }
