@@ -1,6 +1,10 @@
 <?php
 // sync_to_supabase.php
+error_reporting(0);
+ini_set('display_errors', 0);
+ob_start();
 include 'db_config.php';
+ob_clean();
 
 define('SUPABASE_URL', 'https://rnuyhoxlmpivkoxwyxln.supabase.co');
 define('SUPABASE_KEY', 'sb_publishable_dTU5WLDoTWdLhN68x8Pn6g_SwJvFeRs');
