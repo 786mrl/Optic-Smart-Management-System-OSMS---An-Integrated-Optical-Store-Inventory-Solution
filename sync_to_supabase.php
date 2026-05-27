@@ -91,20 +91,21 @@ if ($is_admin && isset($_POST['action']) && $_POST['action'] === 'delete') {
     $by  = $conn->real_escape_string($_SESSION['username'] ?? 'admin');
     $expires = date('Y-m-d H:i:s', strtotime('+30 days'));
 
-    // Get all approved usernames
+    // Get ALL approved usernames (not just count) for accurate check
     $ur = $conn->query("SELECT username FROM users WHERE is_approved = 1");
     $all_users = [];
     while ($row = $ur->fetch_assoc()) $all_users[] = $row['username'];
     $total_users = count($all_users);
 
     // Check if already in queue
-    $existing = $conn->query("SELECT id FROM deletion_queue WHERE target_table='$t' AND target_id_col='$c' AND target_id_val='$v'");
+    $existing = $conn->query("SELECT id FROM deletion_queue
+        WHERE target_table='$t' AND target_id_col='$c' AND target_id_val='$v'");
     if ($existing && $existing->num_rows > 0) {
         echo json_encode(['success' => false, 'message' => 'Already in deletion queue']);
         exit();
     }
 
-    // Current user is first to confirm — use JSON array for confirmed_by
+    // First confirmer is the current admin user
     $confirmed_list = json_encode([$by]);
 
     // Add to local MySQL deletion_queue
@@ -130,17 +131,29 @@ if ($is_admin && isset($_POST['action']) && $_POST['action'] === 'delete') {
     // If only 1 user total → delete from Supabase immediately, clean queue
     if ($total_users <= 1) {
         supabase_request("/rest/v1/{$t}?{$c}=eq." . urlencode($v), 'DELETE');
-        supabase_request('/rest/v1/deletion_queue?target_table=eq.' . urlencode($t) . '&target_id_val=eq.' . urlencode($v), 'DELETE');
+        supabase_request(
+            '/rest/v1/deletion_queue?target_table=eq.' . urlencode($t) . '&target_id_val=eq.' . urlencode($v),
+            'DELETE'
+        );
         $conn->query("DELETE FROM deletion_queue WHERE target_table='$t' AND target_id_val='$v'");
+        echo json_encode(['success' => true, 'message' => 'Deleted immediately (single user)']);
+    } else {
+        echo json_encode([
+            'success' => true,
+            'message' => 'Queued for deletion — waiting for ' . ($total_users - 1) . ' other user(s) to confirm'
+        ]);
     }
-
-    echo json_encode(['success' => true, 'message' => 'Queued for deletion on all devices']);
     exit();
 }
 
 $results     = [];
 $table_rows  = [];
 $supabase_ok = check_supabase();
+
+// Get pending deletions from local queue
+$pending_deletions = [];
+$pq = $conn->query("SELECT * FROM deletion_queue WHERE expires_at > NOW() ORDER BY created_at DESC");
+if ($pq) while ($row = $pq->fetch_assoc()) $pending_deletions[] = $row;
 
 if ($supabase_ok) {
     foreach ($tables as $table) {
@@ -321,6 +334,45 @@ if (!$is_admin) {
                 Connected to Supabase — sync completed successfully
             </div>
 
+            <!-- Pending Deletions -->
+            <?php if (!empty($pending_deletions)): ?>
+            <div style="margin-bottom: 20px;">
+                <div style="font-size:11px; font-weight:700; color:#f6a623; text-transform:uppercase; letter-spacing:0.8px; margin-bottom:10px;">
+                    ⏳ Pending Deletions — <?= count($pending_deletions) ?> item(s) waiting
+                </div>
+                <?php foreach ($pending_deletions as $pd):
+                    $confirmed = json_decode($pd['confirmed_by'] ?? '[]', true);
+                    if (!is_array($confirmed)) $confirmed = [];
+                    $waiting = $pd['total_users'] - count($confirmed);
+                ?>
+                <div style="background:#2a2200; border:1px solid rgba(246,166,35,0.2); border-radius:10px; padding:12px 14px; margin-bottom:8px; font-size:12px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+                        <div>
+                            <span style="color:#f6a623; font-weight:600;"><?= htmlspecialchars($pd['target_table']) ?></span>
+                            <span style="color:#666; margin:0 6px;">→</span>
+                            <span style="color:#ccc; font-family:monospace;"><?= htmlspecialchars($pd['target_id_val']) ?></span>
+                        </div>
+                        <div style="color:#888; font-size:11px;">
+                            Deleted by: <span style="color:#ccc;"><?= htmlspecialchars($pd['deleted_by']) ?></span>
+                        </div>
+                    </div>
+                    <div style="margin-top:8px; display:flex; gap:12px; flex-wrap:wrap;">
+                        <span style="color:#888; font-size:11px;">
+                            Confirmed: <span style="color:#00ff88;"><?= count($confirmed) ?>/<?= $pd['total_users'] ?></span>
+                            (<?= implode(', ', array_map('htmlspecialchars', $confirmed)) ?>)
+                        </span>
+                        <span style="color:#888; font-size:11px;">
+                            Waiting: <span style="color:#f6a623;"><?= $waiting ?> user(s)</span>
+                        </span>
+                        <span style="color:#888; font-size:11px;">
+                            Expires: <?= date('d M Y', strtotime($pd['expires_at'])) ?>
+                        </span>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+            <?php endif; ?>
+
             <!-- Summary Table -->
             <div class="sync-table-wrap">
                 <table class="sync-table">
@@ -434,7 +486,7 @@ function toggleRecords(table, btn) {
 }
 
 function deleteRecord(table, idCol, idVal) {
-    if (!confirm('Delete "' + idVal + '" from Supabase?\nThis cannot be undone.')) return;
+    if (!confirm('Queue "' + idVal + '" for deletion?\n\nThis will be removed from all devices when all users have logged in.')) return;
     fetch('sync_to_supabase.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -446,12 +498,19 @@ function deleteRecord(table, idCol, idVal) {
             const card = document.getElementById('card-' + table + '-' + idVal);
             if (card) {
                 card.style.transition = 'opacity 0.3s, transform 0.3s';
-                card.style.opacity = '0';
-                card.style.transform = 'scale(0.95)';
-                setTimeout(() => card.remove(), 300);
+                card.style.opacity = '0.3';
+                card.style.transform = 'scale(0.97)';
+                // Show pending indicator on card
+                card.style.border = '1px solid rgba(246,166,35,0.4)';
+                const msg = document.createElement('div');
+                msg.style.cssText = 'margin-top:10px; padding:6px 10px; background:rgba(246,166,35,0.1); border-radius:6px; font-size:11px; color:#f6a623;';
+                msg.textContent = '⏳ ' + (data.message || 'Queued for deletion');
+                card.appendChild(msg);
             }
+            // Reload after 1.5s to show updated pending list
+            setTimeout(() => location.reload(), 1500);
         } else {
-            alert('Failed to delete from Supabase.');
+            alert('Error: ' + (data.message || 'Failed to queue deletion'));
         }
     });
 }

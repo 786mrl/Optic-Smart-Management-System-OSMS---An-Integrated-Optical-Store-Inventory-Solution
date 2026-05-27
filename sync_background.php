@@ -13,7 +13,7 @@ if (!$current_username) exit();
 define('SUPABASE_URL', 'https://rnuyhoxlmpivkoxwyxln.supabase.co');
 define('SUPABASE_KEY', 'sb_publishable_dTU5WLDoTWdLhN68x8Pn6g_SwJvFeRs');
 
-// Tabel yang di-sync (deletion_queue TIDAK di-sync otomatis)
+// deletion_queue intentionally excluded — managed separately
 $sync_tables = [
     'settings', 'users', 'frames_main', 'frame_staging',
     'customer_examinations', 'customer_orders', 'custom_frames',
@@ -51,8 +51,13 @@ function supabase_request($path, $method, $body = null) {
     $context  = stream_context_create($opts);
     $response = @file_get_contents(SUPABASE_URL . $path, false, $context);
     $status   = 0;
-    $hdrs = function_exists('http_get_last_response_headers') ? (http_get_last_response_headers() ?? []) : ($http_response_header ?? []);
-    if (!empty($hdrs)) { preg_match('/HTTP\/\S+\s+(\d+)/', $hdrs[0], $m); $status = intval($m[1] ?? 0); }
+    $hdrs = function_exists('http_get_last_response_headers')
+        ? (http_get_last_response_headers() ?? [])
+        : ($http_response_header ?? []);
+    if (!empty($hdrs)) {
+        preg_match('/HTTP\/\S+\s+(\d+)/', $hdrs[0], $m);
+        $status = intval($m[1] ?? 0);
+    }
     return ['body' => $response, 'status' => $status];
 }
 
@@ -63,73 +68,90 @@ function check_supabase() {
 
 if (!check_supabase()) exit();
 
-// ── Get all approved usernames from local MySQL ───────────────
+// ── Get current approved users from local MySQL ───────────────
 $ur = $conn->query("SELECT username FROM users WHERE is_approved = 1");
-$all_users = [];
+$all_users   = [];
 while ($row = $ur->fetch_assoc()) $all_users[] = $row['username'];
 $total_users = count($all_users);
 
-// ── Process expired queue items (30 days) ────────────────────
-// Cleanup expired locally
+// ── Cleanup expired queue items ───────────────────────────────
+// Local MySQL
 $conn->query("DELETE FROM deletion_queue WHERE expires_at IS NOT NULL AND expires_at < NOW()");
+// Supabase
+supabase_request(
+    '/rest/v1/deletion_queue?expires_at=lt.' . urlencode(date('Y-m-d\TH:i:s')),
+    'DELETE'
+);
 
-// Cleanup expired in Supabase
-supabase_request('/rest/v1/deletion_queue?expires_at=lt.' . urlencode(date('Y-m-d\TH:i:s')), 'DELETE');
-
-// ── Process active deletion queue from Supabase ──────────────
-$res = supabase_request('/rest/v1/deletion_queue?order=created_at.asc&expires_at=gt.' . urlencode(date('Y-m-d\TH:i:s')), 'GET');
+// ── Process active deletion queue from Supabase ───────────────
+$now = urlencode(date('Y-m-d\TH:i:s'));
+$res = supabase_request(
+    '/rest/v1/deletion_queue?order=created_at.asc&expires_at=gt.' . $now,
+    'GET'
+);
 
 if ($res['status'] === 200 && !empty($res['body'])) {
     $queue = json_decode($res['body'], true) ?? [];
 
     foreach ($queue as $item) {
-        $q_id      = $item['id'];
+        $q_id      = (int)$item['id'];
         $q_table   = $item['target_table'];
         $q_id_col  = $item['target_id_col'];
         $q_id_val  = $item['target_id_val'];
         $confirmed = (int)($item['confirmed_count'] ?? 0);
-        $confirmed_by_raw = $item['confirmed_by'] ?? '';
 
-        // Parse confirmed_by as JSON array for reliable check
-        $confirmed_list = json_decode($confirmed_by_raw, true);
+        // Parse confirmed_by JSON array
+        $confirmed_list = json_decode($item['confirmed_by'] ?? '[]', true);
         if (!is_array($confirmed_list)) $confirmed_list = [];
 
-        // Check if current user already confirmed
-        $already_confirmed = in_array($current_username, $confirmed_list);
+        // Skip if already confirmed by this user
+        if (in_array($current_username, $confirmed_list)) continue;
 
-        if (!$already_confirmed) {
-            // Delete from local MySQL
-            $safe_val = $conn->real_escape_string($q_id_val);
-            $conn->query("DELETE FROM `{$q_table}` WHERE `{$q_id_col}` = '{$safe_val}'");
+        // Delete from local MySQL
+        $safe_val = $conn->real_escape_string($q_id_val);
+        $safe_col = $conn->real_escape_string($q_id_col);
+        $safe_tbl = $conn->real_escape_string($q_table);
+        $conn->query("DELETE FROM `{$safe_tbl}` WHERE `{$safe_col}` = '{$safe_val}'");
 
-            // Add current user to confirmed list
-            $confirmed_list[] = $current_username;
-            $new_count = count($confirmed_list);
-            $new_confirmed_by = json_encode($confirmed_list);
+        // Also delete from local deletion_queue if exists (cleanup)
+        $conn->query("DELETE FROM deletion_queue WHERE target_table='{$safe_tbl}' AND target_id_col='{$safe_col}' AND target_id_val='{$safe_val}'");
 
-            // Atomic update — only update if confirmed_count matches what we read
-            // This prevents race condition
-            supabase_request('/rest/v1/deletion_queue?id=eq.' . $q_id . '&confirmed_count=eq.' . $confirmed, 'PATCH', [
-                'confirmed_count' => $new_count,
-                'confirmed_by'    => $new_confirmed_by
-            ]);
+        // Atomic confirm via Supabase RPC
+        $rpc_res = supabase_request('/rest/v1/rpc/confirm_deletion', 'POST', [
+            'p_queue_id'      => $q_id,
+            'p_username'      => $current_username,
+            'p_current_count' => $confirmed
+        ]);
 
-            // Check if all approved users have confirmed
-            $all_confirmed = count(array_intersect($confirmed_list, $all_users)) >= $total_users;
+        // Re-fetch updated item to check if all confirmed
+        $updated = supabase_request('/rest/v1/deletion_queue?id=eq.' . $q_id, 'GET');
+        if ($updated['status'] === 200 && !empty($updated['body'])) {
+            $updated_item = json_decode($updated['body'], true);
+            $updated_item = $updated_item[0] ?? null;
 
-            if ($all_confirmed) {
-                // Delete from Supabase target table
-                supabase_request('/rest/v1/' . $q_table . '?' . $q_id_col . '=eq.' . urlencode($q_id_val), 'DELETE');
-                // Remove from Supabase deletion_queue
-                supabase_request('/rest/v1/deletion_queue?id=eq.' . $q_id, 'DELETE');
-                // Remove from local deletion_queue
-                $conn->query("DELETE FROM deletion_queue WHERE id = " . (int)$q_id);
+            if ($updated_item) {
+                $new_confirmed_list = json_decode($updated_item['confirmed_by'] ?? '[]', true);
+                if (!is_array($new_confirmed_list)) $new_confirmed_list = [];
+
+                // Use current approved users for check (fix celah 2: stale total_users)
+                $all_confirmed = count(array_intersect($new_confirmed_list, $all_users)) >= $total_users;
+
+                if ($all_confirmed) {
+                    // Delete from Supabase target table
+                    supabase_request(
+                        '/rest/v1/' . $q_table . '?' . $q_id_col . '=eq.' . urlencode($q_id_val),
+                        'DELETE'
+                    );
+                    // Remove from Supabase deletion_queue
+                    supabase_request('/rest/v1/deletion_queue?id=eq.' . $q_id, 'DELETE');
+                }
             }
         }
     }
 }
 
 // ── Sync all tables to Supabase ───────────────────────────────
+// NOTE: Sync runs AFTER queue processing to avoid re-uploading deleted records
 foreach ($sync_tables as $table) {
     $result = $conn->query("SELECT * FROM `$table`");
     if (!$result) continue;
