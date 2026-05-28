@@ -141,6 +141,50 @@ supabase_request('/rest/v1/users?username=eq.' . urlencode($current_username), '
     'last_login' => $now
 ]);
 
+// ── Pull ALL tables from Supabase every login ────────────────
+// Ensures all devices always have latest data from cloud
+$pk_map_pull = [
+    'users'                      => 'user_id',
+    'settings'                   => 'setting_key',
+    'frames_main'                => 'ufc',
+    'frame_staging'              => 'ufc',
+    'customer_examinations'      => 'id',
+    'customer_orders'            => 'id',
+    'custom_frames'              => 'id',
+    'prescription_modifications' => 'modification_id',
+];
+
+foreach ($sync_tables as $table) {
+    $res = supabase_request('/rest/v1/' . $table . '?select=*', 'GET');
+    if ($res['status'] !== 200 || empty($res['body'])) continue;
+
+    $rows = json_decode($res['body'], true) ?? [];
+    if (empty($rows)) continue;
+
+    $cols     = array_keys($rows[0]);
+    $col_list = '`' . implode('`, `', $cols) . '`';
+    $pk_col   = $pk_map_pull[$table] ?? 'id';
+
+    foreach ($rows as $row) {
+        $values = array_map(function($v) use ($conn) {
+            return $v === null ? 'NULL' : "'" . $conn->real_escape_string($v) . "'";
+        }, array_values($row));
+        $val_list = implode(', ', $values);
+
+        // ON DUPLICATE KEY UPDATE — update all columns except PK
+        $update_parts = [];
+        foreach ($cols as $col) {
+            if ($col !== $pk_col) {
+                $update_parts[] = "`$col` = VALUES(`$col`)";
+            }
+        }
+        $update_set = implode(', ', $update_parts);
+
+        $conn->query("INSERT INTO `$table` ($col_list) VALUES ($val_list)
+            ON DUPLICATE KEY UPDATE $update_set");
+    }
+}
+
 // ── Get current approved users ────────────────────────────────
 $ur = $conn->query("SELECT username FROM users WHERE is_approved = 1");
 $all_users   = [];
