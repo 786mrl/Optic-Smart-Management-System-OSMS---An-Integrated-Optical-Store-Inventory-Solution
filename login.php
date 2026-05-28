@@ -27,8 +27,12 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 $_SESSION['username'] = $user['username'];
                 $_SESSION['user_id'] = $user['user_id'];
                 $_SESSION['role'] = $user['role'];
+                
+                // Update last_login timestamp
+                $now = date('Y-m-d H:i:s');
+                $conn->query("UPDATE users SET last_login = '$now' WHERE user_id = " . (int)$user['user_id']);
 
-                // 4. Sync background ke Supabase saat login
+                // Sync background ke Supabase saat login
                 $host     = $_SERVER['HTTP_HOST'];
                 $base     = dirname($_SERVER['SCRIPT_NAME']);
                 $sync_url = 'http://' . $host . $base . '/sync_background.php';
@@ -36,7 +40,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                     'http' => ['timeout' => 1, 'ignore_errors' => true],
                     'ssl'  => ['verify_peer' => false]
                 ]));
-                
+
                 // Redirect to main window (index.php)
                 header("Location: welcome.php");
                 exit();
