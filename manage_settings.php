@@ -1,6 +1,7 @@
 <?php
 session_start();
 include 'db_config.php';
+include 'activity_helper.php';
 include 'config_helper.php';
 
 // Check if user is logged in
@@ -101,6 +102,7 @@ if (isset($_POST['action']) && $role == 'admin') {
     }
 
     file_put_contents($json_path . $file, json_encode($data, JSON_PRETTY_PRINT));
+    log_activity($conn, 'settings', $file, 'UPDATE', $_SESSION['username'] ?? 'system');
     header("Location: manage_settings.php?status=success");
     exit();
 }

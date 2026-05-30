@@ -5,7 +5,8 @@
     $username = $_SESSION['username'] ?? 'Guest';
     $current_role = $_SESSION['role'] ?? 'N/A';
 
-    include 'db_config.php';      // 1. DB Connection
+    include 'db_config.php';
+include 'activity_helper.php';      // 1. DB Connection
     include 'config_helper.php';  // 2. Fetch Global Settings (STORE_NAME, BRAND_IMAGE_PATH)
 
     // Security check: Must be Admin

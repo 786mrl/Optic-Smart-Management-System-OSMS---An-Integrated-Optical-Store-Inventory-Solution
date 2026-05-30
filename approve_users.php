@@ -5,7 +5,8 @@
     $username = $_SESSION['username'] ?? 'Guest';
     $current_role = $_SESSION['role'] ?? 'N/A';
 
-    include 'db_config.php';      // 1. DB Connection
+    include 'db_config.php';
+include 'activity_helper.php';      // 1. DB Connection
     include 'config_helper.php';  // 2. Fetch Global Settings (STORE_NAME, BRAND_IMAGE_PATH)
 
     // Security check: must be Admin
@@ -26,6 +27,7 @@
         if ($stmt->execute() && $stmt->affected_rows > 0) {
             $message = "User ID #$user_to_approve_id approved successfully!";
             $status = "success";
+            log_activity($conn, 'users', (string)$user_to_approve_id, 'UPDATE', $_SESSION['username'] ?? 'admin');
         } else {
             $message = "Failed to approve user. It might be already approved or not found.";
             $status = "error";

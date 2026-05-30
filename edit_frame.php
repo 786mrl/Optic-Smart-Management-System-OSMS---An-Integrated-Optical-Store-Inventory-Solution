@@ -1,6 +1,7 @@
 <?php
     session_start();
     include 'db_config.php';
+include 'activity_helper.php';
     include 'config_helper.php';
     include 'phpqrcode/qrlib.php'; 
 
@@ -104,6 +105,7 @@
             if ($new_ufc !== $old_ufc) {
                 // If UFC changes, delete the old record because UFC is the Primary Key
                 $del = $conn->prepare("DELETE FROM frame_staging WHERE ufc = ?");
+            // log after execute below
                 $del->bind_param("s", $old_ufc);
                 $del->execute();
                 

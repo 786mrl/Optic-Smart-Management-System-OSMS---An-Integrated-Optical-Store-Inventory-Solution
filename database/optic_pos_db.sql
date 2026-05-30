@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: May 26, 2026 at 02:37 PM
+-- Generation Time: May 30, 2026 at 01:03 PM
 -- Server version: 10.1.38-MariaDB
 -- PHP Version: 7.3.2
 
@@ -21,6 +21,22 @@ SET time_zone = "+00:00";
 --
 -- Database: `optic_pos_db`
 --
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `activity_log`
+--
+
+CREATE TABLE `activity_log` (
+  `id` int(11) NOT NULL,
+  `table_name` varchar(100) NOT NULL,
+  `record_id` varchar(255) NOT NULL,
+  `action` enum('INSERT','UPDATE','DELETE') NOT NULL,
+  `changed_by` varchar(100) NOT NULL,
+  `changed_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `sync_flag` tinyint(1) DEFAULT '1'
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 -- --------------------------------------------------------
 
@@ -112,20 +128,15 @@ CREATE TABLE `custom_frames` (
 -- --------------------------------------------------------
 
 --
--- Table structure for table `deletion_queue`
+-- Table structure for table `deleted_records`
 --
 
-CREATE TABLE `deletion_queue` (
+CREATE TABLE `deleted_records` (
   `id` int(11) NOT NULL,
-  `target_table` varchar(100) NOT NULL,
-  `target_id_col` varchar(100) NOT NULL,
-  `target_id_val` varchar(255) NOT NULL,
-  `total_users` int(11) NOT NULL DEFAULT '1',
-  `confirmed_count` int(11) NOT NULL DEFAULT '0',
-  `confirmed_by` text,
-  `deleted_by` varchar(100) DEFAULT NULL,
-  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `expires_at` timestamp NOT NULL DEFAULT '0000-00-00 00:00:00'
+  `table_name` varchar(100) NOT NULL,
+  `record_id` varchar(255) NOT NULL,
+  `deleted_by` varchar(100) NOT NULL,
+  `deleted_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 -- --------------------------------------------------------
@@ -178,6 +189,21 @@ CREATE TABLE `frame_staging` (
   `stock_age` enum('very old','old','new') DEFAULT 'new',
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `pending_sync`
+--
+
+CREATE TABLE `pending_sync` (
+  `id` int(11) NOT NULL,
+  `table_name` varchar(100) NOT NULL,
+  `record_id` varchar(255) NOT NULL,
+  `action` enum('INSERT','UPDATE','DELETE') NOT NULL,
+  `data_snapshot` text,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 -- --------------------------------------------------------
@@ -239,6 +265,19 @@ INSERT INTO `settings` (`setting_key`, `setting_value`, `description`) VALUES
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `sync_status`
+--
+
+CREATE TABLE `sync_status` (
+  `id` int(11) NOT NULL,
+  `log_id` int(11) NOT NULL,
+  `username` varchar(100) NOT NULL,
+  `applied_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `users`
 --
 
@@ -248,20 +287,27 @@ CREATE TABLE `users` (
   `password_hash` varchar(255) NOT NULL,
   `role` enum('admin','staff','viewer') NOT NULL,
   `is_approved` tinyint(1) NOT NULL DEFAULT '0',
-  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `last_login` timestamp NULL DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 --
 -- Dumping data for table `users`
 --
 
-INSERT INTO `users` (`user_id`, `username`, `password_hash`, `role`, `is_approved`, `created_at`) VALUES
-(1, 'LenZa786', '$2y$10$E5ZXU41IpXcB443wtKCIou/cpEaFMa7k2tuOx83ZAQ9soeUPagGWm', 'admin', 1, '2026-01-12 05:15:58'),
-(16, 'Rais786', '$2y$10$oytb0PrQF9VUXlVjV8B9eu.1OEYFDIKXO8GqkDDVVZbcATJmteHIu', 'staff', 1, '2026-01-18 14:08:35');
+INSERT INTO `users` (`user_id`, `username`, `password_hash`, `role`, `is_approved`, `created_at`, `last_login`) VALUES
+(1, 'LenZa786', '$2y$10$E5ZXU41IpXcB443wtKCIou/cpEaFMa7k2tuOx83ZAQ9soeUPagGWm', 'admin', 1, '2026-01-12 05:15:58', '2026-05-28 08:21:22'),
+(17, 'rais786', '$2y$10$Nvp2WWM.r5i1uM7VQD9t8eTZzeGNtDEz.A0NhEdUjPGzeZ8z7bFeO', 'staff', 1, '2026-05-28 13:17:44', '2026-05-28 08:20:16');
 
 --
 -- Indexes for dumped tables
 --
+
+--
+-- Indexes for table `activity_log`
+--
+ALTER TABLE `activity_log`
+  ADD PRIMARY KEY (`id`);
 
 --
 -- Indexes for table `customer_examinations`
@@ -291,10 +337,11 @@ ALTER TABLE `custom_frames`
   ADD KEY `idx_is_purchased` (`is_purchased`);
 
 --
--- Indexes for table `deletion_queue`
+-- Indexes for table `deleted_records`
 --
-ALTER TABLE `deletion_queue`
-  ADD PRIMARY KEY (`id`);
+ALTER TABLE `deleted_records`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `unique_deleted` (`table_name`,`record_id`);
 
 --
 -- Indexes for table `frames_main`
@@ -307,6 +354,12 @@ ALTER TABLE `frames_main`
 --
 ALTER TABLE `frame_staging`
   ADD PRIMARY KEY (`ufc`);
+
+--
+-- Indexes for table `pending_sync`
+--
+ALTER TABLE `pending_sync`
+  ADD PRIMARY KEY (`id`);
 
 --
 -- Indexes for table `prescription_modifications`
@@ -322,6 +375,13 @@ ALTER TABLE `settings`
   ADD PRIMARY KEY (`setting_key`);
 
 --
+-- Indexes for table `sync_status`
+--
+ALTER TABLE `sync_status`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `unique_log_user` (`log_id`,`username`);
+
+--
 -- Indexes for table `users`
 --
 ALTER TABLE `users`
@@ -331,6 +391,12 @@ ALTER TABLE `users`
 --
 -- AUTO_INCREMENT for dumped tables
 --
+
+--
+-- AUTO_INCREMENT for table `activity_log`
+--
+ALTER TABLE `activity_log`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT for table `customer_examinations`
@@ -351,9 +417,15 @@ ALTER TABLE `custom_frames`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
--- AUTO_INCREMENT for table `deletion_queue`
+-- AUTO_INCREMENT for table `deleted_records`
 --
-ALTER TABLE `deletion_queue`
+ALTER TABLE `deleted_records`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `pending_sync`
+--
+ALTER TABLE `pending_sync`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
@@ -363,10 +435,16 @@ ALTER TABLE `prescription_modifications`
   MODIFY `modification_id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
+-- AUTO_INCREMENT for table `sync_status`
+--
+ALTER TABLE `sync_status`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
 -- AUTO_INCREMENT for table `users`
 --
 ALTER TABLE `users`
-  MODIFY `user_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=17;
+  MODIFY `user_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=18;
 
 --
 -- Constraints for dumped tables

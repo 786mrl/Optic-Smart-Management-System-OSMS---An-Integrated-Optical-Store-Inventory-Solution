@@ -1,6 +1,7 @@
 <?php
     session_start();
     include 'db_config.php';
+include 'activity_helper.php';
     include 'config_helper.php';
 
     if (!isset($_SESSION['user_id'])) { header("Location: index.php"); exit(); }
@@ -18,6 +19,7 @@
         $stmt = $conn->prepare("UPDATE custom_frames SET buy_price = ? WHERE invoice_number = ?");
         $stmt->bind_param("is", $buy_price, $invoice);
         if ($stmt->execute()) {
+            log_activity($conn, 'custom_frames', $invoice, 'UPDATE', $_SESSION['username'] ?? 'system');
             echo json_encode(['success' => true, 'buy_price' => $buy_price]);
         } else {
             echo json_encode(['success' => false, 'error' => $conn->error]);
@@ -46,6 +48,7 @@
         $stmt = $conn->prepare("UPDATE customer_orders SET packaging_cost = ? WHERE id = ?");
         $stmt->bind_param("ii", $packaging_cost, $order_id);
         if ($stmt->execute()) {
+            log_activity($conn, 'customer_orders', $order_id, 'UPDATE', $_SESSION['username'] ?? 'system');
             echo json_encode(['success' => true, 'packaging_cost' => $packaging_cost]);
         } else {
             echo json_encode(['success' => false, 'error' => $conn->error]);
@@ -83,6 +86,7 @@
         $stmt2 = $conn->prepare("UPDATE customer_orders SET total_amount = ? WHERE id = ? AND order_status = 5");
         $stmt2->bind_param("ii", $new_total, $order_id);
         if ($stmt2->execute()) {
+            log_activity($conn, 'customer_orders', $order_id, 'UPDATE', $_SESSION['username'] ?? 'system');
             echo json_encode(['success' => true, 'new_total' => $new_total]);
         } else {
             echo json_encode(['success' => false, 'error' => $conn->error]);

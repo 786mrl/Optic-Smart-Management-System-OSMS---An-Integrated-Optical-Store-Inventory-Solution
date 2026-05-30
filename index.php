@@ -69,7 +69,26 @@ if (!isset($_SESSION['user_id'])) {
 
                     <button class="neu-button" data-url="sync_to_supabase.php" onclick="handleButtonClick(this)">
                         <span class="icon">☁️</span>
-                        Sync to Supabase
+                        Sync ke Supabase
+                        <div class="led"></div>
+                    </button>
+
+                    <button class="neu-button" data-url="activity_log.php" onclick="handleButtonClick(this)">
+                        <span class="icon">📋</span>
+                        Activity Log
+                        <?php
+                        $pending_count = 0;
+                        $al = $conn->query("SELECT COUNT(*) as c FROM activity_log WHERE sync_flag = 1");
+                        if ($al) $pending_count = (int)$al->fetch_assoc()['c'];
+                        ?>
+                        <?php if ($pending_count > 0): ?>
+                        <span style="
+                            position:absolute; top:8px; right:8px;
+                            background:#f6a623; color:#1e2022;
+                            border-radius:10px; padding:2px 7px;
+                            font-size:10px; font-weight:700;
+                        "><?= $pending_count ?></span>
+                        <?php endif; ?>
                         <div class="led"></div>
                     </button>
                 <?php endif; ?>

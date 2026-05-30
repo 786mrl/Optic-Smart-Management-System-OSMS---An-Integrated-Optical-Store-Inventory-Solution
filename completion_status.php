@@ -1,6 +1,7 @@
 <?php
     session_start();
     include 'db_config.php';
+include 'activity_helper.php';
     include 'config_helper.php';
 
     // ── Build daftar nama lensa STOCK dari lense_prices.json ─────────────
@@ -32,6 +33,7 @@
         if ($id > 0 && $new_status >= 1 && $new_status <= 5) {
             $sql = "UPDATE customer_orders SET order_status = $new_status WHERE id = $id";
             if ($conn->query($sql)) {
+                log_activity($conn, 'customer_orders', (string)$id, 'UPDATE', $_SESSION['username'] ?? 'system');
                 echo json_encode(['success' => true]);
             } else {
                 echo json_encode(['success' => false, 'error' => $conn->error]);

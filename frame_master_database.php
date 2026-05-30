@@ -1,6 +1,7 @@
 <?php
     session_start();
     include 'db_config.php';
+include 'activity_helper.php';
     include 'config_helper.php';
 
     $role = $_SESSION['role'] ?? 'staff';

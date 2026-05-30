@@ -1,6 +1,7 @@
 <?php
     session_start();
     include 'db_config.php';
+include 'activity_helper.php';
     include 'config_helper.php';
 
     if (!isset($_SESSION['user_id'])) { header("Location: index.php"); exit(); }
@@ -20,10 +21,12 @@
         }
 
         // 3. Delete record from the database
+        $ufc_to_reject = $_POST['ufc'] ?? '';
         $stmt = $conn->prepare("DELETE FROM frame_staging WHERE ufc = ?");
         $stmt->bind_param("s", $target_ufc);
         
         if ($stmt->execute()) {
+            log_activity($conn, 'frame_staging', $ufc_to_reject, 'DELETE', $_SESSION['username'] ?? 'admin');
             $_SESSION['success_msg'] = "Record $target_ufc has been deleted.";
             header("Location: pending_records_frame.php");
             exit();

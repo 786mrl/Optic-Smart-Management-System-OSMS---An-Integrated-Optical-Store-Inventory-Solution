@@ -1,6 +1,7 @@
 <?php
 session_start();
 include 'db_config.php';
+include 'activity_helper.php';
 date_default_timezone_set('Asia/Jakarta');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_to_main'])) {
@@ -93,6 +94,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_to_main'])) {
             }
 
             $conn->commit();
+            // Log each migrated frame
+            foreach ($selected_ufcs as $migrated_ufc) {
+                log_activity($conn, 'frames_main', $migrated_ufc, 'INSERT', $_SESSION['username'] ?? 'admin');
+                log_activity($conn, 'frame_staging', $migrated_ufc, 'DELETE', $_SESSION['username'] ?? 'admin');
+            }
             $_SESSION['success_msg'] = count($selected_ufcs) . " items successfully migrated to Main Database.";
             
         } catch (Exception $e) {

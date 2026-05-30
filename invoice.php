@@ -1,6 +1,7 @@
 <?php
     session_start();
     include 'db_config.php';
+include 'activity_helper.php';
     include 'config_helper.php';
 
     if (isset($_POST['save_modification'])) {
@@ -24,6 +25,8 @@
         $sql_update = "UPDATE customer_examinations SET lens_modification = 1 WHERE invoice_number = '$inv'";
     
         if (mysqli_query($conn, $sql_mod) && mysqli_query($conn, $sql_update)) {
+            log_activity($conn, 'prescription_modifications', $inv, 'INSERT', $_SESSION['username'] ?? 'system');
+            log_activity($conn, 'customer_examinations', $inv, 'UPDATE', $_SESSION['username'] ?? 'system');
             header("Location: invoice.php?inv=$inv&status=success");
             exit();
         }
@@ -109,6 +112,7 @@
                 if ($chk && mysqli_num_rows($chk) > 0) {
                     $upd = mysqli_query($conn,
                         "UPDATE `$tbl` SET stock = stock - 1 WHERE ufc = '$frameUfc'");
+                    if ($upd) log_activity($conn, $tbl, $frameUfc, 'UPDATE', $_SESSION['username'] ?? 'system');
                     if ($upd) { $stockOk = true; break; }
                 }
             }
@@ -134,6 +138,10 @@
              $totalAmount, $amountPaid, '$orderDate', $dueDate, 1)";
  
         $saved = mysqli_query($conn, $sql_order);
+        if ($saved) {
+            $order_id = mysqli_insert_id($conn);
+            log_activity($conn, 'customer_orders', (string)$order_id, 'INSERT', $_SESSION['username'] ?? 'system');
+        }
  
         // ── JSON response (called via fetch from JS) ───────────────────
         header('Content-Type: application/json');

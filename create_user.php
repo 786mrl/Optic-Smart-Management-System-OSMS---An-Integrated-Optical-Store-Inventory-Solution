@@ -2,6 +2,7 @@
     // create_user.php
     session_start();
     include 'db_config.php';
+include 'activity_helper.php';
 
     $message = '';
 
@@ -39,6 +40,7 @@
             $stmt->bind_param("sssi", $username, $password_hash, $role, $is_approved);
 
             if ($stmt->execute()) {
+                log_activity($conn, 'users', (string)$conn->insert_id, 'INSERT', 'self_register');
                 // Use SESSION so the message persists after redirection
                 $_SESSION['success_msg'] = $msg_text;
                 header("Location: create_user.php"); // Refresh page to clear the form

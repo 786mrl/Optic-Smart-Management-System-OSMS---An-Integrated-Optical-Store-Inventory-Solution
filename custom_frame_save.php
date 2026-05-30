@@ -13,6 +13,7 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 include 'db_config.php';
+include 'activity_helper.php';
 
 header('Content-Type: application/json');
 
@@ -41,6 +42,7 @@ if ($action === 'save_custom_frame') {
 
     if (mysqli_query($conn, $sql)) {
         $inserted_id = mysqli_insert_id($conn);
+        log_activity($conn, 'custom_frames', (string)$inserted_id, 'INSERT', $_SESSION['username'] ?? 'system');
         echo json_encode([
             'success'    => true,
             'id'         => $inserted_id,
@@ -71,6 +73,7 @@ if ($action === 'set_purchased') {
             WHERE invoice_number = '$invoice_number' AND brand_key = '$brand_key'";
 
     if (mysqli_query($conn, $sql)) {
+        log_activity($conn, 'custom_frames', $invoice_number . '_' . $brand_key, 'UPDATE', $_SESSION['username'] ?? 'system');
         echo json_encode(['success' => true, 'is_purchased' => $is_purchased]);
     } else {
         echo json_encode(['success' => false, 'error' => mysqli_error($conn)]);

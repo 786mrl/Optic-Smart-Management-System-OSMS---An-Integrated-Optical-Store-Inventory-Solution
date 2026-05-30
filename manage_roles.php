@@ -5,7 +5,8 @@
     $username = $_SESSION['username'] ?? 'Guest';
     $current_role = $_SESSION['role'] ?? 'N/A';
 
-    include 'db_config.php';      // 1. DB Connection
+    include 'db_config.php';
+include 'activity_helper.php';      // 1. DB Connection
     include 'config_helper.php';  // 2. Fetch Global Settings (STORE_NAME, BRAND_IMAGE_PATH)
 
     // Security check: Must be Admin
@@ -32,6 +33,7 @@
                 $stmt->bind_param("i", $target_user_id);
                 if ($stmt->execute()) {
                     $message = "<p style='color: green;'>User ID $target_user_id successfully deleted.</p>";
+                    log_activity($conn, 'users', (string)$target_user_id, 'DELETE', $_SESSION['username'] ?? 'admin');
                 } else {
                     $message = "<p style='color: red;'>Error deleting user.</p>";
                 }
@@ -43,6 +45,7 @@
                 $stmt->bind_param("si", $new_role, $target_user_id);
                 if ($stmt->execute()) {
                     $message = "<p style='color: green;'>User ID $target_user_id successfully set to role '$new_role'.</p>";
+                    log_activity($conn, 'users', (string)$target_user_id, 'UPDATE', $_SESSION['username'] ?? 'admin');
                 } else {
                     $message = "<p style='color: red;'>Error changing user role.</p>";
                 }
@@ -64,6 +67,7 @@
                 
                 if ($stmt_update->execute()) {
                     $message = "<p style='color: green;'>User ID $target_user_id successfully $action_name.</p>";
+                    log_activity($conn, 'users', (string)$target_user_id, 'UPDATE', $_SESSION['username'] ?? 'admin');
                 } else {
                     $message = "<p style='color: red;'>Error changing user status.</p>";
                 }
@@ -92,6 +96,7 @@
 
             if ($stmt->execute()) {
                 $message = "<p style='color: green;'>New user '$new_username' ($new_role) created successfully and activated.</p>";
+                log_activity($conn, 'users', (string)$conn->insert_id, 'INSERT', $_SESSION['username'] ?? 'admin');
             } else {
                 if ($conn->errno == 1062) {
                     $message = "<p style='color: red;'>Error: Username '$new_username' is already taken.</p>";
