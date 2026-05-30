@@ -157,7 +157,7 @@ close_db_connection($conn);
         <div class="main-card">
             <h2>
                 ACTIVITY LOG
-                <?php $pending = count(array_filter($logs, fn($l) => $l['sync_flag'] == 1)); ?>
+                <?php $pending = count(array_filter($logs, function($l) { return $l['sync_flag'] == 1; })); ?>
                 <?php if ($pending > 0): ?>
                 <span class="pending-badge">⏳ <?= $pending ?> pending</span>
                 <?php endif; ?>
