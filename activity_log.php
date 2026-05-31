@@ -71,7 +71,6 @@ close_db_connection($conn);
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <?php include 'pwa_head.php'; ?>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Activity Log</title>
     <link rel="stylesheet" href="style.css">
@@ -141,7 +140,7 @@ close_db_connection($conn);
 <div class="main-wrapper">
     <div class="content-area" style="flex-direction:column">
 
-        <div class="header-container">
+        <div class="header-container" style="margin-left: auto; margin-right: auto; width: 100%;">
             <button class="logout-btn" onclick="window.location.href='logout.php';">
                 <span>Logout</span>
             </button>
