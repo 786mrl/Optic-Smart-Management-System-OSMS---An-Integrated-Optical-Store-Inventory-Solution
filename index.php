@@ -70,15 +70,9 @@ include 'config_helper.php';
                         <div class="led"></div>
                     </button>
 
-                    <button class="neu-button" data-url="sync_to_supabase.php" onclick="handleButtonClick(this)">
-                        <span class="icon">☁️</span>
-                        Sync ke Supabase
-                        <div class="led"></div>
-                    </button>
-
                     <button class="neu-button" data-url="activity_log.php" onclick="handleButtonClick(this)">
                         <span class="icon">📋</span>
-                        Activity Log
+                        Activity Log & Sync
                         <?php
                         $pending_count = 0;
                         $al = $conn->query("SELECT COUNT(*) as c FROM activity_log WHERE sync_flag = 1");
