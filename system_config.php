@@ -5,8 +5,7 @@
     $username = $_SESSION['username'] ?? 'Guest';
     $current_role = $_SESSION['role'] ?? 'N/A';
 
-    include 'db_config.php';
-include 'activity_helper.php';      // 1. DB Connection
+    include 'db_config.php';      // 1. DB Connection
     include 'config_helper.php';  // 2. Fetch Global Settings (STORE_NAME, BRAND_IMAGE_PATH)
 
     // Security check: Must be Admin
@@ -106,6 +105,7 @@ include 'activity_helper.php';      // 1. DB Connection
                     $stmt->bind_param("ss", $sanitized_value, $key);
                     $stmt->execute();
                     $stmt->close();
+                    log_activity($conn, 'settings', $key, 'UPDATE', $_SESSION['username'] ?? 'admin');
                 }
             }
             $conn->commit();
@@ -140,6 +140,7 @@ include 'activity_helper.php';      // 1. DB Connection
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <?php include 'pwa_head.php'; ?>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>System Configuration</title>
     <link rel="stylesheet" href="style.css">
