@@ -111,11 +111,7 @@ close_db_connection($conn);
         // 2. Prevent back navigation by pushing a new state
         window.history.pushState(null, null, window.location.href);
         window.onpopstate = function() {
-            // If the user presses back, force them to stay on this page
-            window.history.pushState(null, null, window.location.href);
-            
-            // Optional: Provide a small message or leave it as is to feel like a logged-out application
-            console.log("Back button disabled after logout.");
+            window.location.replace('session_ended.php');
         };
         window.addEventListener('DOMContentLoaded', function() {
             setTimeout(function() {
