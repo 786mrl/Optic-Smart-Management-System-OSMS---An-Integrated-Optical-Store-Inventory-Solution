@@ -63,7 +63,6 @@ close_db_connection($conn);
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <?php include 'pwa_head.php'; ?>
     <!-- Sembunyikan badge sync di halaman login -->
     <style>
     #sync-status-badge { display: none !important; }

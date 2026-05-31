@@ -54,7 +54,6 @@ include 'activity_helper.php';      // 1. DB Connection
 <html lang="en">
     <head>
         <meta charset="UTF-8">
-        <?php include 'pwa_head.php'; ?>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Approve Staff Users</title>
         <link rel="stylesheet" href="style.css">

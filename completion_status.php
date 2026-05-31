@@ -182,7 +182,6 @@ include 'activity_helper.php';
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <?php include 'pwa_head.php'; ?>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
     <title>Completion Status — Active Orders</title>
     <link rel="stylesheet" href="style.css">
