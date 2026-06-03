@@ -139,6 +139,8 @@ include 'activity_helper.php';
             }
             // --- QR CODE CHECK LOGIC ENDS HERE ---
 
+            log_activity($conn, 'frame_staging', $ufc, 'INSERT', $_SESSION['username'] ?? 'staff');
+
             $_SESSION['success_msg'] = "Data Saved Successfully! UFC: $ufc | Stock Added: $input_stock $msg_extra";
             
             header("Location: " . $_SERVER['PHP_SELF']);

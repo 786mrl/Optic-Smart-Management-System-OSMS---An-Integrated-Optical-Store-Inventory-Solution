@@ -199,6 +199,8 @@ include 'activity_helper.php';
         );
 
         if ($stmt->execute()) {
+            $exam_inserted_id = (string)$conn->insert_id;
+            log_activity($conn, 'customer_examinations', $exam_inserted_id, 'INSERT', $_SESSION['username'] ?? 'staff');
             if ($invoice_val !== '00') {
                 // Jika belanja, tetap ke invoice
                 header("Location: invoice.php?inv=" . $invoice_val);

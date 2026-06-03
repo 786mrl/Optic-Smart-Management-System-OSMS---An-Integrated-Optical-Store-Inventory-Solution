@@ -108,6 +108,7 @@ include 'activity_helper.php';
             // log after execute below
                 $del->bind_param("s", $old_ufc);
                 $del->execute();
+                log_activity($conn, 'frame_staging', $old_ufc, 'DELETE', $_SESSION['username'] ?? 'staff');
                 
                 // Delete the old QR in the staging folder if it exists (since the UFC is no longer valid)
                 if (file_exists("qrcodes/$old_ufc.png")) unlink("qrcodes/$old_ufc.png");
@@ -127,6 +128,7 @@ include 'activity_helper.php';
                             $_POST['lens_shape'], $_POST['structure'], $_POST['size_range'], $gender_category, $buy_price, $sell_price, 
                             $secret_code, $input_stock, $stock_age);
             $stmt->execute();
+            log_activity($conn, 'frame_staging', $new_ufc, 'UPDATE', $_SESSION['username'] ?? 'staff');
 
             // --- QR CODE CHECK LOGIC ---
             $qr_filename = "$new_ufc.png";
