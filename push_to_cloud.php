@@ -9,6 +9,7 @@
 //   action = 'push_deletes' → push deleted_records yang belum di-sync
 //   action = 'finalize'     → bersihkan pending_sync, catat last_cloud_push
 
+date_default_timezone_set('Asia/Jakarta');
 error_reporting(0);
 ini_set('display_errors', 0);
 ob_start();
