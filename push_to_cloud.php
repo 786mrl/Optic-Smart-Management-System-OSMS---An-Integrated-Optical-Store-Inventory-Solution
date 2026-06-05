@@ -261,14 +261,6 @@ if ($action === 'push_deletes') {
             // Hapus dari Supabase target table
             $res = supabase_req('/rest/v1/' . $table . '?' . $pk_col . '=eq.' . urlencode($record_id), 'DELETE');
 
-            // Tambah ke deleted_records di Supabase
-            supabase_req('/rest/v1/deleted_records', 'POST', [[
-                'table_name' => $table,
-                'record_id'  => $record_id,
-                'deleted_by' => $item['deleted_by'],
-                'deleted_at' => $item['deleted_at'],
-            ]]);
-
             // Catat ke Supabase activity_log
             supabase_req('/rest/v1/activity_log', 'POST', [[
                 'table_name' => $table,
