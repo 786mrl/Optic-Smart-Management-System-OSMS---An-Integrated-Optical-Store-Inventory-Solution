@@ -32,15 +32,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 $now = date('Y-m-d H:i:s');
                 $conn->query("UPDATE users SET last_login = '$now' WHERE user_id = " . (int)$user['user_id']);
 
-                // Sync background ke Supabase saat login
-                $host     = $_SERVER['HTTP_HOST'];
-                $base     = dirname($_SERVER['SCRIPT_NAME']);
-                $sync_url = 'http://' . $host . $base . '/sync_background.php';
-                @file_get_contents($sync_url, false, stream_context_create([
-                    'http' => ['timeout' => 1, 'ignore_errors' => true],
-                    'ssl'  => ['verify_peer' => false]
-                ]));
-
                 // Redirect to main window (index.php)
                 header("Location: welcome.php");
                 exit();

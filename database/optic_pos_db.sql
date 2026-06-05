@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: May 31, 2026 at 11:58 AM
+-- Generation Time: Jun 05, 2026 at 12:43 PM
 -- Server version: 10.1.38-MariaDB
 -- PHP Version: 7.3.2
 
@@ -35,8 +35,19 @@ CREATE TABLE `activity_log` (
   `action` enum('INSERT','UPDATE','DELETE') NOT NULL,
   `changed_by` varchar(100) NOT NULL,
   `changed_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `sync_flag` tinyint(1) DEFAULT '1'
+  `synced` tinyint(1) DEFAULT '0'
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+--
+-- Dumping data for table `activity_log`
+--
+
+INSERT INTO `activity_log` (`id`, `table_name`, `record_id`, `action`, `changed_by`, `changed_at`, `synced`) VALUES
+(1, 'settings', 'store_name', 'UPDATE', 'LenZa786', '2026-05-31 07:25:14', 1),
+(2, 'settings', 'store_phone', 'UPDATE', 'LenZa786', '2026-05-31 07:25:29', 1),
+(3, 'settings', 'store_address', 'UPDATE', 'LenZa786', '2026-05-31 07:25:33', 1),
+(4, 'settings', 'brand_image_location', 'UPDATE', 'LenZa786', '2026-05-31 07:25:37', 1),
+(5, 'settings', 'barcode_guide_image_location', 'UPDATE', 'LenZa786', '2026-05-31 07:25:41', 1);
 
 -- --------------------------------------------------------
 
@@ -136,7 +147,8 @@ CREATE TABLE `deleted_records` (
   `table_name` varchar(100) NOT NULL,
   `record_id` varchar(255) NOT NULL,
   `deleted_by` varchar(100) NOT NULL,
-  `deleted_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
+  `deleted_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `synced` tinyint(1) DEFAULT '0'
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 -- --------------------------------------------------------
@@ -189,6 +201,22 @@ CREATE TABLE `frame_staging` (
   `stock_age` enum('very old','old','new') DEFAULT 'new',
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `last_sync`
+--
+
+CREATE TABLE `last_sync` (
+  `id` int(11) NOT NULL,
+  `direction` enum('push','pull') NOT NULL,
+  `target_ip` varchar(100) NOT NULL,
+  `synced_at` datetime NOT NULL,
+  `total_rows` int(11) DEFAULT '0',
+  `total_dels` int(11) DEFAULT '0',
+  `done_by` varchar(100) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 -- --------------------------------------------------------
@@ -265,19 +293,6 @@ INSERT INTO `settings` (`setting_key`, `setting_value`, `description`) VALUES
 -- --------------------------------------------------------
 
 --
--- Table structure for table `sync_status`
---
-
-CREATE TABLE `sync_status` (
-  `id` int(11) NOT NULL,
-  `log_id` int(11) NOT NULL,
-  `username` varchar(100) NOT NULL,
-  `applied_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=latin1;
-
--- --------------------------------------------------------
-
---
 -- Table structure for table `users`
 --
 
@@ -296,8 +311,8 @@ CREATE TABLE `users` (
 --
 
 INSERT INTO `users` (`user_id`, `username`, `password_hash`, `role`, `is_approved`, `created_at`, `last_login`) VALUES
-(1, 'LenZa786', '$2y$10$E5ZXU41IpXcB443wtKCIou/cpEaFMa7k2tuOx83ZAQ9soeUPagGWm', 'admin', 1, '2026-01-12 05:15:58', '2026-05-31 04:54:39'),
-(17, 'rais786', '$2y$10$Nvp2WWM.r5i1uM7VQD9t8eTZzeGNtDEz.A0NhEdUjPGzeZ8z7bFeO', 'staff', 1, '2026-05-28 13:17:44', '2026-05-28 08:20:16');
+(1, 'LenZa786', '$2y$10$E5ZXU41IpXcB443wtKCIou/cpEaFMa7k2tuOx83ZAQ9soeUPagGWm', 'admin', 1, '2026-01-12 05:15:58', '2026-05-31 07:29:19'),
+(17, 'rais786', '$2y$10$Nvp2WWM.r5i1uM7VQD9t8eTZzeGNtDEz.A0NhEdUjPGzeZ8z7bFeO', 'staff', 1, '2026-05-28 13:17:44', '2026-05-31 06:03:13');
 
 --
 -- Indexes for dumped tables
@@ -356,6 +371,12 @@ ALTER TABLE `frame_staging`
   ADD PRIMARY KEY (`ufc`);
 
 --
+-- Indexes for table `last_sync`
+--
+ALTER TABLE `last_sync`
+  ADD PRIMARY KEY (`id`);
+
+--
 -- Indexes for table `pending_sync`
 --
 ALTER TABLE `pending_sync`
@@ -375,13 +396,6 @@ ALTER TABLE `settings`
   ADD PRIMARY KEY (`setting_key`);
 
 --
--- Indexes for table `sync_status`
---
-ALTER TABLE `sync_status`
-  ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `unique_log_user` (`log_id`,`username`);
-
---
 -- Indexes for table `users`
 --
 ALTER TABLE `users`
@@ -396,7 +410,7 @@ ALTER TABLE `users`
 -- AUTO_INCREMENT for table `activity_log`
 --
 ALTER TABLE `activity_log`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
 
 --
 -- AUTO_INCREMENT for table `customer_examinations`
@@ -423,6 +437,12 @@ ALTER TABLE `deleted_records`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
+-- AUTO_INCREMENT for table `last_sync`
+--
+ALTER TABLE `last_sync`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
 -- AUTO_INCREMENT for table `pending_sync`
 --
 ALTER TABLE `pending_sync`
@@ -433,12 +453,6 @@ ALTER TABLE `pending_sync`
 --
 ALTER TABLE `prescription_modifications`
   MODIFY `modification_id` int(11) NOT NULL AUTO_INCREMENT;
-
---
--- AUTO_INCREMENT for table `sync_status`
---
-ALTER TABLE `sync_status`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT for table `users`

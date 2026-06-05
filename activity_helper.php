@@ -1,15 +1,12 @@
 <?php
-// activity_helper.php — v3.0
-// Include di setiap halaman PHP yang melakukan INSERT/UPDATE/DELETE
+// activity_helper.php — v4.0
+// Catat setiap INSERT/UPDATE/DELETE ke activity_log + pending_sync lokal
+// Tidak ada koneksi ke Supabase atau server lain
+//
 // Usage:
-//   log_activity($conn, 'frames_main', 'FRAME-001', 'INSERT', $_SESSION['username']);
+//   log_activity($conn, 'frames_main', 'UFC001', 'INSERT', $_SESSION['username']);
 //   log_activity($conn, 'customer_orders', '123', 'UPDATE', $_SESSION['username']);
 //   log_activity($conn, 'customer_orders', '123', 'DELETE', $_SESSION['username']);
-//
-// ARSITEKTUR BARU:
-//   - TIDAK ada push otomatis ke Supabase
-//   - Semua perubahan dicatat di local activity_log + pending_sync
-//   - Push ke Supabase dilakukan MANUAL via activity_log.php (push_to_cloud.php)
 
 define('AH_PK_MAP', [
     'users'                      => 'user_id',
@@ -29,23 +26,22 @@ function log_activity($conn, $table, $record_id, $action, $username) {
     $safe_username = $conn->real_escape_string($username);
     $now           = date('Y-m-d H:i:s');
 
-    // ── Auto-create tables if not exist ──────────────────────
     _ah_ensure_tables($conn);
 
-    // ── 1. Log to local activity_log ─────────────────────────
+    // 1. Catat ke activity_log lokal
     $conn->query("INSERT INTO activity_log
-        (table_name, record_id, action, changed_by, changed_at, sync_flag)
-        VALUES ('$safe_table', '$safe_record', '$safe_action', '$safe_username', '$now', 1)");
+        (table_name, record_id, action, changed_by, changed_at, synced)
+        VALUES ('$safe_table', '$safe_record', '$safe_action', '$safe_username', '$now', 0)");
     $log_id = $conn->insert_id;
 
-    // ── 2. If DELETE, add to deleted_records blacklist ────────
+    // 2. Jika DELETE, catat ke deleted_records
     if ($action === 'DELETE') {
         $conn->query("INSERT IGNORE INTO deleted_records
-            (table_name, record_id, deleted_by, deleted_at)
-            VALUES ('$safe_table', '$safe_record', '$safe_username', '$now')");
+            (table_name, record_id, deleted_by, deleted_at, synced)
+            VALUES ('$safe_table', '$safe_record', '$safe_username', '$now', 0)");
     }
 
-    // ── 3. Get data snapshot for INSERT/UPDATE ────────────────
+    // 3. Ambil snapshot data untuk INSERT/UPDATE
     $data_snapshot = null;
     if ($action !== 'DELETE') {
         $pk_col = AH_PK_MAP[$table] ?? 'id';
@@ -57,12 +53,9 @@ function log_activity($conn, $table, $record_id, $action, $username) {
         }
     }
 
-    // ── 4. Add to pending_sync queue (ALWAYS — no Supabase here) ──
-    //    Untuk DELETE: data_snapshot NULL, cukup deleted_records yang mencatat
-    //    Untuk INSERT/UPDATE: simpan snapshot data
+    // 4. Masukkan ke pending_sync
     $safe_snapshot = $data_snapshot ? $conn->real_escape_string($data_snapshot) : null;
     $snapshot_val  = $safe_snapshot ? "'$safe_snapshot'" : 'NULL';
-
     $conn->query("INSERT INTO pending_sync
         (table_name, record_id, action, data_snapshot, created_at)
         VALUES ('$safe_table', '$safe_record', '$safe_action', $snapshot_val, '$now')");
@@ -70,42 +63,38 @@ function log_activity($conn, $table, $record_id, $action, $username) {
     return $log_id;
 }
 
-// ── Helper: cek berapa hari data pending tertua ───────────────
-// Digunakan oleh index.php untuk warning
+// ── Helpers untuk index.php ───────────────────────────────────
+
 function get_oldest_pending_days($conn) {
-    $res = $conn->query(
-        "SELECT MIN(created_at) AS oldest FROM pending_sync"
-    );
+    $res = $conn->query("SELECT MIN(created_at) AS oldest FROM pending_sync");
     if (!$res) return 0;
     $row = $res->fetch_assoc();
     if (!$row['oldest']) return 0;
     return (time() - strtotime($row['oldest'])) / 86400;
 }
 
-// ── Helper: jumlah item pending ──────────────────────────────
 function get_pending_count($conn) {
     $res = $conn->query("SELECT COUNT(*) AS total FROM pending_sync");
     if (!$res) return 0;
     return (int)$res->fetch_assoc()['total'];
 }
 
-// ── Helper: jumlah deleted_records pending ───────────────────
 function get_pending_deleted_count($conn) {
-    $res = $conn->query("SELECT COUNT(*) AS total FROM deleted_records");
+    $res = $conn->query("SELECT COUNT(*) AS total FROM deleted_records WHERE synced = 0");
     if (!$res) return 0;
     return (int)$res->fetch_assoc()['total'];
 }
 
-// ── Internal: auto-create tables ─────────────────────────────
+// ── Auto-create tables ────────────────────────────────────────
 function _ah_ensure_tables($conn) {
     $conn->query("CREATE TABLE IF NOT EXISTS activity_log (
-        id          INT AUTO_INCREMENT PRIMARY KEY,
-        table_name  VARCHAR(100) NOT NULL,
-        record_id   VARCHAR(255) NOT NULL,
-        action      ENUM('INSERT','UPDATE','DELETE') NOT NULL,
-        changed_by  VARCHAR(100) NOT NULL,
-        changed_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        sync_flag   TINYINT(1) DEFAULT 1
+        id         INT AUTO_INCREMENT PRIMARY KEY,
+        table_name VARCHAR(100) NOT NULL,
+        record_id  VARCHAR(255) NOT NULL,
+        action     ENUM('INSERT','UPDATE','DELETE') NOT NULL,
+        changed_by VARCHAR(100) NOT NULL,
+        changed_at DATETIME NOT NULL,
+        synced     TINYINT(1) DEFAULT 0
     )");
 
     $conn->query("CREATE TABLE IF NOT EXISTS pending_sync (
@@ -114,33 +103,26 @@ function _ah_ensure_tables($conn) {
         record_id     VARCHAR(255) NOT NULL,
         action        ENUM('INSERT','UPDATE','DELETE') NOT NULL,
         data_snapshot TEXT NULL,
-        created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        is_processing TINYINT(1) DEFAULT 0
+        created_at    DATETIME NOT NULL
     )");
 
     $conn->query("CREATE TABLE IF NOT EXISTS deleted_records (
-        id          INT AUTO_INCREMENT PRIMARY KEY,
-        table_name  VARCHAR(100) NOT NULL,
-        record_id   VARCHAR(255) NOT NULL,
-        deleted_by  VARCHAR(100) NOT NULL,
-        deleted_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        synced      TINYINT(1) DEFAULT 0,
+        id         INT AUTO_INCREMENT PRIMARY KEY,
+        table_name VARCHAR(100) NOT NULL,
+        record_id  VARCHAR(255) NOT NULL,
+        deleted_by VARCHAR(100) NOT NULL,
+        deleted_at DATETIME NOT NULL,
+        synced     TINYINT(1) DEFAULT 0,
         UNIQUE KEY unique_deleted (table_name, record_id)
     )");
 
-    $conn->query("CREATE TABLE IF NOT EXISTS sync_status (
-        id         INT AUTO_INCREMENT PRIMARY KEY,
-        log_id     INT NOT NULL,
-        username   VARCHAR(100) NOT NULL,
-        applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE KEY unique_log_user (log_id, username)
-    )");
-
-    $conn->query("CREATE TABLE IF NOT EXISTS last_cloud_push (
-        id         INT AUTO_INCREMENT PRIMARY KEY,
-        pushed_at  DATETIME NOT NULL,
-        pushed_by  VARCHAR(100) NOT NULL,
-        total_rows INT DEFAULT 0,
-        total_dels INT DEFAULT 0
+    $conn->query("CREATE TABLE IF NOT EXISTS last_sync (
+        id          INT AUTO_INCREMENT PRIMARY KEY,
+        direction   ENUM('push','pull') NOT NULL,
+        target_ip   VARCHAR(100) NOT NULL,
+        synced_at   DATETIME NOT NULL,
+        total_rows  INT DEFAULT 0,
+        total_dels  INT DEFAULT 0,
+        done_by     VARCHAR(100) NOT NULL
     )");
 }
