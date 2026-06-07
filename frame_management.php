@@ -2,6 +2,7 @@
     session_start();
     include 'db_config.php';
     include 'config_helper.php';
+    include 'auth_check.php';
 
     // Pastikan user sudah login
     if (!isset($_SESSION['user_id'])) {

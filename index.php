@@ -15,6 +15,7 @@ $username = $_SESSION['username'];
 include 'db_config.php';
 include 'activity_helper.php';
 include 'config_helper.php';
+include 'auth_check.php';
 
 // ── Pending sync warning ──────────────────────────────────────
 $_pending_days  = get_oldest_pending_days($conn);
