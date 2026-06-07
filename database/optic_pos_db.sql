@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Jun 07, 2026 at 06:42 PM
+-- Generation Time: Jun 07, 2026 at 07:36 PM
 -- Server version: 10.1.38-MariaDB
 -- PHP Version: 7.3.2
 
@@ -177,6 +177,13 @@ CREATE TABLE `frames_main` (
   `updated_at` datetime DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
+--
+-- Dumping data for table `frames_main`
+--
+
+INSERT INTO `frames_main` (`ufc`, `brand`, `frame_code`, `frame_size`, `color_code`, `material`, `lens_shape`, `structure`, `size_range`, `gender_category`, `buy_price`, `sell_price`, `price_secret_code`, `stock`, `stock_age`, `created_at`, `updated_at`) VALUES
+('EYEWEAR-1376-53-18-145-COL.1', 'EYE WEAR', '1376', '53-18-145', 'COL.1', 'PLASTIC', 'SQUARE', 'full-rim', 'small', 'unisex', '75000.00', '375000.00', 'KH25LZ', 4, 'new', '2026-06-08 00:07:16', '2026-06-08 00:07:16');
+
 -- --------------------------------------------------------
 
 --
@@ -203,13 +210,6 @@ CREATE TABLE `frame_staging` (
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
-
---
--- Dumping data for table `frame_staging`
---
-
-INSERT INTO `frame_staging` (`ufc`, `brand`, `frame_code`, `frame_size`, `color_code`, `material`, `lens_shape`, `structure`, `size_range`, `gender_category`, `buy_price`, `sell_price`, `price_secret_code`, `stock`, `stock_age`, `created_by`, `created_at`, `updated_at`) VALUES
-('EYEWEAR-1376-53-18-145-COL.1', 'EYE WEAR', '1376', '53-18-145', 'COL.1', 'PLASTIC', 'SQUARE', 'full-rim', 'small', 'unisex', '0.00', '0.00', '', 4, 'new', 'LenZa786 (3), rais786 (1)', '2026-06-07 16:31:38', '2026-06-07 16:40:30');
 
 -- --------------------------------------------------------
 
@@ -321,8 +321,8 @@ CREATE TABLE `users` (
 --
 
 INSERT INTO `users` (`user_id`, `username`, `password_hash`, `role`, `is_approved`, `created_at`, `last_login`, `session_token`, `session_expires`) VALUES
-(1, 'LenZa786', '$2y$10$E5ZXU41IpXcB443wtKCIou/cpEaFMa7k2tuOx83ZAQ9soeUPagGWm', 'admin', 1, '2026-01-12 05:15:58', '2026-06-07 11:30:17', NULL, NULL),
-(17, 'rais786', '$2y$10$Nvp2WWM.r5i1uM7VQD9t8eTZzeGNtDEz.A0NhEdUjPGzeZ8z7bFeO', 'staff', 1, '2026-05-28 13:17:44', '2026-06-07 11:39:36', '04a8d77854b00b55d7e342e841b82a8ad7ab8051f4cd6415935301e76f108df2', '2026-06-08 02:39:36');
+(1, 'LenZa786', '$2y$10$E5ZXU41IpXcB443wtKCIou/cpEaFMa7k2tuOx83ZAQ9soeUPagGWm', 'admin', 1, '2026-01-12 05:15:58', '2026-06-07 12:07:57', NULL, NULL),
+(17, 'rais786', '$2y$10$Nvp2WWM.r5i1uM7VQD9t8eTZzeGNtDEz.A0NhEdUjPGzeZ8z7bFeO', 'staff', 1, '2026-05-28 13:17:44', '2026-06-07 11:39:36', NULL, NULL);
 
 --
 -- Indexes for dumped tables
