@@ -10,7 +10,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $password = $_POST['password'];
 
     // 1. Prepare and execute SQL statement to retrieve user
-    $stmt = $conn->prepare("SELECT user_id, username, password_hash, role, is_approved FROM users WHERE username = ?");
+    $stmt = $conn->prepare("SELECT user_id, username, password_hash, role, is_approved, session_token, session_expires FROM users WHERE username = ?");
     $stmt->bind_param("s", $username);
     $stmt->execute();
     $result = $stmt->get_result();
@@ -23,18 +23,34 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             
             // 3. Check for approval status
             if ($user['is_approved']) {
-                // Login Success: Set session variables
-                $_SESSION['username'] = $user['username'];
-                $_SESSION['user_id'] = $user['user_id'];
-                $_SESSION['role'] = $user['role'];
-                
-                // Update last_login timestamp
-                $now = date('Y-m-d H:i:s');
-                $conn->query("UPDATE users SET last_login = '$now' WHERE user_id = " . (int)$user['user_id']);
-
-                // Redirect to main window (index.php)
-                header("Location: welcome.php");
-                exit();
+                // Check if an active session already exists
+                $existing_token = $user['session_token'];
+                $existing_expires = $user['session_expires'];
+            
+                if ($existing_token && $existing_expires && strtotime($existing_expires) > time()) {
+                    // Active session on another device — reject login
+                    $message = "<p style='color: orange;'>This account is currently active on another device. Please log out first.</p>";
+                } else {
+                    // No active session — proceed with login
+                    $token = bin2hex(random_bytes(32)); // 64 unique characters
+                    $expires = date('Y-m-d H:i:s', time() + 8 * 3600); // Active for 8 hours
+                    $now = date('Y-m-d H:i:s');
+                    $uid = (int)$user['user_id'];
+            
+                    $conn->query("UPDATE users SET 
+                        last_login = '$now', 
+                        session_token = '$token', 
+                        session_expires = '$expires' 
+                        WHERE user_id = $uid");
+            
+                    $_SESSION['username'] = $user['username'];
+                    $_SESSION['user_id'] = $user['user_id'];
+                    $_SESSION['role'] = $user['role'];
+                    $_SESSION['session_token'] = $token; // Store token in session
+            
+                    header("Location: welcome.php");
+                    exit();
+                }
             } else {
                 $message = "<p style='color: orange;'>Login failed. Your account is pending admin approval.</p>";
             }
