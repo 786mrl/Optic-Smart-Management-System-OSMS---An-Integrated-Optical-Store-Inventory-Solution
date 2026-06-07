@@ -78,10 +78,43 @@
         // stock age
         $stock_age = !empty($_POST['stock_age']) ? $_POST['stock_age'] : "new";
 
+        // created by
+            $created_by_input = $_SESSION['username'] ?? 'unknown';
+
+            // Get the existing created_by in the database for this ufc
+            $check = $conn->prepare("SELECT created_by FROM frame_staging WHERE ufc = ?");
+            $check->bind_param("s", $ufc);
+            $check->execute();
+            $check->bind_result($existing_created_by);
+            $check->fetch();
+            $check->close();
+
+            // Parse existing created_by
+            $entries = [];
+            if (!empty($existing_created_by)) {
+                foreach (explode(', ', $existing_created_by) as $entry) {
+                    // Separate name and stock: "LenZa786 (1)" -> ["LenZa786", 1]
+                    preg_match('/^(.+?) \((\d+)\)$/', trim($entry), $m);
+                    if ($m) $entries[$m[1]] = (int)$m[2];
+                }
+            }
+
+            // If user already exists, increase their stock, otherwise append
+            if (isset($entries[$created_by_input])) {
+                $entries[$created_by_input] += $input_stock;
+            } else {
+                $entries[$created_by_input] = $input_stock;
+            }
+
+            // Rebuild string
+            $created_by = implode(', ', array_map(function($name, $qty) { 
+                return "$name ($qty)"; 
+            }, array_keys($entries), array_values($entries)));
+
         // query: insert or update stoce also overwrite
         $stmt = $conn->prepare("INSERT INTO frame_staging 
-            (ufc, brand, frame_code, frame_size, color_code, material, lens_shape, structure, size_range, gender_category, buy_price, sell_price, price_secret_code, stock, stock_age) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (ufc, brand, frame_code, frame_size, color_code, material, lens_shape, structure, size_range, gender_category, buy_price, sell_price, price_secret_code, stock, stock_age, created_by) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON DUPLICATE KEY UPDATE 
             brand=VALUES(brand), 
             frame_code=VALUES(frame_code), 
@@ -96,9 +129,11 @@
             sell_price=VALUES(sell_price), 
             price_secret_code=VALUES(price_secret_code), 
             stock=stock+VALUES(stock),
-            stock_age=VALUES(stock_age)");
+            stock_age=VALUES(stock_age),
+            created_by=VALUES(created_by)"
+        );
         
-        $stmt->bind_param("ssssssssssddsis", 
+        $stmt->bind_param("ssssssssssddsiss", 
         $ufc, 
         $brand, 
         $f_code, 
@@ -113,7 +148,8 @@
         $sell_price, 
         $secret_code, 
         $input_stock,
-        $stock_age);
+        $stock_age,
+        $created_by);
         
         if ($stmt->execute()) {
             // --- QR CODE CHECK LOGIC STARTS HERE ---
