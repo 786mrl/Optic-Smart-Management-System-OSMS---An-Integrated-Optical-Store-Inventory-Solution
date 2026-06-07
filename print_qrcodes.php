@@ -1,8 +1,8 @@
 <?php
+    session_start(); 
     include 'db_config.php';
     include 'config_helper.php';
-
-    session_start(); 
+    include 'auth_check.php';
 
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['selected_ufc'])) {
         $_SESSION['print_ufc_list'] = $_POST['selected_ufc'];
@@ -84,8 +84,11 @@
         $result = $stmt->get_result();
 
         $all_data = [];
-        while ($row = $result->fetch_assoc()) { 
-            $all_data[] = $row; 
+        while ($row = $result->fetch_assoc()) {
+            $qty = max(1, (int)($row['stock'] ?? 1));
+            for ($i = 0; $i < $qty; $i++) {
+                $all_data[] = $row;
+            }
         }
         // Reverse the data so the print order matches the input order (optional)
         $all_data = array_reverse($all_data);

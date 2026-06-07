@@ -1,8 +1,9 @@
 <?php
     session_start();
     include 'db_config.php';
-include 'activity_helper.php';
+    include 'activity_helper.php';
     include 'config_helper.php';
+    include 'auth_check.php';
 
     if (!isset($_SESSION['user_id'])) { header("Location: index.php"); exit(); }
     $role = $_SESSION['role'] ?? 'staff';
@@ -169,7 +170,7 @@ include 'activity_helper.php';
                 <div class="main-card" style="margin-left: auto; margin-right: auto;">                    
                     <div class="glass-window">
                         <?php
-                            $query = "SELECT ufc, brand, stock 
+                            $query = "SELECT ufc, brand, stock, created_by 
                                     FROM frame_staging 
                                     WHERE buy_price = 0 
                                     AND sell_price = 0 
@@ -197,6 +198,7 @@ include 'activity_helper.php';
                                         <col style="width: 200px;">
                                         <col style="width: 150px;">
                                         <col style="width: 80px;">
+                                        <col style="width: 150px;">
                                         <col style="width: 250px;">
                                     </colgroup>
                                     <thead>
@@ -204,6 +206,7 @@ include 'activity_helper.php';
                                             <th>UFC</th>
                                             <th>BRAND</th>
                                             <th>STOCK</th>
+                                            <th>CREATED BY</th>
                                             <th>ACTIONS</th>
                                         </tr>
                                     </thead>
@@ -215,6 +218,23 @@ include 'activity_helper.php';
                                                     <td><strong style="color: var(--accent);"><?php echo $row['ufc']; ?></strong></td>
                                                     <td><?php echo $row['brand']; ?></td>
                                                     <td><?php echo $row['stock']; ?></td>
+                                                    <td><?php
+                                                        $raw = trim($row['created_by'] ?? '');
+                                                        if ($raw === '') {
+                                                            echo '-';
+                                                        } else {
+                                                            $entries = array_map('trim', explode(',', $raw));
+                                                            $lines = [];
+                                                            foreach ($entries as $entry) {
+                                                                if (preg_match('/^(.+?)\s*\((\d+)\)$/', $entry, $m)) {
+                                                                    $lines[] = htmlspecialchars($m[1]) . ' &rarr; ' . $m[2];
+                                                                } else {
+                                                                    $lines[] = htmlspecialchars($entry);
+                                                                }
+                                                            }
+                                                            echo implode('<br>', $lines);
+                                                        }
+                                                    ?></td>
                                                     <td>
                                                         <div class="action-btn-container">
                                                             <button type="button" class="btn-table btn-set-price" 
@@ -255,7 +275,7 @@ include 'activity_helper.php';
                     <div class="main-card" style="margin-left: auto; margin-right: auto;">                    
                         <div class="glass-window">
                             <?php
-                                $queryCorrupt = "SELECT ufc, brand, stock 
+                                $queryCorrupt = "SELECT ufc, brand, stock, created_by 
                                                 FROM frame_staging 
                                                 WHERE 
                                                 (
@@ -295,6 +315,7 @@ include 'activity_helper.php';
                                                 <col style="width: 200px;">
                                                 <col style="width: 150px;">
                                                 <col style="width: 80px;">
+                                                <col style="width: 150px;">
                                                 <col style="width: 250px;">
                                             </colgroup>
                                             <thead>
@@ -302,6 +323,7 @@ include 'activity_helper.php';
                                                     <th>UFC</th>
                                                     <th>BRAND</th>
                                                     <th>STOCK</th>
+                                                    <th>CREATED BY</th>
                                                     <th>ACTIONS</th>
                                                 </tr>
                                             </thead>
@@ -312,7 +334,23 @@ include 'activity_helper.php';
                                                             <td><strong style="color: var(--accent-red);"><?php echo $rowCorrupt['ufc'] ?: 'MISSING UFC'; ?></strong></td>
                                                             <td><?php echo $rowCorrupt['brand']; ?></td>
                                                             <td><?php echo $rowCorrupt['stock']; ?></td>
-                                                            <td>
+                                                            <td><?php
+                                                                $raw = trim($rowCorrupt['created_by'] ?? '');
+                                                                if ($raw === '') {
+                                                                    echo '-';
+                                                                } else {
+                                                                    $entries = array_map('trim', explode(',', $raw));
+                                                                    $lines = [];
+                                                                    foreach ($entries as $entry) {
+                                                                        if (preg_match('/^(.+?)\s*\((\d+)\)$/', $entry, $m)) {
+                                                                            $lines[] = htmlspecialchars($m[1]) . ' &rarr; ' . $m[2];
+                                                                        } else {
+                                                                            $lines[] = htmlspecialchars($entry);
+                                                                        }
+                                                                    }
+                                                                    echo implode('<br>', $lines);
+                                                                }
+                                                            ?></td>
                                                                 <div class="action-btn-container">
                                                                     <button type="button" class="btn-table btn-set-price" 
                                                                             onclick="window.location.href='edit_frame.php?ufc=<?php echo urlencode($rowCorrupt['ufc']); ?>'">
@@ -350,7 +388,7 @@ include 'activity_helper.php';
                     <div class="main-card" style="margin-left: auto; margin-right: auto;">                    
                         <div class="glass-window">
                             <?php
-                                $queryStaging = "SELECT ufc, brand, gender_category, stock, price_secret_code 
+                                $queryStaging = "SELECT ufc, brand, gender_category, stock, price_secret_code, created_by 
                                                 FROM frame_staging 
                                                 WHERE NOT (
                                                     (buy_price = 0 AND sell_price = 0 AND (price_secret_code = '' OR price_secret_code IS NULL))
@@ -393,7 +431,8 @@ include 'activity_helper.php';
                                                         <col style="width: 120px;">
                                                          <col style="width: 100px;">  
                                                          <col style="width: 80px;"> 
-                                                         <col style="width: 100px;">  
+                                                         <col style="width: 100px;">
+                                                         <col style="width: 130px;">  
                                                          <col style="width: 200px;">
                                                     </colgroup>
                                                     <thead>
@@ -405,6 +444,7 @@ include 'activity_helper.php';
                                                             <th>GENDER CATEGORY</th>
                                                             <th>STOCK</th>
                                                             <th>SECRET CODE</th>
+                                                            <th>CREATED BY</th>
                                                             <th>ACTIONS</th>
                                                         </tr>
                                                     </thead>
@@ -423,6 +463,23 @@ include 'activity_helper.php';
                                                                     <td data-label="GENDER CATEGORY"><?php echo $rowStaging['gender_category']; ?></td>
                                                                     <td data-label="STOCK"><?php echo $rowStaging['stock']; ?></td>
                                                                     <td data-label="SECRET CODE"><?php echo $rowStaging['price_secret_code']; ?></td>
+                                                                    <td data-label="CREATED BY"><?php
+                                                                        $raw = trim($rowStaging['created_by'] ?? '');
+                                                                        if ($raw === '') {
+                                                                            echo '-';
+                                                                        } else {
+                                                                            $entries = array_map('trim', explode(',', $raw));
+                                                                            $lines = [];
+                                                                            foreach ($entries as $entry) {
+                                                                                if (preg_match('/^(.+?)\s*\((\d+)\)$/', $entry, $m)) {
+                                                                                    $lines[] = htmlspecialchars($m[1]) . ' &rarr; ' . $m[2];
+                                                                                } else {
+                                                                                    $lines[] = htmlspecialchars($entry);
+                                                                                }
+                                                                            }
+                                                                            echo implode('<br>', $lines);
+                                                                        }
+                                                                    ?></td>
                                                                     <td data-label="ACTIONS">
                                                                         <div class="action-btn-container">
                                                                             <button type="button" class="btn-table btn-set-price" 
