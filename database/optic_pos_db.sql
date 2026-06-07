@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Jun 05, 2026 at 12:43 PM
+-- Generation Time: Jun 07, 2026 at 04:49 AM
 -- Server version: 10.1.38-MariaDB
 -- PHP Version: 7.3.2
 
@@ -303,16 +303,18 @@ CREATE TABLE `users` (
   `role` enum('admin','staff','viewer') NOT NULL,
   `is_approved` tinyint(1) NOT NULL DEFAULT '0',
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `last_login` timestamp NULL DEFAULT NULL
+  `last_login` timestamp NULL DEFAULT NULL,
+  `session_token` varchar(64) DEFAULT NULL,
+  `session_expires` datetime DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 --
 -- Dumping data for table `users`
 --
 
-INSERT INTO `users` (`user_id`, `username`, `password_hash`, `role`, `is_approved`, `created_at`, `last_login`) VALUES
-(1, 'LenZa786', '$2y$10$E5ZXU41IpXcB443wtKCIou/cpEaFMa7k2tuOx83ZAQ9soeUPagGWm', 'admin', 1, '2026-01-12 05:15:58', '2026-05-31 07:29:19'),
-(17, 'rais786', '$2y$10$Nvp2WWM.r5i1uM7VQD9t8eTZzeGNtDEz.A0NhEdUjPGzeZ8z7bFeO', 'staff', 1, '2026-05-28 13:17:44', '2026-05-31 06:03:13');
+INSERT INTO `users` (`user_id`, `username`, `password_hash`, `role`, `is_approved`, `created_at`, `last_login`, `session_token`, `session_expires`) VALUES
+(1, 'LenZa786', '$2y$10$E5ZXU41IpXcB443wtKCIou/cpEaFMa7k2tuOx83ZAQ9soeUPagGWm', 'admin', 1, '2026-01-12 05:15:58', '2026-06-06 21:48:18', NULL, NULL),
+(17, 'rais786', '$2y$10$Nvp2WWM.r5i1uM7VQD9t8eTZzeGNtDEz.A0NhEdUjPGzeZ8z7bFeO', 'staff', 1, '2026-05-28 13:17:44', '2026-05-31 06:03:13', NULL, NULL);
 
 --
 -- Indexes for dumped tables
