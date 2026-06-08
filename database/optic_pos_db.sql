@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Jun 08, 2026 at 02:25 PM
+-- Generation Time: Jun 08, 2026 at 06:57 PM
 -- Server version: 10.1.38-MariaDB
 -- PHP Version: 7.3.2
 
@@ -101,7 +101,9 @@ CREATE TABLE `customer_examinations` (
 --
 
 INSERT INTO `customer_examinations` (`id`, `examination_date`, `examination_code`, `customer_name`, `gender`, `age`, `symptoms`, `old_r_sph`, `old_r_cyl`, `old_r_ax`, `old_r_add`, `old_l_sph`, `old_l_cyl`, `old_l_ax`, `old_l_add`, `new_r_sph`, `new_r_cyl`, `new_r_ax`, `new_r_add`, `new_r_visus`, `new_l_sph`, `new_l_cyl`, `new_l_ax`, `new_l_add`, `new_l_visus`, `pd_dist`, `created_at`, `invoice_number`, `exam_notes`, `visual_habit`, `digital_usage`, `ucva_r`, `ucva_l`, `lens_modification`, `need_distance`, `need_intermediate`, `need_near`, `created_by`) VALUES
-(1, '2026-06-08', 'LZ/EC/001/VI/2026', 'MUHAMMAD RAIS LATIF', 'MALE', 30, 'MYOPIA, ASTIGMATISM, HEADACHE, EYE STRAIN, HEADLIGHT GLARE', '-25', '-25', '5', '0.00', '0.00', '-50', '170', '0.00', '-50', '-50', '15', '0.00', '20/20', '-100', '0.00', '0', '0.00', '20/20', '62', '2026-06-08 12:23:15', '00', '', 3, 3, '20/50', '20/50', 0, 0, 0, 0, 'LenZa786');
+(1, '2026-06-08', 'LZ/EC/001/VI/2026', 'MUHAMMAD RAIS LATIF', 'MALE', 30, 'MYOPIA, ASTIGMATISM, HEADACHE, EYE STRAIN, HEADLIGHT GLARE', '-25', '-25', '5', '0.00', '0.00', '-50', '170', '0.00', '-50', '-50', '15', '0.00', '20/20', '-100', '0.00', '0', '0.00', '20/20', '62', '2026-06-08 12:23:15', '001', '', 3, 3, '20/50', '20/50', 0, 0, 0, 0, 'LenZa786'),
+(2, '2026-06-08', 'LZ/EC/002/VI/2026', 'HAYAT', 'FEMALE', 29, 'MYOPIA, HEADACHE', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '0.00', '-25', '0.00', '0', '0.00', '20/20', '-25', '0.00', '0', '0.00', '20/20', '62', '2026-06-08 12:29:05', '002', '', 1, 1, '20/30', '20/30', 0, 0, 0, 0, 'rais786'),
+(3, '2026-06-08', 'LZ/EC/000-003/VI/2026', 'IBNU', 'MALE', 29, 'DIRECT SALE', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '0.00', '0.00', '0.00', '0', '0.00', '20/20', '0.00', '0.00', '0', '0.00', '20/20', '62', '2026-06-08 16:54:59', '003', 'Direct sale — Lens from customer.', 1, 1, '20/20', '20/20', 0, 0, 0, 0, NULL);
 
 -- --------------------------------------------------------
 
@@ -125,8 +127,18 @@ CREATE TABLE `customer_orders` (
   `order_status` int(11) NOT NULL DEFAULT '1',
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  `packaging_cost` int(11) NOT NULL DEFAULT '19500'
+  `packaging_cost` int(11) NOT NULL DEFAULT '19500',
+  `created_by` varchar(100) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Confirmed purchase orders — saved when operator clicks Yes Shopping';
+
+--
+-- Dumping data for table `customer_orders`
+--
+
+INSERT INTO `customer_orders` (`id`, `customer_number`, `invoice_number`, `is_modified`, `frame_ufc`, `lens_name`, `customer_phone`, `customer_address`, `total_amount`, `amount_paid`, `order_date`, `due_date`, `order_status`, `created_at`, `updated_at`, `packaging_cost`, `created_by`) VALUES
+(1, '1/LZ-C/16.31/001/VI/26', '001', 0, NULL, 'SINGLE VISION — BLUECHROMIC', '+62 812 6764 6916', 'JL. APEL RAYA NO. 51', '285000.00', '100000.00', '2026-06-08', '2026-06-10', 1, '2026-06-08 16:43:22', '2026-06-08 16:52:38', 19500, 'LenZa786'),
+(2, '2/LZ-C/16.32/002/VI/26', '002', 0, NULL, 'SINGLE VISION — BLUGARD (STOCK)', '+62 812 6764 6916', 'JL. SITEBA', '300000.00', '200000.00', '2026-06-08', '2026-06-18', 1, '2026-06-08 16:53:19', '2026-06-08 16:54:02', 19500, 'LenZa786'),
+(3, '3/LZ-C/16.33/000/VI/26', '003', 0, '52-18-140+08/06+brenden', NULL, '+62 812 6764 6916', 'JL. MANGGA RAYA', '160000.00', '100000.00', '2026-06-08', '2026-06-11', 1, '2026-06-08 16:56:03', '2026-06-08 16:56:03', 19500, 'LenZa786');
 
 -- --------------------------------------------------------
 
@@ -143,6 +155,13 @@ CREATE TABLE `custom_frames` (
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `buy_price` decimal(12,2) NOT NULL DEFAULT '0.00'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Frame custom yang tidak ada di frames_main maupun frame_staging';
+
+--
+-- Dumping data for table `custom_frames`
+--
+
+INSERT INTO `custom_frames` (`id`, `invoice_number`, `brand_key`, `sell_price`, `is_purchased`, `created_at`, `buy_price`) VALUES
+(1, '003', '52-18-140+08/06+brenden', '160000.00', 1, '2026-06-08 16:55:34', '0.00');
 
 -- --------------------------------------------------------
 
@@ -329,8 +348,8 @@ CREATE TABLE `users` (
 --
 
 INSERT INTO `users` (`user_id`, `username`, `password_hash`, `role`, `is_approved`, `created_at`, `last_login`, `session_token`, `session_expires`) VALUES
-(1, 'LenZa786', '$2y$10$E5ZXU41IpXcB443wtKCIou/cpEaFMa7k2tuOx83ZAQ9soeUPagGWm', 'admin', 1, '2026-01-12 05:15:58', '2026-06-08 07:09:43', '34e03e326f9b8588d3da65dc848511313f48e94a9f08a7dd96ceda0989ba3f04', '2026-06-08 22:09:43'),
-(17, 'rais786', '$2y$10$Nvp2WWM.r5i1uM7VQD9t8eTZzeGNtDEz.A0NhEdUjPGzeZ8z7bFeO', 'staff', 1, '2026-05-28 13:17:44', '2026-06-07 11:39:36', NULL, NULL);
+(1, 'LenZa786', '$2y$10$E5ZXU41IpXcB443wtKCIou/cpEaFMa7k2tuOx83ZAQ9soeUPagGWm', 'admin', 1, '2026-01-12 05:15:58', '2026-06-08 11:37:09', '21ce2d5f25d7e621989b6ed8f6ff2fb60e6517078332c4fc07f5646ca10f56bf', '2026-06-09 02:37:09'),
+(17, 'rais786', '$2y$10$Nvp2WWM.r5i1uM7VQD9t8eTZzeGNtDEz.A0NhEdUjPGzeZ8z7bFeO', 'staff', 1, '2026-05-28 13:17:44', '2026-06-08 07:27:52', NULL, NULL);
 
 --
 -- Indexes for dumped tables
@@ -434,19 +453,19 @@ ALTER TABLE `activity_log`
 -- AUTO_INCREMENT for table `customer_examinations`
 --
 ALTER TABLE `customer_examinations`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
 
 --
 -- AUTO_INCREMENT for table `customer_orders`
 --
 ALTER TABLE `customer_orders`
-  MODIFY `id` int(11) UNSIGNED NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(11) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
 
 --
 -- AUTO_INCREMENT for table `custom_frames`
 --
 ALTER TABLE `custom_frames`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `deleted_records`
