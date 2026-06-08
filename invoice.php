@@ -1,8 +1,9 @@
 <?php
     session_start();
     include 'db_config.php';
-include 'activity_helper.php';
+    include 'activity_helper.php';
     include 'config_helper.php';
+    include 'auth_check.php';
 
     if (isset($_POST['save_modification'])) {
         $inv = mysqli_real_escape_string($conn, $_POST['invoice_number']);
