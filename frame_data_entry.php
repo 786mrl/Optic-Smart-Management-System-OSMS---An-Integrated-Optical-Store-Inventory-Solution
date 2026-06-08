@@ -289,7 +289,7 @@
                             <!-- LENS SHAPE -->
                             <div class="input-group">
                                 <label>Lens Shape</label>
-                                <select name="lens_shape">
+                                <select name="lens_shape" id="lens_shape_select" onchange="autoSetGender(this.value)">
                                     <?php foreach(loadJson('shapes.json') as $s) echo "<option value='$s'>$s</option>"; ?>
                                 </select>
                             </div>
@@ -488,7 +488,37 @@
                 }
             }
 
-            // 2. Execution on Page Load (Place at the bottom of the script)
+            // 2. Auto-set gender category based on lens shape
+                const shapeGenderMap = {
+                    // Men
+                    'RECTANGLE': 'men',
+                    'BROWLINE': 'men',
+                    // Female
+                    'CAT-EYE': 'female',
+                    'BUTTERFLY': 'female',
+                    'OVAL': 'female',
+                    // Unisex
+                    'AVIATOR': 'unisex',
+                    'WAYFARER': 'unisex',
+                    'ROUND': 'unisex',
+                    'SQUARE': 'unisex',
+                    'GEOMETRIC': 'unisex'
+                };
+
+                function autoSetGender(shapeValue) {
+                    const gender = shapeGenderMap[shapeValue.toUpperCase()];
+                    if (!gender) return; // shape tidak dikenal, biarkan apa adanya
+
+                    // Cari tombol gender yang sesuai dan klik
+                    const genderButtons = document.querySelectorAll('.selection-wrapper button[onclick*="gender_category_input"]');
+                    genderButtons.forEach(btn => {
+                        if (btn.value === gender) {
+                            toggleNeu(btn, 'gender_category_input');
+                        }
+                    });
+                }
+
+            // 3. Execution on Page Load (Place at the bottom of the script)
             document.addEventListener('DOMContentLoaded', function() {
                 // Execute for all button groups that have the 'active' class by default
                 document.querySelectorAll('.neu-btn.active').forEach(btn => {
@@ -505,6 +535,10 @@
                         if(hiddenInput) toggleNeu(btn, hiddenInput.id, false);
                     }
                 });
+
+                // Auto-set gender sesuai shape default di dropdown
+                const shapeSelect = document.getElementById('lens_shape_select');
+                if (shapeSelect) autoSetGender(shapeSelect.value);
             });
         </script>
 

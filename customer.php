@@ -3,6 +3,7 @@
     session_start();
     include 'db_config.php';
     include 'config_helper.php';
+    include 'auth_check.php';
 
     if (!isset($_SESSION['user_id'])) {
         header("Location: index.php");
