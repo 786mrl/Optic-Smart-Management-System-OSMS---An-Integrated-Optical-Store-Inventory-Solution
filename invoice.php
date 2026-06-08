@@ -177,9 +177,10 @@
         }
 
         // 2. Basic fields
-        $ds_date  = date('Y-m-d');
-        $ds_month = (int)date('n');
-        $ds_year  = (int)date('Y');
+        $ds_date_raw = trim($_POST['ds_date'] ?? '');
+        $ds_date  = (!empty($ds_date_raw) && strtotime($ds_date_raw)) ? date('Y-m-d', strtotime($ds_date_raw)) : date('Y-m-d');
+        $ds_month = (int)date('n', strtotime($ds_date));
+        $ds_year  = (int)date('Y', strtotime($ds_date));
 
 
         $ds_name    = mysqli_real_escape_string($conn, strtoupper(trim($_POST['ds_customer_name'] ?? '')));
@@ -289,8 +290,10 @@
             $ds_nd, $ds_ni, $ds_nn
         );
 
+        $ds_purchase_type = ($_POST['ds_purchase_type'] ?? '') === 'frame' ? 'frame' : 'complete';
+
         if ($stmt->execute()) {
-            header("Location: invoice.php?inv=" . $ds_inv_str . "&direct=1");
+            header("Location: invoice.php?inv=" . $ds_inv_str . "&direct=1&ptype=" . $ds_purchase_type);
             exit();
         } else {
             $ds_error = "DATABASE ERROR: " . $stmt->error;
@@ -300,6 +303,9 @@
     // Check 'inv' parameter (manual) or 'code' (from customer_prescription.php)
     $invoice_num = $_GET['inv'] ?? $_GET['code'] ?? '';
     $invoice_num = mysqli_real_escape_string($conn, $invoice_num);
+
+    // Purchase type passed from direct-sale form: 'frame' = frame only (no lens/prescription)
+    $inv_purchase_type = ($_GET['ptype'] ?? '') === 'frame' ? 'frame' : 'complete';
 
     // ── DIRECT SALE ENTRY FORM (shown when no invoice number is given) ──────
     if (empty($invoice_num) || $invoice_num === '00' || $invoice_num === '000') {
@@ -349,6 +355,14 @@
 
             <form method="POST" action="invoice.php">
                 <input type="hidden" name="create_direct_sale" value="1">
+
+                <!-- Sale Date -->
+                <div class="input-group" style="margin-bottom:15px;">
+                    <label>DATE</label>
+                    <input type="date" name="ds_date" id="ds_date"
+                           value="<?php echo date('Y-m-d'); ?>"
+                           style="color-scheme:dark;">
+                </div>
 
                 <!-- Customer Name -->
                 <div class="input-group" style="margin-bottom:15px;">
@@ -2513,6 +2527,7 @@ function dsUpdateVisionNeed(age) {
                             </div>
                             <div id="order-details-body" style="display:flex;flex-direction:column;gap:12px;">
 
+                        <?php if ($inv_purchase_type !== 'frame'): ?>
                         <div class="full">
                             <div class="prescription-container" style="text-align:center; border:1px solid rgba(255,170,0,0.2); background:linear-gradient(135deg,rgba(255,170,0,0.03) 0%,transparent 60%);">
                                 <label id="mod-toggle-label" onclick="toggleModSection()" style="cursor:pointer; user-select:none; display:flex; align-items:center; justify-content:space-between; margin-bottom:0;">
@@ -2614,6 +2629,7 @@ function dsUpdateVisionNeed(age) {
                                 </div><!-- /#mod-collapsible -->
                             </div>
                         </div>
+                        <?php endif; // ptype !== 'frame' ?>
 
                         <div class="full" id="mp-scan-card">
                             <!-- Back button (only visible in fullscreen scan mode) -->
@@ -3936,6 +3952,7 @@ function dsUpdateVisionNeed(age) {
                                                 <div style="font-size:7px;color:#555;letter-spacing:1px;margin-bottom:3px;">PHONE NUMBER</div>
                                                 <input type="tel" id="lr-customer-phone"
                                                     inputmode="numeric"
+                                                    value="+62 8"
                                                     style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.04);border:1px solid rgba(0,207,255,0.25);border-radius:6px;padding:5px 8px;color:#ccc;font-size:10px;font-family:monospace;outline:none;"
                                                     onfocus="this.style.borderColor='rgba(0,207,255,0.6)'"
                                                     onblur="this.style.borderColor='rgba(0,207,255,0.25)'"
@@ -4006,7 +4023,8 @@ function dsUpdateVisionNeed(age) {
                                                 <div style="font-size:7px;color:#555;letter-spacing:1px;margin-bottom:3px;">DUE DATE <span style="color:#444;font-weight:normal;">(editable)</span></div>
                                                 <input type="text" id="lr-due-date-box"
                                                     placeholder="— not set"
-                                                    style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.04);border:1px solid rgba(0,207,255,0.20);border-radius:6px;padding:5px 8px;font-size:10px;color:#ccc;font-family:monospace;outline:none;"
+                                                    value="<?php echo ($inv_purchase_type === 'frame') ? date('d/m/Y', strtotime($data['examination_date'] . ' +2 days')) : ''; ?>"
+                                                    style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.04);border:1px solid rgba(0,207,255,0.20);border-radius:6px;padding:5px 8px;font-size:10px;color:<?php echo ($inv_purchase_type === 'frame') ? '#00cfff' : '#ccc'; ?>;font-family:monospace;outline:none;"
                                                     onfocus="this.style.borderColor='rgba(0,207,255,0.6)'"
                                                     onblur="this.style.borderColor='rgba(0,207,255,0.20)'">
                                             </div>
@@ -4317,7 +4335,7 @@ function dsUpdateVisionNeed(age) {
                 var isCustom = name && String(name).indexOf('[CUSTOM]') !== -1;
                 if (!isCustom && typeof window.cfrResetPurchased === 'function') window.cfrResetPurchased();
                 lrUpdateSelectionDisplay(false); // do NOT auto-open bar
-                // If frame is set but no lens yet, due date = +3 days (frame pickup)
+                // If frame is set but no lens yet, due date = +2 days (frame pickup)
                 if (lrSelectedFrame && !lrSelectedLens) {
                     if (typeof lrUpdateDueDate === 'function') lrUpdateDueDate('frame');
                 } else if (!lrSelectedFrame && !lrSelectedLens) {
@@ -4546,8 +4564,8 @@ function dsUpdateVisionNeed(age) {
                 var box = document.getElementById('lr-due-date-box');
                 if (!box || !window._lrOrderDate) return;
                 if (!source) { box.value = ''; box.style.color = '#ccc'; return; }
-                // days: stock lens=2, lab lens=10, frame-only=3
-                var days  = (source === 'stock') ? 2 : (source === 'frame') ? 3 : 10;
+                // days: stock lens=2, lab lens=10, frame-only=2
+                var days  = (source === 'stock') ? 2 : (source === 'frame') ? 2 : 10;
                 var color = (source === 'stock') ? '#00ff88' : (source === 'frame') ? '#00cfff' : '#ff8a4d';
                 var due   = new Date(window._lrOrderDate.getTime());
                 due.setDate(due.getDate() + days);
@@ -4743,6 +4761,20 @@ function dsUpdateVisionNeed(age) {
 
 
             window.onload = () => {
+                // Auto-show selection bar + set due date for frame-only direct sale (+2 days)
+                <?php if ($inv_purchase_type === 'frame'): ?>
+                (function() {
+                    var bar = document.getElementById('lr-selection-bar');
+                    if (bar) bar.style.display = 'block';
+                    var barBody = document.getElementById('lr-selection-bar-body');
+                    if (barBody) barBody.style.display = 'block';
+                    if (typeof lrUpdateDueDate === 'function') lrUpdateDueDate('frame');
+                    // Force phone prefix after bar is shown
+                    var ph = document.getElementById('lr-customer-phone');
+                    if (ph) ph.value = '+62 8';
+                })();
+                <?php endif; ?>
+
                 const isModified = <?php echo $data['lens_modification'] == 1 ? 'true' : 'false'; ?>;
                 if (isModified) {
                     // Auto-open the collapsible panel
