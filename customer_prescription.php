@@ -173,6 +173,9 @@
             $need_near         = 0;
         }
         
+        // created_by: ambil username yang sedang login
+        $created_by = mysqli_real_escape_string($conn, $_SESSION['username'] ?? 'staff');
+
         // 6. Insert Query using Prepared Statement
         $stmt = $conn->prepare("INSERT INTO customer_examinations (
             examination_date, examination_code, customer_name, gender, age, symptoms,
@@ -182,11 +185,12 @@
             new_l_sph, new_l_cyl, new_l_ax, new_l_add, new_l_visus,
             pd_dist, invoice_number,
             visual_habit, digital_usage, ucva_r, ucva_l, exam_notes,
-            need_distance, need_intermediate, need_near
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            need_distance, need_intermediate, need_near,
+            created_by
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
 
         // Define data types: 
-        $types = "ssssi" . str_repeat("s", 21) . "iisss" . "iii"; 
+        $types = "ssssi" . str_repeat("s", 21) . "iisss" . "iii" . "s"; 
 
         $stmt->bind_param($types, 
             $exam_date, $exam_code, $customer_name, $gender, $age_to_save, $symptoms_to_save,
@@ -196,7 +200,8 @@
             $new_l_sph, $new_l_cyl, $new_l_ax, $new_l_add, $new_l_va,
             $pd_dist_val, $invoice_val,
             $visual_habit, $digital_usage, $ucva_r, $ucva_l, $exam_notes,
-            $need_distance, $need_intermediate, $need_near
+            $need_distance, $need_intermediate, $need_near,
+            $created_by
         );
 
         if ($stmt->execute()) {
@@ -236,6 +241,7 @@
         $sequence = (isset($parts[2])) ? (int)$parts[2] + 1 : 1;
     }
     $seq_padded = str_pad($sequence, 3, '0', STR_PAD_LEFT);
+    $exam_code = 'LZ/EC/' . $seq_padded . '/' . getRomawi((int)date('n')) . '/' . date('Y');
 ?>
 
 <!DOCTYPE html>
@@ -556,6 +562,217 @@
             .swal2-popup {
                 border: 1px solid #00ff88 !important;
                 box-shadow: 0 0 20px rgba(0, 255, 136, 0.2) !important;
+            }
+
+            /* ============================================================ */
+            /* === INPUT REVIEW CARD ======================================= */
+            /* ============================================================ */
+            #input_review_card {
+                display: none;
+                margin-top: 28px;
+                background: linear-gradient(145deg, #1e2225, #252930);
+                border: 1px solid #00ff8833;
+                border-radius: 18px;
+                overflow: hidden;
+                box-shadow: 0 4px 30px rgba(0, 255, 136, 0.08), inset 0 1px 0 rgba(255,255,255,0.04);
+                transition: all 0.3s ease;
+            }
+            #input_review_card.has-data {
+                border-color: #00ff8855;
+                box-shadow: 0 4px 30px rgba(0, 255, 136, 0.12), inset 0 1px 0 rgba(255,255,255,0.04);
+            }
+            .review-card-header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: 14px 20px;
+                cursor: pointer;
+                background: rgba(0, 255, 136, 0.04);
+                border-bottom: 1px solid transparent;
+                transition: all 0.25s ease;
+                user-select: none;
+            }
+            .review-card-header:hover {
+                background: rgba(0, 255, 136, 0.07);
+            }
+            #input_review_card.expanded .review-card-header {
+                border-bottom-color: #00ff8822;
+            }
+            .review-header-left {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            }
+            .review-header-icon {
+                width: 28px;
+                height: 28px;
+                background: linear-gradient(135deg, #00ff88, #00ccaa);
+                border-radius: 8px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 0.9em;
+                flex-shrink: 0;
+                box-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
+            }
+            .review-header-title {
+                font-size: 0.82em;
+                font-weight: 700;
+                color: #00ff88;
+                letter-spacing: 2px;
+                text-transform: uppercase;
+            }
+            .review-header-subtitle {
+                font-size: 0.68em;
+                color: #666;
+                letter-spacing: 0.5px;
+                margin-top: 1px;
+            }
+            .review-header-right {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            }
+            .review-badge-count {
+                background: rgba(0, 255, 136, 0.15);
+                border: 1px solid #00ff8844;
+                color: #00ff88;
+                font-size: 0.65em;
+                font-weight: bold;
+                padding: 2px 9px;
+                border-radius: 20px;
+                letter-spacing: 1px;
+            }
+            .review-chevron {
+                color: #00ff88;
+                font-size: 0.7em;
+                opacity: 0.7;
+                transition: transform 0.25s ease;
+                flex-shrink: 0;
+            }
+            #input_review_card.expanded .review-chevron {
+                transform: rotate(180deg);
+            }
+            .review-card-body {
+                display: none;
+                padding: 18px 20px 20px;
+            }
+            #input_review_card.expanded .review-card-body {
+                display: block;
+            }
+            .review-section {
+                margin-bottom: 16px;
+            }
+            .review-section:last-child {
+                margin-bottom: 0;
+            }
+            .review-section-title {
+                font-size: 0.62em;
+                color: #555;
+                letter-spacing: 2px;
+                text-transform: uppercase;
+                font-weight: bold;
+                margin-bottom: 8px;
+                padding-bottom: 5px;
+                border-bottom: 1px solid #2a2d30;
+            }
+            .review-row {
+                display: flex;
+                align-items: flex-start;
+                gap: 10px;
+                margin-bottom: 6px;
+                font-size: 0.8em;
+                line-height: 1.4;
+            }
+            .review-row:last-child {
+                margin-bottom: 0;
+            }
+            .review-label {
+                color: #888;
+                min-width: 90px;
+                flex-shrink: 0;
+                font-size: 0.88em;
+                letter-spacing: 0.5px;
+            }
+            .review-value {
+                color: #ddd;
+                font-weight: 500;
+                flex: 1;
+            }
+            .review-value.highlight {
+                color: #00ff88;
+                font-family: 'Courier New', monospace;
+            }
+            .review-value.yellow {
+                color: #ffcc00;
+            }
+            .review-value.muted {
+                color: #555;
+                font-style: italic;
+            }
+            /* Prescription mini table inside review */
+            .review-pres-table {
+                width: 100%;
+                border-collapse: collapse;
+                font-family: 'Courier New', monospace;
+                font-size: 0.78em;
+                margin-top: 4px;
+            }
+            .review-pres-table th {
+                color: #555;
+                font-size: 0.85em;
+                letter-spacing: 1px;
+                text-align: center;
+                padding: 4px 6px;
+                border-bottom: 1px solid #2a2d30;
+                font-weight: bold;
+            }
+            .review-pres-table th:first-child { text-align: left; }
+            .review-pres-table td {
+                text-align: center;
+                padding: 6px 6px;
+                color: #00ff88;
+                border-bottom: 1px solid #1e2225;
+            }
+            .review-pres-table td:first-child {
+                text-align: left;
+                color: #aaa;
+                font-weight: bold;
+            }
+            .review-pres-table tr:last-child td { border-bottom: none; }
+            .review-pres-table td.val-zero { color: #444; }
+            .review-divider {
+                height: 1px;
+                background: linear-gradient(to right, transparent, #2a2d30, transparent);
+                margin: 14px 0;
+            }
+            .review-symptoms-wrap {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 6px;
+                margin-top: 4px;
+            }
+            .review-symptom-tag {
+                background: rgba(255, 204, 0, 0.1);
+                border: 1px solid #ffcc0033;
+                color: #ffcc00;
+                font-size: 0.72em;
+                padding: 3px 9px;
+                border-radius: 20px;
+                letter-spacing: 0.5px;
+                font-weight: bold;
+            }
+            .review-notes-text {
+                background: #1a1c1e;
+                border: 1px solid #2a2d30;
+                border-radius: 8px;
+                padding: 10px 12px;
+                color: #aaa;
+                font-size: 0.78em;
+                line-height: 1.6;
+                margin-top: 4px;
+                white-space: pre-wrap;
+                word-break: break-word;
             }
 
             /* --- TOGGLE PANEL (Gender, Visual Habits, Digital Usage) --- */
@@ -1204,6 +1421,166 @@
                                 "></textarea>
                         </div>
                         
+                        <!-- ====================================================== -->
+                        <!-- === INPUT REVIEW CARD (live preview before save) ====== -->
+                        <!-- ====================================================== -->
+                        <div id="input_review_card">
+                            <div class="review-card-header" onclick="toggleReviewCard()">
+                                <div class="review-header-left">
+                                    <div class="review-header-icon">📋</div>
+                                    <div>
+                                        <div class="review-header-title">INPUT REVIEW</div>
+                                        <div class="review-header-subtitle">Tap to expand / collapse</div>
+                                    </div>
+                                </div>
+                                <div class="review-header-right">
+                                    <span class="review-badge-count" id="review_field_count">0 fields</span>
+                                    <span class="review-chevron">▼</span>
+                                </div>
+                            </div>
+
+                            <div class="review-card-body">
+                                <!-- PATIENT INFO -->
+                                <div class="review-section" id="review_sec_patient">
+                                    <div class="review-section-title">Patient Info</div>
+                                    <div class="review-row">
+                                        <span class="review-label">Name</span>
+                                        <span class="review-value highlight" id="rv_name">—</span>
+                                    </div>
+                                    <div class="review-row">
+                                        <span class="review-label">Gender</span>
+                                        <span class="review-value" id="rv_gender">—</span>
+                                    </div>
+                                    <div class="review-row">
+                                        <span class="review-label">Age</span>
+                                        <span class="review-value" id="rv_age">—</span>
+                                    </div>
+                                    <div class="review-row">
+                                        <span class="review-label">Exam Date</span>
+                                        <span class="review-value" id="rv_date">—</span>
+                                    </div>
+                                    <div class="review-row">
+                                        <span class="review-label">Exam Code</span>
+                                        <span class="review-value highlight" id="rv_code">—</span>
+                                    </div>
+                                </div>
+
+                                <div class="review-divider"></div>
+
+                                <!-- SYMPTOMS -->
+                                <div class="review-section" id="review_sec_symptoms">
+                                    <div class="review-section-title">Symptoms / Complaints</div>
+                                    <div id="rv_symptoms_wrap" class="review-symptoms-wrap"></div>
+                                </div>
+
+                                <div class="review-divider"></div>
+
+                                <!-- HABITS -->
+                                <div class="review-section" id="review_sec_habits">
+                                    <div class="review-section-title">Habits</div>
+                                    <div class="review-row">
+                                        <span class="review-label">Visual Habit</span>
+                                        <span class="review-value" id="rv_visual_habit">—</span>
+                                    </div>
+                                    <div class="review-row">
+                                        <span class="review-label">Digital Usage</span>
+                                        <span class="review-value" id="rv_digital_usage">—</span>
+                                    </div>
+                                </div>
+
+                                <div class="review-divider"></div>
+
+                                <!-- NEW PRESCRIPTION -->
+                                <div class="review-section">
+                                    <div class="review-section-title">New Prescription</div>
+                                    <table class="review-pres-table">
+                                        <thead>
+                                            <tr>
+                                                <th>EYE</th>
+                                                <th>UCVA</th>
+                                                <th>SPH</th>
+                                                <th>CYL</th>
+                                                <th>AX</th>
+                                                <th>ADD</th>
+                                                <th>VA</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr>
+                                                <td>OD (R)</td>
+                                                <td id="rv_ucva_r">—</td>
+                                                <td id="rv_r_sph">—</td>
+                                                <td id="rv_r_cyl">—</td>
+                                                <td id="rv_r_ax">—</td>
+                                                <td id="rv_r_add">—</td>
+                                                <td id="rv_r_va">—</td>
+                                            </tr>
+                                            <tr>
+                                                <td>OS (L)</td>
+                                                <td id="rv_ucva_l">—</td>
+                                                <td id="rv_l_sph">—</td>
+                                                <td id="rv_l_cyl">—</td>
+                                                <td id="rv_l_ax">—</td>
+                                                <td id="rv_l_add">—</td>
+                                                <td id="rv_l_va">—</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                    <div class="review-row" style="margin-top: 10px;">
+                                        <span class="review-label">PD</span>
+                                        <span class="review-value highlight" id="rv_pd">—</span>
+                                    </div>
+                                </div>
+
+                                <!-- OLD PRESCRIPTION (hidden by default, shown if yes) -->
+                                <div id="review_sec_old_pres" style="display:none;">
+                                    <div class="review-divider"></div>
+                                    <div class="review-section">
+                                        <div class="review-section-title">Old Prescription</div>
+                                        <table class="review-pres-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>EYE</th>
+                                                    <th>SPH</th>
+                                                    <th>CYL</th>
+                                                    <th>AXIS</th>
+                                                    <th>ADD</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr>
+                                                    <td>OD (R)</td>
+                                                    <td id="rv_old_r_sph">—</td>
+                                                    <td id="rv_old_r_cyl">—</td>
+                                                    <td id="rv_old_r_ax">—</td>
+                                                    <td id="rv_old_r_add">—</td>
+                                                </tr>
+                                                <tr>
+                                                    <td>OS (L)</td>
+                                                    <td id="rv_old_l_sph">—</td>
+                                                    <td id="rv_old_l_cyl">—</td>
+                                                    <td id="rv_old_l_ax">—</td>
+                                                    <td id="rv_old_l_add">—</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+
+                                <!-- NOTES -->
+                                <div id="review_sec_notes" style="display:none;">
+                                    <div class="review-divider"></div>
+                                    <div class="review-section">
+                                        <div class="review-section-title">Additional Notes</div>
+                                        <div class="review-notes-text" id="rv_notes"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- ====================================================== -->
+                        <!-- === END INPUT REVIEW CARD ============================ -->
+                        <!-- ====================================================== -->
+
                         <!-- SUBMIT -->
                         <div class="btn-group" style="grid-column: 1 / -1; margin-top: 30px; display: flex; justify-content: center;">
                             <button type="submit" name="submit_customer_prescription" class="submit-main" style="width: 100%; max-width: 400px;">SAVE DATA</button>
@@ -2202,6 +2579,217 @@
 
             // Panggil saat page load agar PD default langsung sesuai kondisi awal ADD
             updatePdDefault();
+
+            // ================================================================
+            // === INPUT REVIEW CARD LOGIC =====================================
+            // ================================================================
+
+            const _rvHabitLabels  = { '1': 'INDOOR', '2': 'OUTDOOR', '3': 'BOTH' };
+            const _rvDigitalLabels = { '1': 'LOW (< 2H)', '2': 'MODERATE (2–5H)', '3': 'HIGH (> 5H)' };
+
+            function _rvVal(id) {
+                const el = document.getElementById(id);
+                return el ? el.value.trim() : '';
+            }
+            function _rvInput(name) {
+                const el = document.querySelector(`input[name="${name}"]`);
+                return el ? el.value.trim() : '';
+            }
+            function _rvSet(id, text, cls) {
+                const el = document.getElementById(id);
+                if (!el) return;
+                el.textContent = text || '—';
+                el.className = 'review-value' + (cls ? ' ' + cls : '');
+            }
+            function _rvTd(id, val) {
+                const el = document.getElementById(id);
+                if (!el) return;
+                const empty = (!val || val === '0.00' || val === '0');
+                el.textContent = val || '—';
+                el.className = empty ? 'val-zero' : '';
+            }
+
+            function updateReviewCard() {
+                let filledCount = 0;
+
+                // Name
+                const nameVal = _rvVal('customer_name');
+                if (nameVal) { _rvSet('rv_name', nameVal.toUpperCase(), 'highlight'); filledCount++; }
+                else _rvSet('rv_name', '—', 'muted');
+
+                // Gender
+                const genderVal = _rvVal('gender');
+                _rvSet('rv_gender', genderVal || '—');
+                if (genderVal) filledCount++;
+
+                // Age
+                const ageVal = _rvVal('age');
+                if (ageVal && parseInt(ageVal) > 0) {
+                    _rvSet('rv_age', ageVal + ' years old');
+                    filledCount++;
+                } else _rvSet('rv_age', '—', 'muted');
+
+                // Date
+                const dateDisp = document.getElementById('examination_date_display');
+                const dateVal  = dateDisp ? dateDisp.value.trim() : '';
+                if (dateVal) { _rvSet('rv_date', dateVal); filledCount++; }
+                else _rvSet('rv_date', '—', 'muted');
+
+                // Exam Code
+                const codeVal = _rvVal('hidden_exam_code') || generateExamCode();
+                _rvSet('rv_code', codeVal, 'highlight');
+
+                // Symptoms
+                const sympEl = document.getElementById('symptom_summary');
+                const sympText = sympEl ? sympEl.innerText.trim() : '';
+                const sympWrap = document.getElementById('rv_symptoms_wrap');
+                sympWrap.innerHTML = '';
+                if (sympText && sympText !== 'NO SYMPTOMS SELECTED') {
+                    sympText.split(',').forEach(s => {
+                        s = s.trim();
+                        if (s) {
+                            const tag = document.createElement('span');
+                            tag.className = 'review-symptom-tag';
+                            tag.textContent = s;
+                            sympWrap.appendChild(tag);
+                        }
+                    });
+                    filledCount++;
+                } else {
+                    const none = document.createElement('span');
+                    none.className = 'review-value muted';
+                    none.textContent = 'None selected';
+                    sympWrap.appendChild(none);
+                }
+
+                // Visual Habit & Digital Usage
+                const habitVal   = _rvVal('visual_habit');
+                const digitalVal = _rvVal('digital_usage');
+                _rvSet('rv_visual_habit', _rvHabitLabels[habitVal] || habitVal || '—');
+                _rvSet('rv_digital_usage', _rvDigitalLabels[digitalVal] || digitalVal || '—');
+
+                // New Prescription
+                const fields = [
+                    ['rv_ucva_r','ucva_r'],['rv_r_sph','new_r_sph'],['rv_r_cyl','new_r_cyl'],
+                    ['rv_r_ax','new_r_ax'],['rv_r_add','new_r_add'],['rv_r_va','new_r_va'],
+                    ['rv_ucva_l','ucva_l'],['rv_l_sph','new_l_sph'],['rv_l_cyl','new_l_cyl'],
+                    ['rv_l_ax','new_l_ax'],['rv_l_add','new_l_add'],['rv_l_va','new_l_va'],
+                ];
+                let presHasVal = false;
+                fields.forEach(([tdId, fieldName]) => {
+                    const v = _rvInput(fieldName);
+                    _rvTd(tdId, v || '—');
+                    if (v && v !== '0.00' && v !== '0') presHasVal = true;
+                });
+                if (presHasVal) filledCount++;
+
+                // PD
+                const pdEl = document.querySelector('input[name="pd_dist"]');
+                const pdVal = pdEl ? (pdEl.value.trim() || pdEl.placeholder || '62') : '62';
+                _rvSet('rv_pd', pdVal, 'highlight');
+
+                // Old Prescription
+                const hasOld = _rvVal('has_old_prescription_input');
+                const oldSec = document.getElementById('review_sec_old_pres');
+                if (hasOld === 'yes') {
+                    oldSec.style.display = 'block';
+                    _rvTd('rv_old_r_sph', _rvInput('old_prescript_R_sph'));
+                    _rvTd('rv_old_r_cyl', _rvInput('old_prescript_R_cyl'));
+                    _rvTd('rv_old_r_ax',  _rvInput('old_prescript_R_ax'));
+                    _rvTd('rv_old_r_add', _rvInput('old_prescript_R_add'));
+                    _rvTd('rv_old_l_sph', _rvInput('old_prescript_L_sph'));
+                    _rvTd('rv_old_l_cyl', _rvInput('old_prescript_L_cyl'));
+                    _rvTd('rv_old_l_ax',  _rvInput('old_prescript_L_ax'));
+                    _rvTd('rv_old_l_add', _rvInput('old_prescript_L_add'));
+                    filledCount++;
+                } else {
+                    oldSec.style.display = 'none';
+                }
+
+                // Notes
+                const notesEl = document.getElementById('exam_notes');
+                const notesVal = notesEl ? notesEl.value.trim() : '';
+                const notesSec = document.getElementById('review_sec_notes');
+                if (notesVal) {
+                    notesSec.style.display = 'block';
+                    document.getElementById('rv_notes').textContent = notesVal;
+                    filledCount++;
+                } else {
+                    notesSec.style.display = 'none';
+                }
+
+                // Show / hide card and update badge
+                const card = document.getElementById('input_review_card');
+                const badge = document.getElementById('review_field_count');
+                if (filledCount > 0) {
+                    card.style.display = 'block';
+                    card.classList.add('has-data');
+                    badge.textContent = filledCount + (filledCount === 1 ? ' field' : ' fields');
+                } else {
+                    card.style.display = 'none';
+                    card.classList.remove('has-data');
+                }
+            }
+
+            function toggleReviewCard() {
+                const card = document.getElementById('input_review_card');
+                card.classList.toggle('expanded');
+            }
+
+            // Watch all relevant inputs & trigger updateReviewCard
+            (function _attachReviewListeners() {
+                const watchIds = ['customer_name','gender','age','visual_habit','digital_usage',
+                    'examination_date_display','hidden_exam_code','exam_notes'];
+                watchIds.forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) { el.addEventListener('input', updateReviewCard); el.addEventListener('change', updateReviewCard); }
+                });
+
+                const watchNames = [
+                    'ucva_r','new_r_sph','new_r_cyl','new_r_ax','new_r_add','new_r_va',
+                    'ucva_l','new_l_sph','new_l_cyl','new_l_ax','new_l_add','new_l_va',
+                    'pd_dist',
+                    'old_prescript_R_sph','old_prescript_R_cyl','old_prescript_R_ax','old_prescript_R_add',
+                    'old_prescript_L_sph','old_prescript_L_cyl','old_prescript_L_ax','old_prescript_L_add',
+                ];
+                watchNames.forEach(name => {
+                    const el = document.querySelector(`input[name="${name}"], textarea[name="${name}"]`);
+                    if (el) { el.addEventListener('input', updateReviewCard); el.addEventListener('blur', updateReviewCard); }
+                });
+
+                // Also observe hidden inputs that are set programmatically (gender, habit, etc.)
+                const hiddenObs = ['gender','visual_habit','digital_usage','has_old_prescription_input'];
+                hiddenObs.forEach(id => {
+                    const el = document.getElementById(id);
+                    if (!el) return;
+                    const observer = new MutationObserver(updateReviewCard);
+                    observer.observe(el, { attributes: true, attributeFilter: ['value'] });
+                    el.addEventListener('change', updateReviewCard);
+                });
+
+                // Symptom summary is updated by JS — observe its text
+                const sympEl = document.getElementById('symptom_summary');
+                if (sympEl) {
+                    new MutationObserver(updateReviewCard).observe(sympEl, { childList: true, characterData: true, subtree: true });
+                }
+
+                // Textarea for other_symptoms
+                const otherEl = document.getElementById('other_symptoms');
+                if (otherEl) otherEl.addEventListener('input', updateReviewCard);
+
+                // Patch toggleNeuPanel & toggleNeu to also fire updateReviewCard after
+                const _origToggleNeu = window.toggleNeu;
+                window.toggleNeu = function() { _origToggleNeu.apply(this, arguments); updateReviewCard(); };
+                const _origToggleNeuPanel = window.toggleNeuPanel;
+                window.toggleNeuPanel = function() { _origToggleNeuPanel.apply(this, arguments); updateReviewCard(); };
+            })();
+
+            // Initial call to set state on page load
+            setTimeout(updateReviewCard, 50);
+
+            // ================================================================
+            // === END INPUT REVIEW CARD LOGIC =================================
+            // ================================================================
         </script>
     </body>
 </html>
