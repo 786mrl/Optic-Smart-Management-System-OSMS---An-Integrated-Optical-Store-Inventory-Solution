@@ -446,6 +446,76 @@
                 animation: valueFlash 0.5s ease-out forwards;
             }
 
+            /* ── Collapsible Preview Wrapper ── */
+            #preview-wrapper {
+                flex: 0 0 100%;
+                max-width: 100%;
+                grid-column: 1 / -1;
+                width: 100% !important;
+                margin-top: 8px;
+                display: none; /* hidden until there is input */
+            }
+
+            #preview-wrapper.has-data {
+                display: block;
+                animation: fadeSlideIn 0.35s ease-out;
+            }
+
+            @keyframes fadeSlideIn {
+                from { opacity: 0; transform: translateY(-8px); }
+                to   { opacity: 1; transform: translateY(0); }
+            }
+
+            /* Toggle header button */
+            #preview-toggle-btn {
+                width: 100%;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                background: rgba(0,201,167,0.08);
+                border: 1.5px solid rgba(0,201,167,0.28);
+                border-radius: 12px;
+                padding: 10px 16px;
+                cursor: pointer;
+                color: #00c9a7;
+                font-size: 0.72rem;
+                font-weight: 800;
+                letter-spacing: 0.14em;
+                text-transform: uppercase;
+                transition: background 0.2s ease, border-color 0.2s ease;
+                margin-bottom: 0;
+            }
+
+            #preview-toggle-btn:hover {
+                background: rgba(0,201,167,0.14);
+                border-color: rgba(0,201,167,0.50);
+            }
+
+            #preview-toggle-btn .toggle-arrow {
+                font-size: 1rem;
+                transition: transform 0.3s cubic-bezier(.34,1.56,.64,1);
+                line-height: 1;
+            }
+
+            #preview-toggle-btn.collapsed .toggle-arrow {
+                transform: rotate(-90deg);
+            }
+
+            /* Preview body: animated open/close */
+            #preview-body {
+                overflow: hidden;
+                max-height: 1000px;
+                transition: max-height 0.4s ease, opacity 0.3s ease, margin-top 0.3s ease;
+                opacity: 1;
+                margin-top: 8px;
+            }
+
+            #preview-body.collapsed {
+                max-height: 0;
+                opacity: 0;
+                margin-top: 0;
+            }
+
             .badge {
                 display: inline-block;
                 width: 28px;
@@ -668,71 +738,80 @@
                             <?php endif; ?>
                             
                             <!-- ── LIVE PREVIEW PANEL ── -->
-                            <div style="flex: 0 0 100%; max-width: 100%; grid-column: 1 / -1; width: 100% !important; margin-top: 8px;">
-                                <div id="live-preview">
-                                    <div class="preview-title">📋 Review Input</div>
+                            <div id="preview-wrapper">
 
-                                    <!-- UFC Badge -->
-                                    <div class="ufc-badge">
-                                        <div class="ufc-label">Unique Frame Code (UFC)</div>
-                                        <div class="ufc-value" id="prev-ufc">—</div>
-                                    </div>
+                                <!-- Toggle Header -->
+                                <button type="button" id="preview-toggle-btn" onclick="togglePreview()">
+                                    <span>📋 Review Input</span>
+                                    <span class="toggle-arrow">▼</span>
+                                </button>
 
-                                    <!-- Detail Grid -->
-                                    <div class="preview-grid">
-                                        <div class="preview-item" id="pi-brand">
-                                            <span class="pi-label">Brand</span>
-                                            <span class="pi-value empty" id="prev-brand">—</span>
+                                <!-- Preview Body (collapsible) -->
+                                <div id="preview-body">
+                                    <div id="live-preview">
+
+                                        <!-- UFC Badge -->
+                                        <div class="ufc-badge">
+                                            <div class="ufc-label">Unique Frame Code (UFC)</div>
+                                            <div class="ufc-value" id="prev-ufc">—</div>
                                         </div>
-                                        <div class="preview-item" id="pi-code">
-                                            <span class="pi-label">Frame Code</span>
-                                            <span class="pi-value empty" id="prev-code">—</span>
+
+                                        <!-- Detail Grid -->
+                                        <div class="preview-grid">
+                                            <div class="preview-item" id="pi-brand">
+                                                <span class="pi-label">Brand</span>
+                                                <span class="pi-value empty" id="prev-brand">—</span>
+                                            </div>
+                                            <div class="preview-item" id="pi-code">
+                                                <span class="pi-label">Frame Code</span>
+                                                <span class="pi-value empty" id="prev-code">—</span>
+                                            </div>
+                                            <div class="preview-item" id="pi-size">
+                                                <span class="pi-label">Frame Size</span>
+                                                <span class="pi-value empty" id="prev-size">—</span>
+                                            </div>
+                                            <div class="preview-item" id="pi-color">
+                                                <span class="pi-label">Color</span>
+                                                <span class="pi-value empty" id="prev-color">—</span>
+                                            </div>
+                                            <div class="preview-item" id="pi-material">
+                                                <span class="pi-label">Material</span>
+                                                <span class="pi-value" id="prev-material">—</span>
+                                            </div>
+                                            <div class="preview-item" id="pi-shape">
+                                                <span class="pi-label">Lens Shape</span>
+                                                <span class="pi-value" id="prev-shape">—</span>
+                                            </div>
+                                            <div class="preview-item" id="pi-structure">
+                                                <span class="pi-label">Structure</span>
+                                                <span class="pi-value" id="prev-structure">FULL-RIM</span>
+                                            </div>
+                                            <div class="preview-item" id="pi-sizerange">
+                                                <span class="pi-label">Size Range</span>
+                                                <span class="pi-value" id="prev-sizerange">SMALL</span>
+                                            </div>
+                                            <div class="preview-item" id="pi-gender">
+                                                <span class="pi-label">Gender</span>
+                                                <span class="pi-value" id="prev-gender">UNISEX</span>
+                                            </div>
+                                            <div class="preview-item" id="pi-stock">
+                                                <span class="pi-label">Stock (Qty)</span>
+                                                <span class="pi-value" id="prev-stock">1</span>
+                                            </div>
+                                            <div class="preview-item" id="pi-stockage">
+                                                <span class="pi-label">Stock Age</span>
+                                                <span class="pi-value" id="prev-stockage">NEW ✨</span>
+                                            </div>
+                                            <?php if ($role === 'admin'): ?>
+                                            <div class="preview-item" id="pi-price">
+                                                <span class="pi-label">Sell Price (Est.)</span>
+                                                <span class="pi-value" id="prev-price">—</span>
+                                            </div>
+                                            <?php endif; ?>
                                         </div>
-                                        <div class="preview-item" id="pi-size">
-                                            <span class="pi-label">Frame Size</span>
-                                            <span class="pi-value empty" id="prev-size">—</span>
-                                        </div>
-                                        <div class="preview-item" id="pi-color">
-                                            <span class="pi-label">Color</span>
-                                            <span class="pi-value empty" id="prev-color">—</span>
-                                        </div>
-                                        <div class="preview-item" id="pi-material">
-                                            <span class="pi-label">Material</span>
-                                            <span class="pi-value" id="prev-material">—</span>
-                                        </div>
-                                        <div class="preview-item" id="pi-shape">
-                                            <span class="pi-label">Lens Shape</span>
-                                            <span class="pi-value" id="prev-shape">—</span>
-                                        </div>
-                                        <div class="preview-item" id="pi-structure">
-                                            <span class="pi-label">Structure</span>
-                                            <span class="pi-value" id="prev-structure">FULL-RIM</span>
-                                        </div>
-                                        <div class="preview-item" id="pi-sizerange">
-                                            <span class="pi-label">Size Range</span>
-                                            <span class="pi-value" id="prev-sizerange">SMALL</span>
-                                        </div>
-                                        <div class="preview-item" id="pi-gender">
-                                            <span class="pi-label">Gender</span>
-                                            <span class="pi-value" id="prev-gender">UNISEX</span>
-                                        </div>
-                                        <div class="preview-item" id="pi-stock">
-                                            <span class="pi-label">Stock (Qty)</span>
-                                            <span class="pi-value" id="prev-stock">1</span>
-                                        </div>
-                                        <div class="preview-item" id="pi-stockage">
-                                            <span class="pi-label">Stock Age</span>
-                                            <span class="pi-value" id="prev-stockage">NEW ✨</span>
-                                        </div>
-                                        <?php if ($role === 'admin'): ?>
-                                        <div class="preview-item" id="pi-price">
-                                            <span class="pi-label">Sell Price (Est.)</span>
-                                            <span class="pi-value" id="prev-price">—</span>
-                                        </div>
-                                        <?php endif; ?>
                                     </div>
-                                </div>
-                            </div>
+                                </div><!-- /#preview-body -->
+                            </div><!-- /#preview-wrapper -->
 
                             <!-- Submit and Update Settings -->
                             <div class="btn-group" style="<?= ($role === 'staff') ? 'width: 100%' : 'width: 50%' ?>">
@@ -896,6 +975,20 @@
                 if (shapeSelect) autoSetGender(shapeSelect.value);
             });
 
+            // ── PREVIEW TOGGLE ──
+            function togglePreview() {
+                const btn  = document.getElementById('preview-toggle-btn');
+                const body = document.getElementById('preview-body');
+                const isCollapsed = body.classList.contains('collapsed');
+                if (isCollapsed) {
+                    body.classList.remove('collapsed');
+                    btn.classList.remove('collapsed');
+                } else {
+                    body.classList.add('collapsed');
+                    btn.classList.add('collapsed');
+                }
+            }
+
             // ── LIVE PREVIEW LOGIC ──
             function setPreviewVal(id, value, fallback) {
                 const el = document.getElementById(id);
@@ -948,6 +1041,16 @@
 
                 setPreviewVal('prev-brand', brand);
                 setPreviewVal('prev-code', code);
+
+                // Show preview wrapper only when brand has been filled
+                const wrapper = document.getElementById('preview-wrapper');
+                if (wrapper) {
+                    if (brand) {
+                        wrapper.classList.add('has-data');
+                    } else {
+                        wrapper.classList.remove('has-data');
+                    }
+                }
                 setPreviewVal('prev-size', size);
                 setPreviewVal('prev-color', colorDisplay);
                 setPreviewVal('prev-material', material, '—');
