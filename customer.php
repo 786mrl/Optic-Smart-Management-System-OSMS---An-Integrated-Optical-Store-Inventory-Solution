@@ -73,6 +73,12 @@
                             <div class="led"></div>
                         </button>
                     <?php endif; ?>
+
+                    <button class="neu-button" data-url="rx_only_customer.php" onclick="handleButtonClick(this)">
+                        <span class="icon">🗒️</span>
+                        Rx-only customer
+                        <div class="led"></div>
+                    </button>
                 </div>
             </div>
         </div>

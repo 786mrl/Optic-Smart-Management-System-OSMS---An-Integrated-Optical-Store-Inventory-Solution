@@ -179,7 +179,7 @@ close_db_connection($conn);
     <div class="main-card" style="width:100%;box-sizing:border-box;">
         <h2>
             ACTIVITY LOG & SYNC
-            <?php $unsync = count(array_filter($logs, fn($l) => $l['synced'] == 0)); ?>
+            <?php $unsync = count(array_filter($logs, function($l) { return $l['synced'] == 0; })); ?>
             <?php if ($unsync > 0): ?>
             <span class="pending-badge">⏳ <?= $unsync ?> belum sync</span>
             <?php endif; ?>
