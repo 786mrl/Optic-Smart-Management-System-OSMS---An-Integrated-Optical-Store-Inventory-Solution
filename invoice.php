@@ -127,16 +127,18 @@
         $phoneVal    = !empty($phone)    ? "'$phone'"    : 'NULL';
         $addressVal  = !empty($address)  ? "'$address'"  : 'NULL';
  
+        $createdBy = mysqli_real_escape_string($conn, $_SESSION['username'] ?? 'system');
+
         $sql_order = "INSERT INTO customer_orders
             (customer_number, invoice_number, is_modified,
              frame_ufc, lens_name,
              customer_phone, customer_address,
-             total_amount, amount_paid, order_date, due_date, order_status)
+             total_amount, amount_paid, order_date, due_date, order_status, created_by)
             VALUES
             ('$customerNumber', '$inv', $isModified,
              $frameUfcVal, $lensNameVal,
              $phoneVal, $addressVal,
-             $totalAmount, $amountPaid, '$orderDate', $dueDate, 1)";
+             $totalAmount, $amountPaid, '$orderDate', $dueDate, 1, '$createdBy')";
  
         $saved = mysqli_query($conn, $sql_order);
         if ($saved) {
