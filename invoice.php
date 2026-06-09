@@ -239,6 +239,8 @@
         $ds_exam_code = mysqli_real_escape_string($conn, $ds_exam_code);
 
         // 4. Insert into customer_examinations
+        $ds_created_by = $_SESSION['username'] ?? 'system';
+
         $stmt = $conn->prepare("INSERT INTO customer_examinations (
             examination_date, examination_code, customer_name, gender, age, symptoms,
             old_r_sph, old_r_cyl, old_r_ax, old_r_add,
@@ -247,8 +249,9 @@
             new_l_sph, new_l_cyl, new_l_ax, new_l_add, new_l_visus,
             pd_dist, invoice_number,
             visual_habit, digital_usage, ucva_r, ucva_l, exam_notes,
-            need_distance, need_intermediate, need_near
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            need_distance, need_intermediate, need_near,
+            created_by
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
 
         $ds_zero = '0.00'; $ds_zero_ax = '0'; $ds_va = '20/20';
         $ds_notes = 'Direct sale — Lens from customer.';
@@ -272,14 +275,14 @@
         array_unshift($symptoms_arr, 'DIRECT SALE');
         $ds_symptoms = mysqli_real_escape_string($conn, implode(', ', $symptoms_arr));
 
-        // Type key (34 params):
+        // Type key (35 params):
         // s=date, s=exam_code, s=name, s=gender, i=age, s=symptoms,
         // s,s,s,s=old_R, s,s,s,s=old_L,
         // s,s,s,s,s=new_R(sph,cyl,ax,add,va), s,s,s,s,s=new_L,
         // s=pd, s=invoice_number,
         // i=visual_habit, i=digital_usage, s=ucva_r, s=ucva_l, s=exam_notes,
-        // i=need_dist, i=need_inter, i=need_near
-        $stmt->bind_param('ssssisssssssssssssssssssssiisssiii',
+        // i=need_dist, i=need_inter, i=need_near, s=created_by
+        $stmt->bind_param('ssssisssssssssssssssssssssiisssiiis',
             $ds_date, $ds_exam_code, $ds_name, $ds_gender, $ds_age, $ds_symptoms,
             $ds_zero, $ds_zero, $ds_zero_ax, $ds_zero,
             $ds_zero, $ds_zero, $ds_zero_ax, $ds_zero,
@@ -287,7 +290,7 @@
             $ds_l_sph, $ds_l_cyl, $ds_l_ax, $ds_l_add, $ds_va,
             $ds_pd, $ds_inv_str,
             $ds_hab, $ds_dig, $ds_va, $ds_va, $ds_notes,
-            $ds_nd, $ds_ni, $ds_nn
+            $ds_nd, $ds_ni, $ds_nn, $ds_created_by
         );
 
         $ds_purchase_type = ($_POST['ds_purchase_type'] ?? '') === 'frame' ? 'frame' : 'complete';
