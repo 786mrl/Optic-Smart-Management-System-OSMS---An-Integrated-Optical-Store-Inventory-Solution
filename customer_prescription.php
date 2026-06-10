@@ -1295,7 +1295,14 @@
                                     <!-- CUSTOMER OLD PRESCRIPTION TABLE (muncul hanya jika YES) -->
                                     <div id="old_prescript" style="display: none; width: 100%;">
                                         <div class="prescription-card">
-                                            <h3 style="color: #00ff88; font-size: 0.9em; text-align: center; margin-bottom: 15px; letter-spacing: 1px;">OLD PRESCRIPTION DATA</h3>
+                                            <div style="display:flex; align-items:center; justify-content:center; gap:12px; margin-bottom:15px; flex-wrap:wrap;">
+                                                <h3 style="color: #00ff88; font-size: 0.9em; text-align: center; margin:0; letter-spacing: 1px;">OLD PRESCRIPTION DATA</h3>
+                                                <button type="button" id="btn_open_lensmeter"
+                                                    onclick="openLensmeterModal()"
+                                                    style="background:#1a2c2a; border:1px solid #00ff8866; color:#00ff88; border-radius:8px; padding:6px 14px; font-size:0.75em; font-weight:700; letter-spacing:1px; cursor:pointer; transition:all 0.2s;">
+                                                    🔬 USE LENSOMETER
+                                                </button>
+                                            </div>
                                             
                                             <div class="prescription-table">
                                                 <div class="pres-grid header">
@@ -1324,6 +1331,171 @@
                                             </div>
                                         </div>
                                     </div>
+
+                                    <!-- ========================================================= -->
+                                    <!-- === LENSOMETER MODAL ===================================== -->
+                                    <!-- ========================================================= -->
+                                    <div id="lensmeter_modal_overlay" style="
+                                        display:none; position:fixed; inset:0; z-index:9999;
+                                        background:rgba(0,0,0,0.82); backdrop-filter:blur(4px);
+                                        overflow-y:auto; padding:20px; box-sizing:border-box;">
+
+                                        <div style="
+                                            background:#1a1d22; border:1px solid #00ff8844; border-radius:16px;
+                                            max-width:540px; width:100%; margin:0 auto; padding:24px;
+                                            box-sizing:border-box; position:relative;">
+
+                                            <!-- Modal header -->
+                                            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:20px;">
+                                                <div>
+                                                    <div style="color:#00ff88; font-size:0.9em; font-weight:800; letter-spacing:2px;">🔬 LENSOMETER</div>
+                                                    <div style="color:#555; font-size:0.68em; margin-top:3px;">Enter readings → select which eye → Apply</div>
+                                                </div>
+                                                <button type="button" onclick="closeLensmeterModal()"
+                                                    style="background:#2a2d30; border:1px solid #444; color:#aaa; border-radius:8px; padding:6px 12px; cursor:pointer; font-size:0.8em;">
+                                                    ✕ Close
+                                                </button>
+                                            </div>
+
+                                            <!-- Eye tabs -->
+                                            <div style="display:flex; gap:10px; margin-bottom:18px;">
+                                                <button type="button" id="lm_tab_od"
+                                                    onclick="lmSwitchEye('od')"
+                                                    style="flex:1; padding:10px; border-radius:8px; border:1px solid #00ff88; background:#1a2c1a; color:#00ff88; font-weight:700; font-size:0.82em; cursor:pointer; letter-spacing:1px;">
+                                                    OD · RIGHT
+                                                </button>
+                                                <button type="button" id="lm_tab_os"
+                                                    onclick="lmSwitchEye('os')"
+                                                    style="flex:1; padding:10px; border-radius:8px; border:1px solid #333; background:#1a1d22; color:#555; font-weight:700; font-size:0.82em; cursor:pointer; letter-spacing:1px;">
+                                                    OS · LEFT
+                                                </button>
+                                            </div>
+
+                                            <!-- OD panel -->
+                                            <div id="lm_panel_od" style="display:block;">
+                                                <div style="background:#13151a; border:1px solid #252830; border-left:3px solid #34d399; border-radius:10px; padding:14px; margin-bottom:10px;">
+                                                    <div style="color:#34d399; font-size:0.7em; font-weight:700; letter-spacing:1px; margin-bottom:12px;">── 2-LINE FOCUS</div>
+                                                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                                                        <div>
+                                                            <label style="display:block; font-size:0.68em; color:#555; font-weight:700; letter-spacing:0.6px; margin-bottom:4px;">POWER</label>
+                                                            <input type="text" id="lm_od_dua_power" placeholder="0.00"
+                                                                onfocus="this.select()" oninput="lmLiveCalc()"
+                                                                style="width:100%; background:#0d0f12; border:1px solid #252830; border-radius:6px; color:#e5e7eb; font-size:16px; font-weight:700; padding:10px 8px; text-align:center; outline:none; box-sizing:border-box;">
+                                                        </div>
+                                                        <div>
+                                                            <label style="display:block; font-size:0.68em; color:#555; font-weight:700; letter-spacing:0.6px; margin-bottom:4px;">AXIS (°)</label>
+                                                            <input type="number" id="lm_od_dua_axis" placeholder="0" min="0" max="180"
+                                                                onfocus="this.select()" oninput="lmAutoFillTigaAxis('od')"
+                                                                style="width:100%; background:#0d0f12; border:1px solid #252830; border-radius:6px; color:#e5e7eb; font-size:16px; font-weight:700; padding:10px 8px; text-align:center; outline:none; box-sizing:border-box;">
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div style="background:#13151a; border:1px solid #252830; border-left:3px solid #fb923c; border-radius:10px; padding:14px;">
+                                                    <div style="color:#fb923c; font-size:0.7em; font-weight:700; letter-spacing:1px; margin-bottom:12px;">│││ 3-LINE FOCUS</div>
+                                                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                                                        <div>
+                                                            <label style="display:block; font-size:0.68em; color:#555; font-weight:700; letter-spacing:0.6px; margin-bottom:4px;">POWER</label>
+                                                            <input type="text" id="lm_od_tiga_power" placeholder="0.00"
+                                                                onfocus="this.select()" oninput="lmLiveCalc()"
+                                                                style="width:100%; background:#0d0f12; border:1px solid #252830; border-radius:6px; color:#e5e7eb; font-size:16px; font-weight:700; padding:10px 8px; text-align:center; outline:none; box-sizing:border-box;">
+                                                        </div>
+                                                        <div>
+                                                            <label style="display:block; font-size:0.68em; color:#555; font-weight:700; letter-spacing:0.6px; margin-bottom:4px;">AXIS (°)</label>
+                                                            <input type="number" id="lm_od_tiga_axis" placeholder="0" min="0" max="180"
+                                                                onfocus="this.select()" oninput="lmAutoFillDuaAxis('od')"
+                                                                style="width:100%; background:#0d0f12; border:1px solid #252830; border-radius:6px; color:#e5e7eb; font-size:16px; font-weight:700; padding:10px 8px; text-align:center; outline:none; box-sizing:border-box;">
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <!-- OS panel -->
+                                            <div id="lm_panel_os" style="display:none;">
+                                                <div style="background:#13151a; border:1px solid #252830; border-left:3px solid #34d399; border-radius:10px; padding:14px; margin-bottom:10px;">
+                                                    <div style="color:#34d399; font-size:0.7em; font-weight:700; letter-spacing:1px; margin-bottom:12px;">── 2-LINE FOCUS</div>
+                                                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                                                        <div>
+                                                            <label style="display:block; font-size:0.68em; color:#555; font-weight:700; letter-spacing:0.6px; margin-bottom:4px;">POWER</label>
+                                                            <input type="text" id="lm_os_dua_power" placeholder="0.00"
+                                                                onfocus="this.select()" oninput="lmLiveCalc()"
+                                                                style="width:100%; background:#0d0f12; border:1px solid #252830; border-radius:6px; color:#e5e7eb; font-size:16px; font-weight:700; padding:10px 8px; text-align:center; outline:none; box-sizing:border-box;">
+                                                        </div>
+                                                        <div>
+                                                            <label style="display:block; font-size:0.68em; color:#555; font-weight:700; letter-spacing:0.6px; margin-bottom:4px;">AXIS (°)</label>
+                                                            <input type="number" id="lm_os_dua_axis" placeholder="0" min="0" max="180"
+                                                                onfocus="this.select()" oninput="lmAutoFillTigaAxis('os')"
+                                                                style="width:100%; background:#0d0f12; border:1px solid #252830; border-radius:6px; color:#e5e7eb; font-size:16px; font-weight:700; padding:10px 8px; text-align:center; outline:none; box-sizing:border-box;">
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div style="background:#13151a; border:1px solid #252830; border-left:3px solid #fb923c; border-radius:10px; padding:14px;">
+                                                    <div style="color:#fb923c; font-size:0.7em; font-weight:700; letter-spacing:1px; margin-bottom:12px;">│││ 3-LINE FOCUS</div>
+                                                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                                                        <div>
+                                                            <label style="display:block; font-size:0.68em; color:#555; font-weight:700; letter-spacing:0.6px; margin-bottom:4px;">POWER</label>
+                                                            <input type="text" id="lm_os_tiga_power" placeholder="0.00"
+                                                                onfocus="this.select()" oninput="lmLiveCalc()"
+                                                                style="width:100%; background:#0d0f12; border:1px solid #252830; border-radius:6px; color:#e5e7eb; font-size:16px; font-weight:700; padding:10px 8px; text-align:center; outline:none; box-sizing:border-box;">
+                                                        </div>
+                                                        <div>
+                                                            <label style="display:block; font-size:0.68em; color:#555; font-weight:700; letter-spacing:0.6px; margin-bottom:4px;">AXIS (°)</label>
+                                                            <input type="number" id="lm_os_tiga_axis" placeholder="0" min="0" max="180"
+                                                                onfocus="this.select()" oninput="lmAutoFillDuaAxis('os')"
+                                                                style="width:100%; background:#0d0f12; border:1px solid #252830; border-radius:6px; color:#e5e7eb; font-size:16px; font-weight:700; padding:10px 8px; text-align:center; outline:none; box-sizing:border-box;">
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <!-- Result preview -->
+                                            <div id="lm_result_preview" style="display:none; margin-top:16px; background:#13151a; border:1px solid #252830; border-radius:10px; padding:14px;">
+                                                <div style="font-size:0.68em; font-weight:700; color:#555; letter-spacing:1px; text-transform:uppercase; margin-bottom:10px;">Calculation Result</div>
+                                                <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                                                    <!-- Original -->
+                                                    <div>
+                                                        <div style="font-size:0.65em; color:#888; letter-spacing:1px; text-transform:uppercase; margin-bottom:6px;">Original</div>
+                                                        <div id="lm_preview_orig" style="font-family:monospace; font-size:0.85em; line-height:2; color:#e5e7eb;"></div>
+                                                    </div>
+                                                    <!-- Transposition -->
+                                                    <div>
+                                                        <div style="font-size:0.65em; color:#f59e0b; letter-spacing:1px; text-transform:uppercase; margin-bottom:6px;">⇄ Transposition</div>
+                                                        <div id="lm_preview_trans" style="font-family:monospace; font-size:0.85em; line-height:2; color:#e5e7eb;"></div>
+                                                    </div>
+                                                </div>
+                                                <div id="lm_which_used" style="margin-top:10px; font-size:0.72em; color:#00ff88; text-align:center; font-weight:700; letter-spacing:0.5px;"></div>
+                                            </div>
+
+                                            <!-- Action buttons -->
+                                            <div style="display:flex; gap:10px; margin-top:18px; flex-wrap:wrap;">
+                                                <button type="button" id="lm_btn_apply_od"
+                                                    onclick="lmApply('od')"
+                                                    style="flex:1; padding:13px; background:#1a2c1a; border:1px solid #00ff8866; color:#00ff88; border-radius:8px; font-weight:700; font-size:0.8em; letter-spacing:1px; cursor:pointer;">
+                                                    APPLY → RIGHT (OD)
+                                                </button>
+                                                <button type="button" id="lm_btn_apply_os"
+                                                    onclick="lmApply('os')"
+                                                    style="flex:1; padding:13px; background:#1a2c1a; border:1px solid #00ff8866; color:#00ff88; border-radius:8px; font-weight:700; font-size:0.8em; letter-spacing:1px; cursor:pointer;">
+                                                    APPLY → LEFT (OS)
+                                                </button>
+                                            </div>
+                                            <div style="margin-top:10px; text-align:center;">
+                                                <button type="button" onclick="lmApplyBoth()"
+                                                    style="width:100%; padding:13px; background:#0a2020; border:1px solid #00ccff55; color:#00ccff; border-radius:8px; font-weight:700; font-size:0.8em; letter-spacing:1px; cursor:pointer;">
+                                                    ✦ APPLY BOTH EYES AT ONCE
+                                                </button>
+                                            </div>
+                                            <div style="margin-top:8px; text-align:center;">
+                                                <button type="button" onclick="lmReset()"
+                                                    style="background:transparent; border:none; color:#555; font-size:0.72em; cursor:pointer; text-decoration:underline; letter-spacing:0.5px;">
+                                                    ↺ Reset Lensometer
+                                                </button>
+                                            </div>
+
+                                        </div><!-- end modal inner -->
+                                    </div>
+                                    <!-- ========================================================= -->
+                                    <!-- === END LENSOMETER MODAL ================================ -->
+                                    <!-- ========================================================= -->
 
                                 </div>
                             </div>
@@ -2786,6 +2958,234 @@
 
             // Initial call to set state on page load
             setTimeout(updateReviewCard, 50);
+
+            // ================================================================
+            // === LENSOMETER MODAL LOGIC ======================================
+            // ================================================================
+
+            // Stored calculation results (both eyes)
+            var _lmData = { od: null, os: null };
+
+            function openLensmeterModal() {
+                document.getElementById('lensmeter_modal_overlay').style.display = 'block';
+                document.body.style.overflow = 'hidden';
+            }
+
+            function closeLensmeterModal() {
+                document.getElementById('lensmeter_modal_overlay').style.display = 'none';
+                document.body.style.overflow = '';
+            }
+
+            // Close modal when clicking the backdrop
+            document.getElementById('lensmeter_modal_overlay').addEventListener('click', function(e) {
+                if (e.target === this) closeLensmeterModal();
+            });
+
+            function lmSwitchEye(eye) {
+                var odTab = document.getElementById('lm_tab_od');
+                var osTab = document.getElementById('lm_tab_os');
+                var odPanel = document.getElementById('lm_panel_od');
+                var osPanel = document.getElementById('lm_panel_os');
+                var isOd = (eye === 'od');
+
+                odPanel.style.display = isOd ? 'block' : 'none';
+                osPanel.style.display = isOd ? 'none' : 'block';
+
+                odTab.style.borderColor = isOd ? '#00ff88' : '#333';
+                odTab.style.background  = isOd ? '#1a2c1a' : '#1a1d22';
+                odTab.style.color       = isOd ? '#00ff88' : '#555';
+
+                osTab.style.borderColor = isOd ? '#333' : '#00ff88';
+                osTab.style.background  = isOd ? '#1a1d22' : '#1a2c1a';
+                osTab.style.color       = isOd ? '#555' : '#00ff88';
+
+                lmUpdatePreview();
+            }
+
+            // Auto-fill axis (90 deg apart) - same logic as lensmeter.php
+            function lmPairAxis(val) {
+                return val > 90 ? val - 90 : val + 90;
+            }
+            function lmAutoFillDuaAxis(eye) {
+                var tigaEl = document.getElementById('lm_' + eye + '_tiga_axis');
+                var duaEl  = document.getElementById('lm_' + eye + '_dua_axis');
+                var val    = parseInt(tigaEl.value);
+                duaEl.value = (isNaN(val) || tigaEl.value.trim() === '') ? '' : lmPairAxis(val);
+                lmLiveCalc();
+            }
+            function lmAutoFillTigaAxis(eye) {
+                var duaEl  = document.getElementById('lm_' + eye + '_dua_axis');
+                var tigaEl = document.getElementById('lm_' + eye + '_tiga_axis');
+                var val    = parseInt(duaEl.value);
+                tigaEl.value = (isNaN(val) || duaEl.value.trim() === '') ? '' : lmPairAxis(val);
+                lmLiveCalc();
+            }
+
+            function lmParseVal(s) {
+                s = String(s).trim();
+                if (!s || s === '-') return null;
+                var n = parseFloat(s);
+                if (isNaN(n)) return null;
+                if (s.indexOf('.') === -1 && Math.abs(n) >= 25 && Math.round(n) % 25 === 0) {
+                    n = n / 100;
+                }
+                return n;
+            }
+            function lmRoundQ(n) { return Math.round(n * 4) / 4; }
+            function lmFmt(n) {
+                if (n === 0) return '0.00';
+                return (n > 0 ? '+' : '') + n.toFixed(2);
+            }
+
+            function lmCalcEye(tigaPower, tigaAxis, duaPower, duaAxis) {
+                var tp = lmParseVal(tigaPower);
+                var dp = lmParseVal(duaPower);
+                var ta = parseInt(tigaAxis) || 0;
+                if (tp === null && dp === null) return null;
+                if (tp === null) { tp = dp; ta = 0; }
+                if (dp === null) { dp = tp; }
+                tp = lmRoundQ(tp);
+                dp = lmRoundQ(dp);
+                var sph, cyl, axis;
+                if (Math.abs(tp - dp) < 0.01) {
+                    sph = dp; cyl = 0; axis = 0;
+                } else {
+                    sph = dp;
+                    cyl = lmRoundQ(tp - dp);
+                    axis = ta;
+                }
+                return { sph: sph, cyl: cyl, axis: axis };
+            }
+
+            function lmTranspose(e) {
+                if (!e || e.cyl === 0) return e ? { sph: e.sph, cyl: 0, axis: 0 } : null;
+                return {
+                    sph:  lmRoundQ(e.sph + e.cyl),
+                    cyl:  lmRoundQ(-e.cyl),
+                    axis: e.axis > 90 ? e.axis - 90 : e.axis + 90
+                };
+            }
+
+            // Choose which version (original or transposed) has CYL negative (minus)
+            // Rule: pick the one where CYL < 0.
+            // If both CYL == 0 (spherical) use original.
+            // If orig CYL > 0 use transposition (which will have cyl < 0).
+            function lmPickNegCyl(orig, trans) {
+                if (!orig) return { data: null, label: 'original' };
+                if (orig.cyl === 0) return { data: orig, label: 'original (spherical)' };
+                if (orig.cyl < 0)   return { data: orig, label: 'original' };
+                return { data: trans, label: 'transposition' };
+            }
+
+            function lmUpdatePreview() {
+                var activeEye = document.getElementById('lm_panel_od').style.display !== 'none' ? 'od' : 'os';
+
+                var orig = lmCalcEye(
+                    document.getElementById('lm_' + activeEye + '_tiga_power').value,
+                    document.getElementById('lm_' + activeEye + '_tiga_axis').value,
+                    document.getElementById('lm_' + activeEye + '_dua_power').value,
+                    document.getElementById('lm_' + activeEye + '_dua_axis').value
+                );
+                var trans = orig ? lmTranspose(orig) : null;
+                var picked = lmPickNegCyl(orig, trans);
+
+                _lmData[activeEye] = { orig: orig, trans: trans, picked: picked };
+
+                var preview = document.getElementById('lm_result_preview');
+                if (!orig) { preview.style.display = 'none'; return; }
+
+                preview.style.display = 'block';
+
+                var fmtRow = function(e) {
+                    if (!e) return '---';
+                    var s = lmFmt(e.sph);
+                    if (e.cyl !== 0) {
+                        s += ' / ' + lmFmt(e.cyl) + ' x ' + e.axis + 'deg';
+                    } else {
+                        s += ' sph';
+                    }
+                    return s;
+                };
+
+                document.getElementById('lm_preview_orig').innerHTML  = fmtRow(orig);
+                document.getElementById('lm_preview_trans').innerHTML = fmtRow(trans);
+
+                var whichEl = document.getElementById('lm_which_used');
+                var cylNote = picked.data && picked.data.cyl < 0
+                    ? 'CYL negative (-)  will be used'
+                    : (picked.data && picked.data.cyl === 0 ? 'Spherical only' : '');
+                whichEl.textContent = 'Will apply: ' + picked.label.toUpperCase() + ' — ' + cylNote;
+            }
+
+            function lmLiveCalc() {
+                lmUpdatePreview();
+            }
+
+            // Apply picked result for one eye to the OLD PRESCRIPTION inputs
+            function lmApply(eye) {
+                var orig = lmCalcEye(
+                    document.getElementById('lm_' + eye + '_tiga_power').value,
+                    document.getElementById('lm_' + eye + '_tiga_axis').value,
+                    document.getElementById('lm_' + eye + '_dua_power').value,
+                    document.getElementById('lm_' + eye + '_dua_axis').value
+                );
+                if (!orig) {
+                    alert('Please enter lensometer readings for ' + (eye === 'od' ? 'RIGHT (OD)' : 'LEFT (OS)') + ' first.');
+                    return;
+                }
+                var trans  = lmTranspose(orig);
+                var picked = lmPickNegCyl(orig, trans);
+                var d      = picked.data;
+                if (!d) return;
+
+                var prefix = eye === 'od' ? 'old_prescript_R' : 'old_prescript_L';
+                var sphEl  = document.querySelector('input[name="' + prefix + '_sph"]');
+                var cylEl  = document.querySelector('input[name="' + prefix + '_cyl"]');
+                var axEl   = document.querySelector('input[name="' + prefix + '_ax"]');
+
+                if (sphEl) sphEl.value = lmFmt(d.sph);
+                if (cylEl) cylEl.value = d.cyl !== 0 ? lmFmt(d.cyl) : '0.00';
+                if (axEl)  axEl.value  = d.cyl !== 0 ? String(d.axis) : '0';
+
+                // Fire events so review card and other listeners update
+                [sphEl, cylEl, axEl].forEach(function(el) {
+                    if (el) {
+                        el.dispatchEvent(new Event('input'));
+                        el.dispatchEvent(new Event('blur'));
+                    }
+                });
+
+                // Flash feedback on the button
+                var btn = document.getElementById('lm_btn_apply_' + eye);
+                var origText = btn.textContent;
+                btn.textContent = 'APPLIED!';
+                btn.style.background = '#0a3a1a';
+                setTimeout(function() {
+                    btn.textContent = origText;
+                    btn.style.background = '#1a2c1a';
+                }, 1200);
+            }
+
+            function lmApplyBoth() {
+                lmApply('od');
+                lmApply('os');
+                setTimeout(closeLensmeterModal, 900);
+            }
+
+            function lmReset() {
+                ['od','os'].forEach(function(eye) {
+                    ['dua_power','dua_axis','tiga_power','tiga_axis'].forEach(function(field) {
+                        var el = document.getElementById('lm_' + eye + '_' + field);
+                        if (el) el.value = '';
+                    });
+                });
+                document.getElementById('lm_result_preview').style.display = 'none';
+                _lmData = { od: null, os: null };
+            }
+
+            // ================================================================
+            // === END LENSOMETER MODAL LOGIC ==================================
+            // ================================================================
 
             // ================================================================
             // === END INPUT REVIEW CARD LOGIC =================================
