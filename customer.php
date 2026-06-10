@@ -79,6 +79,12 @@
                         Rx-only customer
                         <div class="led"></div>
                     </button>
+
+                    <button class="neu-button" data-url="lensmeter.php" onclick="handleButtonClick(this)">
+                        <span class="icon">🔬 </span>
+                        Lensmeter Calculator
+                        <div class="led"></div>
+                    </button>
                 </div>
             </div>
         </div>
