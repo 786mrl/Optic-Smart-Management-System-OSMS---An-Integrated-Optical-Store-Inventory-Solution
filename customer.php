@@ -85,6 +85,12 @@
                         Lensmeter Calculator
                         <div class="led"></div>
                     </button>
+
+                    <button class="neu-button" data-url="customer_history.php" onclick="handleButtonClick(this)">
+                        <span class="icon">🗺️ </span>
+                        Customer History
+                        <div class="led"></div>
+                    </button>
                 </div>
             </div>
         </div>

@@ -2342,3 +2342,19 @@ Dokumen ini mencakup setiap detail teknis yang telah kita bangun bersama. Anda d
 
 Gemini is AI and can make mistakes.
 
+
+
+SET FOREIGN_KEY_CHECKS = 0;
+
+TRUNCATE TABLE prescription_modifications;
+TRUNCATE TABLE customer_orders;
+TRUNCATE TABLE activity_log;
+TRUNCATE TABLE deleted_records;
+TRUNCATE TABLE frame_staging;
+TRUNCATE TABLE last_sync;
+TRUNCATE TABLE pending_sync;
+TRUNCATE TABLE custom_frames;
+TRUNCATE TABLE customer_examinations;
+TRUNCATE TABLE frames_main;
+
+SET FOREIGN_KEY_CHECKS = 1;s
