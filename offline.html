@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Offline — OpticPOS</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #1a1a2e;
+      color: #e0e0e0;
+      font-family: 'Segoe UI', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 24px;
+    }
+
+    .card {
+      background: #16213e;
+      border-radius: 20px;
+      padding: 48px 36px;
+      max-width: 380px;
+      width: 100%;
+      box-shadow:
+        8px 8px 16px #0d1220,
+        -8px -8px 16px #1f2f5c;
+    }
+
+    .icon {
+      font-size: 64px;
+      margin-bottom: 24px;
+      display: block;
+    }
+
+    h1 {
+      font-size: 22px;
+      font-weight: 600;
+      color: #ffffff;
+      margin-bottom: 12px;
+    }
+
+    p {
+      font-size: 14px;
+      color: #8892a4;
+      line-height: 1.6;
+      margin-bottom: 32px;
+    }
+
+    .btn {
+      display: inline-block;
+      background: linear-gradient(135deg, #0f3460, #533483);
+      color: white;
+      border: none;
+      border-radius: 12px;
+      padding: 14px 32px;
+      font-size: 15px;
+      cursor: pointer;
+      text-decoration: none;
+      transition: opacity 0.2s;
+    }
+
+    .btn:hover { opacity: 0.85; }
+
+    .status {
+      margin-top: 24px;
+      font-size: 12px;
+      color: #4a5568;
+    }
+
+    .dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #e53e3e;
+      margin-right: 6px;
+      animation: pulse 1.5s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <span class="icon">📡</span>
+    <h1>Tidak Ada Koneksi</h1>
+    <p>
+      Anda sedang offline. Data yang sudah tersimpan di perangkat tetap bisa diakses.
+      Koneksi akan pulih secara otomatis saat internet tersedia.
+    </p>
+    <button class="btn" onclick="window.location.reload()">
+      🔄 Coba Lagi
+    </button>
+    <div class="status">
+      <span class="dot"></span>Menunggu koneksi...
+    </div>
+  </div>
+
+  <script>
+    // Auto-reload saat koneksi kembali
+    window.addEventListener('online', () => {
+      window.location.href = '/optic_pos/index.php';
+    });
+  </script>
+</body>
+</html>

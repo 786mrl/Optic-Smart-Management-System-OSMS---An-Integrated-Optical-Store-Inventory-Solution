@@ -1,0 +1,1571 @@
+/* --- COLOR VARIABLES (CONSISTENT) --- */
+:root {
+    --bg-color: #1e2124;        
+    --shadow-light: #2a2e32;    
+    --shadow-dark: #121416;     
+    --accent-color: #00d4ff;    
+    --text-main: #e2e8f0;
+    --text-muted: #718096;
+    --text-color: #a0aec0;
+    --active: #00ffaa;    
+    --inactive: #FF3131;
+    --card-bg: #222529;
+    --accent: #00d4ff;
+    --danger: #ff4d4d;
+    --success: #00ffaa;
+    --text: #ffffff;
+    --accent: linear-gradient(135deg, #00d4ff 0%, #0055ff 100%);
+    --muted: #6a6e73;
+    --warning: #f1c40f;
+    --accent-solid: #00d4ff;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600&display=swap');
+
+body {
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    background-color: var(--bg-color);
+    color: var(--text-main);
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+}
+
+.hidden {
+    display: none !important;
+}
+
+/* Container for messages/alerts */
+.alert-container {
+    padding: 15px;
+    margin-bottom: 20px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 0.9rem;
+    line-height: 1.4;
+    /* Inner Neumorphism Effect */
+    box-shadow: inset 4px 4px 8px rgba(0, 0, 0, 0.5), 
+                inset -4px -4px 8px rgba(255, 255, 255, 0.05);
+    animation: fadeIn 0.5s ease-out;
+}
+
+/* Success Variation */
+.alert-success {
+    color: #00ff88;
+    border: 1px solid rgba(0, 255, 136, 0.2);
+    background: rgba(0, 255, 136, 0.05);
+}
+.container { width: 100%; max-width: 1200px; }
+/* Error/Failure Variation */
+.alert-error {
+    color: #ff4d4d;
+    border: 1px solid rgba(255, 77, 77, 0.2);
+    background: rgba(255, 77, 77, 0.05);
+}
+.alert-icon {
+    font-size: 1.2rem;
+}
+
+/* ---1. LOGIN CARD --- */
+.login-card {
+    width: 100%;
+    max-width: 400px;
+    background-color: var(--bg-color);
+    padding: 50px 40px;
+    border-radius: 40px;
+    box-shadow: 20px 20px 60px var(--shadow-dark), 
+                -20px -20px 60px var(--shadow-light);
+    text-align: center;
+}
+
+.login-logo {
+    width: 80px;
+    height: 80px;
+    background: var(--bg-color);
+    margin: 0 auto 30px auto;
+    border-radius: 50%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 30px;
+    box-shadow: 8px 8px 16px var(--shadow-dark), 
+                -8px -8px 16px var(--shadow-light);
+}
+
+.btn-back {
+    font-size: 24px;
+    font-weight: 700;
+    margin-bottom: 10px;
+    letter-spacing: -0.5px;
+}
+
+label {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-bottom: 40px;
+}
+
+label {
+    display: block;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+    margin-left: 15px;
+    text-transform: uppercase;
+    /* frame data entry */
+    letter-spacing: 1px;
+}
+
+p.subtitle {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-bottom: 40px;
+}
+.input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+input, select {
+    width: 100%;
+    border: none;
+    outline: none;
+    background: var(--bg-color);
+    padding: 16px 20px;
+    border-radius: 18px;
+    color: var(--text-main);
+    font-size: 15px;
+    /* Neumorphic Inset Effect */
+    box-shadow: inset 6px 6px 12px var(--shadow-dark), 
+                inset -6px -6px 12px var(--shadow-light);
+    transition: 0.3s;
+}
+
+input:focus {
+    color: var(--accent-color);
+    box-shadow: inset 3px 3px 6px var(--shadow-dark), 
+                inset -3px -3px 6px var(--shadow-light);
+}
+
+/* --- BUTTON STYLING --- */
+.login-btn {
+    width: 100%;
+    margin-top: 20px;
+    padding: 18px;
+    border: none;
+    border-radius: 18px;
+    background: var(--bg-color);
+    color: var(--accent-color);
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+    /* Neumorphic Shadow Effect */
+    box-shadow: 8px 8px 16px var(--shadow-dark), 
+                -8px -8px 16px var(--shadow-light);
+    transition: all 0.2s ease;
+}
+
+.login-btn:hover {
+    transform: scale(0.99);
+    color: #fff;
+}
+
+.login-btn:active {
+    box-shadow: inset 5px 5px 10px var(--shadow-dark), 
+                inset -5px -5px 10px var(--shadow-light);
+}
+
+.forgot-pass {
+    display: block;
+    margin-top: 25px;
+    font-size: 12px;
+    color: var(--text-muted);
+    text-decoration: none;
+    transition: 0.3s;
+}
+
+.forgot-pass:hover {
+    color: var(--accent-color);
+}
+
+/* --- 2. welcome --- */
+.welcome-container {
+    text-align: center;
+    animation: fadeIn 1.2s ease-out;
+}
+
+/* --- NEUMORPHIC PROFILE PICTURE --- */
+.profile-circle {
+    width: 150px;
+    height: 150px;
+    background: var(--bg-color);
+    margin: 0 auto 30px auto;
+    border-radius: 50%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 60px;
+    box-shadow: 15px 15px 30px var(--shadow-dark), 
+                -15px -15px 30px var(--shadow-light);
+    position: relative;
+}
+
+/* Light Ring Decoration */
+.profile-circle::after {
+    content: '';
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    border: 2px solid var(--accent-color);
+    opacity: 0.3;
+    animation: pulse 2s infinite;
+}
+
+h1 {
+    font-size: 28px;
+    font-weight: 700;
+    margin-bottom: 10px;
+    letter-spacing: -0.5px;
+}
+
+.user-name {
+    color: var(--accent-color);
+    display: block;
+    font-size: 32px;
+    margin-top: 5px;
+}
+
+.status-msg {
+    font-size: 14px;
+    color: var(--text-muted);
+    margin-top: 15px;
+    letter-spacing: 1px;
+}
+
+/* --- NEUMORPHIC LOADING BAR --- */
+.loader-track {
+    width: 200px;
+    height: 8px;
+    background: var(--bg-color);
+    margin: 40px auto 0 auto;
+    border-radius: 10px;
+    box-shadow: inset 3px 3px 6px var(--shadow-dark), 
+                inset -3px -3px 6px var(--shadow-light);
+    overflow: hidden;
+    position: relative;
+}
+
+.loader-fill {
+    position: absolute;
+    height: 100%;
+    width: 40%;
+    background: var(--accent-color);
+    border-radius: 10px;
+    box-shadow: 0 0 10px var(--accent-color);
+    animation: loadingMove 2s infinite ease-in-out;
+}
+
+/* --- 3. index --- */
+.selection-container {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 25px;
+    flex: 1.5;
+    max-width: 500px;
+    padding: 20px;
+    flex-direction: column;
+    border-radius: 40px;
+}
+
+/* --- ADDITIONAL HEADER STYLING --- */
+
+.header-container {
+    flex: 1;
+    max-width: 350px; 
+    margin-left: auto;
+    position: relative;
+    padding: 20px;
+    justify-content: center;
+    align-items: center;
+    display: flex;
+    flex-direction: column;
+    text-align: center;
+}
+
+.brand-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 10px;
+}
+
+/* Logo with Raised Neumorphic Effect */
+.logo-box {
+    width: 100px;
+    height: 100px;
+    background-color: var(--bg-color);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border-radius: 50%;
+    box-shadow: 10px 10px 20px var(--shadow-dark), 
+                -10px -10px 20px var(--shadow-light);
+    margin-bottom: 15px;
+}
+
+.company-name {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text-main);
+    letter-spacing: 1px;
+}
+
+.company-address {
+    font-size: 13px;
+    color: var(--text-muted);
+    max-width: 300px;
+    line-height: 1.5;
+}
+
+/* Neumorphic Logout Button */
+.logout-btn {
+    /* position: absolute; */
+    margin-top: 25px;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 12px;
+    background: var(--bg-color);
+    color: #ff4b2b; 
+    font-weight: 600;
+    font-size: 12px;
+    cursor: pointer;
+    box-shadow: 5px 5px 10px var(--shadow-dark), 
+                -5px -5px 10px var(--shadow-light);
+    transition: all 0.2s ease;
+    align-self: flex-end; 
+    margin-right: -30px;
+}
+
+.logout-btn:hover {
+    box-shadow: 2px 2px 5px var(--shadow-dark), 
+                -2px -2px 5px var(--shadow-light);
+    transform: scale(0.95);
+}
+
+.logout-btn:active {
+    box-shadow: inset 3px 3px 6px var(--shadow-dark), 
+                inset -3px -3px 6px var(--shadow-light);
+}
+
+/* --- DARK NEUMORPHIC BUTTON STYLE --- */
+.neu-button {
+    flex: 0 0 calc(50% - 13px);
+    background-color: var(--bg-color);
+    padding: 30px 20px;
+    border-radius: 24px;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    color: var(--text-color);
+    font-weight: 600;
+    transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+
+    /* Convex Effect */
+    box-shadow: 8px 8px 16px var(--shadow-dark), 
+                -8px -8px 16px var(--shadow-light);
+}
+
+.neu-button:nth-child(3):last-child {
+    flex: 0 0 70%;
+}
+
+.neu-button:hover {
+    color: #ffffff;
+    transform: translateY(-2px);
+}
+
+/* --- ACTIVE STATE (INSET/PRESSED) --- */
+.neu-button.active {
+    box-shadow: inset 6px 6px 12px var(--shadow-dark), 
+                inset -6px -6px 12px var(--shadow-light);
+    color: var(--accent-color);
+    transform: scale(0.97);
+}
+
+/* LED Indicator */
+.led {
+    width: 6px;
+    height: 6px;
+    background-color: #444; 
+    border-radius: 50%;
+    margin-top: 5px;
+    transition: all 0.3s ease;
+}
+
+.active .led {
+    background-color: var(--accent-color);
+    box-shadow: 0 0 10px var(--accent-color); 
+}
+
+.icon { font-size: 28px; }
+
+/* --- FOOTER STYLING --- */
+.footer-container {
+    width: 100%;
+    text-align: center;
+    padding: 40px 0px;
+    margin-top: auto;
+    background-color:1px solid  var(--bg-color);
+}
+
+.footer-text {
+    font-size: 12px;
+    width: 100%;
+    color: var(--text-muted);
+    letter-spacing: 1px;
+    display: inline-block;
+    padding: 12px 25px;
+    border-radius: 50px;
+    background: var(--bg-color);
+    box-shadow: inset 4px 4px 8px var(--shadow-dark), 
+                inset -4px -4px 8px var(--shadow-light);
+    text-transform: uppercase;
+}
+
+/* --- 4. FRAME DATA ENTRY --- */
+.main-card {
+    background-color: var(--bg-color);
+    width: 100%;
+    max-width: none;
+    padding: 40px;
+    border-radius: 40px;
+    box-shadow: 20px 20px 60px var(--shadow-dark), 
+                -20px -20px 60px var(--shadow-light);
+}
+    /* --- GRID LOGIC (2 TOP, 1 MIDDLE) --- */
+    .form-grid {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 25px;
+    }
+
+    .input-group {
+        flex: 0 0 calc(50% - 13px);
+        display: flex;
+        flex-direction: column;
+        margin-bottom: 25px;
+        text-align: left;
+    }
+
+    /* 3rd element automatically moves to center */
+    .input-group:nth-child(3):last-child, 
+    .selection-label {
+        flex: 0 0 100%;
+    }
+
+    /* --- SELECTION BUTTONS (WINDOWS STYLE) --- */
+    .selection-wrapper {
+        display: flex;
+        gap: 15px;
+        width: 100%;
+        margin-top: 10px;
+    }
+
+    .neu-btn {
+        flex: 1;
+        background: var(--bg-color);
+        border: none;
+        padding: 20px;
+        border-radius: 18px;
+        color: var(--text-muted);
+        font-weight: 600;
+        cursor: pointer;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+        box-shadow: 6px 6px 12px var(--shadow-dark), 
+                    -6px -6px 12px var(--shadow-light);
+        transition: all 0.3s ease;
+    }
+
+    .neu-btn.active {
+        box-shadow: inset 4px 4px 8px var(--shadow-dark), 
+                    inset -4px -4px 8px var(--shadow-light);
+        color: var(--accent-color);
+    }
+
+    .led {
+        width: 5px;
+        height: 5px;
+        background: #444;
+        border-radius: 50%;
+        transition: 0.3s;
+    }
+
+    .active .led {
+        background: var(--accent-color);
+        box-shadow: 0 0 8px var(--accent-color);
+    }
+
+    /* --- BUTTON GROUP (SUBMIT & BACK) --- */
+    .btn-group {
+        margin-top: 0px;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        place-items: center;
+    }
+    .back-main {
+        width: 40%;
+        padding: 15px;
+        border: none;
+        border-radius: 15px;
+        background: var(--bg-color);
+        color: var(--text-muted);
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        box-shadow: 5px 5px 10px var(--shadow-dark), 
+                    -5px -5px 10px var(--shadow-light);
+    }
+    .back-main:active {
+        box-shadow: inset 4px 4px 8px var(--shadow-dark), 
+                    inset -4px -4px 8px var(--shadow-light);
+}
+    .submit-main {
+        width: 100%;
+        padding: 18px;
+        border: none;
+        border-radius: 15px;
+        background: var(--bg-color);
+        color: var(--accent-color);
+        font-size: 14px;
+        font-weight: 700;
+        cursor: pointer;
+        box-shadow: 8px 8px 16px var(--shadow-dark), 
+                    -8px -8px 16px var(--shadow-light);
+        transition: 0.2s;
+    }
+
+    .submit-main:hover {
+        transform: scale(0.99);
+        color: #fff;
+    }
+
+    .submit-main:active {
+        box-shadow: inset 4px 4px 8px var(--shadow-dark), 
+                    inset -4px -4px 8px var(--shadow-light);
+    }
+
+.main-wrapper{
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    width: 100%;
+    max-width: 1400px;
+}
+.content-area {
+    display: flex;
+    flex: 1;
+    gap: 40px;
+    padding: 40px 20px;
+    max-width: 1200px;
+    margin: 0 auto;
+    width: 100%;
+}
+.button-grid {
+    display: grid;
+    flex-wrap: wrap;
+    gap: 20px;
+    justify-content: center;
+    max-width: 340px;
+    margin: 0 auto;
+}
+.button-grid button {
+    width: 160px;
+}
+
+/* Custom Class for SweetAlert2 Neumorphism */
+.neumorph-alert {
+    background: #2e3133 !important; /* Dark base color */
+    border-radius: 30px !important;
+    box-shadow: 20px 20px 60px #272a2b, 
+                -20px -20px 60px #35383b !important;
+    color: #e0e0e0 !important;
+}
+
+/* Adjusting the button to look inset/outset (concave/convex) */
+.neumorph-button {
+    background: #2e3133 !important;
+    border: none !important;
+    border-radius: 12px !important;
+    box-shadow: 6px 6px 12px #272a2b, 
+                -6px -6px 12px #35383b !important;
+    color: #00ff88 !important; /* Neon green button text color */
+    font-weight: bold !important;
+    padding: 10px 30px !important;
+}
+
+.neumorph-button:active {
+    box-shadow: inset 4px 4px 8px #272a2b, 
+                inset -4px -4px 8px #35383b !important;
+}
+
+/* Setting the color for title and content text */
+.neumorph-title {
+    color: #ffffff !important;
+}
+
+.neumorph-content {
+    color: #b0b0b0 !important;
+}
+
+/* --- 5. manage settings */
+.window-card {
+    background-color: var(--bg-color);
+    width: 100%;
+    max-width: 800px;
+    padding: 40px;
+    border-radius: 30px;
+    box-shadow: 20px 20px 60px var(--shadow-dark), 
+                -20px -20px 60px var(--shadow-light);
+    margin-bottom: 40px;
+}
+
+/* --- TABLE SECTION --- */
+.table-container {
+    width: 100%;
+    overflow-x: auto;
+    margin-bottom: 40px;
+    padding: 5px;
+}
+
+table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0 15px; /* Add spacing between rows to make the embossed effect visible */
+}
+
+th {
+    padding: 15px;
+    color: var(--text-muted);
+    font-size: 12px;
+    text-transform: uppercase;
+    text-align: left;
+}
+
+td {
+    padding: 15px;
+    background: var(--bg-color);
+    font-size: 14px;
+}
+
+/* Make each row look like a neumorphic card */
+tr td:first-child { border-radius: 15px 0 0 15px; }
+tr td:last-child { border-radius: 0 15px 15px 0; }
+
+tr td {
+    box-shadow: 5px 5px 10px var(--shadow-dark), 
+                -5px -5px 10px var(--shadow-light);
+}
+
+/* --- ACTION BUTTON (DELETE) --- */
+.btn-delete {
+    background: var(--bg-color);
+    border: none;
+    color: var(--danger-color);
+    padding: 8px 12px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 700;
+    box-shadow: 3px 3px 6px var(--shadow-dark), 
+                -3px -3px 6px var(--shadow-light);
+    transition: 0.2s;
+}
+
+.btn-delete:active {
+    box-shadow: inset 2px 2px 5px var(--shadow-dark), 
+                inset -2px -2px 5px var(--shadow-light);
+    transform: scale(0.95);
+}
+
+/* --- INPUT & UPDATE SECTION --- */
+.form-update {
+    border-top: 1px solid var(--shadow-light);
+    padding-top: 30px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.btn-update {
+    width: 100%;
+    padding: 18px;
+    border: none;
+    border-radius: 15px;
+    background: var(--bg-color);
+    color: var(--accent-color);
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 8px 8px 16px var(--shadow-dark), 
+                -8px -8px 16px var(--shadow-light);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    transition: 0.3s;
+}
+
+.btn-update:active {
+    box-shadow: inset 4px 4px 8px var(--shadow-dark), 
+                inset -4px -4px 8px var(--shadow-light);
+}
+
+/* --- 6. create user --- */
+/* --- WINDOW CONTAINER --- */
+.user-window {
+    background-color: var(--bg-color);
+    width: 100%;
+    max-width: 420px;
+    padding: 40px;
+    border-radius: 40px;
+    box-shadow: 20px 20px 60px var(--shadow-dark), 
+                -20px -20px 60px var(--shadow-light);
+}
+
+/* --- HEADER SECTION --- */
+.header-section {
+    text-align: center;
+    margin-bottom: 35px;
+}
+
+.avatar-box {
+    width: 70px;
+    height: 70px;
+    background: var(--bg-color);
+    margin: 0 auto 20px;
+    border-radius: 22px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 30px;
+    box-shadow: 8px 8px 16px var(--shadow-dark), 
+                -8px -8px 16px var(--shadow-light);
+}
+.input-neu {
+    width: 100%;
+    background: var(--bg-color);
+    border: none;
+    outline: none;
+    padding: 16px 20px;
+    border-radius: 15px;
+    color: var(--text-main);
+    font-size: 14px;
+    /* Inset Effect */
+    box-shadow: inset 5px 5px 10px var(--shadow-dark), 
+                inset -5px -5px 10px var(--shadow-light);
+    transition: all 0.3s ease;
+}
+
+.input-neu:focus {
+    box-shadow: inset 2px 2px 5px var(--shadow-dark), 
+                inset -2px -2px 5px var(--shadow-light);
+    color: var(--accent-color);
+}
+
+/* --- ACTION AREA --- */
+.action-area {
+    margin-top: 35px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.btn-submit {
+    padding: 18px;
+    border: none;
+    border-radius: 15px;
+    background: var(--bg-color);
+    color: var(--accent-color);
+    font-weight: 700;
+    font-size: 14px;
+    cursor: pointer;
+    box-shadow: 6px 6px 12px var(--shadow-dark), 
+                -6px -6px 12px var(--shadow-light);
+    transition: 0.2s;
+}
+
+.btn-submit:active {
+    box-shadow: inset 4px 4px 8px var(--shadow-dark), 
+                inset -4px -4px 8px var(--shadow-light);
+    transform: scale(0.98);
+}
+
+.btn-back {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 13px;
+    cursor: pointer;
+    padding: 5px;
+    transition: 0.2s;
+}
+.form-group {
+    margin-bottom: 22px;
+}
+
+.btn-back:hover { color: var(--danger); }
+
+/* --- 6. approve user --- */
+/* --- CONDITION: IF EMPTY --- */
+.empty-state {
+    display: none; /* Change to 'block' to show empty status */
+    text-align: center;
+    padding: 50px 20px;
+    border-radius: 25px;
+    box-shadow: inset 10px 10px 20px var(--shadow-dark), 
+                inset -10px -10px 20px var(--shadow-light);
+    margin: 20px 0;
+}
+
+.empty-icon { font-size: 40px; margin-bottom: 15px; opacity: 0.5; }
+
+/* --- CONDITION: IF DATA EXISTS (TABLE) --- */
+.table-responsive_approve_user {
+    width: 100%;
+    overflow-x: auto;
+    padding: 15px; /* EXTRA SPACE: So edge shadows aren't clipped */
+    -webkit-overflow-scrolling: touch;
+}
+
+.neu-alert {
+    padding: 20px;
+    border-radius: 15px;
+    margin-bottom: 30px;
+    text-align: center;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 15px;
+    background: var(--bg-color);
+    box-shadow: 8px 8px 16px var(--shadow-dark), 
+               -8px -8px 16px var(--shadow-light);
+}
+
+.neu-alert.success {
+    color: #00ff88;
+    border-left: 5px solid #00ff88;
+}
+
+.neu-alert.error {
+    color: #ff5555;
+    border-left: 5px solid #ff5555;
+}
+
+.alert-icon {
+    font-size: 1.5rem;
+}
+
+/* --- APPROVE BUTTON --- */
+.btn-approve {
+    background: var(--bg-color);
+    border: none;
+    color: var(--accent-color);
+    padding: 10px 20px;
+    border-radius: 12px;
+    font-weight: 700;
+    font-size: 12px;
+    cursor: pointer;
+    box-shadow: 4px 4px 8px var(--shadow-dark), 
+                -4px -4px 8px var(--shadow-light);
+    transition: 0.2s;
+}
+
+.btn-approve:active {
+    box-shadow: inset 3px 3px 6px var(--shadow-dark), 
+                inset -3px -3px 6px var(--shadow-light);
+    transform: scale(0.95);
+}
+
+/* --- 7. manage user --- */
+/* --- MAIN CONTAINER --- */
+.glass-window {
+    width: 100%;
+    background: linear-gradient(145deg, #23272b, #1e2124);
+    border-radius: 30px;
+    padding: 35px;
+    box-shadow: 25px 25px 50px #131517, -10px -10px 30px #2d3135;
+    border: 1px solid rgba(255,255,255,0.05);
+}
+
+/* --- QUICK ADD BAR --- */
+.quick-add-bar {
+    display: flex;
+    gap: 12px;
+    background: rgba(0, 0, 0, 0.2);
+    padding: 20px;
+    border-radius: 20px;
+    margin-bottom: 40px;
+    box-shadow: inset 4px 4px 10px rgba(0,0,0,0.5);
+    flex-direction: column;
+}
+
+.input-row {
+    display: flex;
+    gap: 12px;
+    width: 100%;
+    flex-wrap: wrap;
+}
+
+.button-row {
+    display: flex;
+    justify-content: center; /* Menaruh tombol tepat di tengah */
+    width: 100%;
+}
+
+.input-minimal, .select-minimal {
+    flex: 1;
+    min-width: 150px;
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.1);
+    padding: 12px 15px;
+    border-radius: 12px;
+    color: white;
+    outline: none;
+    transition: 0.3s;
+    font-family: inherit;
+    margin-bottom: 20px;
+}
+
+.select-minimal {
+    cursor: pointer;
+    background-color: var(--card-bg); /* Ensures visibility across different browsers */
+}
+
+.select-minimal option {
+    background-color: var(--card-bg);
+    color: white;
+}
+
+.input-minimal:focus, .select-minimal:focus {
+    border-color: var(--accent);
+    background: rgba(255,255,255,0.05);
+}
+
+.btn-glow {
+    background: var(--accent);
+    border: none;
+    padding: 13px 25px;
+    border-radius: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 0 15px rgba(0, 212, 255, 0.3);
+    transition: 0.3s;
+    white-space: nowrap;
+}
+
+.btn-glow:hover {
+    box-shadow: 0 0 25px rgba(0, 212, 255, 0.5);
+    transform: translateY(-2px);
+}
+
+/* --- MODERN TABLE --- */
+.table-wrapper {
+    overflow-x: auto;
+}
+
+/* Container Group to align buttons neatly */
+.action-group {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    align-items: center;
+}
+
+/* Base button style: Background must match the body/card color */
+.action-promote, .action-demote, .action-activate, .action-deactivate, .action-delete {
+    border: none;
+    background: var(--bg-color); /* Ensure this matches your dashboard background */
+    padding: 8px 14px;
+    border-radius: 8px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    
+    /* Subtle Neumorphism Effect */
+    box-shadow: 4px 4px 8px var(--shadow-dark), 
+                -4px -4px 8px var(--shadow-light);
+    
+    /* Uniform default text color */
+    color: #FFFFFFFF; 
+    min-width: 85px;
+}
+
+/* --- Hover State: Adding subtle neon color accents --- */
+
+/* Promote & Activate (Green) */
+.action-promote:hover, .action-activate:hover {
+    color: #00ff88;
+    box-shadow: 2px 2px 4px var(--shadow-dark), 
+                -2px -2px 4px var(--shadow-light);
+}
+
+/* Demote (Yellow) */
+.action-demote:hover {
+    color: #ffcc00;
+}
+
+/* Delete & Deactivate (Red) */
+.action-delete:hover, .action-deactivate:hover {
+    color: #ff3131;
+}
+
+/* --- Active State: Pressed effect (Inverted Neumorphism) --- */
+.action-promote:active, .action-demote:active, .action-activate:active, .action-deactivate:active, .action-delete:active {
+    box-shadow: inset 3px 3px 6px var(--shadow-dark), 
+                inset -3px -3px 6px var(--shadow-light);
+    transform: scale(0.96);
+}
+
+/* Additional styling for Status Badges */
+.status-active, .status-inactive {
+    padding: 4px 12px;
+    border-radius: 50px;
+    font-size: 10px;
+    font-weight: bold;
+    box-shadow: inset 2px 2px 4px var(--shadow-dark), 
+                inset -2px -2px 4px var(--shadow-light);
+}
+.status-active {
+    padding: 5px 10px;
+    border-radius: 6px;
+    font-size: 10px;
+    background: rgba(255,255,255,0.05);
+    color: var(--active);
+    font-weight: bold;
+}
+.status-inactive {
+    padding: 5px 10px;
+    border-radius: 6px;
+    font-size: 10px;
+    background: rgba(255,255,255,0.05);
+    color: var(--inactive);
+    font-weight: bold;
+}
+
+/* ---8. system config---- */
+.config-window {
+    width: 100%;
+    max-width: 900px;
+    background: linear-gradient(145deg, #23272b, #1e2124);
+    border-radius: 30px;
+    padding: 40px;
+    box-shadow: 25px 25px 50px #131517, -10px -10px 30px #2d3135;
+    border: 1px solid rgba(255,255,255,0.05);
+}
+
+.header-title {
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    padding-bottom: 20px;
+    margin-bottom: 30px;
+}
+
+/* --- CONFIG SECTION --- */
+.config-section {
+    margin-bottom: 35px;
+    background: rgba(0, 0, 0, 0.15);
+    padding: 25px;
+    border-radius: 20px;
+    box-shadow: inset 4px 4px 10px rgba(0,0,0,0.3);
+}
+
+.section-header {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.input-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+}
+
+.input-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.input-group.full-width {
+    grid-column: span 2;
+}
+
+.input-field {
+    background: var(--card-bg);
+    border: 1px solid rgba(255,255,255,0.05);
+    padding: 12px 15px;
+    border-radius: 12px;
+    color: white;
+    outline: none;
+    box-shadow: 4px 4px 8px var(--shadow-dark);
+    transition: 0.3s;
+}
+
+.input-field:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 10px rgba(0, 212, 255, 0.2);
+}
+
+.input-field:disabled {
+    background: rgba(0, 0, 0, 0.2);
+    color: var(--text-muted);
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+.description {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 5px;
+    font-style: italic;
+}
+
+/* --- ACTION BAR --- */
+.action-bar {
+    display: flex;
+    justify-content: center;
+    margin-top: 40px;
+}
+
+.btn-save {
+    background: var(--accent);
+    border: none;
+    padding: 15px 60px;
+    border-radius: 15px;
+    font-weight: 700;
+    color: #000;
+    cursor: pointer;
+    box-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
+    transition: 0.3s;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.btn-save:hover {
+    box-shadow: 0 0 35px rgba(0, 212, 255, 0.5);
+    transform: translateY(-3px);
+}
+.upload-wrapper {
+    background: var(--bg-color);
+    padding: 10px;
+    border-radius: 12px;
+    box-shadow: inset 3px 3px 6px var(--shadow-dark), 
+                inset -3px -3px 6px var(--shadow-light);
+}
+
+/* --- ANIMATIONS --- */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulse {
+    0% { transform: scale(1); opacity: 0.3; }
+    50% { transform: scale(1.1); opacity: 0.1; }
+    100% { transform: scale(1); opacity: 0.3; }
+}
+
+@keyframes loadingMove {
+    0% { left: -40%; }
+    100% { left: 110%; }
+}
+
+
+/* ----- SCAN FRAME ----- */
+.scanner-window {
+    width: 100%;
+    max-width: 400px;
+    background: var(--bg-color);
+    padding: 40px 30px;
+    border-radius: 40px;
+    box-shadow: 20px 20px 60px var(--shadow-dark), 
+                -20px -20px 60px var(--shadow-light);
+    text-align: center;
+}
+
+.header-info { margin-bottom: 30px; }
+.header-info h2 { font-size: 22px; margin-bottom: 8px; font-weight: 700;}
+/*  */
+.header-info p { font-size: 13px; color: var(--muted); }
+
+/* Scanner Container */
+.scanner-container {
+    position: relative;
+    border-radius: 30px;
+    overflow: hidden;
+    background: var(--bg-color);
+    box-shadow: inset 10px 10px 20px var(--shadow-dark), 
+                inset -10px -10px 20px var(--shadow-light);
+    padding: 10px;
+    width: 280px;
+    height: 280px;
+    margin: 0 auto 40px;
+    justify-content: center;
+    align-items: center;
+}
+
+/* Camera/Video Feed Simulation */
+.camera-feed {
+    width: 85%;
+    height: 85%;
+    background: #000;
+    border-radius: 20px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    position: relative;
+}
+
+#reader { width: 100%; border: none !important; border-radius: 20px; overflow: hidden; }
+#reader video { object-fit: cover; }
+
+/* Laser Line */
+#laser-line {
+    position: absolute;
+    width: 90%;
+    height: 2px;
+    background: var(--accent);
+    box-shadow: 0 0 15px var(--accent);
+    z-index: 10;
+    animation: scanLine 2s infinite ease-in-out;
+}
+
+/* Corner Markers */
+.corner {
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    border: 3px solid var(--accent);
+    z-index: 5;
+}
+.top-left { top: 15px; left: 15px; border-right: 0; border-bottom: 0; border-top-left-radius: 10px; }
+.top-right { top: 15px; right: 15px; border-left: 0; border-bottom: 0; border-top-right-radius: 10px; }
+.bottom-left { bottom: 15px; left: 15px; border-right: 0; border-top: 0; border-bottom-left-radius: 10px; }
+.bottom-right { bottom: 15px; right: 15px; border-left: 0; border-top: 0; border-bottom-right-radius: 10px; }
+
+
+@keyframes scanLine {
+    0% { top: 5%; }
+    100% { top: 95%; }
+}
+
+/*  */
+@keyframes scanMove {
+    0% { top: 10%; }
+    50% { top: 90%; }
+    100% { top: 10%; }
+}
+
+/* Result Card */
+.result-card {
+    display: none;
+    padding: 20px;
+    background: var(--bg-color);
+    border-radius: 25px;
+    box-shadow: inset 5px 5px 15px var(--shadow-dark), inset -5px -5px 15px var(--shadow-light);
+    margin-bottom: 20px;
+    animation: fadeIn 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.detail-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 12px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+}
+
+.detail-row span:first-child { color: var(--muted); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
+.detail-row span:last-child { color: var(--text); font-weight: 500; font-size: 13px; }
+
+/* Specific Highlight for Stock & Price */
+.detail-row.highlight span:last-child { color: var(--success); font-weight: 700; font-size: 15px; }
+
+.btn-action {
+    width: 100%;
+    padding: 18px;
+    border: none;
+    border-radius: 20px;
+    background: var(--bg-color);
+    color: var(--accent);
+    font-weight: 700;
+    /* font-size: 13px;
+    letter-spacing: 1px; */
+    cursor: pointer;
+    box-shadow: 8px 8px 16px var(--shadow-dark), 
+                -8px -8px 16px var(--shadow-light);
+    transition: all 0.2s ease;
+    /* margin-top: 15px; */
+}
+
+.btn-action:active {
+    box-shadow: inset 4px 4px 8px var(--shadow-dark), 
+                inset -4px -4px 8px var(--shadow-light);
+    transform: scale(0.98);
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* pending_records_frame */
+.submit-main:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    filter: grayscale(1);
+}
+
+/* main database display */
+ /* --- HEADER --- */
+ .header-area { margin-bottom: 30px; }
+ .header-area h1 { font-weight: 800; font-size: 24px; letter-spacing: 2px; margin: 0; }
+ .status-text { color: var(--accent-solid); font-size: 13px; font-weight: 600; text-transform: uppercase; margin-top: 5px; }
+
+ /* --- INPUT BAR --- */
+ .input-bar-container {
+     background: var(--card-bg);
+     padding: 20px;
+     border-radius: 25px;
+     box-shadow: 15px 15px 35px var(--shadow-dark), -10px -10px 30px var(--shadow-light);
+     display: flex; gap: 12px; margin-bottom: 40px;
+     align-items: center; border: 1px solid rgba(255,255,255,0.02);
+ }
+
+ .cmd-input {
+     flex: 1; background: var(--bg-color); border: 1px solid rgba(255,255,255,0.05);
+     padding: 15px 20px; border-radius: 15px; color: var(--accent-solid);
+     font-family: 'Courier New', monospace; outline: none;
+     box-shadow: inset 6px 6px 12px var(--shadow-dark);
+     text-transform: uppercase;
+ }
+
+ .btn-display {
+     background: var(--accent); border: none; padding: 0 30px; height: 50px;
+     border-radius: 15px; color: white; font-weight: 800; cursor: pointer;
+     box-shadow: 0 5px 15px rgba(0, 85, 255, 0.3); transition: 0.3s;
+ }
+
+ .btn-help {
+     background: var(--card-bg); border: none; width: 50px; height: 50px;
+     border-radius: 15px; color: var(--accent-solid); cursor: pointer;
+     box-shadow: 4px 4px 10px var(--shadow-dark), -2px -2px 8px var(--shadow-light);
+ }
+
+.ufc-badge { font-family: 'Courier New', monospace; font-weight: 800; color: #fff; }
+.color-code { font-size: 11px; color: var(--text-muted); }
+
+/* AGE DOTS */
+.age-dot { height: 20px; width: 20px; border-radius: 50%; display: inline-block; box-shadow: 0 0 8px currentColor; }
+.dot-new { color: var(--success); background: currentColor; }
+.dot-old { color: var(--warning); background: currentColor; }
+.dot-veryold { color: var(--danger); background: currentColor; }
+
+/* EMPTY STATE */
+/* .empty-state {
+    text-align: center; padding: 80px; background: var(--card-bg);
+    border-radius: 30px; box-shadow: 20px 20px 60px var(--shadow-dark);
+} */
+.price-box {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.price-value {
+    display: none; /* Hidden by default */
+}
+.price-hidden {
+    color: var(--text-muted);
+    font-style: italic;
+    font-size: 11px;
+}
+.btn-reveal {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: var(--accent-solid);
+    padding: 4px 8px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 10px;
+    transition: 0.2s;
+}
+.btn-reveal:hover {
+    background: var(--accent-solid);
+    color: white;
+}
+
+/* --- MOBILE RESPONSIVENESS --- */
+@media (max-width: 480px) {
+    .content-area {
+        flex-direction: column;
+        align-items: center;
+        padding: 20px 15px;
+        gap: 30px;
+    }
+    .header-container {
+        max-width: 100%;
+        margin-left: 0;
+        margin-bottom: 20px;
+    }
+
+    .selection-container {
+        min-width: 100%;
+        padding: 30px 20px;
+    }
+
+    .button-grid {
+        display: flex;
+        gap: 15px;
+        width: 100%;
+    }
+
+    .neu-btn {
+        width: 100%;
+        height: 100px;
+        font-size: 14px;
+        border-radius: 20px;
+    }
+
+    .neu-btn:last-child:nth-child(odd) {
+        grid-column: 1 / span 2;
+        width: 100%;
+    }
+    .login-card {
+        padding: 40px 25px;
+        box-shadow: 10px 10px 30px var(--shadow-dark), 
+                    -10px -10px 30px var(--shadow-light);
+    }
+    h2 { 
+        font-size: 20px; 
+    }
+    h1 { 
+        font-size: 22px; 
+    }
+    .user-name { 
+        font-size: 26px; 
+    }
+    .profile-circle { 
+        width: 120px; 
+        height: 120px; 
+        font-size: 50px; 
+    }
+    .neu-button, .neu-button:nth-child(3):last-child {
+        flex: 0 0 100%;
+    }
+    .logout-btn {
+        position: absolute; 
+        top: 0;             
+        right: 0;        
+        margin: 0;      
+        padding: 8px 15px;
+        font-size: 10px;
+        border-radius: 15px; /* Opsional: tumpulkan hanya sisi kiri bawah */
+        box-shadow: -2px 2px 10px var(--shadow-dark); /* Bayangan halus */
+        align-self: center;
+        margin-right: 0;
+        width: 30%;
+        height: 15%;
+    }
+    .company-name {
+        font-size: 18px;
+    }
+
+    .input-group, .input-group:nth-child(3):last-child { 
+        flex: 0 0 100%;
+    }    
+
+    .selection-wrapper { 
+        flex-direction: column;
+    }
+
+    .main-card, .header-container {
+        margin-bottom: 20px;
+        padding: 10px
+    }
+
+    .input-wrapper { flex-direction: column; }
+    .window-card { padding: 25px; }
+    .input-grid { grid-template-columns: 1fr; }
+    .input-group.full-width { grid-column: span 1; }
+
+    .scanner-window {
+        padding: 25px 20px;
+        border-radius: 30px; /* Sedikit lebih kotak agar tidak memakan ruang */
+        box-shadow: 10px 10px 30px var(--shadow-dark), 
+                    -10px -10px 30px var(--shadow-light);
+    }
+
+    .header-info h2 {
+        font-size: 18px; /* Kecilkan judul agar tidak memakan baris */
+    }
+
+    .scanner-container {
+        width: 100%; /* Gunakan lebar penuh layar HP */
+        height: auto;
+        aspect-ratio: 1 / 1; /* Pastikan kotak scanner tetap persegi sempurna */
+        margin-bottom: 25px;
+    }
+
+    #reader video {
+        border-radius: 15px;
+    }
+
+    .detail-row {
+        padding: 10px 0; /* Perkecil jarak baris agar info muat dalam satu layar */
+    }
+
+    .detail-row span:last-child {
+        font-size: 12px; /* Sesuaikan ukuran teks detail */
+    }
+
+    .btn-action {
+        padding: 15px; /* Sesuaikan ukuran tombol agar nyaman ditekan jempol */
+        font-size: 14px;
+    }
+
+    /* Hilangkan bayangan berlebih di mobile agar performa render lebih ringan */
+    .scanner-window {
+        box-shadow: 15px 15px 40px var(--shadow-dark);
+    }
+}
+
+/* Optimasi untuk HP dengan layar sangat kecil atau Landscape */
+@media screen and (max-height: 600px) {
+    .header-info { margin-bottom: 15px; }
+    .scanner-container { width: 200px; height: 200px; margin-bottom: 15px; }
+}

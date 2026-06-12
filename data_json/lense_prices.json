@@ -1,0 +1,1775 @@
+{
+    "stock": {
+        "SINGLE VISION": {
+            "BLUERAY": {
+                "cost": 25000,
+                "selling": 150000,
+                "features": [
+                    "UV PROTECTION",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SCRATCH-RESISTANT COATING",
+                    "BLUE LIGHT BLOCKING"
+                ],
+                "limits": {
+                    "sph_from": 0,
+                    "sph_to": -800,
+                    "cyl_from": -25,
+                    "cyl_to": -200,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 0,
+                    "note": ""
+                }
+            },
+            "PHOTOCHROMIC": {
+                "cost": 30000,
+                "selling": 150000,
+                "features": [
+                    "PHOTOCHROMIC",
+                    "UV PROTECTION",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SCRATCH-RESISTANT COATING"
+                ],
+                "limits": {
+                    "sph_from": 0,
+                    "sph_to": -800,
+                    "cyl_from": -25,
+                    "cyl_to": -200,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 0,
+                    "note": ""
+                }
+            },
+            "BLUECHROMIC": {
+                "cost": 60000,
+                "selling": 285000,
+                "features": [
+                    "PHOTOCHROMIC",
+                    "UV PROTECTION",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "BLUE LIGHT BLOCKING",
+                    "SCRATCH-RESISTANT COATING"
+                ],
+                "limits": {
+                    "sph_from": 0,
+                    "sph_to": -800,
+                    "cyl_from": -25,
+                    "cyl_to": -200,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 0,
+                    "note": ""
+                }
+            },
+            "ONE-DRIVE": {
+                "cost": 130000,
+                "selling": 500000,
+                "features": [
+                    "HIGH-INDEX UV400 PROTECTION",
+                    "ANTI-STATIC",
+                    "SUPER HYDROPHOBIC",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "BLUE LIGHT BLOCKING",
+                    "PHOTOCHROMIC",
+                    "NIGHT DRIVE COATING"
+                ],
+                "limits": {
+                    "sph_from": 0,
+                    "sph_to": -800,
+                    "cyl_from": -25,
+                    "cyl_to": -200,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 0,
+                    "note": ""
+                }
+            },
+            "HMC": {
+                "cost": 18000,
+                "selling": 90000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING"
+                ],
+                "limits": {
+                    "sph_from": 0,
+                    "sph_to": -800,
+                    "cyl_from": -25,
+                    "cyl_to": -200,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 0,
+                    "note": ""
+                }
+            }
+        },
+        "KRYPTOK": {
+            "HMC": {
+                "cost": 18000,
+                "selling": 90000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING"
+                ],
+                "limits": {
+                    "sph_from": -200,
+                    "sph_to": 200,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": 0,
+                    "note": "Reading power must not exceed distance SPH. If exceeded, order from lab."
+                }
+            },
+            "PHOTOCHROMIC": {
+                "cost": 60000,
+                "selling": 250000,
+                "features": [
+                    "PHOTOCHROMIC",
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING"
+                ],
+                "limits": {
+                    "sph_from": -200,
+                    "sph_to": 200,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": 0,
+                    "note": "Reading power must not exceed distance SPH. If exceeded, order from lab."
+                }
+            }
+        },
+        "PROGRESSIVE": {
+            "HMC": {
+                "cost": 38000,
+                "selling": 160000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING"
+                ],
+                "limits": {
+                    "sph_from": -200,
+                    "sph_to": 200,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": 0,
+                    "note": ""
+                }
+            },
+            "PHOTOCHROMIC": {
+                "cost": 60000,
+                "selling": 250000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "PHOTOCHROMIC"
+                ],
+                "limits": {
+                    "sph_from": -200,
+                    "sph_to": 200,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": 0,
+                    "note": ""
+                }
+            },
+            "ANTI-BLUE RAY": {
+                "cost": 60000,
+                "selling": 250000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "BLUE LIGHT BLOCKING"
+                ],
+                "limits": {
+                    "sph_from": -200,
+                    "sph_to": 200,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": 0,
+                    "note": ""
+                }
+            },
+            "BLUECHROMIC": {
+                "cost": 120000,
+                "selling": 450000,
+                "features": [
+                    "PHOTOCHROMIC",
+                    "BLUE LIGHT BLOCKING",
+                    "SCRATCH-RESISTANT COATING",
+                    "UV PROTECTION",
+                    "ANTI-REFLECTIVE (AR) COATING"
+                ],
+                "limits": {
+                    "sph_from": -200,
+                    "sph_to": 200,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 100,
+                    "add_to": 200,
+                    "comb_max": 0,
+                    "note": ""
+                }
+            }
+        }
+    },
+    "lab": {
+        "SINGLE VISION": {
+            "HMC": {
+                "cost": 96000,
+                "selling": 285000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING"
+                ],
+                "limits": {
+                    "sph_from": 0,
+                    "sph_to": -1100,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": -1100,
+                    "note": ""
+                }
+            },
+            "SHMC": {
+                "cost": 114000,
+                "selling": 450000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SUPER HYDROPHOBIC",
+                    "SMUDGE-RESISTANT",
+                    "ANTI-STATIC"
+                ],
+                "limits": {
+                    "sph_from": 0,
+                    "sph_to": -1100,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": -1100,
+                    "note": ""
+                }
+            },
+            "LENTICULAR HMC": {
+                "cost": 150000,
+                "selling": 750000,
+                "features": [
+                    "HIGH POWER RX",
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING"
+                ],
+                "limits": {
+                    "sph_from": 0,
+                    "sph_to": 0,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 0,
+                    "note": ""
+                }
+            },
+            "LENTICULAR SHMC": {
+                "cost": 180000,
+                "selling": 800000,
+                "features": [
+                    "HIGH POWER RX",
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SUPER HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "SMUDGE-RESISTANT"
+                ],
+                "limits": {
+                    "sph_from": 0,
+                    "sph_to": 0,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 0,
+                    "note": ""
+                }
+            },
+            "SUPERBLOCK 1.67": {
+                "cost": 330000,
+                "selling": 1600000,
+                "features": [
+                    "HIGH INDEX 1.67",
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING"
+                ],
+                "limits": {
+                    "sph_from": -300,
+                    "sph_to": -1400,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": -1400,
+                    "note": ""
+                }
+            },
+            "BLUGARD (STOCK)": {
+                "cost": 60000,
+                "selling": 350000,
+                "features": [
+                    "UV PROTECTION",
+                    "SMUDGE-RESISTANT",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SUPER HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING"
+                ],
+                "limits": {
+                    "sph_from": 0,
+                    "sph_to": -600,
+                    "cyl_from": -25,
+                    "cyl_to": -200,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 0,
+                    "note": ""
+                }
+            },
+            "BLUGARD (STOCK) (2)": {
+                "cost": 90000,
+                "selling": 450000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "SUPER HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING"
+                ],
+                "limits": {
+                    "sph_from": 0,
+                    "sph_to": 0,
+                    "cyl_from": -25,
+                    "cyl_to": -200,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 0,
+                    "note": ""
+                }
+            },
+            "BLUGARD (STOCK) (3)": {
+                "cost": 110000,
+                "selling": 500000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "SUPER HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING"
+                ],
+                "limits": {
+                    "sph_from": 0,
+                    "sph_to": -400,
+                    "cyl_from": -225,
+                    "cyl_to": -400,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 0,
+                    "note": ""
+                }
+            },
+            "BLUGARD (STOCK) (4)": {
+                "cost": 180000,
+                "selling": 700000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "SUPER HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING",
+                    "HIGHT INDEX 1.67"
+                ],
+                "limits": {
+                    "sph_from": -400,
+                    "sph_to": -1200,
+                    "cyl_from": -25,
+                    "cyl_to": -200,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 0,
+                    "note": ""
+                }
+            },
+            "BLUGARD (STOCK) (5)": {
+                "cost": 180000,
+                "selling": 700000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "SUPER HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING",
+                    "HIGH INDEX 1.67"
+                ],
+                "limits": {
+                    "sph_from": -1225,
+                    "sph_to": -1500,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 0,
+                    "note": ""
+                }
+            },
+            "SUPERBLOCK (STOCK)": {
+                "cost": 180000,
+                "selling": 600000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING",
+                    "HIGH INDEX 1.67"
+                ],
+                "limits": {
+                    "sph_from": -400,
+                    "sph_to": -1200,
+                    "cyl_from": -25,
+                    "cyl_to": -200,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 0,
+                    "note": ""
+                }
+            },
+            "SUPERBLOCK (STOCK) (2)": {
+                "cost": 180000,
+                "selling": 600000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING",
+                    "HIGH INDEX 1.67"
+                ],
+                "limits": {
+                    "sph_from": -1225,
+                    "sph_to": -1500,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 0,
+                    "note": ""
+                }
+            },
+            "SUPERBLOCK": {
+                "cost": 180000,
+                "selling": 700000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING"
+                ],
+                "limits": {
+                    "sph_from": 850,
+                    "sph_to": -950,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": -950,
+                    "note": ""
+                }
+            },
+            "SUPERBLOCK (STOCK) (3)": {
+                "cost": 110000,
+                "selling": 300000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING"
+                ],
+                "limits": {
+                    "sph_from": 0,
+                    "sph_to": -375,
+                    "cyl_from": -25,
+                    "cyl_to": -200,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 0,
+                    "note": ""
+                }
+            },
+            "SUPERBLOCK (STOCK) (4)": {
+                "cost": 110000,
+                "selling": 300000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING"
+                ],
+                "limits": {
+                    "sph_from": 25,
+                    "sph_to": 400,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 0,
+                    "note": ""
+                }
+            },
+            "SENSIBLE 6 GREY": {
+                "cost": 180000,
+                "selling": 850000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "PHOTOCHROMIC"
+                ],
+                "limits": {
+                    "sph_from": 850,
+                    "sph_to": -1000,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": -1000,
+                    "note": ""
+                }
+            },
+            "SENSIBLE 6 BROWN": {
+                "cost": 200000,
+                "selling": 1000000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "PHOTOCHROMIC"
+                ],
+                "limits": {
+                    "sph_from": 850,
+                    "sph_to": -100,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": -1000,
+                    "note": ""
+                }
+            },
+            "BLUECHROMIC (STOCK)": {
+                "cost": 180000,
+                "selling": 1100000,
+                "features": [
+                    "HIGH-INDEX UV400 PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "SUPER HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING",
+                    "PHOTOCHROMIC",
+                    "HIGH INDEX 1.67"
+                ],
+                "limits": {
+                    "sph_from": -400,
+                    "sph_to": -1200,
+                    "cyl_from": -25,
+                    "cyl_to": -200,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 0,
+                    "note": ""
+                }
+            },
+            "BLUECHROMIC": {
+                "cost": 350000,
+                "selling": 2050000,
+                "features": [
+                    "HIGH-INDEX UV400 PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "SUPER HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING",
+                    "PHOTOCHROMIC"
+                ],
+                "limits": {
+                    "sph_from": -300,
+                    "sph_to": -1400,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": -1400,
+                    "note": ""
+                }
+            },
+            "BLUECHROMIC (STOCK) (2)": {
+                "cost": 180000,
+                "selling": 1100000,
+                "features": [
+                    "HIGH-INDEX UV400 PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "SUPER HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING",
+                    "PHOTOCHROMIC"
+                ],
+                "limits": {
+                    "sph_from": -1225,
+                    "sph_to": -1500,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 0,
+                    "note": ""
+                }
+            }
+        },
+        "KRYPTOK": {
+            "LENTICULAR HMC": {
+                "cost": 220000,
+                "selling": 1300000,
+                "features": [
+                    "HIGH POWER RX",
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING"
+                ],
+                "limits": {
+                    "sph_from": 700,
+                    "sph_to": 1700,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 200,
+                    "add_to": 300,
+                    "comb_max": 1700,
+                    "note": ""
+                }
+            },
+            "LENTICULAR SHMC": {
+                "cost": 240000,
+                "selling": 1400000,
+                "features": [
+                    "HIGH POWER RX",
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC"
+                ],
+                "limits": {
+                    "sph_from": 700,
+                    "sph_to": 1700,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 200,
+                    "add_to": 300,
+                    "comb_max": 1700,
+                    "note": ""
+                }
+            },
+            "HMC": {
+                "cost": 110000,
+                "selling": 285000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING"
+                ],
+                "limits": {
+                    "sph_from": 650,
+                    "sph_to": -900,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -900,
+                    "note": ""
+                }
+            },
+            "SHMC": {
+                "cost": 160000,
+                "selling": 550000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC"
+                ],
+                "limits": {
+                    "sph_from": 650,
+                    "sph_to": -900,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -900,
+                    "note": ""
+                }
+            },
+            "SUPERBLOCK": {
+                "cost": 220000,
+                "selling": 700000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "HYDROPHOBIC",
+                    "BLUE LIGHT BLOCKING",
+                    "ANTI-STATIC",
+                    "SMUDGE-RESISTANT"
+                ],
+                "limits": {
+                    "sph_from": 650,
+                    "sph_to": -900,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -900,
+                    "note": ""
+                }
+            },
+            "BLUGARD": {
+                "cost": 250000,
+                "selling": 800000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "SUPER HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING"
+                ],
+                "limits": {
+                    "sph_from": -650,
+                    "sph_to": -900,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -900,
+                    "note": ""
+                }
+            },
+            "BLUECHROMIC": {
+                "cost": 280000,
+                "selling": 1000000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING",
+                    "PHOTOCHROMIC"
+                ],
+                "limits": {
+                    "sph_from": 650,
+                    "sph_to": -500,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -500,
+                    "note": ""
+                }
+            },
+            "BLUECHROMIC (STOCK)": {
+                "cost": 220000,
+                "selling": 700000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING",
+                    "PHOTOCHROMIC"
+                ],
+                "limits": {
+                    "sph_from": -200,
+                    "sph_to": 200,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": 0,
+                    "note": ""
+                }
+            },
+            "SENSIBLE 6 GREY": {
+                "cost": 200000,
+                "selling": 1000000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "PHOTOCHROMIC"
+                ],
+                "limits": {
+                    "sph_from": 650,
+                    "sph_to": -700,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -700,
+                    "note": ""
+                }
+            }
+        },
+        "FLATTOP": {
+            "HMC": {
+                "cost": 140000,
+                "selling": 550000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING"
+                ],
+                "limits": {
+                    "sph_from": 650,
+                    "sph_to": -500,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -500,
+                    "note": ""
+                }
+            },
+            "SHMC": {
+                "cost": 150000,
+                "selling": 600000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "SMUDGE-RESISTANT"
+                ],
+                "limits": {
+                    "sph_from": 50,
+                    "sph_to": -500,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -500,
+                    "note": ""
+                }
+            },
+            "SUPERBLOCK": {
+                "cost": 250000,
+                "selling": 850000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING"
+                ],
+                "limits": {
+                    "sph_from": 650,
+                    "sph_to": -600,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -600,
+                    "note": ""
+                }
+            },
+            "BLUGARD": {
+                "cost": 280000,
+                "selling": 900000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "SUPER HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING"
+                ],
+                "limits": {
+                    "sph_from": 650,
+                    "sph_to": -600,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -600,
+                    "note": ""
+                }
+            },
+            "TAFT": {
+                "cost": 220000,
+                "selling": 1100000,
+                "features": [
+                    "UV PROTECTION",
+                    "SMUDGE-RESISTANT",
+                    "SUPER HYDROPHOBIC",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING",
+                    "IMPACT-RESISTANT"
+                ],
+                "limits": {
+                    "sph_from": 500,
+                    "sph_to": -825,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -825,
+                    "note": ""
+                }
+            },
+            "SENSIBLE 6 BROWN": {
+                "cost": 220000,
+                "selling": 1200000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "PHOTOCHROMIC"
+                ],
+                "limits": {
+                    "sph_from": 650,
+                    "sph_to": -600,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -600,
+                    "note": ""
+                }
+            },
+            "SENSIBLE 6 GREY": {
+                "cost": 210000,
+                "selling": 1100000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "SMUDGE-RESISTANT",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "PHOTOCHROMIC"
+                ],
+                "limits": {
+                    "sph_from": 650,
+                    "sph_to": -600,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -600,
+                    "note": ""
+                }
+            }
+        },
+        "PROGRESSIVE": {
+            "FLEXI BLUCHROMIC ONE-DRIVE (STOCK)": {
+                "cost": 250000,
+                "selling": 1100000,
+                "features": [
+                    "HIGH-INDEX UV400 PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "SUPER HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING",
+                    "PHOTOCHROMIC",
+                    "NIGHT DRIVE COATING",
+                    "FAR & NEAR OPTIMIZED LENS"
+                ],
+                "limits": {
+                    "sph_from": -200,
+                    "sph_to": 200,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": 0,
+                    "note": ""
+                }
+            },
+            "BALANCE BLUCHROMIC ONE-DRIVE (STOCK)": {
+                "cost": 260000,
+                "selling": 1250000,
+                "features": [
+                    "HIGH-INDEX UV400 PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "SUPER HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING",
+                    "PHOTOCHROMIC",
+                    "NIGHT DRIVE COATING",
+                    "ALL-DISTANCE PROGRESSIVE"
+                ],
+                "limits": {
+                    "sph_from": -200,
+                    "sph_to": 200,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": 0,
+                    "note": ""
+                }
+            },
+            "FLEXI BLUCHROMIC ONE-DRIVE": {
+                "cost": 330000,
+                "selling": 1800000,
+                "features": [
+                    "HIGH-INDEX UV400 PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "SUPER HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING",
+                    "PHOTOCHROMIC",
+                    "NIGHT DRIVE COATING",
+                    "FAR & NEAR OPTIMIZED LENS"
+                ],
+                "limits": {
+                    "sph_from": 500,
+                    "sph_to": -700,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -700,
+                    "note": ""
+                }
+            },
+            "BALANCE BLUCHROMIC ONE-DRIVE": {
+                "cost": 350000,
+                "selling": 1900000,
+                "features": [
+                    "HIGH-INDEX UV400 PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "SUPER HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING",
+                    "PHOTOCHROMIC",
+                    "NIGHT DRIVE COATING",
+                    "ALL-DISTANCE PROGRESSIVE"
+                ],
+                "limits": {
+                    "sph_from": 500,
+                    "sph_to": -700,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -700,
+                    "note": ""
+                }
+            },
+            "STANDARD CORD HMC": {
+                "cost": 140000,
+                "selling": 500000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "DYNAMIC DISTANCE LENS"
+                ],
+                "limits": {
+                    "sph_from": 600,
+                    "sph_to": -1000,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -1000,
+                    "note": ""
+                }
+            },
+            "STANDARD CORD SHMC": {
+                "cost": 170000,
+                "selling": 600000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "DYNAMIC DISTANCE LENS"
+                ],
+                "limits": {
+                    "sph_from": 600,
+                    "sph_to": -1000,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -1000,
+                    "note": ""
+                }
+            },
+            "STANDARD CORD SUPERBLOCK": {
+                "cost": 200000,
+                "selling": 750000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING",
+                    "DYNAMIC DISTANCE LENS"
+                ],
+                "limits": {
+                    "sph_from": 650,
+                    "sph_to": -700,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -1000,
+                    "note": ""
+                }
+            },
+            "SHORT CORD HMC": {
+                "cost": 180000,
+                "selling": 650000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "NEAR-OPTIMIZED LENS"
+                ],
+                "limits": {
+                    "sph_from": 600,
+                    "sph_to": -1000,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -1000,
+                    "note": ""
+                }
+            },
+            "SHORT CORD SHMC": {
+                "cost": 200000,
+                "selling": 700000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "NEAR-OPTIMIZED LENS"
+                ],
+                "limits": {
+                    "sph_from": 600,
+                    "sph_to": -1000,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -1000,
+                    "note": ""
+                }
+            },
+            "SHORT CORD SUPERBLOCK": {
+                "cost": 330000,
+                "selling": 850000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING",
+                    "NEAR-OPTIMIZED LENS"
+                ],
+                "limits": {
+                    "sph_from": 650,
+                    "sph_to": -700,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -700,
+                    "note": ""
+                }
+            },
+            "MINICORD HMC": {
+                "cost": 180000,
+                "selling": 600000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "ENHANCED NEAR VISION"
+                ],
+                "limits": {
+                    "sph_from": 600,
+                    "sph_to": -1000,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -1000,
+                    "note": ""
+                }
+            },
+            "MINICORD SHMC": {
+                "cost": 190000,
+                "selling": 650000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "ENHANCED NEAR VISION"
+                ],
+                "limits": {
+                    "sph_from": 600,
+                    "sph_to": -1000,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -1000,
+                    "note": ""
+                }
+            },
+            "MINICORD SUPERBLOCK": {
+                "cost": 220000,
+                "selling": 800000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING",
+                    "ENHANCED NEAR VISION"
+                ],
+                "limits": {
+                    "sph_from": 650,
+                    "sph_to": -700,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -700,
+                    "note": ""
+                }
+            },
+            "INOCORD PREMIUM": {
+                "cost": 250000,
+                "selling": 1000000,
+                "features": [
+                    "UV PROTECTION",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SCRATCH-RESISTANT COATING",
+                    "SMUDGE-RESISTANT",
+                    "SUPER HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING",
+                    "FAR & NEAR OPTIMIZED LENS"
+                ],
+                "limits": {
+                    "sph_from": 650,
+                    "sph_to": -700,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -700,
+                    "note": ""
+                }
+            },
+            "FLEXI CORD HMC": {
+                "cost": 220000,
+                "selling": 800000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "FAR & NEAR OPTIMIZED LENS"
+                ],
+                "limits": {
+                    "sph_from": 600,
+                    "sph_to": -950,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -950,
+                    "note": ""
+                }
+            },
+            "FLEXI CORD SHMC": {
+                "cost": 240000,
+                "selling": 850000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "HYDROPHOBIC",
+                    "SMUDGE-RESISTANT",
+                    "ANTI-STATIC",
+                    "FAR & NEAR OPTIMIZED LENS"
+                ],
+                "limits": {
+                    "sph_from": 600,
+                    "sph_to": -950,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -950,
+                    "note": ""
+                }
+            },
+            "FLEXI CORD PREMIUM": {
+                "cost": 250000,
+                "selling": 1100000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "SUPER HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING",
+                    "FAR & NEAR OPTIMIZED LENS"
+                ],
+                "limits": {
+                    "sph_from": 650,
+                    "sph_to": -700,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -700,
+                    "note": ""
+                }
+            },
+            "FLEXI CORD SENSIBLE 6 GREY": {
+                "cost": 280000,
+                "selling": 1350000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "PHOTOCHROMIC",
+                    "FAR & NEAR OPTIMIZED LENS"
+                ],
+                "limits": {
+                    "sph_from": 650,
+                    "sph_to": -700,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -700,
+                    "note": ""
+                }
+            },
+            "BALANCE CORD SHMC": {
+                "cost": 200000,
+                "selling": 950000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "ALL-DISTANCE PROGRESSIVE"
+                ],
+                "limits": {
+                    "sph_from": 600,
+                    "sph_to": -800,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -800,
+                    "note": ""
+                }
+            },
+            "BALANCE CORD PREMIUM": {
+                "cost": 330000,
+                "selling": 1250000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "SUPER HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING",
+                    "ALL-DISTANCE PROGRESSIVE"
+                ],
+                "limits": {
+                    "sph_from": 650,
+                    "sph_to": -700,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -700,
+                    "note": ""
+                }
+            },
+            "BALANCE CORD SENSIBLE GREY 6": {
+                "cost": 350000,
+                "selling": 1500000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "PHOTOCHROMIC",
+                    "ALL-DISTANCE PROGRESSIVE"
+                ],
+                "limits": {
+                    "sph_from": 650,
+                    "sph_to": -700,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -700,
+                    "note": ""
+                }
+            },
+            "BALANCE CORD SENSIBLE BROWN 6": {
+                "cost": 380000,
+                "selling": 1600000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "PHOTOCHROMIC",
+                    "ALL-DISTANCE PROGRESSIVE"
+                ],
+                "limits": {
+                    "sph_from": 650,
+                    "sph_to": -700,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -700,
+                    "note": ""
+                }
+            },
+            "STANDARD CORD HMC (STOCK)": {
+                "cost": 45000,
+                "selling": 300000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "DYNAMIC DISTANCE LENS"
+                ],
+                "limits": {
+                    "sph_from": -200,
+                    "sph_to": 200,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": 0,
+                    "note": ""
+                }
+            },
+            "MINI CORD HMC (STOCK)": {
+                "cost": 60000,
+                "selling": 350000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "ENHANCED NEAR VISION"
+                ],
+                "limits": {
+                    "sph_from": -200,
+                    "sph_to": 200,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": 0,
+                    "note": ""
+                }
+            },
+            "MINI CORD PREMIUM (STOCK)": {
+                "cost": 180000,
+                "selling": 650000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "SUPER HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING"
+                ],
+                "limits": {
+                    "sph_from": -200,
+                    "sph_to": 200,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": 0,
+                    "note": ""
+                }
+            },
+            "INNOVATIVE HMC (STOCK)": {
+                "cost": 160000,
+                "selling": 400000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "FAR & NEAR OPTIMIZED LENS"
+                ],
+                "limits": {
+                    "sph_from": -200,
+                    "sph_to": 200,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": 0,
+                    "note": ""
+                }
+            },
+            "INOCORD PREMIUM (STOCK)": {
+                "cost": 200000,
+                "selling": 700000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "SUPER HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING",
+                    "FAR & NEAR OPTIMIZED LENS"
+                ],
+                "limits": {
+                    "sph_from": -200,
+                    "sph_to": 200,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": 0,
+                    "note": ""
+                }
+            },
+            "FLEXI CORD HMC (STOCK)": {
+                "cost": 180000,
+                "selling": 450000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "FAR & NEAR OPTIMIZED LENS"
+                ],
+                "limits": {
+                    "sph_from": -200,
+                    "sph_to": 200,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": 0,
+                    "note": ""
+                }
+            },
+            "FLEXI TAFT SHMC (STOCK)": {
+                "cost": 280000,
+                "selling": 750000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "IMPACT-RESISTANT"
+                ],
+                "limits": {
+                    "sph_from": -200,
+                    "sph_to": 200,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": 0,
+                    "note": ""
+                }
+            },
+            "FLEXI BLUTAFT (STOCK)": {
+                "cost": 330000,
+                "selling": 1100000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "SUPER HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING",
+                    "IMPACT-RESISTANT",
+                    "FAR & NEAR OPTIMIZED LENS"
+                ],
+                "limits": {
+                    "sph_from": -200,
+                    "sph_to": 200,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": 0,
+                    "note": ""
+                }
+            },
+            "BALANCE CORD SHMC (STOCK)": {
+                "cost": 220000,
+                "selling": 700000,
+                "features": [
+                    "UV PROTECTION",
+                    "SCRATCH-RESISTANT COATING",
+                    "ANTI-REFLECTIVE (AR) COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC"
+                ],
+                "limits": {
+                    "sph_from": -200,
+                    "sph_to": 200,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": 0,
+                    "note": ""
+                }
+            }
+        }
+    }
+}
