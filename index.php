@@ -1,7 +1,12 @@
 <?php
 // index.php theme: Dark Neumorphism
+<<<<<<< HEAD
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
+=======
+error_reporting(0);
+ini_set('display_errors', 0);
+>>>>>>> ad90a17b9bdff87790f307c7234ac56106a4bb73
 session_start();
 
 if (!isset($_SESSION['user_id'])) {

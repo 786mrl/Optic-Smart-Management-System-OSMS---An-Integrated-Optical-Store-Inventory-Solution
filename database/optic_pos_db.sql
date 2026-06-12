@@ -1,4 +1,5 @@
 -- phpMyAdmin SQL Dump
+<<<<<<< HEAD
 -- version 5.2.1
 -- https://www.phpmyadmin.net/
 --
@@ -8,6 +9,18 @@
 -- PHP Version: 8.2.12
 
 SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
+=======
+-- version 4.8.5
+-- https://www.phpmyadmin.net/
+--
+-- Host: 127.0.0.1
+-- Generation Time: Jun 08, 2026 at 07:40 PM
+-- Server version: 10.1.38-MariaDB
+-- PHP Version: 7.3.2
+
+SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
+SET AUTOCOMMIT = 0;
+>>>>>>> ad90a17b9bdff87790f307c7234ac56106a4bb73
 START TRANSACTION;
 SET time_zone = "+00:00";
 
@@ -33,10 +46,16 @@ CREATE TABLE `activity_log` (
   `record_id` varchar(255) NOT NULL,
   `action` enum('INSERT','UPDATE','DELETE') NOT NULL,
   `changed_by` varchar(100) NOT NULL,
+<<<<<<< HEAD
   `changed_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `synced` tinyint(1) DEFAULT 0,
   `sync_flag` tinyint(1) DEFAULT 0
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+=======
+  `changed_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `synced` tinyint(1) DEFAULT '0'
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+>>>>>>> ad90a17b9bdff87790f307c7234ac56106a4bb73
 
 -- --------------------------------------------------------
 
@@ -51,7 +70,11 @@ CREATE TABLE `customer_examinations` (
   `customer_name` varchar(100) NOT NULL,
   `gender` enum('MALE','FEMALE') NOT NULL,
   `age` int(11) DEFAULT NULL,
+<<<<<<< HEAD
   `symptoms` text DEFAULT NULL,
+=======
+  `symptoms` text,
+>>>>>>> ad90a17b9bdff87790f307c7234ac56106a4bb73
   `old_r_sph` varchar(5) DEFAULT NULL,
   `old_r_cyl` varchar(5) DEFAULT NULL,
   `old_r_ax` varchar(3) DEFAULT NULL,
@@ -71,6 +94,7 @@ CREATE TABLE `customer_examinations` (
   `new_l_add` varchar(5) DEFAULT NULL,
   `new_l_visus` varchar(6) DEFAULT NULL,
   `pd_dist` varchar(10) DEFAULT '62/60',
+<<<<<<< HEAD
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `invoice_number` varchar(20) DEFAULT '00',
   `exam_notes` text DEFAULT NULL,
@@ -84,6 +108,21 @@ CREATE TABLE `customer_examinations` (
   `need_near` tinyint(1) NOT NULL DEFAULT 0 COMMENT '1=Yes, 0=No — Kebutuhan jarak dekat',
   `created_by` varchar(100) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+=======
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `invoice_number` varchar(20) DEFAULT '00',
+  `exam_notes` text,
+  `visual_habit` tinyint(1) DEFAULT '1' COMMENT '1:Indoor, 2:Outdoor, 3:Both',
+  `digital_usage` tinyint(1) DEFAULT '1' COMMENT '1:Low, 2:Moderate, 3:High',
+  `ucva_r` varchar(10) DEFAULT '20/20',
+  `ucva_l` varchar(10) DEFAULT '20/20',
+  `lens_modification` tinyint(1) DEFAULT '0',
+  `need_distance` tinyint(1) NOT NULL DEFAULT '0' COMMENT '1=Yes, 0=No — Kebutuhan jarak jauh',
+  `need_intermediate` tinyint(1) NOT NULL DEFAULT '0' COMMENT '1=Yes, 0=No — Kebutuhan jarak menengah',
+  `need_near` tinyint(1) NOT NULL DEFAULT '0' COMMENT '1=Yes, 0=No — Kebutuhan jarak dekat',
+  `created_by` varchar(100) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+>>>>>>> ad90a17b9bdff87790f307c7234ac56106a4bb73
 
 -- --------------------------------------------------------
 
@@ -95,6 +134,7 @@ CREATE TABLE `customer_orders` (
   `id` int(11) UNSIGNED NOT NULL,
   `customer_number` varchar(40) NOT NULL,
   `invoice_number` varchar(50) NOT NULL,
+<<<<<<< HEAD
   `is_modified` tinyint(1) NOT NULL DEFAULT 0,
   `frame_ufc` varchar(50) DEFAULT NULL,
   `lens_name` varchar(150) DEFAULT NULL,
@@ -110,6 +150,23 @@ CREATE TABLE `customer_orders` (
   `packaging_cost` int(11) NOT NULL DEFAULT 19500,
   `created_by` varchar(100) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='Confirmed purchase orders — saved when operator clicks Yes Shopping';
+=======
+  `is_modified` tinyint(1) NOT NULL DEFAULT '0',
+  `frame_ufc` varchar(50) DEFAULT NULL,
+  `lens_name` varchar(150) DEFAULT NULL,
+  `customer_phone` varchar(30) DEFAULT NULL,
+  `customer_address` text,
+  `total_amount` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `amount_paid` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `order_date` date NOT NULL,
+  `due_date` date DEFAULT NULL,
+  `order_status` int(11) NOT NULL DEFAULT '1',
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `packaging_cost` int(11) NOT NULL DEFAULT '19500',
+  `created_by` varchar(100) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Confirmed purchase orders — saved when operator clicks Yes Shopping';
+>>>>>>> ad90a17b9bdff87790f307c7234ac56106a4bb73
 
 -- --------------------------------------------------------
 
@@ -119,6 +176,7 @@ CREATE TABLE `customer_orders` (
 
 CREATE TABLE `custom_frames` (
   `id` int(11) NOT NULL,
+<<<<<<< HEAD
   `invoice_number` varchar(50) NOT NULL COMMENT 'Nomor invoice yang terkait',
   `brand_key` varchar(100) NOT NULL COMMENT 'Pola: dd/mm/yyyy+brand_name, contoh: 05/04/2026+brenden',
   `sell_price` decimal(12,2) NOT NULL DEFAULT 0.00 COMMENT 'Harga jual frame',
@@ -126,6 +184,14 @@ CREATE TABLE `custom_frames` (
   `created_by` varchar(100) NOT NULL DEFAULT 'system',
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `buy_price` decimal(12,2) NOT NULL DEFAULT 0.00
+=======
+  `invoice_number` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Nomor invoice yang terkait',
+  `brand_key` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Pola: dd/mm/yyyy+brand_name, contoh: 05/04/2026+brenden',
+  `sell_price` decimal(12,2) NOT NULL DEFAULT '0.00' COMMENT 'Harga jual frame',
+  `is_purchased` tinyint(1) NOT NULL DEFAULT '0' COMMENT '0 = belum dibeli, 1 = dibeli',
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `buy_price` decimal(12,2) NOT NULL DEFAULT '0.00'
+>>>>>>> ad90a17b9bdff87790f307c7234ac56106a4bb73
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Frame custom yang tidak ada di frames_main maupun frame_staging';
 
 -- --------------------------------------------------------
@@ -139,9 +205,15 @@ CREATE TABLE `deleted_records` (
   `table_name` varchar(100) NOT NULL,
   `record_id` varchar(255) NOT NULL,
   `deleted_by` varchar(100) NOT NULL,
+<<<<<<< HEAD
   `deleted_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `synced` tinyint(1) DEFAULT 0
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+=======
+  `deleted_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `synced` tinyint(1) DEFAULT '0'
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+>>>>>>> ad90a17b9bdff87790f307c7234ac56106a4bb73
 
 -- --------------------------------------------------------
 
@@ -163,11 +235,19 @@ CREATE TABLE `frames_main` (
   `buy_price` decimal(15,2) DEFAULT NULL,
   `sell_price` decimal(15,2) DEFAULT NULL,
   `price_secret_code` varchar(20) DEFAULT NULL,
+<<<<<<< HEAD
   `stock` int(11) DEFAULT 0,
   `stock_age` enum('very old','old','new') DEFAULT NULL,
   `created_at` datetime DEFAULT NULL,
   `updated_at` datetime DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+=======
+  `stock` int(11) DEFAULT '0',
+  `stock_age` enum('very old','old','new') DEFAULT NULL,
+  `created_at` datetime DEFAULT NULL,
+  `updated_at` datetime DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+>>>>>>> ad90a17b9bdff87790f307c7234ac56106a4bb73
 
 -- --------------------------------------------------------
 
@@ -186,6 +266,7 @@ CREATE TABLE `frame_staging` (
   `structure` enum('full-rim','semi-rimless','rimless') DEFAULT NULL,
   `size_range` enum('small','medium','large') DEFAULT NULL,
   `gender_category` enum('men','female','unisex') NOT NULL DEFAULT 'unisex',
+<<<<<<< HEAD
   `buy_price` decimal(15,2) DEFAULT 0.00,
   `sell_price` decimal(15,2) DEFAULT 0.00,
   `price_secret_code` varchar(20) DEFAULT NULL,
@@ -195,6 +276,17 @@ CREATE TABLE `frame_staging` (
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+=======
+  `buy_price` decimal(15,2) DEFAULT '0.00',
+  `sell_price` decimal(15,2) DEFAULT '0.00',
+  `price_secret_code` varchar(20) DEFAULT NULL,
+  `stock` int(11) DEFAULT '1',
+  `stock_age` enum('very old','old','new') DEFAULT 'new',
+  `created_by` varchar(255) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+>>>>>>> ad90a17b9bdff87790f307c7234ac56106a4bb73
 
 -- --------------------------------------------------------
 
@@ -207,10 +299,17 @@ CREATE TABLE `last_sync` (
   `direction` enum('push','pull') NOT NULL,
   `target_ip` varchar(100) NOT NULL,
   `synced_at` datetime NOT NULL,
+<<<<<<< HEAD
   `total_rows` int(11) DEFAULT 0,
   `total_dels` int(11) DEFAULT 0,
   `done_by` varchar(100) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+=======
+  `total_rows` int(11) DEFAULT '0',
+  `total_dels` int(11) DEFAULT '0',
+  `done_by` varchar(100) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+>>>>>>> ad90a17b9bdff87790f307c7234ac56106a4bb73
 
 -- --------------------------------------------------------
 
@@ -223,9 +322,15 @@ CREATE TABLE `pending_sync` (
   `table_name` varchar(100) NOT NULL,
   `record_id` varchar(255) NOT NULL,
   `action` enum('INSERT','UPDATE','DELETE') NOT NULL,
+<<<<<<< HEAD
   `data_snapshot` text DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+=======
+  `data_snapshot` text,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+>>>>>>> ad90a17b9bdff87790f307c7234ac56106a4bb73
 
 -- --------------------------------------------------------
 
@@ -244,8 +349,13 @@ CREATE TABLE `prescription_modifications` (
   `os_cyl` varchar(10) DEFAULT NULL,
   `os_axis` varchar(10) DEFAULT NULL,
   `os_add` varchar(10) DEFAULT NULL,
+<<<<<<< HEAD
   `modified_at` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+=======
+  `modified_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+>>>>>>> ad90a17b9bdff87790f307c7234ac56106a4bb73
 
 -- --------------------------------------------------------
 
@@ -257,7 +367,11 @@ CREATE TABLE `settings` (
   `setting_key` varchar(100) NOT NULL,
   `setting_value` text NOT NULL,
   `description` varchar(255) DEFAULT NULL
+<<<<<<< HEAD
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+=======
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+>>>>>>> ad90a17b9bdff87790f307c7234ac56106a4bb73
 
 --
 -- Dumping data for table `settings`
@@ -274,7 +388,11 @@ INSERT INTO `settings` (`setting_key`, `setting_value`, `description`) VALUES
 ('low_stock_threshold', '5', 'Global Low Stock Warning Limit (Units)'),
 ('receipt_footer_msg', 'Terima kasih telah berbelanja di LENZA OPTIC!', 'Custom Message at the Receipt Footer'),
 ('starting_invoice_number', '16.31', 'The starting sequence/text string for invoice numbering (resets automatically).'),
+<<<<<<< HEAD
 ('store_address', 'Jl. Apel Raya, No. 50, Kuranji, Padang, Sumatera Barat, 25157, Indonesia', 'Store Physical Address'),
+=======
+('store_address', 'Jl. Apel Raya, No. 51, Kuranji, Padang, Sumatera Barat, 25157, Indonesia', 'Store Physical Address'),
+>>>>>>> ad90a17b9bdff87790f307c7234ac56106a4bb73
 ('store_name', 'LENZA OPTIC', 'Store Name for Receipts and Reports'),
 ('store_phone', '+62 812 6764 6916', 'Store Contact Phone Number'),
 ('tax_rate_percent', '11.0', 'Sales Tax / VAT Percentage'),
@@ -286,6 +404,7 @@ INSERT INTO `settings` (`setting_key`, `setting_value`, `description`) VALUES
 -- --------------------------------------------------------
 
 --
+<<<<<<< HEAD
 -- Table structure for table `sync_status`
 --
 
@@ -299,6 +418,8 @@ CREATE TABLE `sync_status` (
 -- --------------------------------------------------------
 
 --
+=======
+>>>>>>> ad90a17b9bdff87790f307c7234ac56106a4bb73
 -- Table structure for table `users`
 --
 
@@ -307,19 +428,32 @@ CREATE TABLE `users` (
   `username` varchar(50) NOT NULL,
   `password_hash` varchar(255) NOT NULL,
   `role` enum('admin','staff','viewer') NOT NULL,
+<<<<<<< HEAD
   `is_approved` tinyint(1) NOT NULL DEFAULT 0,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `last_login` timestamp NULL DEFAULT NULL,
   `session_token` varchar(64) DEFAULT NULL,
   `session_expires` datetime DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+=======
+  `is_approved` tinyint(1) NOT NULL DEFAULT '0',
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `last_login` timestamp NULL DEFAULT NULL,
+  `session_token` varchar(64) DEFAULT NULL,
+  `session_expires` datetime DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+>>>>>>> ad90a17b9bdff87790f307c7234ac56106a4bb73
 
 --
 -- Dumping data for table `users`
 --
 
 INSERT INTO `users` (`user_id`, `username`, `password_hash`, `role`, `is_approved`, `created_at`, `last_login`, `session_token`, `session_expires`) VALUES
+<<<<<<< HEAD
 (1, 'LenZa786', '$2y$10$E5ZXU41IpXcB443wtKCIou/cpEaFMa7k2tuOx83ZAQ9soeUPagGWm', 'admin', 1, '2026-01-12 05:15:58', '2026-06-11 20:41:27', NULL, NULL),
+=======
+(1, 'LenZa786', '$2y$10$E5ZXU41IpXcB443wtKCIou/cpEaFMa7k2tuOx83ZAQ9soeUPagGWm', 'admin', 1, '2026-01-12 05:15:58', '2026-06-08 11:37:09', NULL, NULL),
+>>>>>>> ad90a17b9bdff87790f307c7234ac56106a4bb73
 (17, 'rais786', '$2y$10$Nvp2WWM.r5i1uM7VQD9t8eTZzeGNtDEz.A0NhEdUjPGzeZ8z7bFeO', 'staff', 1, '2026-05-28 13:17:44', '2026-06-08 07:27:52', NULL, NULL);
 
 --
@@ -404,6 +538,7 @@ ALTER TABLE `settings`
   ADD PRIMARY KEY (`setting_key`);
 
 --
+<<<<<<< HEAD
 -- Indexes for table `sync_status`
 --
 ALTER TABLE `sync_status`
@@ -412,6 +547,8 @@ ALTER TABLE `sync_status`
   ADD KEY `idx_username` (`username`);
 
 --
+=======
+>>>>>>> ad90a17b9bdff87790f307c7234ac56106a4bb73
 -- Indexes for table `users`
 --
 ALTER TABLE `users`
@@ -471,12 +608,15 @@ ALTER TABLE `prescription_modifications`
   MODIFY `modification_id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
+<<<<<<< HEAD
 -- AUTO_INCREMENT for table `sync_status`
 --
 ALTER TABLE `sync_status`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
+=======
+>>>>>>> ad90a17b9bdff87790f307c7234ac56106a4bb73
 -- AUTO_INCREMENT for table `users`
 --
 ALTER TABLE `users`
