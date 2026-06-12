@@ -35,19 +35,12 @@ if ($action === 'save_custom_frame') {
     // Clamp is_purchased to 0 or 1
     $is_purchased = ($is_purchased >= 1) ? 1 : 0;
 
-<<<<<<< HEAD
     $created_by = mysqli_real_escape_string($conn, $_SESSION['username'] ?? 'system');
 
     $sql = "INSERT INTO custom_frames
                 (invoice_number, brand_key, sell_price, is_purchased, created_by)
             VALUES
                 ('$invoice_number', '$brand_key', $sell_price, $is_purchased, '$created_by')";
-=======
-    $sql = "INSERT INTO custom_frames
-                (invoice_number, brand_key, sell_price, is_purchased)
-            VALUES
-                ('$invoice_number', '$brand_key', $sell_price, $is_purchased)";
->>>>>>> ad90a17b9bdff87790f307c7234ac56106a4bb73
 
     if (mysqli_query($conn, $sql)) {
         $inserted_id = mysqli_insert_id($conn);
@@ -92,8 +85,4 @@ if ($action === 'set_purchased') {
 
 // Unknown action
 echo json_encode(['success' => false, 'error' => 'Unknown action: ' . htmlspecialchars($action)]);
-<<<<<<< HEAD
 exit();
-=======
-exit();
->>>>>>> ad90a17b9bdff87790f307c7234ac56106a4bb73
