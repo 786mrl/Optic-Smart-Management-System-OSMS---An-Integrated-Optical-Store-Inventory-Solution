@@ -164,28 +164,12 @@
 
     if (!isset($_SESSION['user_id'])) { header("Location: index.php"); exit(); }
 
-    // ── DIRECT SALE: create a minimal customer_examinations record ──────────
+    // ── DIRECT SALE: save pending data to session, redirect to invoice page ──
     // Triggered when the user submits the direct-sale entry form.
-    // Prescription from customer → examination_code uses '000' as sequence.
+    // NO DB insert here — insertion happens only when PRINT INVOICE is confirmed.
     if (isset($_POST['create_direct_sale'])) {
 
-        // 1. Helper: Roman numeral for month
-        function getRomawiDirect($month) {
-            $r = [1=>'I',2=>'II',3=>'III',4=>'IV',5=>'V',6=>'VI',
-                  7=>'VII',8=>'VIII',9=>'IX',10=>'X',11=>'XI',12=>'XII'];
-            return $r[(int)$month] ?? 'I';
-        }
-
-        // 2. Basic fields
-        $ds_date_raw = trim($_POST['ds_date'] ?? '');
-        $ds_date  = (!empty($ds_date_raw) && strtotime($ds_date_raw)) ? date('Y-m-d', strtotime($ds_date_raw)) : date('Y-m-d');
-        $ds_month = (int)date('n', strtotime($ds_date));
-        $ds_year  = (int)date('Y', strtotime($ds_date));
-
-
-        $ds_name    = mysqli_real_escape_string($conn, strtoupper(trim($_POST['ds_customer_name'] ?? '')));
-        $ds_gender  = mysqli_real_escape_string($conn, strtoupper(trim($_POST['ds_gender'] ?? 'FEMALE')));
-        // Age: supports direct input (e.g. 31) or birth year with dot (e.g. .95 or .1995)
+        // Helper: age from raw input
         $raw_age = trim($_POST['ds_age'] ?? '');
         $ds_age  = 0;
         if (!empty($raw_age)) {
@@ -203,43 +187,115 @@
             }
         }
 
-        // Prescription (optional — all default to 0.00/0)
-        function dsPres($conn, $val) {
-            $v = mysqli_real_escape_string($conn, trim($val));
+        // Helper: format prescription value
+        $dsPres = function($val) {
+            $v = trim($val);
             if ($v === '') return '0.00';
             if (is_numeric($v) && (float)$v > 0 && strpos($v, '+') === false) $v = '+' . $v;
             return $v;
+        };
+
+        // Symptoms array
+        $symptoms_arr = json_decode($_POST['ds_symptoms_json'] ?? '[]', true) ?? [];
+        $symptoms_arr = array_map('strtoupper', $symptoms_arr);
+        if (!empty($_POST['ds_other_symptoms'])) {
+            $symptoms_arr[] = 'OTHERS: ' . strtoupper(trim($_POST['ds_other_symptoms']));
         }
-        $ds_r_sph = dsPres($conn, $_POST['ds_r_sph'] ?? '');
-        $ds_r_cyl = dsPres($conn, $_POST['ds_r_cyl'] ?? '');
-        $ds_r_ax  = (int)($_POST['ds_r_ax'] ?? 0);
-        $ds_r_add = dsPres($conn, $_POST['ds_r_add'] ?? '');
-        $ds_l_sph = dsPres($conn, $_POST['ds_l_sph'] ?? '');
-        $ds_l_cyl = dsPres($conn, $_POST['ds_l_cyl'] ?? '');
-        $ds_l_ax  = (int)($_POST['ds_l_ax'] ?? 0);
-        $ds_l_add = dsPres($conn, $_POST['ds_l_add'] ?? '');
+        array_unshift($symptoms_arr, 'DIRECT SALE');
 
-        $ds_r_ax  = mysqli_real_escape_string($conn, (string)$ds_r_ax);
-        $ds_l_ax  = mysqli_real_escape_string($conn, (string)$ds_l_ax);
+        $ds_purchase_type = ($_POST['ds_purchase_type'] ?? '') === 'frame' ? 'frame' : 'complete';
 
-        $ds_pd = mysqli_real_escape_string($conn, trim($_POST['ds_pd'] ?? '62'));
-        if ($ds_pd === '') $ds_pd = '62';
+        // Vision need (only relevant if age >= 39)
+        $ds_nd = ($ds_age >= 39) ? max(0, min(1, (int)($_POST['ds_need_distance']     ?? 0))) : 0;
+        $ds_ni = ($ds_age >= 39) ? max(0, min(1, (int)($_POST['ds_need_intermediate'] ?? 0))) : 0;
+        $ds_nn = ($ds_age >= 39) ? max(0, min(1, (int)($_POST['ds_need_near']         ?? 0))) : 0;
 
-        // 3. Get next invoice number (same format as customer_prescription: "001", "002", etc.)
-        // Query the MAX numeric invoice_number from customer_examinations, then increment & pad to 3 digits.
+        $ds_date_raw = trim($_POST['ds_date'] ?? '');
+        $ds_date = (!empty($ds_date_raw) && strtotime($ds_date_raw)) ? date('Y-m-d', strtotime($ds_date_raw)) : date('Y-m-d');
+
+        // Store all form data in session — will be committed to DB only at print time
+        $_SESSION['ds_pending'] = [
+            'date'          => $ds_date,
+            'name'          => strtoupper(trim($_POST['ds_customer_name'] ?? '')),
+            'gender'        => strtoupper(trim($_POST['ds_gender'] ?? 'FEMALE')),
+            'age'           => $ds_age,
+            'purchase_type' => $ds_purchase_type,
+            'r_sph'         => $dsPres($_POST['ds_r_sph'] ?? ''),
+            'r_cyl'         => $dsPres($_POST['ds_r_cyl'] ?? ''),
+            'r_ax'          => (int)($_POST['ds_r_ax'] ?? 0),
+            'r_add'         => $dsPres($_POST['ds_r_add'] ?? ''),
+            'l_sph'         => $dsPres($_POST['ds_l_sph'] ?? ''),
+            'l_cyl'         => $dsPres($_POST['ds_l_cyl'] ?? ''),
+            'l_ax'          => (int)($_POST['ds_l_ax'] ?? 0),
+            'l_add'         => $dsPres($_POST['ds_l_add'] ?? ''),
+            'pd'            => trim($_POST['ds_pd'] ?? '62') ?: '62',
+            'visual_habit'  => max(1, min(3, (int)($_POST['ds_visual_habit']  ?? 1))),
+            'digital_usage' => max(1, min(3, (int)($_POST['ds_digital_usage'] ?? 1))),
+            'symptoms'      => implode(', ', $symptoms_arr),
+            'need_distance' => $ds_nd,
+            'need_inter'    => $ds_ni,
+            'need_near'     => $ds_nn,
+            'created_by'    => $_SESSION['username'] ?? 'system',
+        ];
+
+        header("Location: invoice.php?direct=1&ptype=" . $ds_purchase_type);
+        exit();
+    }
+
+    // ── DIRECT SALE: AJAX — insert into customer_examinations at print time ──
+    // Called via fetch() from confirmOrderYes() when direct=1.
+    // Returns JSON {success, inv_str, exam_code}.
+    if (isset($_POST['save_direct_sale'])) {
+
+        function getRomawiDirect($month) {
+            $r = [1=>'I',2=>'II',3=>'III',4=>'IV',5=>'V',6=>'VI',
+                  7=>'VII',8=>'VIII',9=>'IX',10=>'X',11=>'XI',12=>'XII'];
+            return $r[(int)$month] ?? 'I';
+        }
+
+        $p = $_SESSION['ds_pending'] ?? null;
+        if (!$p) {
+            header('Content-Type: application/json');
+            echo json_encode(['success'=>false,'error'=>'Session expired. Please re-enter direct sale data.']);
+            exit();
+        }
+
+        $ds_date   = $p['date'];
+        $ds_month  = (int)date('n', strtotime($ds_date));
+        $ds_year   = (int)date('Y', strtotime($ds_date));
+
+        // Get next invoice number
         $invRes = mysqli_query($conn, "SELECT MAX(CAST(invoice_number AS UNSIGNED)) AS max_inv FROM customer_examinations WHERE invoice_number REGEXP '^[0-9]+$'");
         $invRow = mysqli_fetch_assoc($invRes);
         $ds_inv_num = max(1, (int)($invRow['max_inv'] ?? 0) + 1);
         $ds_inv_str = str_pad((string)$ds_inv_num, 3, '0', STR_PAD_LEFT);
-        $ds_inv_str = mysqli_real_escape_string($conn, $ds_inv_str);
 
-        // Examination code: LZ/EC/000-{inv}/MONTH_ROM/YEAR  (000 = from-customer marker)
-        // The invoice number is appended to guarantee uniqueness (examination_code has a UNIQUE key).
         $ds_exam_code = 'LZ/EC/000-' . $ds_inv_str . '/' . getRomawiDirect($ds_month) . '/' . $ds_year;
-        $ds_exam_code = mysqli_real_escape_string($conn, $ds_exam_code);
 
-        // 4. Insert into customer_examinations
-        $ds_created_by = $_SESSION['username'] ?? 'system';
+        $ds_name       = mysqli_real_escape_string($conn, $p['name']);
+        $ds_gender     = mysqli_real_escape_string($conn, $p['gender']);
+        $ds_age        = (int)$p['age'];
+        $ds_symptoms   = mysqli_real_escape_string($conn, $p['symptoms']);
+        $ds_r_sph      = mysqli_real_escape_string($conn, $p['r_sph']);
+        $ds_r_cyl      = mysqli_real_escape_string($conn, $p['r_cyl']);
+        $ds_r_ax       = mysqli_real_escape_string($conn, (string)(int)$p['r_ax']);
+        $ds_r_add      = mysqli_real_escape_string($conn, $p['r_add']);
+        $ds_l_sph      = mysqli_real_escape_string($conn, $p['l_sph']);
+        $ds_l_cyl      = mysqli_real_escape_string($conn, $p['l_cyl']);
+        $ds_l_ax       = mysqli_real_escape_string($conn, (string)(int)$p['l_ax']);
+        $ds_l_add      = mysqli_real_escape_string($conn, $p['l_add']);
+        $ds_pd         = mysqli_real_escape_string($conn, $p['pd']);
+        $ds_hab        = (int)$p['visual_habit'];
+        $ds_dig        = (int)$p['digital_usage'];
+        $ds_nd         = (int)$p['need_distance'];
+        $ds_ni         = (int)$p['need_inter'];
+        $ds_nn         = (int)$p['need_near'];
+        $ds_created_by = mysqli_real_escape_string($conn, $p['created_by']);
+        $ds_inv_esc    = mysqli_real_escape_string($conn, $ds_inv_str);
+        $ds_ec_esc     = mysqli_real_escape_string($conn, $ds_exam_code);
+
+        $ds_zero = '0.00'; $ds_zero_ax = '0'; $ds_va = '20/20';
+        $ds_notes = 'Direct sale — Lens from customer.';
 
         $stmt = $conn->prepare("INSERT INTO customer_examinations (
             examination_date, examination_code, customer_name, gender, age, symptoms,
@@ -253,35 +309,6 @@
             created_by
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
 
-        $ds_zero = '0.00'; $ds_zero_ax = '0'; $ds_va = '20/20';
-        $ds_notes = 'Direct sale — Lens from customer.';
-
-        // Visual habit & digital usage from form
-        $ds_hab = max(1, min(3, (int)($_POST['ds_visual_habit'] ?? 1)));
-        $ds_dig = max(1, min(3, (int)($_POST['ds_digital_usage'] ?? 1)));
-
-        // Vision need (only stored if age >= 39, same rule as customer_prescription)
-        $ds_nd = ($ds_age >= 39) ? max(0, min(1, (int)($_POST['ds_need_distance']     ?? 0))) : 0;
-        $ds_ni = ($ds_age >= 39) ? max(0, min(1, (int)($_POST['ds_need_intermediate'] ?? 0))) : 0;
-        $ds_nn = ($ds_age >= 39) ? max(0, min(1, (int)($_POST['ds_need_near']         ?? 0))) : 0;
-
-        // Symptoms: build from JSON list + other text
-        $symptoms_arr = json_decode($_POST['ds_symptoms_json'] ?? '[]', true) ?? [];
-        $symptoms_arr = array_map('strtoupper', $symptoms_arr);
-        if (!empty($_POST['ds_other_symptoms'])) {
-            $symptoms_arr[] = 'OTHERS: ' . strtoupper(trim($_POST['ds_other_symptoms']));
-        }
-        // Always keep DIRECT SALE marker
-        array_unshift($symptoms_arr, 'DIRECT SALE');
-        $ds_symptoms = mysqli_real_escape_string($conn, implode(', ', $symptoms_arr));
-
-        // Type key (35 params):
-        // s=date, s=exam_code, s=name, s=gender, i=age, s=symptoms,
-        // s,s,s,s=old_R, s,s,s,s=old_L,
-        // s,s,s,s,s=new_R(sph,cyl,ax,add,va), s,s,s,s,s=new_L,
-        // s=pd, s=invoice_number,
-        // i=visual_habit, i=digital_usage, s=ucva_r, s=ucva_l, s=exam_notes,
-        // i=need_dist, i=need_inter, i=need_near, s=created_by
         $stmt->bind_param('ssssisssssssssssssssssssssiisssiiis',
             $ds_date, $ds_exam_code, $ds_name, $ds_gender, $ds_age, $ds_symptoms,
             $ds_zero, $ds_zero, $ds_zero_ax, $ds_zero,
@@ -293,14 +320,15 @@
             $ds_nd, $ds_ni, $ds_nn, $ds_created_by
         );
 
-        $ds_purchase_type = ($_POST['ds_purchase_type'] ?? '') === 'frame' ? 'frame' : 'complete';
-
+        header('Content-Type: application/json');
         if ($stmt->execute()) {
-            header("Location: invoice.php?inv=" . $ds_inv_str . "&direct=1&ptype=" . $ds_purchase_type);
-            exit();
+            log_activity($conn, 'customer_examinations', $ds_inv_str, 'INSERT', $p['created_by']);
+            unset($_SESSION['ds_pending']); // clear after successful commit
+            echo json_encode(['success'=>true,'inv_str'=>$ds_inv_str,'exam_code'=>$ds_exam_code]);
         } else {
-            $ds_error = "DATABASE ERROR: " . $stmt->error;
+            echo json_encode(['success'=>false,'error'=>$stmt->error]);
         }
+        exit();
     }
 
     // Check 'inv' parameter (manual) or 'code' (from customer_prescription.php)
@@ -310,10 +338,52 @@
     // Purchase type passed from direct-sale form: 'frame' = frame only (no lens/prescription)
     $inv_purchase_type = ($_GET['ptype'] ?? '') === 'frame' ? 'frame' : 'complete';
 
-    // ── DIRECT SALE ENTRY FORM (shown when no invoice number is given) ──────
-    if (empty($invoice_num) || $invoice_num === '00' || $invoice_num === '000') {
+    // ── DIRECT SALE: when ?direct=1, build $data from session so main page renders ──
+    $is_direct_pending = (!empty($_GET['direct']) && $_GET['direct'] === '1' && isset($_SESSION['ds_pending']));
+
+    if ($is_direct_pending) {
+        $p = $_SESSION['ds_pending'];
+        // Build a $data array that mirrors customer_examinations so the rest of the page works.
+        $data = [
+            'examination_date'  => $p['date'],
+            'examination_code'  => 'LZ/EC/000-PENDING',
+            'customer_name'     => $p['name'],
+            'gender'            => $p['gender'],
+            'age'               => $p['age'],
+            'symptoms'          => $p['symptoms'],
+            'new_r_sph'         => $p['r_sph'],
+            'new_r_cyl'         => $p['r_cyl'],
+            'new_r_ax'          => $p['r_ax'],
+            'new_r_add'         => $p['r_add'],
+            'new_r_visus'       => '20/20',
+            'new_l_sph'         => $p['l_sph'],
+            'new_l_cyl'         => $p['l_cyl'],
+            'new_l_ax'          => $p['l_ax'],
+            'new_l_add'         => $p['l_add'],
+            'new_l_visus'       => '20/20',
+            'old_r_sph' => '0.00','old_r_cyl' => '0.00','old_r_ax' => '0','old_r_add' => '0.00',
+            'old_l_sph' => '0.00','old_l_cyl' => '0.00','old_l_ax' => '0','old_l_add' => '0.00',
+            'pd_dist'           => $p['pd'],
+            'invoice_number'    => '',
+            'visual_habit'      => $p['visual_habit'],
+            'digital_usage'     => $p['digital_usage'],
+            'ucva_r'            => '20/20',
+            'ucva_l'            => '20/20',
+            'exam_notes'        => 'Direct sale — Lens from customer.',
+            'need_distance'     => $p['need_distance'],
+            'need_intermediate' => $p['need_inter'],
+            'need_near'         => $p['need_near'],
+            'lens_modification' => 0,
+            'mod_r_sph' => null,'mod_r_cyl' => null,'mod_r_ax' => null,'mod_r_add' => null,
+            'mod_l_sph' => null,'mod_l_cyl' => null,'mod_l_ax' => null,'mod_l_add' => null,
+        ];
+        $invoice_num = ''; // no inv number yet — assigned at save_direct_sale time
+    }
+
+    // ── DIRECT SALE ENTRY FORM (shown when no invoice number is given AND not a pending direct sale) ──
+    if (!$is_direct_pending && (empty($invoice_num) || $invoice_num === '00' || $invoice_num === '000')) {
         // Show the direct-sale entry form instead of dying
-        $ds_err_msg = $ds_error ?? '';
+        $ds_err_msg = '';
         ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -695,24 +765,26 @@ function dsUpdateVisionNeed(age) {
         exit();
     }
 
-    // Query customer_examinations using 'invoice_number' column
-    $query = "SELECT ce.*, 
-            pm.od_sph AS mod_r_sph, pm.od_cyl AS mod_r_cyl, pm.od_axis AS mod_r_ax, pm.od_add AS mod_r_add,
-            pm.os_sph AS mod_l_sph, pm.os_cyl AS mod_l_cyl, pm.os_axis AS mod_l_ax, pm.os_add AS mod_l_add
-            FROM customer_examinations ce
-            LEFT JOIN prescription_modifications pm ON ce.invoice_number = pm.invoice_number
-            WHERE ce.invoice_number = '$invoice_num' 
-            LIMIT 1";
+    // Query customer_examinations — skip when direct pending session already built $data above
+    if (!$is_direct_pending) {
+        $query = "SELECT ce.*, 
+                pm.od_sph AS mod_r_sph, pm.od_cyl AS mod_r_cyl, pm.od_axis AS mod_r_ax, pm.od_add AS mod_r_add,
+                pm.os_sph AS mod_l_sph, pm.os_cyl AS mod_l_cyl, pm.os_axis AS mod_l_ax, pm.os_add AS mod_l_add
+                FROM customer_examinations ce
+                LEFT JOIN prescription_modifications pm ON ce.invoice_number = pm.invoice_number
+                WHERE ce.invoice_number = '$invoice_num' 
+                LIMIT 1";
 
-    $result = mysqli_query($conn, $query);
-    $data = mysqli_fetch_assoc($result);
+        $result = mysqli_query($conn, $query);
+        $data = mysqli_fetch_assoc($result);
 
-    if (!$data) {
-        die("
-            <div style='background:#1a1c1d; color:#ff4d4d; height:100vh; display:flex; align-items:center; justify-content:center; font-family:sans-serif;'>
-                Invoice data for <b>$invoice_num</b> was not found in the database.
-            </div>
-        ");
+        if (!$data) {
+            die("
+                <div style='background:#1a1c1d; color:#ff4d4d; height:100vh; display:flex; align-items:center; justify-content:center; font-family:sans-serif;'>
+                    Invoice data for <b>$invoice_num</b> was not found in the database.
+                </div>
+            ");
+        }
     }
 
     // ============================================================
@@ -2470,7 +2542,66 @@ function dsUpdateVisionNeed(age) {
                 width: 100%;">
                     <h2>INVOICE<?php if (!empty($_GET['direct'])): ?> <span style="font-size:0.55em;background:rgba(0,255,136,0.15);color:#00ff88;border:1px solid rgba(0,255,136,0.4);border-radius:20px;padding:3px 10px;letter-spacing:1px;vertical-align:middle;">DIRECT SALE</span><?php endif; ?></h2>
             
-                    <?php if (!empty($_GET['direct'])): ?>
+                    <?php if ($is_direct_pending):
+                        $pCard = $_SESSION['ds_pending'];
+                        $presHasPrescription = ($pCard['r_sph'] !== '0.00' || $pCard['r_cyl'] !== '0.00' || $pCard['r_add'] !== '0.00' || $pCard['l_sph'] !== '0.00' || $pCard['l_cyl'] !== '0.00' || $pCard['l_add'] !== '0.00');
+                    ?>
+                    <!-- ── DIRECT SALE PENDING CARD ─────────────────────────── -->
+                    <div id="ds-pending-card" style="background:rgba(0,255,136,0.05);border:1px solid rgba(0,255,136,0.35);border-radius:14px;margin-bottom:22px;overflow:hidden;">
+                        <!-- Card header / toggle -->
+                        <div onclick="dsPendingToggle()" style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;cursor:pointer;user-select:none;">
+                            <div style="display:flex;align-items:center;gap:10px;">
+                                <span style="font-size:0.6em;letter-spacing:2px;color:#00ff88;font-weight:800;">📋 DIRECT SALE DATA</span>
+                                <span style="font-size:0.55em;background:rgba(255,170,0,0.15);color:#ffaa00;border:1px solid rgba(255,170,0,0.4);border-radius:20px;padding:2px 8px;">PENDING — saved at print</span>
+                            </div>
+                            <span id="ds-pending-chevron" style="color:#00ff88;font-size:0.9em;transition:transform 0.2s;">▾</span>
+                        </div>
+                        <!-- Card body -->
+                        <div id="ds-pending-body" style="padding:0 16px 14px;display:block;">
+                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
+                                <div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:8px 10px;">
+                                    <div style="font-size:0.58em;color:#666;letter-spacing:1px;margin-bottom:3px;">CUSTOMER NAME</div>
+                                    <div style="font-size:0.78em;color:#eee;font-weight:700;"><?php echo htmlspecialchars($pCard['name'] ?: '— (not set)'); ?></div>
+                                </div>
+                                <div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:8px 10px;">
+                                    <div style="font-size:0.58em;color:#666;letter-spacing:1px;margin-bottom:3px;">DATE / GENDER / AGE</div>
+                                    <div style="font-size:0.78em;color:#eee;"><?php echo date('d/m/Y', strtotime($pCard['date'])); ?> · <?php echo $pCard['gender']; ?> · <?php echo $pCard['age'] ?: '—'; ?> YRS</div>
+                                </div>
+                                <div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:8px 10px;">
+                                    <div style="font-size:0.58em;color:#666;letter-spacing:1px;margin-bottom:3px;">PURCHASE TYPE</div>
+                                    <div style="font-size:0.78em;color:<?php echo $inv_purchase_type === 'frame' ? '#ffaa00' : '#00cfff'; ?>;font-weight:700;"><?php echo $inv_purchase_type === 'frame' ? '🕶️ FRAME ONLY' : '🔬 FRAME + LENS'; ?></div>
+                                </div>
+                                <div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:8px 10px;">
+                                    <div style="font-size:0.58em;color:#666;letter-spacing:1px;margin-bottom:3px;">PD</div>
+                                    <div style="font-size:0.78em;color:#eee;"><?php echo htmlspecialchars($pCard['pd']); ?> mm</div>
+                                </div>
+                            </div>
+                            <?php if ($presHasPrescription): ?>
+                            <div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:10px 12px;margin-bottom:8px;">
+                                <div style="font-size:0.58em;color:#666;letter-spacing:1px;margin-bottom:8px;">PRESCRIPTION (FROM CUSTOMER)</div>
+                                <div style="display:grid;grid-template-columns:1.1fr repeat(4,1fr);gap:4px;font-size:0.65em;">
+                                    <div style="color:#555;text-align:center;font-weight:700;">EYE</div>
+                                    <div style="color:#555;text-align:center;font-weight:700;">SPH</div>
+                                    <div style="color:#555;text-align:center;font-weight:700;">CYL</div>
+                                    <div style="color:#555;text-align:center;font-weight:700;">AXIS</div>
+                                    <div style="color:#555;text-align:center;font-weight:700;">ADD</div>
+                                    <div style="color:#aaa;font-weight:700;">RIGHT</div>
+                                    <div style="color:#00ff88;font-family:monospace;text-align:center;"><?php echo $pCard['r_sph']; ?></div>
+                                    <div style="color:#00ff88;font-family:monospace;text-align:center;"><?php echo $pCard['r_cyl']; ?></div>
+                                    <div style="color:#00cfff;font-family:monospace;text-align:center;"><?php echo $pCard['r_ax']; ?>°</div>
+                                    <div style="color:#00ff88;font-family:monospace;text-align:center;"><?php echo $pCard['r_add'] !== '0.00' ? $pCard['r_add'] : '—'; ?></div>
+                                    <div style="color:#aaa;font-weight:700;">LEFT</div>
+                                    <div style="color:#00ff88;font-family:monospace;text-align:center;"><?php echo $pCard['l_sph']; ?></div>
+                                    <div style="color:#00ff88;font-family:monospace;text-align:center;"><?php echo $pCard['l_cyl']; ?></div>
+                                    <div style="color:#00cfff;font-family:monospace;text-align:center;"><?php echo $pCard['l_ax']; ?>°</div>
+                                    <div style="color:#00ff88;font-family:monospace;text-align:center;"><?php echo $pCard['l_add'] !== '0.00' ? $pCard['l_add'] : '—'; ?></div>
+                                </div>
+                            </div>
+                            <?php endif; ?>
+                            <div style="font-size:0.62em;color:#555;text-align:center;margin-top:4px;">⚠ Data ini akan disimpan ke database hanya saat PRINT INVOICE dikonfirmasi</div>
+                        </div>
+                    </div>
+                    <?php elseif (!empty($_GET['direct'])): ?>
                     <div style="background:rgba(0,255,136,0.05);border:1px solid rgba(0,255,136,0.2);border-radius:12px;padding:12px 16px;margin-bottom:18px;font-size:0.8em;color:#888;text-align:center;line-height:1.7;">
                         Prescription provided by customer · Sequence code: <span style="color:#00ff88;font-weight:bold;">000</span>
                     </div>
@@ -6948,6 +7079,23 @@ function dsUpdateVisionNeed(age) {
         // Replaces the old openPrintPage() direct-open behaviour.
         // ============================================================
         
+        // Direct sale pending flag (set server-side)
+        var _isDirectPending = <?php echo $is_direct_pending ? 'true' : 'false'; ?>;
+
+        // Toggle for the direct-sale pending card
+        function dsPendingToggle() {
+            var body    = document.getElementById('ds-pending-body');
+            var chevron = document.getElementById('ds-pending-chevron');
+            if (!body) return;
+            if (body.style.display === 'none') {
+                body.style.display = 'block';
+                if (chevron) chevron.style.transform = '';
+            } else {
+                body.style.display = 'none';
+                if (chevron) chevron.style.transform = 'rotate(-90deg)';
+            }
+        }
+
         // Next invoice sheet — computed server-side from the latest order in DB.
         // Falls back to starting_invoice_number from settings when no orders exist yet.
         var _coDefaultSheet = '<?php echo htmlspecialchars($nextInvoiceSheet, ENT_QUOTES); ?>';
@@ -7074,61 +7222,90 @@ function dsUpdateVisionNeed(age) {
                 return;
             }
         
-            var fd = new FormData();
-            fd.append('save_order',    '1');
-            fd.append('inv',           overlay.dataset.inv);
-            fd.append('exam_code',     overlay.dataset.examCode);
-            fd.append('invoice_sheet', invoiceSheet);
-            fd.append('is_modified',   overlay.dataset.isModified);
-            fd.append('frame_ufc',     overlay.dataset.frameUfc);
-            fd.append('frame_name',    overlay.dataset.frameName);
-            fd.append('frame_price',   overlay.dataset.framePrice);
-            fd.append('lens_name',     overlay.dataset.lensName);
-            fd.append('lens_price',    overlay.dataset.lensPrice);
-            fd.append('phone',         overlay.dataset.phone);
-            fd.append('address',       overlay.dataset.address);
-            fd.append('total_amount',  overlay.dataset.total);
-            fd.append('amount_paid',   overlay.dataset.paid);
-            fd.append('order_date',    overlay.dataset.orderDate);
-            fd.append('due_date',      overlay.dataset.dueDate);
-        
-            fetch('invoice.php', { method: 'POST', body: fd })
-                .then(function (r) { return r.json(); })
-                .then(function (data) {
-                    if (data.success) {
-                        closeConfirmOrder();
-        
-                        // Open print page in new tab
-                        var params = new URLSearchParams({
-                            inv:             overlay.dataset.inv,
-                            frame:           overlay.dataset.frameName,
-                            frame_price:     overlay.dataset.framePrice,
-                            lens:            overlay.dataset.lensName,
-                            lens_price:      overlay.dataset.lensPrice,
-                            rx_mode:         overlay.dataset.rxMode,
-                            total:           overlay.dataset.total,
-                            paid:            overlay.dataset.paid,
-                            balance:         overlay.dataset.total - overlay.dataset.paid,
-                            phone:           overlay.dataset.phone,
-                            due_date:        overlay.dataset.dueDate,
-                            customer_number: data.customer_number,
-                            auto:            '1'
-                        });
-                        window.open('print_invoice_snippet.php?' + params.toString(), '_self');
-        
-                    } else {
-                        errBox.textContent   = 'Failed to save: ' + (data.error || 'Unknown error');
+            // ── Helper: do the actual save_order + open print page ────────
+            function doSaveOrder(invNum, examCode) {
+                var fd2 = new FormData();
+                fd2.append('save_order',    '1');
+                fd2.append('inv',           invNum);
+                fd2.append('exam_code',     examCode);
+                fd2.append('invoice_sheet', invoiceSheet);
+                fd2.append('is_modified',   overlay.dataset.isModified);
+                fd2.append('frame_ufc',     overlay.dataset.frameUfc);
+                fd2.append('frame_name',    overlay.dataset.frameName);
+                fd2.append('frame_price',   overlay.dataset.framePrice);
+                fd2.append('lens_name',     overlay.dataset.lensName);
+                fd2.append('lens_price',    overlay.dataset.lensPrice);
+                fd2.append('phone',         overlay.dataset.phone);
+                fd2.append('address',       overlay.dataset.address);
+                fd2.append('total_amount',  overlay.dataset.total);
+                fd2.append('amount_paid',   overlay.dataset.paid);
+                fd2.append('order_date',    overlay.dataset.orderDate);
+                fd2.append('due_date',      overlay.dataset.dueDate);
+
+                fetch('invoice.php', { method: 'POST', body: fd2 })
+                    .then(function (r) { return r.json(); })
+                    .then(function (data) {
+                        if (data.success) {
+                            closeConfirmOrder();
+                            var params = new URLSearchParams({
+                                inv:             invNum,
+                                frame:           overlay.dataset.frameName,
+                                frame_price:     overlay.dataset.framePrice,
+                                lens:            overlay.dataset.lensName,
+                                lens_price:      overlay.dataset.lensPrice,
+                                rx_mode:         overlay.dataset.rxMode,
+                                total:           overlay.dataset.total,
+                                paid:            overlay.dataset.paid,
+                                balance:         overlay.dataset.total - overlay.dataset.paid,
+                                phone:           overlay.dataset.phone,
+                                due_date:        overlay.dataset.dueDate,
+                                customer_number: data.customer_number,
+                                auto:            '1'
+                            });
+                            window.open('print_invoice_snippet.php?' + params.toString(), '_self');
+                        } else {
+                            errBox.textContent   = 'Failed to save order: ' + (data.error || 'Unknown error');
+                            errBox.style.display = 'block';
+                            btn.disabled         = false;
+                            btn.textContent      = '✅ YES SHOPPING — SAVE & PRINT';
+                        }
+                    })
+                    .catch(function () {
+                        errBox.textContent   = 'Network error. Please try again.';
                         errBox.style.display = 'block';
                         btn.disabled         = false;
                         btn.textContent      = '✅ YES SHOPPING — SAVE & PRINT';
-                    }
-                })
-                .catch(function (err) {
-                    errBox.textContent   = 'Network error. Please try again.';
-                    errBox.style.display = 'block';
-                    btn.disabled         = false;
-                    btn.textContent      = '✅ YES SHOPPING — SAVE & PRINT';
-                });
+                    });
+            }
+
+            // ── If direct pending: save customer_examinations first ────────
+            if (_isDirectPending) {
+                btn.textContent = '⏳ SAVING CUSTOMER DATA…';
+                var fd1 = new FormData();
+                fd1.append('save_direct_sale', '1');
+                fetch('invoice.php', { method: 'POST', body: fd1 })
+                    .then(function (r) { return r.json(); })
+                    .then(function (ds) {
+                        if (ds.success) {
+                            btn.textContent = '⏳ SAVING ORDER…';
+                            doSaveOrder(ds.inv_str, ds.exam_code);
+                        } else {
+                            errBox.textContent   = 'Failed to save customer data: ' + (ds.error || 'Unknown error');
+                            errBox.style.display = 'block';
+                            btn.disabled         = false;
+                            btn.textContent      = '✅ YES SHOPPING — SAVE & PRINT';
+                        }
+                    })
+                    .catch(function () {
+                        errBox.textContent   = 'Network error saving customer data. Please try again.';
+                        errBox.style.display = 'block';
+                        btn.disabled         = false;
+                        btn.textContent      = '✅ YES SHOPPING — SAVE & PRINT';
+                    });
+            } else {
+                // Normal flow: inv number already in overlay.dataset.inv
+                doSaveOrder(overlay.dataset.inv, overlay.dataset.examCode);
+            }
         }
 
         // Make showFrameRecommendation accessible from outside its IIFE
