@@ -37,9 +37,8 @@
         // WHITE-LIST: Define keys allowed to be updated through this form
         $allowed_keys = [
             'store_name', 'store_phone', 'store_address', 'brand_image_location', 
-            'copyright_footer', 'currency_code', 'timezone', 'tax_rate_percent', 
-            'uom_frame_default', 'uom_lens_default', 'uom_other_default', 
-            'low_stock_threshold', 'starting_invoice_number', 'receipt_footer_msg', 
+            'copyright_footer', 
+            'starting_invoice_number', 
             'invoice_format_prefix', 'barcode_guide_image_location',
             'lens_stock_lead_time_days', 'lens_lab_lead_time_days'
         ];
@@ -268,64 +267,11 @@
                             </div>
                         </div>
             
-                        <div class="config-section">
-                            <div class="section-header">🌍 Localization</div>
-                            
-                            <div class="input-grid">
-                                <div class="input-group">
-                                    <label>Currency Code (e.g., IDR)</label>
-                                    <input type="text" class="input-field" name="currency_code" value="<?php echo htmlspecialchars($settings['currency_code']['value'] ?? ''); ?>" maxlength="3">
-                                    <p class="description"><?php echo $settings['currency_code']['description'] ?? ''; ?></p>
-                                </div>
-                
-                                <div class="input-group">
-                                    <label>Timezone (e.g., Asia/Jakarta)</label>
-                                    <input type="text" class="input-field" name="timezone" value="<?php echo htmlspecialchars($settings['timezone']['value'] ?? ''); ?>">
-                                    <p class="description"><?php echo $settings['timezone']['description'] ?? ''; ?></p>
-                                </div>
-                            </div>
-                        </div>
-            
-                        <div class="config-section">
-                            <div class="section-header">💰 Financial & Tax</div>
-                            
-                            <div class="input-grid">
-                                <div class="input-group">
-                                    <label>Tax Rate Percentage</label>
-                                    <input type="number" class="input-field" step="0.01" name="tax_rate_percent" value="<?php echo htmlspecialchars($settings['tax_rate_percent']['value'] ?? ''); ?>" required>
-                                    <p class="description"><?php echo $settings['tax_rate_percent']['description'] ?? ''; ?></p>
-                                </div>
-                            </div>
-                        </div>
                         
                         <div class="config-section">
                             <div class="section-header">📦 Inventory Defaults</div>
                             
                             <div class="input-grid">
-                                <div class="input-group">
-                                    <label>UOM Default - Frame</label>
-                                    <input type="text" class="input-field" name="uom_frame_default" value="<?php echo htmlspecialchars($settings['uom_frame_default']['value'] ?? ''); ?>">
-                                    <p class="description"><?php echo $settings['uom_frame_default']['description'] ?? 'Default Unit of Measure (UOM) for Frame Category'; ?></p>
-                                </div>
-                
-                                <div class="input-group">
-                                    <label>UOM Default - Lensa</label>
-                                    <input type="text" class="input-field" name="uom_lens_default" value="<?php echo htmlspecialchars($settings['uom_lens_default']['value'] ?? ''); ?>">
-                                    <p class="description"><?php echo $settings['uom_lens_default']['description'] ?? 'Default Unit of Measure (UOM) for Lens Category'; ?></p>
-                                </div>
-                
-                                <div class="input-group">
-                                    <label>UOM Default - Lainnya (Other)</label>
-                                    <input type="text" class="input-field" name="uom_other_default" value="<?php echo htmlspecialchars($settings['uom_other_default']['value'] ?? ''); ?>">
-                                    <p class="description"><?php echo $settings['uom_other_default']['description'] ?? 'Default Unit of Measure (UOM) for Other Product Categories'; ?></p>
-                                </div>
-                
-                                <div class="input-group">
-                                    <label>Low Stock Threshold (Global)</label>
-                                    <input type="number" class="input-field" name="low_stock_threshold" value="<?php echo htmlspecialchars($settings['low_stock_threshold']['value'] ?? ''); ?>" required>
-                                    <p class="description"><?php echo $settings['low_stock_threshold']['description'] ?? 'Global Low Stock Warning Limit (Units)'; ?></p>
-                                </div>
-                
                                 <div class="input-group full-width">
                                     <label>Starting Invoice Number (Sequence)</label>
                                     <input type="text" class="input-field" name="starting_invoice_number" value="<?php echo htmlspecialchars($settings['starting_invoice_number']['value'] ?? ''); ?>" required> 
@@ -349,13 +295,7 @@
                         <div class="config-section">
                             <div class="section-header">🧾 Receipt & Invoice</div>
                             <div class="input-grid">
-                                <div class="input-group">
-                                    <label>Receipt Footer Message</label>
-                                    <input type="text" class="input-field" name="receipt_footer_msg" value="<?php echo htmlspecialchars($settings['receipt_footer_msg']['value'] ?? ''); ?>">
-                                    <p class="description"><?php echo $settings['receipt_footer_msg']['description'] ?? ''; ?></p>
-                                </div>
-                
-                                <div class="input-group">
+                                <div class="input-group full-width">
                                     <label>Invoice Format Prefix</label>
                                     <input type="text" class="input-field" name="invoice_format_prefix" value="<?php echo htmlspecialchars($settings['invoice_format_prefix']['value'] ?? ''); ?>">
                                     <p class="description"><?php echo $settings['invoice_format_prefix']['description'] ?? ''; ?></p>
