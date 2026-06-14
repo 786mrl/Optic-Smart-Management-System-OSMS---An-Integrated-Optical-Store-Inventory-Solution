@@ -216,10 +216,12 @@
                 flex: 1 1 100px;
                 min-width: 90px;
                 max-width: 160px;
+                min-height: 140px;
                 background: var(--card-bg, #2a2d2f);
                 border: 2px solid var(--border-color, #3a3d3f);
                 border-radius: 14px;
-                padding: 16px 10px 14px;
+                padding: 18px 10px 26px;
+                justify-content: center;
                 cursor: pointer;
                 display: flex;
                 flex-direction: column;
@@ -270,7 +272,7 @@
             }
 
             .card-opt.active .card-label {
-                color: var(--accent, #00c9a7);
+                color: #00ff88;
             }
 
             .card-opt .card-sub {
@@ -501,6 +503,104 @@
                 transform: rotate(-90deg);
             }
 
+            /* ── Collapsible Card-Select Groups (Structure/Size/Gender/StockAge) ── */
+            .cs-group {
+                flex: 0 0 100%;
+                max-width: 100%;
+                grid-column: 1 / -1;
+                width: 100% !important;
+                border: 1px solid var(--border-color, #3a3d3f);
+                border-radius: 14px;
+                background: var(--card-bg, #2a2d2f);
+                overflow: hidden;
+                transition: border-color 0.2s ease;
+            }
+
+            .cs-group-header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                width: 100%;
+                padding: 12px 16px;
+                background: transparent;
+                border: none;
+                cursor: pointer;
+                -webkit-tap-highlight-color: transparent;
+                user-select: none;
+            }
+
+            .cs-group-header:hover {
+                background: rgba(0,201,167,0.06);
+            }
+
+            .cs-group-title {
+                font-size: 0.78rem;
+                font-weight: 800;
+                letter-spacing: 0.14em;
+                text-transform: uppercase;
+                color: var(--text-main, #e8e8e8);
+            }
+
+            .cs-group-current {
+                font-size: 0.68rem;
+                font-weight: 700;
+                letter-spacing: 0.05em;
+                color: #00ff88;
+                text-transform: uppercase;
+                margin-left: 8px;
+                white-space: nowrap;
+            }
+
+            .cs-group-right {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+
+            .cs-group-arrow {
+                font-size: 1rem;
+                color: var(--text-muted, #aaa);
+                transition: transform 0.3s cubic-bezier(.34,1.56,.64,1);
+                line-height: 1;
+            }
+
+            .cs-group.expanded .cs-group-arrow {
+                transform: rotate(180deg);
+            }
+
+            .cs-group-body {
+                overflow: hidden;
+                max-height: 0;
+                opacity: 0;
+                transition: max-height 0.35s ease, opacity 0.25s ease, padding 0.35s ease;
+                padding: 0 14px;
+            }
+
+            .cs-group.expanded .cs-group-body {
+                max-height: 600px;
+                opacity: 1;
+                padding: 14px 14px 16px;
+            }
+
+            .cs-group .card-select-wrapper {
+                margin-top: 0;
+            }
+
+            @media (max-width: 480px) {
+                .cs-group-title {
+                    font-size: 0.7rem;
+                }
+                .cs-group-current {
+                    font-size: 0.62rem;
+                }
+                .cs-group-header {
+                    padding: 10px 12px;
+                }
+                .cs-group.expanded .cs-group-body {
+                    padding: 12px 8px 14px;
+                }
+            }
+
             /* Preview body: animated open/close */
             #preview-body {
                 overflow: hidden;
@@ -625,37 +725,52 @@
                             </div>
             
                             <!-- FRAME STRUCTURE -->
-                            <div class="input-group" style="flex: 0 0 100%; max-width: 100%; grid-column: 1 / -1; width: 100% !important;">
-                                <label style="width: 100%; text-align: center; margin-bottom: 0;">FRAME STRUCTURE</label>
+                            <div class="cs-group" id="csgroup_structure">
+                                <button type="button" class="cs-group-header" onclick="toggleCsGroup('csgroup_structure')">
+                                    <span class="cs-group-title">Frame Structure</span>
+                                    <span class="cs-group-right">
+                                        <span class="cs-group-current" id="cscurrent_structure">Full Rim</span>
+                                        <span class="cs-group-arrow">▾</span>
+                                    </span>
+                                </button>
+                                <div class="cs-group-body">
                                 <input type="hidden" name="structure" id="frame_structure_input" value="full-rim">
                                 <div class="card-select-wrapper" id="card_structure">
                                     <button type="button" class="card-opt active" value="full-rim" onclick="selectCard(this,'frame_structure_input','card_structure')">
                                         <span class="card-icon">
-                                            <img src="image/frame_data_entry/full_rim.png" alt="Kacamata" style="width: 60px; height: auto; vertical-align: middle;">
+                                            <img src="image/frame_data_entry/full_rim.png" alt="Kacamata" style="width: 72px; height: auto; vertical-align: middle;">
                                         </span>
                                         <span class="card-label">FULL RIM</span>
                                         <span class="card-sub">Full frame</span>
                                     </button>
                                     <button type="button" class="card-opt" value="semi-rimless" onclick="selectCard(this,'frame_structure_input','card_structure')">
                                         <span class="card-icon">
-                                            <img src="image/frame_data_entry/semi_rimless.png" alt="Kacamata" style="width: 60px; height: auto; vertical-align: middle;">
+                                            <img src="image/frame_data_entry/semi_rimless.png" alt="Kacamata" style="width: 72px; height: auto; vertical-align: middle;">
                                         </span>
                                         <span class="card-label">SEMI RIMLESS</span>
                                         <span class="card-sub">Half frame</span>
                                     </button>
                                     <button type="button" class="card-opt" value="rimless" onclick="selectCard(this,'frame_structure_input','card_structure')">
                                     <span class="card-icon">
-                                        <img src="image/frame_data_entry/rimless.png" alt="Kacamata" style="width: 60px; height: auto; vertical-align: middle;">
+                                        <img src="image/frame_data_entry/rimless.png" alt="Kacamata" style="width: 72px; height: auto; vertical-align: middle;">
                                     </span>
                                         <span class="card-label">RIMLESS</span>
                                         <span class="card-sub">No frame</span>
                                     </button>
                                 </div>
+                                </div>
                             </div>
             
                             <!-- FRAME SIZE RANGE -->
-                            <div class="input-group" style="flex: 0 0 100%; max-width: 100%; grid-column: 1 / -1; width: 100% !important;">
-                                <label style="width: 100%; text-align: center; margin-bottom: 0;">SIZE RANGE</label>
+                            <div class="cs-group" id="csgroup_size_range">
+                                <button type="button" class="cs-group-header" onclick="toggleCsGroup('csgroup_size_range')">
+                                    <span class="cs-group-title">Size Range</span>
+                                    <span class="cs-group-right">
+                                        <span class="cs-group-current" id="cscurrent_size_range">Small</span>
+                                        <span class="cs-group-arrow">▾</span>
+                                    </span>
+                                </button>
+                                <div class="cs-group-body">
                                 <input type="hidden" name="size_range" id="frame_size_range_input" value="small">
                                 <div class="card-select-wrapper" id="card_size_range">
                                     <button type="button" class="card-opt active" value="small" onclick="selectCard(this,'frame_size_range_input','card_size_range')">
@@ -674,11 +789,19 @@
                                         <span class="card-sub">Wide fit</span>
                                     </button>
                                 </div>
+                                </div>
                             </div>
 
                             <!-- GENDER CATEGORY -->
-                            <div class="input-group" style="flex: 0 0 100%; max-width: 100%; grid-column: 1 / -1; width: 100% !important;">
-                                <label style="width: 100%; text-align: center; margin-bottom: 0;">GENDER CATEGORY</label>
+                            <div class="cs-group" id="csgroup_gender">
+                                <button type="button" class="cs-group-header" onclick="toggleCsGroup('csgroup_gender')">
+                                    <span class="cs-group-title">Gender Category</span>
+                                    <span class="cs-group-right">
+                                        <span class="cs-group-current" id="cscurrent_gender">Unisex</span>
+                                        <span class="cs-group-arrow">▾</span>
+                                    </span>
+                                </button>
+                                <div class="cs-group-body">
                                 <input type="hidden" name="gender_category" id="gender_category_input" value="unisex">
                                 <div class="card-select-wrapper" id="card_gender">
                                     <button type="button" class="card-opt" value="men" onclick="selectCard(this,'gender_category_input','card_gender')">
@@ -697,6 +820,7 @@
                                         <span class="card-sub">For all</span>
                                     </button>
                                 </div>
+                                </div>
                             </div>
             
                             <!-- TOTAL FRAME -->
@@ -706,8 +830,15 @@
                             </div>
 
                             <!-- STOCK AGE -->
-                            <div class="input-group" style="flex: 0 0 100%; max-width: 100%; grid-column: 1 / -1; width: 100% !important;">
-                                <label style="width: 100%; text-align: center; margin-bottom: 0;">STOCK AGE</label>
+                            <div class="cs-group" id="csgroup_stock_age">
+                                <button type="button" class="cs-group-header" onclick="toggleCsGroup('csgroup_stock_age')">
+                                    <span class="cs-group-title">Stock Age</span>
+                                    <span class="cs-group-right">
+                                        <span class="cs-group-current" id="cscurrent_stock_age">New</span>
+                                        <span class="cs-group-arrow">▾</span>
+                                    </span>
+                                </button>
+                                <div class="cs-group-body">
                                 <input type="hidden" name="stock_age" id="stock_age_input" value="new">
                                 <div class="card-select-wrapper" id="card_stock_age">
                                     <button type="button" class="card-opt" value="very old" onclick="selectCard(this,'stock_age_input','card_stock_age')">
@@ -725,6 +856,7 @@
                                         <span class="card-label">NEW</span>
                                         <span class="card-sub">Fresh stock</span>
                                     </button>
+                                </div>
                                 </div>
                             </div>
             
@@ -903,6 +1035,43 @@
 
                 // Save value
                 document.getElementById(hiddenInputId).value = el.value;
+
+                // Update collapsible group "current value" badge (if applicable)
+                const csCurrentMap = {
+                    'card_structure':  'cscurrent_structure',
+                    'card_size_range': 'cscurrent_size_range',
+                    'card_gender':     'cscurrent_gender',
+                    'card_stock_age':  'cscurrent_stock_age'
+                };
+                const csCurrentId = csCurrentMap[wrapperId];
+                if (csCurrentId) {
+                    const csCurrentEl = document.getElementById(csCurrentId);
+                    if (csCurrentEl) {
+                        const labelEl = el.querySelector('.card-label');
+                        csCurrentEl.textContent = labelEl ? labelEl.textContent.trim() : el.value;
+                    }
+                }
+
+                // ── AUTO-COLLAPSE current group & AUTO-EXPAND next group (chained flow) ──
+                const csChainMap = {
+                    'card_structure':  { current: 'csgroup_structure',  next: 'csgroup_size_range' },
+                    'card_size_range': { current: 'csgroup_size_range', next: 'csgroup_gender' },
+                    'card_gender':     { current: 'csgroup_gender',     next: 'csgroup_stock_age' }
+                };
+                const csChain = csChainMap[wrapperId];
+                if (csChain) {
+                    const currentGroup = document.getElementById(csChain.current);
+                    const nextGroup = document.getElementById(csChain.next);
+                    if (currentGroup) currentGroup.classList.remove('expanded');
+                    if (nextGroup) nextGroup.classList.add('expanded');
+                }
+            }
+
+            // ── CARD GROUP COLLAPSE/EXPAND (Frame Structure, Size Range, Gender, Stock Age) ──
+            function toggleCsGroup(groupId) {
+                const group = document.getElementById(groupId);
+                if (!group) return;
+                group.classList.toggle('expanded');
             }
 
             // 1. Primary Toggle Function (still used by color / has_color_code sections)

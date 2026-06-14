@@ -328,10 +328,59 @@
             text-transform: uppercase;
             color: var(--text-muted);
             margin: 0 0 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .chart-card h3 .card-toggle-icon {
+            font-size: 11px;
+            color: var(--text-muted);
+            transition: transform 0.3s ease;
+            flex-shrink: 0;
+        }
+
+        .chart-card.collapsed h3 {
+            margin-bottom: 0;
+        }
+
+        .chart-card.collapsed h3 .card-toggle-icon {
+            transform: rotate(-90deg);
+        }
+
+        .chart-card .card-body {
+            overflow: hidden;
+            max-height: 600px;
+            transition: max-height 0.3s ease, opacity 0.3s ease;
+            opacity: 1;
+        }
+
+        .chart-card.collapsed .card-body {
+            max-height: 0;
+            opacity: 0;
         }
 
         .chart-card canvas {
             max-height: 180px;
+        }
+
+        /* ── CARD-LEVEL EMPTY STATE ── */
+        .card-empty-state {
+            text-align: center;
+            padding: 28px 10px;
+            color: var(--text-muted);
+        }
+        .card-empty-state .card-empty-icon {
+            font-size: 32px;
+            margin-bottom: 8px;
+            opacity: 0.5;
+        }
+        .card-empty-state .card-empty-text {
+            font-size: 11px;
+            letter-spacing: 0.5px;
         }
 
         /* ── TOP FRAMES LIST ── */
@@ -566,6 +615,9 @@
         @media (max-width: 600px) {
             .stat-bar { grid-template-columns: 1fr 1fr; }
             .analytics-section { grid-template-columns: 1fr; }
+            .chart-card h3 { font-size: 10px; }
+            .chart-card canvas { max-height: 220px; }
+            .chart-card .card-body { max-height: 700px; }
         }
     </style>
 </head>
@@ -633,38 +685,102 @@
                 <div class="analytics-section">
 
                     <!-- Top Brands -->
-                    <div class="chart-card">
-                        <h3>🏆 Top Brands Sold</h3>
-                        <canvas id="chartBrand"></canvas>
+                    <div class="chart-card collapsed" id="card-brand">
+                        <h3 onclick="toggleCard('card-brand')">
+                            <span>🏆 Top Brands Sold</span>
+                            <span class="card-toggle-icon">▼</span>
+                        </h3>
+                        <div class="card-body">
+                            <?php if (count($js_brand) > 0): ?>
+                                <canvas id="chartBrand"></canvas>
+                            <?php else: ?>
+                                <div class="card-empty-state">
+                                    <div class="card-empty-icon">🏆</div>
+                                    <div class="card-empty-text">No brand data yet</div>
+                                </div>
+                            <?php endif; ?>
+                        </div>
                     </div>
 
                     <!-- Structure Breakdown -->
-                    <div class="chart-card">
-                        <h3>👓 Frame Structure</h3>
-                        <canvas id="chartStruct"></canvas>
+                    <div class="chart-card collapsed" id="card-struct">
+                        <h3 onclick="toggleCard('card-struct')">
+                            <span>👓 Frame Structure</span>
+                            <span class="card-toggle-icon">▼</span>
+                        </h3>
+                        <div class="card-body">
+                            <?php if (count($js_struct) > 0): ?>
+                                <canvas id="chartStruct"></canvas>
+                            <?php else: ?>
+                                <div class="card-empty-state">
+                                    <div class="card-empty-icon">👓</div>
+                                    <div class="card-empty-text">No structure data yet</div>
+                                </div>
+                            <?php endif; ?>
+                        </div>
                     </div>
 
                     <!-- Gender Category -->
-                    <div class="chart-card">
-                        <h3>⚧ Frame Gender Category</h3>
-                        <canvas id="chartGender"></canvas>
+                    <div class="chart-card collapsed" id="card-gender">
+                        <h3 onclick="toggleCard('card-gender')">
+                            <span>⚧ Frame Gender Category</span>
+                            <span class="card-toggle-icon">▼</span>
+                        </h3>
+                        <div class="card-body">
+                            <?php if (count($js_gender) > 0): ?>
+                                <canvas id="chartGender"></canvas>
+                            <?php else: ?>
+                                <div class="card-empty-state">
+                                    <div class="card-empty-icon">⚧</div>
+                                    <div class="card-empty-text">No gender category data yet</div>
+                                </div>
+                            <?php endif; ?>
+                        </div>
                     </div>
 
                     <!-- Material -->
-                    <div class="chart-card">
-                        <h3>🔩 Material Breakdown</h3>
-                        <canvas id="chartMaterial"></canvas>
+                    <div class="chart-card collapsed" id="card-material">
+                        <h3 onclick="toggleCard('card-material')">
+                            <span>🔩 Material Breakdown</span>
+                            <span class="card-toggle-icon">▼</span>
+                        </h3>
+                        <div class="card-body">
+                            <?php if (count($js_material) > 0): ?>
+                                <canvas id="chartMaterial"></canvas>
+                            <?php else: ?>
+                                <div class="card-empty-state">
+                                    <div class="card-empty-icon">🔩</div>
+                                    <div class="card-empty-text">No material data yet</div>
+                                </div>
+                            <?php endif; ?>
+                        </div>
                     </div>
 
                     <!-- Monthly Trend (full width) -->
-                    <div class="chart-card" style="grid-column: 1 / -1;">
-                        <h3>📈 Monthly Sales Trend (Last 6 Months)</h3>
-                        <canvas id="chartTrend" style="max-height:200px;"></canvas>
+                    <div class="chart-card collapsed" id="card-trend" style="grid-column: 1 / -1;">
+                        <h3 onclick="toggleCard('card-trend')">
+                            <span>📈 Monthly Sales Trend (Last 6 Months)</span>
+                            <span class="card-toggle-icon">▼</span>
+                        </h3>
+                        <div class="card-body">
+                            <?php if (count($js_trend) > 0): ?>
+                                <canvas id="chartTrend" style="max-height:200px;"></canvas>
+                            <?php else: ?>
+                                <div class="card-empty-state">
+                                    <div class="card-empty-icon">📈</div>
+                                    <div class="card-empty-text">No sales trend data for the last 6 months yet</div>
+                                </div>
+                            <?php endif; ?>
+                        </div>
                     </div>
 
                     <!-- Top 5 Frames -->
-                    <div class="chart-card" style="grid-column: 1 / -1;">
-                        <h3>🥇 Top 5 Best-Selling Frames</h3>
+                    <div class="chart-card collapsed" id="card-topframes" style="grid-column: 1 / -1;">
+                        <h3 onclick="toggleCard('card-topframes')">
+                            <span>🥇 Top 5 Best-Selling Frames</span>
+                            <span class="card-toggle-icon">▼</span>
+                        </h3>
+                        <div class="card-body">
                         <?php if (count($top_frames) > 0): ?>
                             <?php foreach ($top_frames as $i => $tf): ?>
                             <div class="top-frame-item">
@@ -684,8 +800,12 @@
                             </div>
                             <?php endforeach; ?>
                         <?php else: ?>
-                            <p style="color:var(--text-muted); font-size:12px; text-align:center; padding:20px;">No data yet.</p>
+                            <div class="card-empty-state">
+                                <div class="card-empty-icon">🥇</div>
+                                <div class="card-empty-text">No best-selling frame data yet</div>
+                            </div>
                         <?php endif; ?>
+                        </div>
                     </div>
 
                 </div>
@@ -921,10 +1041,12 @@ const PALETTE = [
     '#9b59b6','#e67e22','#2ecc71','#e91e63','#00bcd4'
 ];
 
+const chartInstances = {};
+
 function makeChart(id, type, labels, values, extras = {}) {
     const ctx = document.getElementById(id);
     if (!ctx) return;
-    new Chart(ctx, {
+    const chart = new Chart(ctx, {
         type,
         data: {
             labels,
@@ -965,6 +1087,8 @@ function makeChart(id, type, labels, values, extras = {}) {
             } : {}
         }
     });
+    chartInstances[id] = chart;
+    return chart;
 }
 
 // Build charts
@@ -995,7 +1119,7 @@ makeChart('chartMaterial',
 // Trend: dual axis orders + revenue
 const trendCtx = document.getElementById('chartTrend');
 if (trendCtx && trendData.length > 0) {
-    new Chart(trendCtx, {
+    chartInstances['chartTrend'] = new Chart(trendCtx, {
         type: 'bar',
         data: {
             labels: trendData.map(r => r.mon),
@@ -1050,6 +1174,21 @@ if (trendCtx && trendData.length > 0) {
             }
         }
     });
+}
+
+// ─────────────────────────────────────────
+// TOGGLE INDIVIDUAL CHART/ANALYTICS CARDS
+// ─────────────────────────────────────────
+function toggleCard(id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.toggle('collapsed');
+    if (!el.classList.contains('collapsed')) {
+        const canvas = el.querySelector('canvas');
+        if (canvas && chartInstances[canvas.id]) {
+            setTimeout(() => chartInstances[canvas.id].resize(), 310);
+        }
+    }
 }
 
 // ─────────────────────────────────────────
