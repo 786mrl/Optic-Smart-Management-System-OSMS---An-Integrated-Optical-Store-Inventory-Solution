@@ -1003,6 +1003,35 @@
                     overflow-x: auto !important;
                     white-space: nowrap !important;
                 }
+
+                /* --- TOGGLE PANEL HEADER (Gender, Visual Habits, Digital Usage, Has Old Prescription) --- */
+                .toggle-panel-header {
+                    flex-wrap: wrap;
+                    padding: 12px 14px;
+                    gap: 6px;
+                }
+                .toggle-panel-header .tph-label {
+                    font-size: 0.75em;
+                    white-space: nowrap;
+                }
+                .toggle-panel-header .tph-value {
+                    font-size: 0.75em;
+                    text-align: right;
+                    white-space: normal;
+                    word-break: break-word;
+                }
+                .toggle-panel-header .tph-arrow {
+                    margin-left: 8px;
+                }
+
+                /* --- SYMPTOMS SUMMARY BAR --- */
+                #btn_open_symptoms {
+                    padding: 12px;
+                }
+                #symptom_summary {
+                    font-size: 0.8em;
+                    word-break: break-word;
+                }
             }
         </style>
         <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
@@ -1328,6 +1357,10 @@
                                                     <input type="text" inputmode="tel" name="old_prescript_L_ax" placeholder="0">
                                                     <input type="text" inputmode="tel" name="old_prescript_L_add" placeholder="0.00">
                                                 </div>
+                                            </div>
+
+                                            <div style="text-align: center;">
+                                                <button type="button" class="submit-main" style="margin-top: 20px; font-size: 0.8em; padding: 10px; width: 150px;" onclick="closeOldPresAndOpenReview()">DONE</button>
                                             </div>
                                         </div>
                                     </div>
@@ -1818,6 +1851,11 @@
                     // Update status label di header toggle
                     const statusLabel = document.getElementById('old_pres_status_label');
                     if (statusLabel) statusLabel.textContent = val.toUpperCase();
+
+                    // If "NO" is chosen, close this section and open the Input Review card
+                    if (val === 'no') {
+                        closeOldPresAndOpenReview();
+                    }
                 }
             }
 
@@ -1831,6 +1869,23 @@
                 body.style.display  = isOpen ? 'none' : 'block';
                 arrow.textContent   = isOpen ? '\u25bc' : '\u25b2';
                 header.classList.toggle('open', !isOpen);
+            }
+
+            // DONE button inside the Old Prescription table (when "YES" is selected):
+            // closes the "Has Old Prescription" section and opens the Input Review card
+            function closeOldPresAndOpenReview() {
+                const body   = document.getElementById('old_pres_body');
+                const arrow  = document.getElementById('old_pres_arrow');
+                const header = document.getElementById('old_pres_header');
+
+                // Collapse the Has Old Prescription section
+                body.style.display = 'none';
+                arrow.textContent  = '\u25bc';
+                header.classList.remove('open');
+
+                // Expand the Input Review card
+                const reviewCard = document.getElementById('input_review_card');
+                if (reviewCard) reviewCard.classList.add('expanded');
             }
 
             // ================================================================
@@ -1873,6 +1928,44 @@
                 const header = document.getElementById(headerId);
                 if (panel)  panel.classList.remove('open');
                 if (header) header.classList.remove('open');
+
+                // 5. Auto-chain: open the next section in the sequence
+                openNextAutoSection(panelId);
+            }
+
+            // ================================================================
+            // === AUTO-CHAIN SEQUENTIAL SECTION OPENING =======================
+            // ================================================================
+            // Order: Gender -> Visual Habits -> Digital Device Usage -> Symptoms -> Has Old Prescription
+            const _autoChainOrder = ['gender_panel', 'visual_habit_panel', 'digital_usage_panel', 'symptoms_panel', 'old_pres_body'];
+
+            function openNextAutoSection(currentPanelId) {
+                const idx = _autoChainOrder.indexOf(currentPanelId);
+                if (idx === -1 || idx === _autoChainOrder.length - 1) return;
+
+                const nextId = _autoChainOrder[idx + 1];
+
+                if (nextId === 'symptoms_panel') {
+                    const panel = document.getElementById('symptoms_panel');
+                    const arrowIcon = document.getElementById('arrow_icon');
+                    if (panel) panel.style.display = 'block';
+                    if (arrowIcon) arrowIcon.innerText = '▲';
+                } else if (nextId === 'old_pres_body') {
+                    const body   = document.getElementById('old_pres_body');
+                    const arrow  = document.getElementById('old_pres_arrow');
+                    const header = document.getElementById('old_pres_header');
+                    if (body && body.style.display !== 'block') {
+                        body.style.display = 'block';
+                        if (arrow)  arrow.textContent = '\u25b2';
+                        if (header) header.classList.add('open');
+                    }
+                } else {
+                    // Toggle panels (visual_habit_panel, digital_usage_panel)
+                    const nextPanel  = document.getElementById(nextId);
+                    const nextHeader = document.getElementById(nextId.replace('_panel', '_header'));
+                    if (nextPanel)  nextPanel.classList.add('open');
+                    if (nextHeader) nextHeader.classList.add('open');
+                }
             }
 
             // ================================================================
@@ -2270,11 +2363,18 @@
                 const isHidden = (panel.style.display === 'none' || panel.style.display === '');
                 panel.style.display = isHidden ? 'block' : 'none';
                 document.getElementById('arrow_icon').innerText = isHidden ? '▲' : '▼';
+
+                // Auto-chain: if the Symptoms card is being collapsed (closed), open "Has Old Prescription" next
+                if (!isHidden) {
+                    openNextAutoSection('symptoms_panel');
+                }
             };
 
             function closePanel() {
                 panel.style.display = 'none';
                 document.getElementById('arrow_icon').innerText = '▼';
+                // Auto-chain: after closing Symptoms, open "Has Old Prescription" section
+                openNextAutoSection('symptoms_panel');
             }
 
             function toggleSymptom(btn, value, detailId = null) {

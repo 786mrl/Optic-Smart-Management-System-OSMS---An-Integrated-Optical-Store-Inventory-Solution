@@ -16,6 +16,61 @@
         }
     }
 
+    // ── Save edited customer/examination info (top info card) ─────────
+    if (isset($_POST['save_customer_info'])) {
+        $ci_inv = mysqli_real_escape_string($conn, $_POST['invoice_number'] ?? '');
+
+        // Fetch current values so we only update columns that actually changed
+        $curRes = mysqli_query($conn, "SELECT examination_date, customer_name, age, gender, symptoms, exam_notes FROM customer_examinations WHERE invoice_number = '$ci_inv' LIMIT 1");
+        $cur    = $curRes ? mysqli_fetch_assoc($curRes) : null;
+
+        $ci_date     = $_POST['ci_date'] ?? '';                                   // YYYY-MM-DD from <input type="date">
+        $ci_name     = strtoupper(trim($_POST['ci_customer_name'] ?? ''));
+        $ci_age      = (string)(int)($_POST['ci_age'] ?? 0);
+        $ci_gender   = $_POST['ci_gender'] ?? '';
+        $ci_symptoms = $_POST['ci_symptoms'] ?? '';
+        $ci_notes    = $_POST['ci_exam_notes'] ?? '';
+
+        $cur_date = $cur ? date('Y-m-d', strtotime($cur['examination_date'])) : null;
+
+        $setParts = [];
+        if ($cur === null || ($ci_date !== '' && $ci_date !== $cur_date)) {
+            $setParts[] = "examination_date = '" . mysqli_real_escape_string($conn, $ci_date) . "'";
+        }
+        if ($cur === null || $ci_name !== $cur['customer_name']) {
+            $setParts[] = "customer_name = '" . mysqli_real_escape_string($conn, $ci_name) . "'";
+        }
+        if ($cur === null || $ci_age !== (string)(int)$cur['age']) {
+            $setParts[] = "age = '" . mysqli_real_escape_string($conn, $ci_age) . "'";
+        }
+        if ($cur === null || $ci_gender !== $cur['gender']) {
+            $setParts[] = "gender = '" . mysqli_real_escape_string($conn, $ci_gender) . "'";
+        }
+        if ($cur === null || $ci_symptoms !== $cur['symptoms']) {
+            $setParts[] = "symptoms = '" . mysqli_real_escape_string($conn, $ci_symptoms) . "'";
+        }
+        if ($cur === null || $ci_notes !== $cur['exam_notes']) {
+            $setParts[] = "exam_notes = '" . mysqli_real_escape_string($conn, $ci_notes) . "'";
+        }
+
+        if (empty($setParts)) {
+            // Nothing actually changed — treat as success without touching the DB
+            header("Location: invoice.php?inv=$ci_inv&info_status=success");
+            exit();
+        }
+
+        $sql_ci_update = "UPDATE customer_examinations SET " . implode(', ', $setParts) . " WHERE invoice_number = '$ci_inv'";
+
+        if (mysqli_query($conn, $sql_ci_update)) {
+            log_activity($conn, 'customer_examinations', $ci_inv, 'UPDATE', $_SESSION['username'] ?? 'system');
+            header("Location: invoice.php?inv=$ci_inv&info_status=success");
+            exit();
+        } else {
+            header("Location: invoice.php?inv=$ci_inv&info_status=error");
+            exit();
+        }
+    }
+
     if (isset($_POST['save_modification'])) {
         $inv = mysqli_real_escape_string($conn, $_POST['invoice_number']);
         
@@ -243,6 +298,7 @@
             'visual_habit'  => max(1, min(3, (int)($_POST['ds_visual_habit']  ?? 1))),
             'digital_usage' => max(1, min(3, (int)($_POST['ds_digital_usage'] ?? 1))),
             'symptoms'      => implode(', ', $symptoms_arr),
+            'exam_notes'    => 'Direct sale — Lens from customer.',
             'need_distance' => $ds_nd,
             'need_inter'    => $ds_ni,
             'need_near'     => $ds_nn,
@@ -253,7 +309,69 @@
         exit();
     }
 
-    // ── DIRECT SALE: AJAX — insert into customer_examinations at print time ──
+    // ── Update pending direct-sale customer/examination info (session only) ──
+    // Same purpose as save_customer_info, but for direct-sale data that is
+    // still held in $_SESSION['ds_pending'] (not yet in the DB).
+    if (isset($_POST['save_ds_pending_info'])) {
+        if (isset($_SESSION['ds_pending'])) {
+            // Helper: format prescription value (mirrors $dsPres in create_direct_sale)
+            $dspPres = function($val) {
+                $v = trim($val);
+                if ($v === '') return '0.00';
+                if (is_numeric($v) && (float)$v > 0 && strpos($v, '+') === false) $v = '+' . $v;
+                return $v;
+            };
+
+            $dsp_date_raw = trim($_POST['ci_date'] ?? '');
+            if ($dsp_date_raw !== '' && strtotime($dsp_date_raw)) {
+                $_SESSION['ds_pending']['date'] = date('Y-m-d', strtotime($dsp_date_raw));
+            }
+            $_SESSION['ds_pending']['name']       = strtoupper(trim($_POST['ci_customer_name'] ?? $_SESSION['ds_pending']['name']));
+            $_SESSION['ds_pending']['age']        = (int)($_POST['ci_age'] ?? $_SESSION['ds_pending']['age']);
+            $_SESSION['ds_pending']['gender']     = ($_POST['ci_gender'] ?? $_SESSION['ds_pending']['gender']) === 'MALE' ? 'MALE' : 'FEMALE';
+            $_SESSION['ds_pending']['symptoms']   = $_POST['ci_symptoms']   ?? $_SESSION['ds_pending']['symptoms'];
+            $_SESSION['ds_pending']['exam_notes'] = $_POST['ci_exam_notes'] ?? $_SESSION['ds_pending']['exam_notes'];
+
+            // PD (pupillary distance)
+            $dsp_pd = trim($_POST['ci_pd'] ?? '');
+            $_SESSION['ds_pending']['pd'] = ($dsp_pd !== '') ? $dsp_pd : $_SESSION['ds_pending']['pd'];
+
+            // Prescription (only when fields were submitted — frame-only mode omits them)
+            if (isset($_POST['ci_r_sph'])) {
+                $_SESSION['ds_pending']['r_sph'] = $dspPres($_POST['ci_r_sph']);
+                $_SESSION['ds_pending']['r_cyl'] = $dspPres($_POST['ci_r_cyl'] ?? '');
+                $_SESSION['ds_pending']['r_ax']  = (int)($_POST['ci_r_ax'] ?? 0);
+                $_SESSION['ds_pending']['r_add'] = $dspPres($_POST['ci_r_add'] ?? '');
+                $_SESSION['ds_pending']['l_sph'] = $dspPres($_POST['ci_l_sph'] ?? '');
+                $_SESSION['ds_pending']['l_cyl'] = $dspPres($_POST['ci_l_cyl'] ?? '');
+                $_SESSION['ds_pending']['l_ax']  = (int)($_POST['ci_l_ax'] ?? 0);
+                $_SESSION['ds_pending']['l_add'] = $dspPres($_POST['ci_l_add'] ?? '');
+            }
+
+            // Visual habit / digital usage (1-3)
+            $_SESSION['ds_pending']['visual_habit']  = max(1, min(3, (int)($_POST['ci_visual_habit']  ?? $_SESSION['ds_pending']['visual_habit'])));
+            $_SESSION['ds_pending']['digital_usage'] = max(1, min(3, (int)($_POST['ci_digital_usage'] ?? $_SESSION['ds_pending']['digital_usage'])));
+
+            // Vision need (only relevant if age >= 39)
+            if ($_SESSION['ds_pending']['age'] >= 39) {
+                $_SESSION['ds_pending']['need_distance'] = max(0, min(1, (int)($_POST['ci_need_distance']     ?? 0)));
+                $_SESSION['ds_pending']['need_inter']    = max(0, min(1, (int)($_POST['ci_need_intermediate'] ?? 0)));
+                $_SESSION['ds_pending']['need_near']     = max(0, min(1, (int)($_POST['ci_need_near']         ?? 0)));
+            } else {
+                $_SESSION['ds_pending']['need_distance'] = 0;
+                $_SESSION['ds_pending']['need_inter']    = 0;
+                $_SESSION['ds_pending']['need_near']     = 0;
+            }
+
+            header("Location: invoice.php?direct=1&ptype=" . ($_GET['ptype'] ?? '') . "&info_status=success");
+            exit();
+        } else {
+            header("Location: invoice.php?direct=1&ptype=" . ($_GET['ptype'] ?? '') . "&info_status=error");
+            exit();
+        }
+    }
+
+
     // Called via fetch() from confirmOrderYes() when direct=1.
     // Returns JSON {success, inv_str, exam_code}.
     if (isset($_POST['save_direct_sale'])) {
@@ -306,7 +424,7 @@
         $ds_ec_esc     = mysqli_real_escape_string($conn, $ds_exam_code);
 
         $ds_zero = '0.00'; $ds_zero_ax = '0'; $ds_va = '20/20';
-        $ds_notes = 'Direct sale — Lens from customer.';
+        $ds_notes = mysqli_real_escape_string($conn, $p['exam_notes'] ?? 'Direct sale — Lens from customer.');
 
         $stmt = $conn->prepare("INSERT INTO customer_examinations (
             examination_date, examination_code, customer_name, gender, age, symptoms,
@@ -380,7 +498,7 @@
             'digital_usage'     => $p['digital_usage'],
             'ucva_r'            => '20/20',
             'ucva_l'            => '20/20',
-            'exam_notes'        => 'Direct sale — Lens from customer.',
+            'exam_notes'        => $p['exam_notes'] ?? 'Direct sale — Lens from customer.',
             'need_distance'     => $p['need_distance'],
             'need_intermediate' => $p['need_inter'],
             'need_near'         => $p['need_near'],
@@ -404,12 +522,32 @@
     <title>Direct Sale - <?php echo htmlspecialchars($STORE_NAME); ?></title>
     <link rel="stylesheet" href="style.css">
     <style>
-        .ds-card { background:#25282a; padding:20px; border-radius:15px; border:1px solid #444; box-shadow:inset 5px 5px 10px #1a1c1d; margin-bottom:18px; }
+        .ds-card { background:#25282a; padding:20px; border-radius:15px; border:1px solid #444; box-shadow:inset 5px 5px 10px #1a1c1d; margin-bottom:18px; box-sizing:border-box; }
         .ds-pres-grid { display:grid; grid-template-columns:1.2fr repeat(4,1fr); gap:8px; align-items:center; width:100%; }
         .ds-pres-grid.header { font-size:0.7em; color:#888; text-align:center; font-weight:bold; text-transform:uppercase; }
         .ds-pres-grid input { width:100%; background:#1a1c1d!important; border:1px solid #333!important; border-radius:8px!important; padding:10px 5px!important; color:#00ff88!important; text-align:center; font-family:monospace; font-size:0.9em; }
         .eye-lbl { font-size:0.8em; font-weight:bold; color:#eee; }
         .ds-section-label { font-size:0.65em; color:#888; letter-spacing:2px; text-transform:uppercase; font-weight:bold; margin-bottom:10px; }
+
+        /* Collapsible card */
+        .ds-collapsible { cursor:pointer; user-select:none; transition:background 0.2s; }
+        .ds-collapsible .ds-card-header { display:flex; align-items:center; justify-content:space-between; }
+        .ds-collapsible .ds-card-chevron { font-size:0.75em; color:#666; transition:transform 0.25s ease; flex-shrink:0; margin-left:10px; }
+        .ds-collapsible.collapsed .ds-card-chevron { transform:rotate(-90deg); }
+        .ds-collapsible .ds-card-body { overflow:hidden; max-height:2000px; transition:max-height 0.3s ease, opacity 0.25s ease, margin-top 0.3s ease; opacity:1; margin-top:14px; }
+        .ds-collapsible.collapsed .ds-card-body { max-height:0; opacity:0; margin-top:0; }
+        .ds-collapsible .ds-card-summary { font-size:0.75em; color:#00ff88; font-weight:bold; display:none; }
+        .ds-collapsible.collapsed .ds-card-summary { display:block; }
+        .ds-done-row { display:flex; justify-content:center; margin-top:16px; }
+        .ds-done-btn { background:rgba(0,255,136,0.10); border:1px solid rgba(0,255,136,0.5); color:#00ff88; font-family:inherit; font-weight:800; letter-spacing:1.5px; font-size:0.78em; padding:12px 30px; border-radius:12px; cursor:pointer; transition:all 0.2s; }
+        .ds-done-btn:hover { background:rgba(0,255,136,0.18); }
+
+        @media (max-width: 480px) {
+            .ds-card { padding:16px 14px; }
+            .ds-section-label { font-size:0.62em; }
+            .ds-pres-grid { gap:5px; }
+            .ds-pres-grid input { padding:8px 3px!important; font-size:0.8em; }
+        }
     </style>
 </head>
 <body>
@@ -448,32 +586,7 @@
                            style="color-scheme:dark;">
                 </div>
 
-                <!-- Customer Name -->
-                <div class="input-group" style="margin-bottom:15px;">
-                    <label>CUSTOMER NAME <span style="color:#ff4d4d;">*</span></label>
-                    <input type="text" name="ds_customer_name" required placeholder="CUSTOMER NAME"
-                           style="text-transform:uppercase;" oninput="this.value=this.value.toUpperCase()">
-                </div>
-
-                <!-- Gender -->
-                <div class="ds-card" style="margin-bottom:15px;">
-                    <div class="ds-section-label">GENDER</div>
-                    <input type="hidden" name="ds_gender" id="ds_gender" value="FEMALE">
-                    <div class="selection-wrapper">
-                        <button type="button" class="neu-btn active" value="FEMALE" onclick="dsToggleGender(this)"><span>FEMALE</span><div class="led"></div></button>
-                        <button type="button" class="neu-btn" value="MALE" onclick="dsToggleGender(this)"><span>MALE</span><div class="led"></div></button>
-                    </div>
-                </div>
-
-                <!-- Age -->
-                <div class="input-group" style="margin-bottom:15px;">
-                    <label>AGE / BIRTH YEAR</label>
-                    <input type="text" id="ds_age" name="ds_age" inputmode="tel"
-                           placeholder="e.g. 35 (age) or .95 (birth year)"
-                           autocomplete="off">
-                </div>
-
-                <!-- PURCHASE TYPE SELECTOR -->
+                <!-- PURCHASE TYPE SELECTOR (always visible, not collapsible) -->
                 <input type="hidden" name="ds_purchase_type" id="ds_purchase_type" value="">
                 <div id="ds_purchase_type_section" style="margin-bottom:20px;">
                     <div style="text-align:center;margin-bottom:14px;">
@@ -495,12 +608,66 @@
                     </div>
                 </div>
 
+                <!-- Customer Name -->
+                <div class="ds-card ds-collapsible collapsed" id="ds_card_name" onclick="dsCardToggle(this, event)">
+                    <div class="ds-card-header">
+                        <div class="ds-section-label" style="margin-bottom:0;">CUSTOMER NAME</div>
+                        <span class="ds-card-chevron">▼</span>
+                    </div>
+                    <div class="ds-card-summary" id="ds_summary_name">JOHN DOE</div>
+                    <div class="ds-card-body">
+                        <div class="input-group" style="margin-bottom:0;" onclick="event.stopPropagation()">
+                            <label>CUSTOMER NAME <span style="color:#ff4d4d;">*</span></label>
+                            <input type="text" name="ds_customer_name" id="ds_customer_name" required value="JOHN DOE" placeholder="CUSTOMER NAME"
+                                   style="text-transform:uppercase;" oninput="this.value=this.value.toUpperCase(); dsUpdateNameSummary();">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Gender -->
+                <div class="ds-card ds-collapsible collapsed" id="ds_card_gender" onclick="dsCardToggle(this, event)">
+                    <div class="ds-card-header">
+                        <div class="ds-section-label" style="margin-bottom:0;">GENDER</div>
+                        <span class="ds-card-chevron">▼</span>
+                    </div>
+                    <div class="ds-card-summary" id="ds_summary_gender">FEMALE</div>
+                    <div class="ds-card-body">
+                        <input type="hidden" name="ds_gender" id="ds_gender" value="FEMALE">
+                        <div class="selection-wrapper" onclick="event.stopPropagation()">
+                            <button type="button" class="neu-btn active" value="FEMALE" onclick="dsToggleGender(this)"><span>FEMALE</span><div class="led"></div></button>
+                            <button type="button" class="neu-btn" value="MALE" onclick="dsToggleGender(this)"><span>MALE</span><div class="led"></div></button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Age -->
+                <div class="ds-card ds-collapsible collapsed" id="ds_card_age" onclick="dsCardToggle(this, event)">
+                    <div class="ds-card-header">
+                        <div class="ds-section-label" style="margin-bottom:0;">AGE / BIRTH YEAR</div>
+                        <span class="ds-card-chevron">▼</span>
+                    </div>
+                    <div class="ds-card-summary" id="ds_summary_age">—</div>
+                    <div class="ds-card-body">
+                        <div class="input-group" style="margin-bottom:0;" onclick="event.stopPropagation()">
+                            <label>AGE / BIRTH YEAR</label>
+                            <input type="text" id="ds_age" name="ds_age" inputmode="tel"
+                                   placeholder="e.g. 35 (age) or .95 (birth year)"
+                                   autocomplete="off">
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Complete purchase sections (FRAME + LENS only) -->
                 <div id="ds_complete_sections" style="display:none;">
 
                 <!-- Prescription -->
-                <div class="ds-card" style="margin-bottom:15px;">
-                    <div class="ds-section-label">PRESCRIPTION</div>
+                <div class="ds-card ds-collapsible collapsed" id="ds_card_pres" onclick="dsCardToggle(this, event)">
+                    <div class="ds-card-header">
+                        <div class="ds-section-label" style="margin-bottom:0;">PRESCRIPTION</div>
+                        <span class="ds-card-chevron">▼</span>
+                    </div>
+                    <div class="ds-card-summary" id="ds_summary_pres">Not set</div>
+                    <div class="ds-card-body" onclick="event.stopPropagation()">
                     <div class="ds-pres-grid header" style="margin-bottom:6px;">
                         <div>EYE</div><div>SPH</div><div>CYL</div><div>AXIS</div><div>ADD</div>
                     </div>
@@ -524,33 +691,54 @@
                             <input type="text" inputmode="tel" name="ds_pd" id="ds_pd" placeholder="62" style="background:#1a1c1d;border:1px solid #333;color:#00ff88;border-radius:8px;padding:10px;width:100%;text-align:center;font-family:monospace;">
                         </div>
                     </div>
+                    <div class="ds-done-row">
+                        <button type="button" class="ds-done-btn" onclick="dsUpdatePresSummary(); dsSectionDone('ds_card_pres', 'ds_card_visual')">DONE</button>
+                    </div>
+                    </div>
                 </div>
 
                 <!-- Visual Habit -->
-                <div class="ds-card" style="margin-bottom:15px;">
-                    <div class="ds-section-label">VISUAL HABITS</div>
-                    <input type="hidden" name="ds_visual_habit" id="ds_visual_habit" value="1">
-                    <div class="selection-wrapper">
-                        <button type="button" class="neu-btn active" value="1" onclick="dsToggleBtn(this,'ds_visual_habit')"><span>INDOOR</span><div class="led"></div></button>
-                        <button type="button" class="neu-btn" value="2" onclick="dsToggleBtn(this,'ds_visual_habit')"><span>OUTDOOR</span><div class="led"></div></button>
-                        <button type="button" class="neu-btn" value="3" onclick="dsToggleBtn(this,'ds_visual_habit')"><span>BOTH</span><div class="led"></div></button>
+                <div class="ds-card ds-collapsible collapsed" id="ds_card_visual" onclick="dsCardToggle(this, event)">
+                    <div class="ds-card-header">
+                        <div class="ds-section-label" style="margin-bottom:0;">VISUAL HABITS</div>
+                        <span class="ds-card-chevron">▼</span>
+                    </div>
+                    <div class="ds-card-summary" id="ds_summary_visual">INDOOR</div>
+                    <div class="ds-card-body">
+                        <input type="hidden" name="ds_visual_habit" id="ds_visual_habit" value="1">
+                        <div class="selection-wrapper" onclick="event.stopPropagation()">
+                            <button type="button" class="neu-btn active" value="1" onclick="dsToggleBtn(this,'ds_visual_habit'); dsSectionDone('ds_card_visual','ds_card_digital');"><span>INDOOR</span><div class="led"></div></button>
+                            <button type="button" class="neu-btn" value="2" onclick="dsToggleBtn(this,'ds_visual_habit'); dsSectionDone('ds_card_visual','ds_card_digital');"><span>OUTDOOR</span><div class="led"></div></button>
+                            <button type="button" class="neu-btn" value="3" onclick="dsToggleBtn(this,'ds_visual_habit'); dsSectionDone('ds_card_visual','ds_card_digital');"><span>BOTH</span><div class="led"></div></button>
+                        </div>
                     </div>
                 </div>
 
                 <!-- Digital Device Usage -->
-                <div class="ds-card" style="margin-bottom:15px;">
-                    <div class="ds-section-label">DIGITAL DEVICE USAGE</div>
-                    <input type="hidden" name="ds_digital_usage" id="ds_digital_usage" value="1">
-                    <div class="selection-wrapper">
-                        <button type="button" class="neu-btn active" value="1" onclick="dsToggleBtn(this,'ds_digital_usage')"><span>LOW<br>(&lt; 2H)</span><div class="led"></div></button>
-                        <button type="button" class="neu-btn" value="2" onclick="dsToggleBtn(this,'ds_digital_usage')"><span>MODERATE<br>(2H-5H)</span><div class="led"></div></button>
-                        <button type="button" class="neu-btn" value="3" onclick="dsToggleBtn(this,'ds_digital_usage')"><span>HIGH<br>(&gt; 5H)</span><div class="led"></div></button>
+                <div class="ds-card ds-collapsible collapsed" id="ds_card_digital" onclick="dsCardToggle(this, event)">
+                    <div class="ds-card-header">
+                        <div class="ds-section-label" style="margin-bottom:0;">DIGITAL DEVICE USAGE</div>
+                        <span class="ds-card-chevron">▼</span>
+                    </div>
+                    <div class="ds-card-summary" id="ds_summary_digital">LOW (&lt; 2H)</div>
+                    <div class="ds-card-body">
+                        <input type="hidden" name="ds_digital_usage" id="ds_digital_usage" value="1">
+                        <div class="selection-wrapper" onclick="event.stopPropagation()">
+                            <button type="button" class="neu-btn active" value="1" onclick="dsToggleBtn(this,'ds_digital_usage'); dsSectionDone('ds_card_digital','ds_card_symptoms');"><span>LOW<br>(&lt; 2H)</span><div class="led"></div></button>
+                            <button type="button" class="neu-btn" value="2" onclick="dsToggleBtn(this,'ds_digital_usage'); dsSectionDone('ds_card_digital','ds_card_symptoms');"><span>MODERATE<br>(2H-5H)</span><div class="led"></div></button>
+                            <button type="button" class="neu-btn" value="3" onclick="dsToggleBtn(this,'ds_digital_usage'); dsSectionDone('ds_card_digital','ds_card_symptoms');"><span>HIGH<br>(&gt; 5H)</span><div class="led"></div></button>
+                        </div>
                     </div>
                 </div>
 
                 <!-- Symptoms -->
-                <div class="ds-card" style="margin-bottom:15px;">
-                    <div class="ds-section-label">SYMPTOMS / COMPLAINTS <span style="color:#444;font-weight:normal;">(optional)</span></div>
+                <div class="ds-card ds-collapsible collapsed" id="ds_card_symptoms" onclick="dsCardToggle(this, event)">
+                    <div class="ds-card-header">
+                        <div class="ds-section-label" style="margin-bottom:0;">SYMPTOMS / COMPLAINTS <span style="color:#444;font-weight:normal;">(optional)</span></div>
+                        <span class="ds-card-chevron">▼</span>
+                    </div>
+                    <div class="ds-card-summary" id="ds_summary_symptoms">None selected</div>
+                    <div class="ds-card-body" onclick="event.stopPropagation()">
                     <input type="hidden" name="ds_symptoms_json" id="ds_symptoms_json" value="[]">
                     <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:10px;">
                         <button type="button" class="neu-btn" onclick="dsToggleSymptom(this,'HEADACHE')"><span>HEADACHE</span><div class="led"></div></button>
@@ -560,15 +748,24 @@
                         <button type="button" class="neu-btn" style="grid-column:1/-1;" onclick="dsToggleSymptom(this,'DRIVING')"><span>FREQUENT DRIVING</span><div class="led"></div></button>
                     </div>
                     <textarea name="ds_other_symptoms" id="ds_other_symptoms" placeholder="OTHER COMPLAINTS..." oninput="this.value=this.value.toUpperCase()" style="width:100%;background:#1a1c1d;color:white;border:1px solid #444;padding:10px;border-radius:10px;font-family:monospace;resize:vertical;min-height:60px;box-sizing:border-box;"></textarea>
+                    <div class="ds-done-row">
+                        <button type="button" class="ds-done-btn" onclick="dsSectionDone('ds_card_symptoms', 'ds_vision_need_card')">DONE</button>
+                    </div>
+                    </div>
                 </div>
 
                 <!-- Vision Need (auto-show if age >= 39) -->
                 <div id="ds_vision_need_section" style="display:none;margin-bottom:15px;">
-                <div class="ds-card">
-                    <div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:10px;">
-                        <span style="color:#ffcc00;font-size:0.78em;font-weight:bold;letter-spacing:2px;">⚑ VISION NEED</span>
-                        <span style="background:#3a3200;border:1px solid rgba(255,204,0,0.4);color:#ffcc00;font-size:0.65em;padding:2px 8px;border-radius:20px;">AGE ≥ 39</span>
+                <div class="ds-card ds-collapsible collapsed" id="ds_vision_need_card" onclick="dsCardToggle(this, event)">
+                    <div class="ds-card-header">
+                        <div style="display:flex;align-items:center;gap:8px;">
+                            <span style="color:#ffcc00;font-size:0.78em;font-weight:bold;letter-spacing:2px;">⚑ VISION NEED</span>
+                            <span style="background:#3a3200;border:1px solid rgba(255,204,0,0.4);color:#ffcc00;font-size:0.65em;padding:2px 8px;border-radius:20px;">AGE ≥ 39</span>
+                        </div>
+                        <span class="ds-card-chevron">▼</span>
                     </div>
+                    <div class="ds-card-summary" id="ds_summary_vision">DISTANCE, NEAR</div>
+                    <div class="ds-card-body" onclick="event.stopPropagation()">
                     <p style="text-align:center;font-size:0.72em;color:#888;margin:0 0 12px 0;">Select required vision needs (multiple selection allowed)</p>
                     <input type="hidden" name="ds_need_distance"     id="ds_need_distance"     value="0">
                     <input type="hidden" name="ds_need_intermediate" id="ds_need_intermediate" value="0">
@@ -577,6 +774,10 @@
                         <button type="button" class="neu-btn" id="ds_btn_dist"  onclick="dsToggleVisionNeed(this,'ds_need_distance')"    style="flex:1;min-width:90px;flex-direction:column;align-items:center;gap:4px;padding:12px 8px;"><span style="font-size:1.3em;">🔭</span><span>DISTANCE</span><div class="led"></div></button>
                         <button type="button" class="neu-btn" id="ds_btn_inter" onclick="dsToggleVisionNeed(this,'ds_need_intermediate')" style="flex:1;min-width:90px;flex-direction:column;align-items:center;gap:4px;padding:12px 8px;"><span style="font-size:1.3em;">🖥️</span><span>INTERMEDIATE</span><div class="led"></div></button>
                         <button type="button" class="neu-btn" id="ds_btn_near"  onclick="dsToggleVisionNeed(this,'ds_need_near')"         style="flex:1;min-width:90px;flex-direction:column;align-items:center;gap:4px;padding:12px 8px;"><span style="font-size:1.3em;">📖</span><span>NEAR</span><div class="led"></div></button>
+                    </div>
+                    <div class="ds-done-row">
+                        <button type="button" class="ds-done-btn" onclick="dsSectionDone('ds_vision_need_card', null)">DONE</button>
+                    </div>
                     </div>
                 </div>
                 </div><!-- /ds_vision_need_section -->
@@ -604,7 +805,10 @@
 function dsToggleGender(btn) {
     btn.closest('.selection-wrapper').querySelectorAll('.neu-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
-    document.getElementById('ds_gender').value = btn.getAttribute('value');
+    var val = btn.getAttribute('value');
+    document.getElementById('ds_gender').value = val;
+    document.getElementById('ds_summary_gender').textContent = val;
+    dsSectionDone('ds_card_gender', 'ds_card_age');
 }
 
 // Age: supports direct input (35) or birth year with dot (.95 / .1995)
@@ -640,6 +844,7 @@ document.getElementById('ds_age').addEventListener('blur', function() {
     }
     if (!isNaN(age) && age > 0) {
         this.value = age;
+        document.getElementById('ds_summary_age').textContent = age;
         // Auto-fill ADD if age >= 40 AND purchase type is complete (frame+lens)
         var purchaseType = document.getElementById('ds_purchase_type').value;
         if (purchaseType === 'complete') {
@@ -655,6 +860,12 @@ document.getElementById('ds_age').addEventListener('blur', function() {
         }
         // Show/hide vision need section
         dsUpdateVisionNeed(age);
+        // Auto-advance: complete -> Prescription card, frame -> collapse only
+        if (purchaseType === 'complete') {
+            dsSectionDone('ds_card_age', 'ds_card_pres');
+        } else {
+            dsSectionDone('ds_card_age', null);
+        }
     }
 });
 
@@ -713,6 +924,12 @@ function dsPurchaseType(type) {
 
     // Always show submit button once type is chosen
     document.getElementById('ds_submit_btn').style.display = 'flex';
+
+    // Auto-expand the first card (Customer Name) once a purchase type is chosen
+    var nameCard = document.getElementById('ds_card_name');
+    if (nameCard && nameCard.classList.contains('collapsed')) {
+        dsExpandCard(nameCard);
+    }
 }
 
 // Generic toggle for single-select button groups (visual habit, digital usage)
@@ -732,12 +949,14 @@ function dsToggleSymptom(btn, value) {
         dsSelectedSymptoms = dsSelectedSymptoms.filter(function(s) { return s !== value; });
     }
     document.getElementById('ds_symptoms_json').value = JSON.stringify(dsSelectedSymptoms);
+    dsUpdateSymptomsSummary();
 }
 
 // Vision need toggle (multi-select, each tied to a hidden 0/1 field)
 function dsToggleVisionNeed(btn, hiddenId) {
     btn.classList.toggle('active');
     document.getElementById(hiddenId).value = btn.classList.contains('active') ? '1' : '0';
+    dsUpdateVisionSummary();
 }
 
 // Show / hide vision need section based on age (same rule: age >= 39)
@@ -768,7 +987,70 @@ function dsUpdateVisionNeed(age) {
             if (el) el.value = '0';
         });
     }
+    dsUpdateVisionSummary();
 }
+
+// ── Collapsible card helpers ─────────────────────────────────────
+function dsExpandCard(card) {
+    card.classList.remove('collapsed');
+}
+function dsCollapseCard(card) {
+    card.classList.add('collapsed');
+}
+// Click anywhere on a card header/summary toggles expand/collapse
+function dsCardToggle(card, evt) {
+    if (evt.target.closest('.ds-card-body')) return; // clicks inside body handled separately
+    card.classList.toggle('collapsed');
+}
+
+// Mark current card done: collapse it and (optionally) expand the next card
+function dsSectionDone(currentId, nextId) {
+    var current = document.getElementById(currentId);
+    if (current) dsCollapseCard(current);
+    if (nextId) {
+        var next = document.getElementById(nextId);
+        if (next) dsExpandCard(next);
+    }
+}
+
+// ── Live summary updaters ────────────────────────────────────────
+function dsUpdateNameSummary() {
+    var val = document.getElementById('ds_customer_name').value.trim();
+    document.getElementById('ds_summary_name').textContent = val || 'JOHN DOE';
+}
+
+function dsUpdateSymptomsSummary() {
+    var el = document.getElementById('ds_summary_symptoms');
+    if (!el) return;
+    el.textContent = dsSelectedSymptoms.length ? dsSelectedSymptoms.join(', ') : 'None selected';
+}
+
+function dsUpdateVisionSummary() {
+    var el = document.getElementById('ds_summary_vision');
+    if (!el) return;
+    var labels = [];
+    if (document.getElementById('ds_need_distance').value === '1') labels.push('DISTANCE');
+    if (document.getElementById('ds_need_intermediate').value === '1') labels.push('INTERMEDIATE');
+    if (document.getElementById('ds_need_near').value === '1') labels.push('NEAR');
+    el.textContent = labels.length ? labels.join(', ') : 'None selected';
+}
+
+function dsUpdatePresSummary() {
+    var el = document.getElementById('ds_summary_pres');
+    if (!el) return;
+    var rSph = document.querySelector('[name="ds_r_sph"]').value.trim();
+    var lSph = document.querySelector('[name="ds_l_sph"]').value.trim();
+    if (rSph || lSph) {
+        el.textContent = 'OD ' + (rSph || '0.00') + ' / OS ' + (lSph || '0.00');
+    } else {
+        el.textContent = 'Not set';
+    }
+}
+
+// Initial summary sync on page load
+dsUpdateNameSummary();
+dsUpdateSymptomsSummary();
+dsUpdateVisionSummary();
 </script>
 </body>
 </html>
@@ -2523,8 +2805,100 @@ function dsUpdateVisionNeed(age) {
                 .eye-indicator { width: 24px !important; height: 24px !important; font-size: 0.68rem !important; }
                 .read-only-box { font-size: 0.78rem !important; }
             }
-            /* Hide spinner arrows on payment amount inputs */
+            /* ── Direct Sale Pending Card — collapsible sub-sections ──── */
+            .dsp-section {
+                background: rgba(255,255,255,0.03);
+                border-radius: 10px;
+                padding: 12px 14px;
+                margin-bottom: 10px;
+                cursor: pointer;
+                user-select: none;
+                transition: background 0.2s;
+            }
+            .dsp-section-header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 10px;
+            }
+            .dsp-section-header-left {
+                display: flex;
+                align-items: baseline;
+                gap: 10px;
+                min-width: 0;
+                flex: 1;
+            }
+            .dsp-section-title {
+                font-size: 0.72em;
+                color: #888;
+                letter-spacing: 1.5px;
+                font-weight: 700;
+                text-transform: uppercase;
+                flex-shrink: 0;
+            }
+            .dsp-chevron {
+                font-size: 0.85em;
+                color: #666;
+                transition: transform 0.25s ease;
+                flex-shrink: 0;
+                margin-left: 10px;
+            }
+            .dsp-section.collapsed .dsp-chevron { transform: rotate(-90deg); }
+            .dsp-section-body {
+                overflow: hidden;
+                max-height: 2000px;
+                opacity: 1;
+                margin-top: 12px;
+                transition: max-height 0.3s ease, opacity 0.25s ease, margin-top 0.3s ease;
+            }
+            .dsp-section.collapsed .dsp-section-body {
+                max-height: 0;
+                opacity: 0;
+                margin-top: 0;
+            }
+            .dsp-section-summary {
+                font-size: 0.85em;
+                color: #00ff88;
+                font-weight: 700;
+                display: none;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+                min-width: 0;
+            }
+            .dsp-section.collapsed .dsp-section-summary { display: block; }
 
+            /* Larger, more legible field labels & values inside pending card */
+            #ds-pending-card .dsp-field-label { font-size: 0.72em !important; color: #777 !important; letter-spacing: 1px; margin-bottom: 5px !important; }
+            #ds-pending-card .ci-field { font-size: 0.95em !important; }
+            #ds-pending-card input[type="text"].ci-field,
+            #ds-pending-card input[type="date"].ci-field,
+            #ds-pending-card input[type="number"].ci-field,
+            #ds-pending-card select.ci-field { font-size: 0.95em !important; }
+
+            /* Prescription table inside pending card — bigger */
+            #ds-pending-card .dsp-pres-grid { display: grid; grid-template-columns: 1.1fr repeat(4, 1fr); gap: 8px; }
+            #ds-pending-card .dsp-pres-grid.header { font-size: 0.78em; }
+            #ds-pending-card .dsp-pres-grid .eye-lbl { font-size: 0.85em; }
+            #ds-pending-card .ds-rx-field {
+                font-size: 1.05em !important;
+                padding: 10px 4px !important;
+            }
+
+            @media (max-width: 600px) {
+                .dsp-section { padding: 10px 12px; }
+                .dsp-section-title { font-size: 0.68em; }
+                .dsp-section-summary { font-size: 0.75em; }
+                .dsp-section-header-left { gap: 6px; }
+                #ds-pending-card .dsp-field-label { font-size: 0.7em !important; }
+                #ds-pending-card .ci-field { font-size: 0.9em !important; }
+                #ds-pending-card .dsp-pres-grid { gap: 5px; }
+                #ds-pending-card .dsp-pres-grid.header { font-size: 0.68em; }
+                #ds-pending-card .ds-rx-field {
+                    font-size: 0.95em !important;
+                    padding: 9px 2px !important;
+                }
+            }
 
         </style>
     </head>
@@ -2571,47 +2945,179 @@ function dsUpdateVisionNeed(age) {
                         </div>
                         <!-- Card body -->
                         <div id="ds-pending-body" style="padding:0 16px 14px;display:block;">
+
+                            <!-- Section: Customer & Sale Info -->
+                            <div class="dsp-section collapsed" id="dsp_sec_info" onclick="dspToggle(this, event)">
+                                <div class="dsp-section-header">
+                                    <div class="dsp-section-header-left">
+                                        <div class="dsp-section-title">CUSTOMER &amp; SALE INFO</div>
+                                        <div class="dsp-section-summary" id="dsp_summary_info"><?php echo htmlspecialchars($pCard['name']); ?></div>
+                                    </div>
+                                    <span class="dsp-chevron">▾</span>
+                                </div>
+                                <div class="dsp-section-body" onclick="event.stopPropagation()">
                             <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
-                                <div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:8px 10px;">
-                                    <div style="font-size:0.58em;color:#666;letter-spacing:1px;margin-bottom:3px;">CUSTOMER NAME</div>
-                                    <div style="font-size:0.78em;color:#eee;font-weight:700;"><?php echo htmlspecialchars($pCard['name'] ?: '— (not set)'); ?></div>
+                                <div class="full" style="grid-column:1/-1;background:rgba(255,255,255,0.03);border-radius:8px;padding:8px 10px;">
+                                    <div class="dsp-field-label" style="margin-bottom:3px;">CUSTOMER NAME</div>
+                                    <input type="text" class="ci-field" id="ci_customer_name"
+                                        value="<?php echo htmlspecialchars($pCard['name']); ?>"
+                                        placeholder="— (not set)"
+                                        oninput="this.value=this.value.toUpperCase(); dspUpdateInfoSummary();"
+                                        style="width:100%;box-sizing:border-box;background:transparent;border:none;color:#eee;font-weight:700;font-family:inherit;padding:0;">
                                 </div>
                                 <div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:8px 10px;">
-                                    <div style="font-size:0.58em;color:#666;letter-spacing:1px;margin-bottom:3px;">DATE / GENDER / AGE</div>
-                                    <div style="font-size:0.78em;color:#eee;"><?php echo date('d/m/Y', strtotime($pCard['date'])); ?> · <?php echo $pCard['gender']; ?> · <?php echo $pCard['age'] ?: '—'; ?> YRS</div>
+                                    <div class="dsp-field-label" style="margin-bottom:3px;">DATE</div>
+                                    <input type="date" class="ci-field" id="ci_date"
+                                        value="<?php echo date('Y-m-d', strtotime($pCard['date'])); ?>"
+                                        style="width:100%;box-sizing:border-box;background:transparent;border:none;color:#eee;font-family:inherit;padding:0;color-scheme:dark;">
                                 </div>
                                 <div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:8px 10px;">
-                                    <div style="font-size:0.58em;color:#666;letter-spacing:1px;margin-bottom:3px;">PURCHASE TYPE</div>
-                                    <div style="font-size:0.78em;color:<?php echo $inv_purchase_type === 'frame' ? '#ffaa00' : '#00cfff'; ?>;font-weight:700;"><?php echo $inv_purchase_type === 'frame' ? '🕶️ FRAME ONLY' : '🔬 FRAME + LENS'; ?></div>
+                                    <div class="dsp-field-label" style="margin-bottom:3px;">GENDER / AGE</div>
+                                    <div style="display:flex;gap:6px;align-items:center;">
+                                        <select class="ci-field" id="ci_gender" onchange="dspToggleClose('dsp_sec_info')"
+                                            style="background:transparent;border:none;color:#eee;font-family:inherit;padding:0;flex:1;min-width:0;">
+                                            <option value="MALE" <?php echo (strtoupper($pCard['gender']) === 'MALE') ? 'selected' : ''; ?>>MALE</option>
+                                            <option value="FEMALE" <?php echo (strtoupper($pCard['gender']) === 'FEMALE') ? 'selected' : ''; ?>>FEMALE</option>
+                                        </select>
+                                        <input type="number" class="ci-field" id="ci_age" min="0" max="150"
+                                            value="<?php echo (int)$pCard['age']; ?>"
+                                            style="width:48px;background:transparent;border:none;color:#eee;font-family:inherit;padding:0;">
+                                        <span style="font-size:0.85em;color:#eee;">YRS</span>
+                                    </div>
                                 </div>
                                 <div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:8px 10px;">
-                                    <div style="font-size:0.58em;color:#666;letter-spacing:1px;margin-bottom:3px;">PD</div>
-                                    <div style="font-size:0.78em;color:#eee;"><?php echo htmlspecialchars($pCard['pd']); ?> mm</div>
+                                    <div class="dsp-field-label" style="margin-bottom:3px;">PURCHASE TYPE</div>
+                                    <div style="font-size:0.95em;color:<?php echo $inv_purchase_type === 'frame' ? '#ffaa00' : '#00cfff'; ?>;font-weight:700;"><?php echo $inv_purchase_type === 'frame' ? '🕶️ FRAME ONLY' : '🔬 FRAME + LENS'; ?></div>
+                                </div>
+                                <div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:8px 10px;">
+                                    <div class="dsp-field-label" style="margin-bottom:3px;">PD (PUPILLARY DISTANCE)</div>
+                                    <div style="display:flex;align-items:center;gap:4px;">
+                                        <input type="text" inputmode="tel" class="ci-field" id="ci_pd"
+                                            value="<?php echo htmlspecialchars($pCard['pd']); ?>"
+                                            style="width:100%;box-sizing:border-box;background:transparent;border:none;color:#eee;font-family:inherit;padding:0;">
+                                        <span style="font-size:0.85em;color:#eee;">mm</span>
+                                    </div>
                                 </div>
                             </div>
-                            <?php if ($presHasPrescription): ?>
-                            <div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:10px 12px;margin-bottom:8px;">
-                                <div style="font-size:0.58em;color:#666;letter-spacing:1px;margin-bottom:8px;">PRESCRIPTION (FROM CUSTOMER)</div>
-                                <div style="display:grid;grid-template-columns:1.1fr repeat(4,1fr);gap:4px;font-size:0.65em;">
+                                </div>
+                            </div>
+                            <!-- /Section: Customer & Sale Info -->
+
+                            <?php if ($inv_purchase_type !== 'frame'): ?>
+                            <!-- Section: Prescription -->
+                            <div class="dsp-section collapsed" id="dsp_sec_pres" onclick="dspToggle(this, event)">
+                                <div class="dsp-section-header">
+                                    <div class="dsp-section-header-left">
+                                        <div class="dsp-section-title">PRESCRIPTION</div>
+                                        <div class="dsp-section-summary">OD <?php echo htmlspecialchars($pCard['r_sph']); ?> / OS <?php echo htmlspecialchars($pCard['l_sph']); ?></div>
+                                    </div>
+                                    <span class="dsp-chevron">▾</span>
+                                </div>
+                                <div class="dsp-section-body" onclick="event.stopPropagation()">
+                                <div class="dsp-pres-grid header" style="margin-bottom:6px;">
                                     <div style="color:#555;text-align:center;font-weight:700;">EYE</div>
                                     <div style="color:#555;text-align:center;font-weight:700;">SPH</div>
                                     <div style="color:#555;text-align:center;font-weight:700;">CYL</div>
                                     <div style="color:#555;text-align:center;font-weight:700;">AXIS</div>
                                     <div style="color:#555;text-align:center;font-weight:700;">ADD</div>
-                                    <div style="color:#aaa;font-weight:700;">RIGHT</div>
-                                    <div style="color:#00ff88;font-family:monospace;text-align:center;"><?php echo $pCard['r_sph']; ?></div>
-                                    <div style="color:#00ff88;font-family:monospace;text-align:center;"><?php echo $pCard['r_cyl']; ?></div>
-                                    <div style="color:#00cfff;font-family:monospace;text-align:center;"><?php echo $pCard['r_ax']; ?>°</div>
-                                    <div style="color:#00ff88;font-family:monospace;text-align:center;"><?php echo $pCard['r_add'] !== '0.00' ? $pCard['r_add'] : '—'; ?></div>
-                                    <div style="color:#aaa;font-weight:700;">LEFT</div>
-                                    <div style="color:#00ff88;font-family:monospace;text-align:center;"><?php echo $pCard['l_sph']; ?></div>
-                                    <div style="color:#00ff88;font-family:monospace;text-align:center;"><?php echo $pCard['l_cyl']; ?></div>
-                                    <div style="color:#00cfff;font-family:monospace;text-align:center;"><?php echo $pCard['l_ax']; ?>°</div>
-                                    <div style="color:#00ff88;font-family:monospace;text-align:center;"><?php echo $pCard['l_add'] !== '0.00' ? $pCard['l_add'] : '—'; ?></div>
+                                </div>
+                                <div class="dsp-pres-grid" style="margin-bottom:6px;">
+                                    <div class="eye-lbl" style="color:#aaa;font-weight:700;display:flex;align-items:center;">RIGHT</div>
+                                    <input type="text" inputmode="tel" class="ci-field ds-rx-field" id="ci_r_sph" value="<?php echo htmlspecialchars($pCard['r_sph']); ?>" style="width:100%;box-sizing:border-box;background:#1a1c1d;border:1px solid #333;border-radius:6px;color:#00ff88;font-family:monospace;text-align:center;">
+                                    <input type="text" inputmode="tel" class="ci-field ds-rx-field" id="ci_r_cyl" value="<?php echo htmlspecialchars($pCard['r_cyl']); ?>" style="width:100%;box-sizing:border-box;background:#1a1c1d;border:1px solid #333;border-radius:6px;color:#00ff88;font-family:monospace;text-align:center;">
+                                    <input type="text" inputmode="tel" class="ci-field ds-rx-field" id="ci_r_ax"  value="<?php echo htmlspecialchars($pCard['r_ax']); ?>"  style="width:100%;box-sizing:border-box;background:#1a1c1d;border:1px solid #333;border-radius:6px;color:#00cfff;font-family:monospace;text-align:center;">
+                                    <input type="text" inputmode="tel" class="ci-field ds-rx-field" id="ci_r_add" value="<?php echo htmlspecialchars($pCard['r_add']); ?>" style="width:100%;box-sizing:border-box;background:#1a1c1d;border:1px solid #333;border-radius:6px;color:#00ff88;font-family:monospace;text-align:center;">
+                                </div>
+                                <div class="dsp-pres-grid">
+                                    <div class="eye-lbl" style="color:#aaa;font-weight:700;display:flex;align-items:center;">LEFT</div>
+                                    <input type="text" inputmode="tel" class="ci-field ds-rx-field" id="ci_l_sph" value="<?php echo htmlspecialchars($pCard['l_sph']); ?>" style="width:100%;box-sizing:border-box;background:#1a1c1d;border:1px solid #333;border-radius:6px;color:#00ff88;font-family:monospace;text-align:center;">
+                                    <input type="text" inputmode="tel" class="ci-field ds-rx-field" id="ci_l_cyl" value="<?php echo htmlspecialchars($pCard['l_cyl']); ?>" style="width:100%;box-sizing:border-box;background:#1a1c1d;border:1px solid #333;border-radius:6px;color:#00ff88;font-family:monospace;text-align:center;">
+                                    <input type="text" inputmode="tel" class="ci-field ds-rx-field" id="ci_l_ax"  value="<?php echo htmlspecialchars($pCard['l_ax']); ?>"  style="width:100%;box-sizing:border-box;background:#1a1c1d;border:1px solid #333;border-radius:6px;color:#00cfff;font-family:monospace;text-align:center;">
+                                    <input type="text" inputmode="tel" class="ci-field ds-rx-field" id="ci_l_add" value="<?php echo htmlspecialchars($pCard['l_add']); ?>" style="width:100%;box-sizing:border-box;background:#1a1c1d;border:1px solid #333;border-radius:6px;color:#00ff88;font-family:monospace;text-align:center;">
+                                </div>
                                 </div>
                             </div>
+                            <!-- /Section: Prescription -->
                             <?php endif; ?>
-                            <div style="font-size:0.62em;color:#555;text-align:center;margin-top:4px;">⚠ Data ini akan disimpan ke database hanya saat PRINT INVOICE dikonfirmasi</div>
+
+                            <!-- Section: Visual Habits -->
+                            <div class="dsp-section collapsed" id="dsp_sec_visual" onclick="dspToggle(this, event)">
+                                <div class="dsp-section-header">
+                                    <div class="dsp-section-header-left">
+                                        <div class="dsp-section-title">VISUAL HABITS</div>
+                                        <div class="dsp-section-summary" id="dsp_summary_visual"><?php
+                                            $vhLabels = [1=>'INDOOR', 2=>'OUTDOOR', 3=>'BOTH'];
+                                            echo $vhLabels[(int)$pCard['visual_habit']] ?? 'INDOOR';
+                                        ?></div>
+                                    </div>
+                                    <span class="dsp-chevron">▾</span>
+                                </div>
+                                <div class="dsp-section-body" onclick="event.stopPropagation()">
+                                <input type="hidden" class="ci-field" id="ci_visual_habit" value="<?php echo (int)$pCard['visual_habit']; ?>">
+                                <div class="selection-wrapper" id="ci_visual_habit_wrapper">
+                                    <button type="button" class="neu-btn ds-pending-toggle <?php echo ((int)$pCard['visual_habit'] === 1) ? 'active' : ''; ?>" data-target="ci_visual_habit" data-value="1" data-section="dsp_sec_visual" data-summary="dsp_summary_visual" data-label="INDOOR"><span>INDOOR</span><div class="led"></div></button>
+                                    <button type="button" class="neu-btn ds-pending-toggle <?php echo ((int)$pCard['visual_habit'] === 2) ? 'active' : ''; ?>" data-target="ci_visual_habit" data-value="2" data-section="dsp_sec_visual" data-summary="dsp_summary_visual" data-label="OUTDOOR"><span>OUTDOOR</span><div class="led"></div></button>
+                                    <button type="button" class="neu-btn ds-pending-toggle <?php echo ((int)$pCard['visual_habit'] === 3) ? 'active' : ''; ?>" data-target="ci_visual_habit" data-value="3" data-section="dsp_sec_visual" data-summary="dsp_summary_visual" data-label="BOTH"><span>BOTH</span><div class="led"></div></button>
+                                </div>
+                                </div>
+                            </div>
+                            <!-- /Section: Visual Habits -->
+
+                            <!-- Section: Digital Device Usage -->
+                            <div class="dsp-section collapsed" id="dsp_sec_digital" onclick="dspToggle(this, event)">
+                                <div class="dsp-section-header">
+                                    <div class="dsp-section-header-left">
+                                        <div class="dsp-section-title">DIGITAL DEVICE USAGE</div>
+                                        <div class="dsp-section-summary" id="dsp_summary_digital"><?php
+                                            $duLabels = [1=>'LOW (< 2H)', 2=>'MODERATE (2H-5H)', 3=>'HIGH (> 5H)'];
+                                            echo $duLabels[(int)$pCard['digital_usage']] ?? 'LOW (< 2H)';
+                                        ?></div>
+                                    </div>
+                                    <span class="dsp-chevron">▾</span>
+                                </div>
+                                <div class="dsp-section-body" onclick="event.stopPropagation()">
+                                <input type="hidden" class="ci-field" id="ci_digital_usage" value="<?php echo (int)$pCard['digital_usage']; ?>">
+                                <div class="selection-wrapper" id="ci_digital_usage_wrapper">
+                                    <button type="button" class="neu-btn ds-pending-toggle <?php echo ((int)$pCard['digital_usage'] === 1) ? 'active' : ''; ?>" data-target="ci_digital_usage" data-value="1" data-section="dsp_sec_digital" data-summary="dsp_summary_digital" data-label="LOW (< 2H)"><span>LOW<br>(&lt; 2H)</span><div class="led"></div></button>
+                                    <button type="button" class="neu-btn ds-pending-toggle <?php echo ((int)$pCard['digital_usage'] === 2) ? 'active' : ''; ?>" data-target="ci_digital_usage" data-value="2" data-section="dsp_sec_digital" data-summary="dsp_summary_digital" data-label="MODERATE (2H-5H)"><span>MODERATE<br>(2H-5H)</span><div class="led"></div></button>
+                                    <button type="button" class="neu-btn ds-pending-toggle <?php echo ((int)$pCard['digital_usage'] === 3) ? 'active' : ''; ?>" data-target="ci_digital_usage" data-value="3" data-section="dsp_sec_digital" data-summary="dsp_summary_digital" data-label="HIGH (> 5H)"><span>HIGH<br>(&gt; 5H)</span><div class="led"></div></button>
+                                </div>
+                                </div>
+                            </div>
+                            <!-- /Section: Digital Device Usage -->
+
+                            <?php if ((int)$pCard['age'] >= 39): ?>
+                            <!-- Section: Vision Need -->
+                            <div class="dsp-section collapsed" id="dsp_sec_vision" onclick="dspToggle(this, event)">
+                                <div class="dsp-section-header">
+                                    <div class="dsp-section-header-left">
+                                        <span style="color:#ffcc00;font-size:0.78em;font-weight:bold;letter-spacing:2px;flex-shrink:0;">⚑ VISION NEED</span>
+                                        <span style="background:#3a3200;border:1px solid rgba(255,204,0,0.4);color:#ffcc00;font-size:0.7em;padding:2px 8px;border-radius:20px;flex-shrink:0;">AGE ≥ 39</span>
+                                        <div class="dsp-section-summary" id="dsp_summary_vision"><?php
+                                            $vnLabels = [];
+                                            if ((int)$pCard['need_distance'] === 1) $vnLabels[] = 'DISTANCE';
+                                            if ((int)$pCard['need_inter'] === 1) $vnLabels[] = 'INTERMEDIATE';
+                                            if ((int)$pCard['need_near'] === 1) $vnLabels[] = 'NEAR';
+                                            echo $vnLabels ? htmlspecialchars(implode(', ', $vnLabels)) : 'None selected';
+                                        ?></div>
+                                    </div>
+                                    <span class="dsp-chevron">▾</span>
+                                </div>
+                                <div class="dsp-section-body" onclick="event.stopPropagation()">
+                                <input type="hidden" class="ci-field" id="ci_need_distance"     value="<?php echo (int)$pCard['need_distance']; ?>">
+                                <input type="hidden" class="ci-field" id="ci_need_intermediate" value="<?php echo (int)$pCard['need_inter']; ?>">
+                                <input type="hidden" class="ci-field" id="ci_need_near"          value="<?php echo (int)$pCard['need_near']; ?>">
+                                <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
+                                    <button type="button" class="neu-btn ds-pending-vision-toggle <?php echo ((int)$pCard['need_distance'] === 1) ? 'active' : ''; ?>" data-target="ci_need_distance" data-summary="dsp_summary_vision" style="flex:1;min-width:80px;flex-direction:column;align-items:center;gap:4px;padding:10px 6px;"><span style="font-size:1.2em;">🔭</span><span style="font-size:0.7em;">DISTANCE</span><div class="led"></div></button>
+                                    <button type="button" class="neu-btn ds-pending-vision-toggle <?php echo ((int)$pCard['need_inter'] === 1) ? 'active' : ''; ?>" data-target="ci_need_intermediate" data-summary="dsp_summary_vision" style="flex:1;min-width:80px;flex-direction:column;align-items:center;gap:4px;padding:10px 6px;"><span style="font-size:1.2em;">🖥️</span><span style="font-size:0.7em;">INTERMEDIATE</span><div class="led"></div></button>
+                                    <button type="button" class="neu-btn ds-pending-vision-toggle <?php echo ((int)$pCard['need_near'] === 1) ? 'active' : ''; ?>" data-target="ci_need_near" data-summary="dsp_summary_vision" style="flex:1;min-width:80px;flex-direction:column;align-items:center;gap:4px;padding:10px 6px;"><span style="font-size:1.2em;">📖</span><span style="font-size:0.7em;">NEAR</span><div class="led"></div></button>
+                                </div>
+                                </div>
+                            </div>
+                            <!-- /Section: Vision Need -->
+                            <?php endif; ?>
+
+                            <div style="font-size:0.7em;color:#555;text-align:center;margin-top:4px;">⚠ This data will be saved to the database only after PRINT INVOICE is confirmed</div>
                         </div>
                     </div>
                     <?php elseif (!empty($_GET['direct'])): ?>
@@ -2619,45 +3125,131 @@ function dsUpdateVisionNeed(age) {
                         Prescription provided by customer · Sequence code: <span style="color:#00ff88;font-weight:bold;">000</span>
                     </div>
                     <?php endif; ?>
+                    <?php if (isset($_GET['info_status'])): ?>
+                        <?php if ($_GET['info_status'] === 'success'): ?>
+                        <div style="background:rgba(0,255,136,0.08);border:1px solid rgba(0,255,136,0.35);color:#00ff88;border-radius:12px;padding:10px 16px;margin-bottom:16px;font-size:0.8em;text-align:center;font-weight:700;letter-spacing:0.5px;">
+                            ✓ CUSTOMER INFORMATION SAVED
+                        </div>
+                        <?php else: ?>
+                        <div style="background:rgba(255,77,77,0.08);border:1px solid rgba(255,77,77,0.35);color:#ff4d4d;border-radius:12px;padding:10px 16px;margin-bottom:16px;font-size:0.8em;text-align:center;font-weight:700;letter-spacing:0.5px;">
+                            ✕ FAILED TO SAVE CUSTOMER INFORMATION
+                        </div>
+                        <?php endif; ?>
+                    <?php endif; ?>
                     <div class="info-grid">
                         <div>
                             <label>EXAMINATION CODE</label>
                             <div class="read-only-box"><?php echo $data['examination_code']; ?></div>
                         </div>
 
+                        <?php if (!$is_direct_pending): ?>
+                        <!-- ============================================================
+                             EDITABLE CUSTOMER / EXAMINATION INFO
+                             Fields below can be edited inline. Editing reveals a
+                             SAVE INFO button; until saved, Order Details and the
+                             Print Invoice button remain locked.
+                             ============================================================ -->
                         <div>
                             <label>DATE</label>
-                            <div class="read-only-box"><?php echo date('d/m/Y', strtotime($data['examination_date'])); ?></div>
+                            <input type="date" class="read-only-box ci-field" id="ci_date"
+                                value="<?php echo date('Y-m-d', strtotime($data['examination_date'])); ?>"
+                                style="width:100%;box-sizing:border-box;border:none;font-family:inherit;color-scheme:dark;">
                         </div>
 
                         <div class="full">
                             <label>CUSTOMER NAME</label>
-                            <div class="read-only-box"><?php echo strtoupper($data['customer_name']); ?></div>
-
+                            <input type="text" class="read-only-box ci-field" id="ci_customer_name"
+                                value="<?php echo strtoupper($data['customer_name']); ?>"
+                                oninput="this.value=this.value.toUpperCase()"
+                                style="width:100%;box-sizing:border-box;border:none;font-family:inherit;">
                         </div>
 
                         <div>
                             <label>AGE</label>
-                            <div class="read-only-box"><?php echo $data['age']; ?> YEARS</div>
-
+                            <input type="number" class="read-only-box ci-field" id="ci_age"
+                                value="<?php echo (int)$data['age']; ?>" min="0" max="150"
+                                style="width:100%;box-sizing:border-box;border:none;font-family:inherit;">
                         </div>
 
                         <div>
                             <label>GENDER</label>
-                            <div class="read-only-box"><?php echo $data['gender']; ?></div>
-
+                            <select class="read-only-box ci-field" id="ci_gender"
+                                style="width:100%;box-sizing:border-box;border:none;font-family:inherit;">
+                                <option value="MALE" <?php echo (strtoupper($data['gender']) === 'MALE') ? 'selected' : ''; ?>>MALE</option>
+                                <option value="FEMALE" <?php echo (strtoupper($data['gender']) === 'FEMALE') ? 'selected' : ''; ?>>FEMALE</option>
+                            </select>
                         </div>
 
                         <div class="full">
                             <label>SYMPTOMS</label>
-                            <div class="read-only-box" style="height: auto;"><?php echo $data['symptoms']; ?></div>
-
+                            <textarea class="read-only-box ci-field" id="ci_symptoms"
+                                style="width:100%;box-sizing:border-box;height:auto;min-height:45px;border:none;font-family:inherit;resize:vertical;"><?php echo htmlspecialchars($data['symptoms']); ?></textarea>
                         </div>
 
                         <div class="full">
                             <label>EXAM NOTES</label>
-                            <div class="read-only-box" style="height: auto; min-height: 80px;"><?php echo $data['exam_notes'] ?: '-'; ?></div>
+                            <textarea class="read-only-box ci-field" id="ci_exam_notes"
+                                style="width:100%;box-sizing:border-box;height:auto;min-height:80px;border:none;font-family:inherit;resize:vertical;"><?php echo htmlspecialchars($data['exam_notes']); ?></textarea>
                         </div>
+
+                        <!-- Save Customer Info button — hidden until a field changes -->
+                        <div class="full" id="ci-save-row" style="display:none;justify-content:center;">
+                            <form method="POST" id="ci-save-form" style="width:100%;max-width:320px;">
+                                <input type="hidden" name="invoice_number" value="<?php echo $data['invoice_number']; ?>">
+                                <input type="hidden" name="ci_date" id="ci_date_hidden">
+                                <input type="hidden" name="ci_customer_name" id="ci_customer_name_hidden">
+                                <input type="hidden" name="ci_age" id="ci_age_hidden">
+                                <input type="hidden" name="ci_gender" id="ci_gender_hidden">
+                                <input type="hidden" name="ci_symptoms" id="ci_symptoms_hidden">
+                                <input type="hidden" name="ci_exam_notes" id="ci_exam_notes_hidden">
+                                <button type="submit" name="save_customer_info" value="1" class="btn-action" style="width:100%;">SAVE INFO</button>
+                            </form>
+                        </div>
+                        <?php else: ?>
+                        <!-- ============================================================
+                             DIRECT SALE PENDING — remaining editable fields
+                             (CUSTOMER NAME, DATE, GENDER, AGE are edited directly in the
+                             DIRECT SALE DATA card above — not duplicated here)
+                             ============================================================ -->
+                        <div class="full">
+                            <label>SYMPTOMS</label>
+                            <textarea class="read-only-box ci-field" id="ci_symptoms"
+                                style="width:100%;box-sizing:border-box;height:auto;min-height:45px;border:none;font-family:inherit;resize:vertical;"><?php echo htmlspecialchars($data['symptoms']); ?></textarea>
+                        </div>
+
+                        <div class="full">
+                            <label>EXAM NOTES</label>
+                            <textarea class="read-only-box ci-field" id="ci_exam_notes"
+                                style="width:100%;box-sizing:border-box;height:auto;min-height:80px;border:none;font-family:inherit;resize:vertical;"><?php echo htmlspecialchars($data['exam_notes']); ?></textarea>
+                        </div>
+
+                        <!-- Save Pending Info button — hidden until a field changes -->
+                        <div class="full" id="ci-save-row" style="display:none;justify-content:center;">
+                            <form method="POST" id="ci-save-form" style="width:100%;max-width:320px;">
+                                <input type="hidden" name="ci_date" id="ci_date_hidden">
+                                <input type="hidden" name="ci_customer_name" id="ci_customer_name_hidden">
+                                <input type="hidden" name="ci_age" id="ci_age_hidden">
+                                <input type="hidden" name="ci_gender" id="ci_gender_hidden">
+                                <input type="hidden" name="ci_symptoms" id="ci_symptoms_hidden">
+                                <input type="hidden" name="ci_exam_notes" id="ci_exam_notes_hidden">
+                                <input type="hidden" name="ci_pd" id="ci_pd_hidden">
+                                <input type="hidden" name="ci_r_sph" id="ci_r_sph_hidden">
+                                <input type="hidden" name="ci_r_cyl" id="ci_r_cyl_hidden">
+                                <input type="hidden" name="ci_r_ax" id="ci_r_ax_hidden">
+                                <input type="hidden" name="ci_r_add" id="ci_r_add_hidden">
+                                <input type="hidden" name="ci_l_sph" id="ci_l_sph_hidden">
+                                <input type="hidden" name="ci_l_cyl" id="ci_l_cyl_hidden">
+                                <input type="hidden" name="ci_l_ax" id="ci_l_ax_hidden">
+                                <input type="hidden" name="ci_l_add" id="ci_l_add_hidden">
+                                <input type="hidden" name="ci_visual_habit" id="ci_visual_habit_hidden">
+                                <input type="hidden" name="ci_digital_usage" id="ci_digital_usage_hidden">
+                                <input type="hidden" name="ci_need_distance" id="ci_need_distance_hidden">
+                                <input type="hidden" name="ci_need_intermediate" id="ci_need_intermediate_hidden">
+                                <input type="hidden" name="ci_need_near" id="ci_need_near_hidden">
+                                <button type="submit" name="save_ds_pending_info" value="1" class="btn-action" style="width:100%;">SAVE INFO</button>
+                            </form>
+                        </div>
+                        <?php endif; ?>
 
                         <!-- ============================================================
                              ORDER DETAILS GROUP
@@ -4187,7 +4779,7 @@ function dsUpdateVisionNeed(age) {
                     </div>
 
                     <div style="margin-top: 40px; text-align: center;">
-                        <button onclick="openPrintPage()" class="btn-action">PRINT INVOICE</button>
+                        <button onclick="openPrintPage()" class="btn-action" id="print-invoice-btn">PRINT INVOICE</button>
                     </div>
                 </div>
             </div>
@@ -7109,13 +7701,58 @@ function dsUpdateVisionNeed(age) {
             }
         }
 
+        // ── Direct sale pending card: collapsible sub-sections ─────────
+        // Click anywhere on a section header/summary toggles expand/collapse.
+        // Clicks inside the section body are stopped from bubbling (see inline
+        // onclick="event.stopPropagation()" on .dsp-section-body).
+        function dspToggle(section, evt) {
+            if (evt.target.closest('.dsp-section-body')) return;
+            section.classList.toggle('collapsed');
+        }
+
+        // Collapse a section by id (used e.g. after a <select> change)
+        function dspToggleClose(sectionId) {
+            var section = document.getElementById(sectionId);
+            if (section) section.classList.add('collapsed');
+        }
+
+        // Keep the "Customer & Sale Info" section summary in sync with the name field
+        function dspUpdateInfoSummary() {
+            var nameEl    = document.getElementById('ci_customer_name');
+            var summaryEl = document.getElementById('dsp_summary_info');
+            if (!nameEl || !summaryEl) return;
+            var val = nameEl.value.trim();
+            summaryEl.textContent = val || '— (not set)';
+        }
+
         // Next invoice sheet — computed server-side from the latest order in DB.
         // Falls back to starting_invoice_number from settings when no orders exist yet.
         var _coDefaultSheet = '<?php echo htmlspecialchars($nextInvoiceSheet, ENT_QUOTES); ?>';
         
         // ── Open the confirmation modal ───────────────────────────────
         function openPrintPage() {
-        
+
+            // ── Direct sale guard: block printing while customer name is still the placeholder "JOHN DOE" ──
+            if (_isDirectPending) {
+                var nameField = document.getElementById('ci_customer_name');
+                if (nameField) {
+                    var nameVal = nameField.value.trim().toUpperCase();
+                    if (nameVal === 'JOHN DOE' || nameVal === '') {
+                        // Expand the Customer & Sale Info section so the field is visible
+                        var infoSection = document.getElementById('dsp_sec_info');
+                        if (infoSection) infoSection.classList.remove('collapsed');
+
+                        // Scroll to and focus the customer name field
+                        nameField.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        nameField.focus();
+                        nameField.select();
+
+                        alert('Please change the customer name before printing the invoice.\n\n"JOHN DOE" is a placeholder and must be replaced with the actual customer name.');
+                        return;
+                    }
+                }
+            }
+
             // Collect current selection data
             var frameName  = '';
             var frameUfc   = '';
@@ -7652,7 +8289,141 @@ function dsUpdateVisionNeed(age) {
                     });
             };
 
-            // ── Escape HTML helper ────────────────────────────────────────
+            // ============================================================
+            // EDITABLE CUSTOMER / EXAMINATION INFO CARD
+            // Detect changes → show SAVE INFO button.
+            // Lock Order Details + Print Invoice until saved.
+            // ============================================================
+            (function initCustomerInfoEditor() {
+                var allFieldIds = [
+                    'ci_date', 'ci_customer_name', 'ci_age', 'ci_gender', 'ci_symptoms', 'ci_exam_notes',
+                    'ci_pd',
+                    'ci_r_sph', 'ci_r_cyl', 'ci_r_ax', 'ci_r_add',
+                    'ci_l_sph', 'ci_l_cyl', 'ci_l_ax', 'ci_l_add',
+                    'ci_visual_habit', 'ci_digital_usage',
+                    'ci_need_distance', 'ci_need_intermediate', 'ci_need_near'
+                ];
+                var fields = allFieldIds
+                    .map(function(id) { return document.getElementById(id); })
+                    .filter(function(el) { return el !== null; });
+
+                if (fields.length === 0) return; // nothing editable on this view
+
+                var saveRow      = document.getElementById('ci-save-row');
+                var saveForm     = document.getElementById('ci-save-form');
+                var odGroup      = document.getElementById('order-details-group');
+                var printBtn     = document.getElementById('print-invoice-btn');
+
+                var originalValues = {};
+                fields.forEach(function(f) {
+                    originalValues[f.id] = f.value;
+                });
+
+                function isDirty() {
+                    return fields.some(function(f) {
+                        return f.value !== originalValues[f.id];
+                    });
+                }
+
+                function setLocked(locked) {
+                    if (odGroup) {
+                        odGroup.style.opacity = locked ? '0.4' : '1';
+                        odGroup.style.pointerEvents = locked ? 'none' : 'auto';
+                        odGroup.style.filter = locked ? 'blur(1.5px)' : 'none';
+                    }
+                    if (printBtn) {
+                        printBtn.disabled = locked;
+                        printBtn.style.opacity = locked ? '0.4' : '1';
+                        printBtn.style.cursor = locked ? 'not-allowed' : 'pointer';
+                        printBtn.title = locked ? 'Save the customer information above before printing.' : '';
+                    }
+                }
+
+                function refreshState() {
+                    var dirty = isDirty();
+                    if (saveRow) saveRow.style.display = dirty ? 'flex' : 'none';
+                    setLocked(dirty);
+                }
+
+                fields.forEach(function(f) {
+                    f.addEventListener('input', refreshState);
+                    f.addEventListener('change', refreshState);
+                });
+
+                // Lock from the start until any changes are saved is NOT desired —
+                // only lock once the user starts editing (dirty state).
+                refreshState();
+
+                // ── Toggle buttons (visual habit / digital usage) ──────────
+                // Each button sets a hidden input's value and marks itself active
+                // within its own selection-wrapper, then triggers dirty-check.
+                // After choosing, the section auto-collapses (but does not open the next one).
+                document.querySelectorAll('.ds-pending-toggle').forEach(function(btn) {
+                    btn.addEventListener('click', function() {
+                        var targetId = btn.getAttribute('data-target');
+                        var value    = btn.getAttribute('data-value');
+                        var hidden   = document.getElementById(targetId);
+                        if (!hidden) return;
+                        btn.closest('.selection-wrapper').querySelectorAll('.neu-btn').forEach(function(b) {
+                            b.classList.remove('active');
+                        });
+                        btn.classList.add('active');
+                        hidden.value = value;
+                        hidden.dispatchEvent(new Event('input', { bubbles: true }));
+
+                        // Update summary text and collapse this section
+                        var summaryId = btn.getAttribute('data-summary');
+                        var label     = btn.getAttribute('data-label');
+                        if (summaryId && label) {
+                            var summaryEl = document.getElementById(summaryId);
+                            if (summaryEl) summaryEl.textContent = label;
+                        }
+                        var sectionId = btn.getAttribute('data-section');
+                        if (sectionId) {
+                            var sectionEl = document.getElementById(sectionId);
+                            if (sectionEl) sectionEl.classList.add('collapsed');
+                        }
+                    });
+                });
+
+                // ── Vision need toggle buttons (multi-select, 0/1) ─────────
+                document.querySelectorAll('.ds-pending-vision-toggle').forEach(function(btn) {
+                    btn.addEventListener('click', function() {
+                        var targetId = btn.getAttribute('data-target');
+                        var hidden   = document.getElementById(targetId);
+                        if (!hidden) return;
+                        var nowActive = !btn.classList.contains('active');
+                        btn.classList.toggle('active');
+                        hidden.value = nowActive ? '1' : '0';
+                        hidden.dispatchEvent(new Event('input', { bubbles: true }));
+
+                        // Update vision need summary text (multi-select — no auto-collapse)
+                        var summaryId = btn.getAttribute('data-summary');
+                        if (summaryId) {
+                            var summaryEl = document.getElementById(summaryId);
+                            if (summaryEl) {
+                                var labels = [];
+                                if (document.getElementById('ci_need_distance').value === '1') labels.push('DISTANCE');
+                                if (document.getElementById('ci_need_intermediate').value === '1') labels.push('INTERMEDIATE');
+                                if (document.getElementById('ci_need_near').value === '1') labels.push('NEAR');
+                                summaryEl.textContent = labels.length ? labels.join(', ') : 'None selected';
+                            }
+                        }
+                    });
+                });
+
+                if (saveForm) {
+                    saveForm.addEventListener('submit', function() {
+                        fields.forEach(function(f) {
+                            var hidden = document.getElementById(f.id + '_hidden');
+                            if (hidden) hidden.value = f.value;
+                        });
+                    });
+                }
+            })();
+
+
+
             function escHtml(str) {
                 return String(str)
                     .replace(/&/g, '&amp;')
