@@ -312,8 +312,8 @@ h1 {
 
 /* Logo with Raised Neumorphic Effect */
 .logo-box {
-    width: 100px;
-    height: 100px;
+    width: 150px;
+    height: 150px;
     background-color: var(--bg-color);
     display: flex;
     justify-content: center;
@@ -324,8 +324,13 @@ h1 {
     margin-bottom: 15px;
 }
 
+.logo-box img {
+    height: 65px !important;
+    width: auto;
+}
+
 .company-name {
-    font-size: 22px;
+    font-size: 26px;
     font-weight: 700;
     color: var(--text-main);
     letter-spacing: 1px;
@@ -1502,7 +1507,16 @@ tr td {
         height: 15%;
     }
     .company-name {
-        font-size: 18px;
+        font-size: 20px;
+    }
+
+    .logo-box {
+        width: 125px;
+        height: 125px;
+    }
+
+    .logo-box img {
+        height: 55px !important;
     }
 
     .input-group, .input-group:nth-child(3):last-child { 

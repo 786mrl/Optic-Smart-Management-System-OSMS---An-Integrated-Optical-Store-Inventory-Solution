@@ -20,6 +20,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Inventory Management - <?php echo htmlspecialchars($STORE_NAME); ?></title>
     <link rel="stylesheet" href="style.css">
+    <style>
+        .neu-button.disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            pointer-events: none;
+            filter: grayscale(1);
+        }
+    </style>
 </head>
 <body>
     <div class="main-wrapper">
@@ -46,13 +54,13 @@
                         <div class="led"></div>
                     </button>
                 
-                    <button class="neu-button" data-url="lense_management.php" onclick="handleButtonClick(this)">
+                    <button class="neu-button disabled" disabled title="Coming soon">
                         <span class="icon">🔍</span>
                         Lense Management
                         <div class="led"></div>
                     </button>
                 
-                    <button class="neu-button" data-url="other_management.php" onclick="handleButtonClick(this)">
+                    <button class="neu-button disabled" disabled title="Coming soon">
                         <span class="icon">🔘</span>
                         Other
                         <div class="led"></div>
