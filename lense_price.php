@@ -1504,6 +1504,20 @@
             }
             // Toggle for ALL-view read-only cards (click anywhere on card)
             function toggleLensCardEl(card) {
+                const wasCollapsed = card.classList.contains('collapsed');
+                // Accordion: collapse other open cards within the same group before opening this one
+                if (wasCollapsed) {
+                    const scope = card.closest('details.lense-details') || card.parentElement;
+                    if (scope) {
+                        scope.querySelectorAll('.lens-card').forEach(other => {
+                            if (other !== card) {
+                                other.classList.add('collapsed');
+                                const otherArrow = other.querySelector('.lens-name-icon');
+                                if (otherArrow) otherArrow.style.transform = '';
+                            }
+                        });
+                    }
+                }
                 card.classList.toggle('collapsed');
                 const arrow = card.querySelector('.lens-name-icon');
                 if (arrow) arrow.style.transform = card.classList.contains('collapsed') ? '' : 'rotate(90deg)';
@@ -1675,6 +1689,15 @@
                 const card = btn.closest('.lens-card');
                 if (!card) return;
                 const wasCollapsed = card.classList.contains('collapsed');
+                // Accordion: collapse other open cards within the same group before opening this one
+                if (wasCollapsed) {
+                    const scope = card.closest('details.lense-details') || card.parentElement;
+                    if (scope) {
+                        scope.querySelectorAll('.lens-card').forEach(other => {
+                            if (other !== card) other.classList.add('collapsed');
+                        });
+                    }
+                }
                 card.classList.toggle('collapsed');
                 // Mark as opened only when expanding (not when collapsing)
                 if (wasCollapsed) markCardAsOpened(card);
