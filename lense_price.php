@@ -1409,12 +1409,13 @@
                         <input type="hidden" name="last_category" id="del_last_category">
                     </form>
 
-                    <div class="btn-group">
-                        <button type="button" class="back-main" onclick="window.location.href='inventory.php'">&larr; Back to Previous Page</button>
-                    </div>
-
+                    
                 </div><!-- /.config-window -->
             </div><!-- /.content-area -->
+            
+            <div class="btn-group">
+                <button type="button" class="back-main" onclick="window.location.href='inventory.php'">&larr; Back to Previous Page</button>
+            </div>
 
             <footer class="footer-container">
                 <p class="footer-text"><?php echo $COPYRIGHT_FOOTER; ?></p>
