@@ -40,7 +40,8 @@
             'copyright_footer', 'currency_code', 'timezone', 'tax_rate_percent', 
             'uom_frame_default', 'uom_lens_default', 'uom_other_default', 
             'low_stock_threshold', 'starting_invoice_number', 'receipt_footer_msg', 
-            'invoice_format_prefix', 'barcode_guide_image_location'
+            'invoice_format_prefix', 'barcode_guide_image_location',
+            'lens_stock_lead_time_days', 'lens_lab_lead_time_days'
         ];
 
         $conn->begin_transaction(); // Use transaction for data consistency
@@ -329,6 +330,18 @@
                                     <label>Starting Invoice Number (Sequence)</label>
                                     <input type="text" class="input-field" name="starting_invoice_number" value="<?php echo htmlspecialchars($settings['starting_invoice_number']['value'] ?? ''); ?>" required> 
                                     <p class="description"><?php echo $settings['starting_invoice_number']['description'] ?? 'The starting sequence number for daily/monthly invoices (resets automatically).'; ?></p>
+                                </div>
+
+                                <div class="input-group">
+                                    <label>Lens Order Lead Time - Stock (Days)</label>
+                                    <input type="number" class="input-field" min="0" name="lens_stock_lead_time_days" value="<?php echo htmlspecialchars($settings['lens_stock_lead_time_days']['value'] ?? '2'); ?>" required>
+                                    <p class="description"><?php echo $settings['lens_stock_lead_time_days']['description'] ?? 'Default estimated waiting time (in days) for stock lens orders'; ?></p>
+                                </div>
+
+                                <div class="input-group">
+                                    <label>Lens Order Lead Time - Lab (Days)</label>
+                                    <input type="number" class="input-field" min="0" name="lens_lab_lead_time_days" value="<?php echo htmlspecialchars($settings['lens_lab_lead_time_days']['value'] ?? '10'); ?>" required>
+                                    <p class="description"><?php echo $settings['lens_lab_lead_time_days']['description'] ?? 'Default estimated waiting time (in days) for lab-order lens orders'; ?></p>
                                 </div>          
                             </div>                
                         </div>

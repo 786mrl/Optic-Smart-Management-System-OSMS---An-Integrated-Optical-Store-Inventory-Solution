@@ -49,7 +49,7 @@ if ($search_input !== '') {
     $res2->free(); $stmt2->close();
 
     if (empty($candidates)) {
-        $error_msg = 'Data tidak ditemukan untuk: <strong>' . htmlspecialchars($search_input) . '</strong>';
+        $error_msg = 'Data not found for: <strong>' . htmlspecialchars($search_input) . '</strong>';
     } else {
         $pivot_invoice = array_key_first($candidates);
 
@@ -113,12 +113,12 @@ function fmt_rx($v) {
 }
 function rx_float($v) { return ($v === null || $v === '') ? null : (float)$v; }
 function visit_gap_label($days) {
-    if ($days < 30)  return $days . ' hari';
-    if ($days < 365) return round($days/30) . ' bln';
-    return round($days/365,1) . ' thn';
+    if ($days < 30)  return $days . ' days';
+    if ($days < 365) return round($days/30) . ' mos';
+    return round($days/365,1) . ' yrs';
 }
 function order_status_label($s) {
-    return [1=>'Proses',2=>'Selesai',3=>'Diambil',4=>'Batal'][$s] ?? '?';
+    return [1=>'Process',2=>'Completed',3=>'Picked Up',4=>'Cancelled'][$s] ?? '?';
 }
 function order_status_color($s) {
     return [1=>'#f59e0b',2=>'#00ffaa',3=>'#00d4ff',4=>'#ff4d4d'][$s] ?? '#718096';
@@ -435,7 +435,6 @@ foreach ($examinations as $e) {
 <div class="main-wrapper">
     <div class="content-area">
 
-        <!-- ── Header (identical to lense_price.php) ───────────────── -->
         <div class="header-container">
             <button class="logout-btn" onclick="window.location.href='logout.php';">Logout</button>
             <div class="brand-section">
@@ -447,51 +446,42 @@ foreach ($examinations as $e) {
             </div>
         </div>
 
-        <!-- ── Main content window ─────────────────────────────────── -->
         <div class="config-window">
 
             <div class="page-header" style="text-align:center;margin-bottom:24px;">
                 <h2 style="margin:0 0 4px;font-size:18px;">📋 Customer History</h2>
-                <p style="margin:0;color:var(--text-muted);font-size:12px;">Riwayat pemeriksaan, pembelian, dan analisa per customer</p>
+                <p style="margin:0;color:var(--text-muted);font-size:12px;">Examination, purchase history, and analytics per customer</p>
             </div>
 
-            <!-- ── Search bar ─────────────────────────────────────── -->
             <div class="ch-search-bar">
-                <span class="ch-search-label">🔍 Cari Customer — nama, nomor HP, atau nomor invoice</span>
+                <span class="ch-search-label">🔍 Search Customer — name, phone number, or invoice number</span>
                 <form method="get" action="customer_history.php">
                     <div class="ch-search-row">
                         <input
                             type="text" name="q"
                             class="ch-search-input"
-                            placeholder="Contoh: ANDI / 0812xxxx / INV-20240101-001"
+                            placeholder="Example: ANDI / 0812xxxx / INV-20240101-001"
                             value="<?= htmlspecialchars($search_input) ?>"
                             autocomplete="off" autofocus
                         >
-                        <button type="submit" class="ch-search-btn">Cari</button>
+                        <button type="submit" class="ch-search-btn">Search</button>
                     </div>
                 </form>
             </div>
 
             <?php if ($search_input === ''): ?>
-            <!-- ── Welcome state ───────────────────────────────────── -->
             <div class="ch-state">
                 <div class="ch-state-icon">🔎</div>
-                <p>Masukkan nama customer, nomor telepon, atau nomor invoice<br>untuk melihat riwayat lengkapnya.</p>
+                <p>Enter a customer name, phone number, or invoice number<br>to view their complete history.</p>
             </div>
 
             <?php elseif ($error_msg !== ''): ?>
-            <!-- ── Not found ───────────────────────────────────────── -->
             <div class="ch-state error">
                 <div class="ch-state-icon">⚠️</div>
                 <p><?= $error_msg ?></p>
             </div>
 
             <?php else: ?>
-            <!-- ═══════════════════════════════════════════════════════
-                 CUSTOMER FOUND
-            ══════════════════════════════════════════════════════════ -->
-
-            <!-- ── Identity card ──────────────────────────────────── -->
             <div class="ch-identity">
                 <div class="ch-avatar"><?= mb_substr($customer_data['name'], 0, 1) ?></div>
                 <div class="ch-id-info">
@@ -499,43 +489,42 @@ foreach ($examinations as $e) {
                     <div class="ch-id-sub">📞 <span><?= htmlspecialchars($customer_data['phone']) ?></span> &nbsp;·&nbsp; Ref: <span><?= htmlspecialchars($customer_data['pivot_invoice']) ?></span></div>
                 </div>
                 <div class="ch-id-badges">
-                    <span class="ch-badge exam">👁 <?= $exam_count ?> pemeriksaan</span>
-                    <span class="ch-badge order">🧾 <?= $order_count ?> order</span>
+                    <span class="ch-badge exam">👁 <?= $exam_count ?> examinations</span>
+                    <span class="ch-badge order">🧾 <?= $order_count ?> orders</span>
                     <?php if ($unpaid_amount > 0): ?>
                     <span class="ch-badge debt">⚠ <?= fmt_idr($unpaid_amount) ?></span>
                     <?php endif; ?>
                 </div>
             </div>
 
-            <!-- ── KPI row ─────────────────────────────────────────── -->
             <div class="ch-kpi-grid">
                 <div class="ch-kpi c-teal">
-                    <div class="ch-kpi-label">Total Transaksi</div>
+                    <div class="ch-kpi-label">Total Transactions</div>
                     <div class="ch-kpi-val sm"><?= fmt_idr($total_spent) ?></div>
-                    <div class="ch-kpi-sub"><?= $order_count ?> order</div>
+                    <div class="ch-kpi-sub"><?= $order_count ?> orders</div>
                 </div>
                 <div class="ch-kpi c-green">
-                    <div class="ch-kpi-label">Total Dibayar</div>
+                    <div class="ch-kpi-label">Total Paid</div>
                     <div class="ch-kpi-val sm"><?= fmt_idr($total_paid) ?></div>
-                    <div class="ch-kpi-sub"><?= $total_spent > 0 ? round($total_paid/$total_spent*100) : 0 ?>% dari total</div>
+                    <div class="ch-kpi-sub"><?= $total_spent > 0 ? round($total_paid/$total_spent*100) : 0 ?>% of total</div>
                 </div>
                 <div class="ch-kpi <?= $unpaid_amount > 0 ? 'c-red' : 'c-green' ?>">
-                    <div class="ch-kpi-label">Sisa Hutang</div>
+                    <div class="ch-kpi-label">Remaining Balance</div>
                     <div class="ch-kpi-val sm"><?= fmt_idr($unpaid_amount) ?></div>
-                    <div class="ch-kpi-sub"><?= $unpaid_orders ?> belum · <?= $partial_orders ?> partial</div>
+                    <div class="ch-kpi-sub"><?= $unpaid_orders ?> unpaid · <?= $partial_orders ?> partial</div>
                 </div>
                 <div class="ch-kpi c-blue">
-                    <div class="ch-kpi-label">Kunjungan</div>
+                    <div class="ch-kpi-label">Visits</div>
                     <div class="ch-kpi-val"><?= $exam_count ?></div>
-                    <div class="ch-kpi-sub">pemeriksaan tercatat</div>
+                    <div class="ch-kpi-sub">recorded examinations</div>
                 </div>
                 <div class="ch-kpi c-amber">
-                    <div class="ch-kpi-label">Rata-rata Interval</div>
+                    <div class="ch-kpi-label">Average Interval</div>
                     <div class="ch-kpi-val"><?= $avg_gap_days !== null ? visit_gap_label($avg_gap_days) : '—' ?></div>
-                    <div class="ch-kpi-sub">antar kunjungan</div>
+                    <div class="ch-kpi-sub">between visits</div>
                 </div>
                 <div class="ch-kpi c-purple">
-                    <div class="ch-kpi-label">Periksa Terakhir</div>
+                    <div class="ch-kpi-label">Last Exam</div>
                     <div class="ch-kpi-val sm"><?php
                         if (!empty($examinations)) {
                             $last = end($examinations);
@@ -546,62 +535,57 @@ foreach ($examinations as $e) {
                         if (!empty($examinations)) {
                             $last = end($examinations);
                             $days_ago = (int)round((time() - strtotime($last['examination_date'])) / 86400);
-                            echo $days_ago . ' hari lalu';
+                            echo $days_ago . ' days ago';
                         }
                     ?></div>
                 </div>
             </div>
 
-            <!-- ── Charts ─────────────────────────────────────────── -->
             <?php if (count($rx_trend) >= 2): ?>
             <div class="ch-section">
-                <span class="ch-section-title">Tren Resep</span>
+                <span class="ch-section-title">Prescription Trend</span>
                 <span class="ch-section-count">OD &amp; OS · New Rx</span>
             </div>
             <div class="ch-chart-grid">
                 <div class="ch-chart-card">
-                    <div class="ch-chart-title">SPH — Kanan (OD) &amp; Kiri (OS)</div>
+                    <div class="ch-chart-title">SPH — Right (OD) &amp; Left (OS)</div>
                     <div class="ch-chart-wrap"><canvas id="chartSph"></canvas></div>
                 </div>
                 <div class="ch-chart-card">
-                    <div class="ch-chart-title">CYL — Kanan (OD) &amp; Kiri (OS)</div>
+                    <div class="ch-chart-title">CYL — Right (OD) &amp; Left (OS)</div>
                     <div class="ch-chart-wrap"><canvas id="chartCyl"></canvas></div>
                 </div>
             </div>
             <?php endif; ?>
 
-            <!-- ── Analysis ───────────────────────────────────────── -->
             <?php if (!empty($examinations) || !empty($orders)): ?>
             <div class="ch-section">
-                <span class="ch-section-title">Ringkasan Analisa</span>
+                <span class="ch-section-title">Analysis Summary</span>
             </div>
             <div class="ch-analysis-grid">
 
-                <!-- Visit pattern -->
                 <div class="ch-analysis-card">
-                    <div class="ch-analysis-title">📅 Pola Kunjungan</div>
+                    <div class="ch-analysis-title">📅 Visit Patterns</div>
                     <?php
                     $first_visit = !empty($exam_dates) ? date('d M Y', strtotime(reset($exam_dates))) : '—';
                     $last_visit  = !empty($exam_dates) ? date('d M Y', strtotime(end($exam_dates)))   : '—';
                     ?>
-                    <div class="ch-analysis-row"><span class="ch-a-key">Kunjungan pertama</span><span class="ch-a-val teal"><?= $first_visit ?></span></div>
-                    <div class="ch-analysis-row"><span class="ch-a-key">Kunjungan terakhir</span><span class="ch-a-val teal"><?= $last_visit ?></span></div>
-                    <div class="ch-analysis-row"><span class="ch-a-key">Rata-rata interval</span><span class="ch-a-val"><?= $avg_gap_days !== null ? visit_gap_label($avg_gap_days) : '—' ?></span></div>
-                    <div class="ch-analysis-row"><span class="ch-a-key">Interval terpendek</span><span class="ch-a-val"><?= !empty($visit_gaps) ? visit_gap_label(min($visit_gaps)) : '—' ?></span></div>
-                    <div class="ch-analysis-row"><span class="ch-a-key">Interval terpanjang</span><span class="ch-a-val"><?= !empty($visit_gaps) ? visit_gap_label(max($visit_gaps)) : '—' ?></span></div>
+                    <div class="ch-analysis-row"><span class="ch-a-key">First visit</span><span class="ch-a-val teal"><?= $first_visit ?></span></div>
+                    <div class="ch-analysis-row"><span class="ch-a-key">Last visit</span><span class="ch-a-val teal"><?= $last_visit ?></span></div>
+                    <div class="ch-analysis-row"><span class="ch-a-key">Average interval</span><span class="ch-a-val"><?= $avg_gap_days !== null ? visit_gap_label($avg_gap_days) : '—' ?></span></div>
+                    <div class="ch-analysis-row"><span class="ch-a-key">Shortest interval</span><span class="ch-a-val"><?= !empty($visit_gaps) ? visit_gap_label(min($visit_gaps)) : '—' ?></span></div>
+                    <div class="ch-analysis-row"><span class="ch-a-key">Longest interval</span><span class="ch-a-val"><?= !empty($visit_gaps) ? visit_gap_label(max($visit_gaps)) : '—' ?></span></div>
                 </div>
 
-                <!-- Payment summary -->
                 <div class="ch-analysis-card">
-                    <div class="ch-analysis-title">💰 Status Pembayaran</div>
-                    <div class="ch-analysis-row"><span class="ch-a-key">Total tagihan</span><span class="ch-a-val"><?= fmt_idr($total_spent) ?></span></div>
-                    <div class="ch-analysis-row"><span class="ch-a-key">Total dibayar</span><span class="ch-a-val good"><?= fmt_idr($total_paid) ?></span></div>
-                    <div class="ch-analysis-row"><span class="ch-a-key">Sisa belum bayar</span><span class="ch-a-val <?= $unpaid_amount>0?'bad':'good' ?>"><?= fmt_idr($unpaid_amount) ?></span></div>
-                    <div class="ch-analysis-row"><span class="ch-a-key">Order lunas</span><span class="ch-a-val good"><?= $paid_orders ?></span></div>
-                    <div class="ch-analysis-row"><span class="ch-a-key">Partial / belum bayar</span><span class="ch-a-val <?= ($partial_orders+$unpaid_orders)>0?'warn':'good' ?>"><?= $partial_orders + $unpaid_orders ?></span></div>
+                    <div class="ch-analysis-title">💰 Payment Status</div>
+                    <div class="ch-analysis-row"><span class="ch-a-key">Total amount</span><span class="ch-a-val"><?= fmt_idr($total_spent) ?></span></div>
+                    <div class="ch-analysis-row"><span class="ch-a-key">Total paid</span><span class="ch-a-val good"><?= fmt_idr($total_paid) ?></span></div>
+                    <div class="ch-analysis-row"><span class="ch-a-key">Remaining balance</span><span class="ch-a-val <?= $unpaid_amount>0?'bad':'good' ?>"><?= fmt_idr($unpaid_amount) ?></span></div>
+                    <div class="ch-analysis-row"><span class="ch-a-key">Fully paid orders</span><span class="ch-a-val good"><?= $paid_orders ?></span></div>
+                    <div class="ch-analysis-row"><span class="ch-a-key">Partial / unpaid</span><span class="ch-a-val <?= ($partial_orders+$unpaid_orders)>0?'warn':'good' ?>"><?= $partial_orders + $unpaid_orders ?></span></div>
                 </div>
 
-                <!-- Rx progression -->
                 <?php if (count($rx_trend) >= 2):
                     $fr = $rx_trend[0]; $lr = $rx_trend[count($rx_trend)-1];
                     function rdelta($a,$b){ return ($a===null||$b===null)?null:round($b-$a,2); }
@@ -609,9 +593,9 @@ foreach ($examinations as $e) {
                     function dstr($d){ if($d===null)return'—'; return $d>0?'+'.$d:(string)$d; }
                 ?>
                 <div class="ch-analysis-card">
-                    <div class="ch-analysis-title">👁 Perubahan Resep</div>
+                    <div class="ch-analysis-title">👁 Prescription Changes</div>
                     <table class="ch-rx-tbl">
-                        <thead><tr><th>Mata</th><th>Komp.</th><th>Awal</th><th></th><th>Akhir</th><th>Δ</th></tr></thead>
+                        <thead><tr><th>Eye</th><th>Comp.</th><th>Initial</th><th></th><th>Final</th><th>Δ</th></tr></thead>
                         <tbody>
                         <?php foreach ([
                             ['OD','SPH',$fr['r_sph'],$lr['r_sph']],
@@ -633,16 +617,15 @@ foreach ($examinations as $e) {
                 </div>
                 <?php endif; ?>
 
-                <!-- Timeline -->
                 <?php
                 $events = [];
-                foreach ($examinations as $e) $events[] = ['date'=>$e['examination_date'],'type'=>'exam','label'=>'Pemeriksaan','sub'=>$e['examination_code']];
+                foreach ($examinations as $e) $events[] = ['date'=>$e['examination_date'],'type'=>'exam','label'=>'Examination','sub'=>$e['examination_code']];
                 foreach ($orders as $o)       $events[] = ['date'=>$o['order_date'],'type'=>'order','label'=>$o['invoice_number'],'sub'=>fmt_idr($o['total_amount'])];
                 usort($events, fn($a,$b)=>strcmp($b['date'],$a['date']));
                 $events = array_slice($events, 0, 6);
                 ?>
                 <div class="ch-analysis-card">
-                    <div class="ch-analysis-title">🕐 Aktivitas Terkini</div>
+                    <div class="ch-analysis-title">🕐 Recent Activities</div>
                     <div class="ch-timeline">
                         <?php foreach ($events as $ev): ?>
                         <div class="ch-tl-item">
@@ -660,13 +643,10 @@ foreach ($examinations as $e) {
             </div>
             <?php endif; ?>
 
-            <!-- ═══════════════════════════════════════════════════════
-                 EXAMINATION RECORDS
-            ══════════════════════════════════════════════════════════ -->
             <?php if (!empty($examinations)): ?>
             <div class="ch-section">
-                <span class="ch-section-title">Riwayat Pemeriksaan</span>
-                <span class="ch-section-count"><?= $exam_count ?> data</span>
+                <span class="ch-section-title">Examination History</span>
+                <span class="ch-section-count"><?= $exam_count ?> records</span>
             </div>
             <?php
             function rx_td_ch($v) {
@@ -688,9 +668,9 @@ foreach ($examinations as $e) {
                         <span style="font-size:10px;color:#333;font-family:monospace">#<?= htmlspecialchars($e['invoice_number']) ?></span>
                     <?php endif; ?>
                     <div class="ch-need-wrap" style="margin-left:auto;margin-right:6px">
-                        <?php if ($e['need_distance']): ?><span class="ch-need on">Jauh</span><?php endif; ?>
+                        <?php if ($e['need_distance']): ?><span class="ch-need on">Distance</span><?php endif; ?>
                         <?php if ($e['need_intermediate']): ?><span class="ch-need on">Mid</span><?php endif; ?>
-                        <?php if ($e['need_near']): ?><span class="ch-need on">Dekat</span><?php endif; ?>
+                        <?php if ($e['need_near']): ?><span class="ch-need on">Near</span><?php endif; ?>
                     </div>
                     <span class="ch-acc-arrow">▼</span>
                 </div>
@@ -698,15 +678,15 @@ foreach ($examinations as $e) {
                     <table class="ch-rx-table">
                         <thead>
                             <tr>
-                                <th>Mata</th>
-                                <th>Lama SPH</th><th>Lama CYL</th><th>Lama AX</th>
+                                <th>Eye</th>
+                                <th>Old SPH</th><th>Old CYL</th><th>Old AX</th>
                                 <th style="color:#333">→</th>
-                                <th>Baru SPH</th><th>Baru CYL</th><th>Baru AX</th><th>ADD</th><th>Visus</th>
+                                <th>New SPH</th><th>New CYL</th><th>New AX</th><th>ADD</th><th>VA</th>
                             </tr>
                         </thead>
                         <tbody>
                             <tr>
-                                <td>OD (Kanan)</td>
+                                <td>OD (Right)</td>
                                 <?= rx_td_ch($e['old_r_sph']) ?><?= rx_td_ch($e['old_r_cyl']) ?>
                                 <td><?= htmlspecialchars($e['old_r_ax'] ?: '—') ?></td>
                                 <td class="rx-arr">→</td>
@@ -716,7 +696,7 @@ foreach ($examinations as $e) {
                                 <td><?= htmlspecialchars($e['new_r_visus'] ?: '—') ?></td>
                             </tr>
                             <tr>
-                                <td>OS (Kiri)</td>
+                                <td>OS (Left)</td>
                                 <?= rx_td_ch($e['old_l_sph']) ?><?= rx_td_ch($e['old_l_cyl']) ?>
                                 <td><?= htmlspecialchars($e['old_l_ax'] ?: '—') ?></td>
                                 <td class="rx-arr">→</td>
@@ -731,40 +711,37 @@ foreach ($examinations as $e) {
                     <div class="ch-meta-wrap">
                         <?php if ($e['pd_dist']): ?><div class="ch-meta-chip"><span class="ch-meta-label">PD Distance</span><span class="ch-meta-val"><?= htmlspecialchars($e['pd_dist']) ?></span></div><?php endif; ?>
                         <?php if ($e['ucva_r']||$e['ucva_l']): ?><div class="ch-meta-chip"><span class="ch-meta-label">UCVA OD/OS</span><span class="ch-meta-val"><?= htmlspecialchars($e['ucva_r']?:'—') ?> / <?= htmlspecialchars($e['ucva_l']?:'—') ?></span></div><?php endif; ?>
-                        <?php if ($e['age']): ?><div class="ch-meta-chip"><span class="ch-meta-label">Usia periksa</span><span class="ch-meta-val"><?= (int)$e['age'] ?> tahun</span></div><?php endif; ?>
-                        <div class="ch-meta-chip"><span class="ch-meta-label">Kebiasaan</span><span class="ch-meta-val"><?= $e['visual_habit'] ? 'Dekat' : 'Jauh' ?></span></div>
-                        <?php if ($e['digital_usage']): ?><div class="ch-meta-chip"><span class="ch-meta-label">Digital</span><span class="ch-meta-val" style="color:var(--warning)">Tinggi</span></div><?php endif; ?>
-                        <?php if ($e['lens_modification']): ?><div class="ch-meta-chip"><span class="ch-meta-label">Modifikasi</span><span class="ch-meta-val" style="color:var(--warning)">Ya</span></div><?php endif; ?>
-                        <?php if ($e['created_by']): ?><div class="ch-meta-chip"><span class="ch-meta-label">Pemeriksa</span><span class="ch-meta-val"><?= htmlspecialchars($e['created_by']) ?></span></div><?php endif; ?>
+                        <?php if ($e['age']): ?><div class="ch-meta-chip"><span class="ch-meta-label">Age at Exam</span><span class="ch-meta-val"><?= (int)$e['age'] ?> years old</span></div><?php endif; ?>
+                        <div class="ch-meta-chip"><span class="ch-meta-label">Visual Habit</span><span class="ch-meta-val"><?= $e['visual_habit'] ? 'Near' : 'Distance' ?></span></div>
+                        <?php if ($e['digital_usage']): ?><div class="ch-meta-chip"><span class="ch-meta-label">Digital</span><span class="ch-meta-val" style="color:var(--warning)">High</span></div><?php endif; ?>
+                        <?php if ($e['lens_modification']): ?><div class="ch-meta-chip"><span class="ch-meta-label">Modification</span><span class="ch-meta-val" style="color:var(--warning)">Yes</span></div><?php endif; ?>
+                        <?php if ($e['created_by']): ?><div class="ch-meta-chip"><span class="ch-meta-label">Examiner</span><span class="ch-meta-val"><?= htmlspecialchars($e['created_by']) ?></span></div><?php endif; ?>
                     </div>
 
                     <div style="margin-top:14px">
-                        <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:8px">Kebutuhan Lensa</div>
+                        <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:8px">Lens Requirements</div>
                         <div class="ch-need-wrap">
-                            <span class="ch-need <?= $e['need_distance']?'on':'off' ?>">👁 Jarak Jauh</span>
+                            <span class="ch-need <?= $e['need_distance']?'on':'off' ?>">👁 Distance</span>
                             <span class="ch-need <?= $e['need_intermediate']?'on':'off' ?>">💻 Intermediate</span>
-                            <span class="ch-need <?= $e['need_near']?'on':'off' ?>">📖 Jarak Dekat</span>
+                            <span class="ch-need <?= $e['need_near']?'on':'off' ?>">📖 Near</span>
                         </div>
                     </div>
 
                     <?php if ($has_symptoms): ?>
-                    <div class="ch-note-box"><span class="ch-note-label">Keluhan</span><?= nl2br(htmlspecialchars($e['symptoms'])) ?></div>
+                    <div class="ch-note-box"><span class="ch-note-label">Chief Complaint</span><?= nl2br(htmlspecialchars($e['symptoms'])) ?></div>
                     <?php endif; ?>
                     <?php if ($has_notes): ?>
-                    <div class="ch-note-box"><span class="ch-note-label">Catatan Pemeriksa</span><?= nl2br(htmlspecialchars($e['exam_notes'])) ?></div>
+                    <div class="ch-note-box"><span class="ch-note-label">Examiner Notes</span><?= nl2br(htmlspecialchars($e['exam_notes'])) ?></div>
                     <?php endif; ?>
                 </div>
             </div>
             <?php endforeach; ?>
             <?php endif; ?>
 
-            <!-- ═══════════════════════════════════════════════════════
-                 ORDER RECORDS
-            ══════════════════════════════════════════════════════════ -->
             <?php if (!empty($orders)): ?>
             <div class="ch-section">
-                <span class="ch-section-title">Riwayat Order</span>
-                <span class="ch-section-count"><?= $order_count ?> transaksi</span>
+                <span class="ch-section-title">Order History</span>
+                <span class="ch-section-count"><?= $order_count ?> transactions</span>
             </div>
             <?php foreach (array_reverse($orders) as $oi => $o):
                 $o_total = (float)$o['total_amount'];
@@ -786,21 +763,21 @@ foreach ($examinations as $e) {
                 </div>
                 <div class="ch-acc-body">
                     <div class="ch-order-grid">
-                        <?php if ($o['lens_name']): ?><div><span class="ch-od-label">Lensa</span><span class="ch-od-val" style="font-size:12px"><?= htmlspecialchars($o['lens_name']) ?></span></div><?php endif; ?>
+                        <?php if ($o['lens_name']): ?><div><span class="ch-od-label">Lens</span><span class="ch-od-val" style="font-size:12px"><?= htmlspecialchars($o['lens_name']) ?></span></div><?php endif; ?>
                         <?php if ($o['frame_ufc']): ?><div><span class="ch-od-label">Frame UFC</span><span class="ch-od-val" style="font-size:12px"><?= htmlspecialchars($o['frame_ufc']) ?></span></div><?php endif; ?>
                         <div><span class="ch-od-label">Total</span><span class="ch-od-val" style="color:var(--accent-solid)"><?= fmt_idr($o_total) ?></span></div>
-                        <div><span class="ch-od-label">Dibayar</span><span class="ch-od-val" style="color:var(--success)"><?= fmt_idr($o_paid) ?></span></div>
-                        <div><span class="ch-od-label">Sisa</span><span class="ch-od-val" style="color:<?= $o_sisa>0?'var(--danger)':'var(--success)' ?>"><?= fmt_idr(max(0,$o_sisa)) ?></span></div>
-                        <?php if ($o['due_date']): ?><div><span class="ch-od-label">Jatuh Tempo</span><span class="ch-od-val" style="font-size:12px"><?= date('d M Y', strtotime($o['due_date'])) ?></span></div><?php endif; ?>
-                        <?php if ($o['created_by']): ?><div><span class="ch-od-label">Dibuat oleh</span><span class="ch-od-val" style="font-size:12px"><?= htmlspecialchars($o['created_by']) ?></span></div><?php endif; ?>
-                        <?php if ($o['customer_address']): ?><div style="grid-column:1/-1"><span class="ch-od-label">Alamat</span><span class="ch-od-val" style="font-size:12px"><?= nl2br(htmlspecialchars($o['customer_address'])) ?></span></div><?php endif; ?>
+                        <div><span class="ch-od-label">Paid</span><span class="ch-od-val" style="color:var(--success)"><?= fmt_idr($o_paid) ?></span></div>
+                        <div><span class="ch-od-label">Balance</span><span class="ch-od-val" style="color:<?= $o_sisa>0?'var(--danger)':'var(--success)' ?>"><?= fmt_idr(max(0,$o_sisa)) ?></span></div>
+                        <?php if ($o['due_date']): ?><div><span class="ch-od-label">Due Date</span><span class="ch-od-val" style="font-size:12px"><?= date('d M Y', strtotime($o['due_date'])) ?></span></div><?php endif; ?>
+                        <?php if ($o['created_by']): ?><div><span class="ch-od-label">Created by</span><span class="ch-od-val" style="font-size:12px"><?= htmlspecialchars($o['created_by']) ?></span></div><?php endif; ?>
+                        <?php if ($o['customer_address']): ?><div style="grid-column:1/-1"><span class="ch-od-label">Address</span><span class="ch-od-val" style="font-size:12px"><?= nl2br(htmlspecialchars($o['customer_address'])) ?></span></div><?php endif; ?>
                     </div>
                     <div class="ch-pay-wrap">
-                        <div class="ch-pay-labels"><span>Pembayaran</span><span><?= $o_pct ?>%</span></div>
+                        <div class="ch-pay-labels"><span>Payment</span><span><?= $o_pct ?>%</span></div>
                         <div class="ch-pay-track"><div class="ch-pay-fill" style="width:<?= $o_pct ?>%;background:<?= $fill_color ?>"></div></div>
                     </div>
                     <div style="font-size:11px;margin-top:6px;color:<?= $o_sisa>0?'var(--danger)':'var(--success)' ?>">
-                        <?= $o_sisa>0 ? '⚠ Belum lunas: '.fmt_idr($o_sisa) : '✓ Lunas' ?>
+                        <?= $o_sisa>0 ? '⚠ Remaining Balance: '.fmt_idr($o_sisa) : '✓ Fully Paid' ?>
                     </div>
                 </div>
             </div>
@@ -810,35 +787,27 @@ foreach ($examinations as $e) {
             <?php if ($customer_data && empty($examinations) && empty($orders)): ?>
             <div class="ch-state">
                 <div class="ch-state-icon">📭</div>
-                <p>Customer ditemukan tetapi belum ada data pemeriksaan atau order.</p>
+                <p>Customer found but no examination or order records available.</p>
             </div>
             <?php endif; ?>
 
             <?php endif; // end customer found ?>
 
-            <!-- ── Back button ─────────────────────────────────────── -->
             <div class="btn-group" style="margin-top:30px">
                 <button class="back-main" onclick="window.location.href='javascript:history.back()'">← Back to Previous Page</button>
             </div>
 
-        </div><!-- /.config-window -->
-
-        <!-- ── Footer ──────────────────────────────────────────────── -->
-        <div class="footer-container">
+        </div><div class="footer-container">
             <span class="footer-text">© <?= date('Y') ?> <?= htmlspecialchars($STORE_NAME ?? 'LENZA OPTIC') ?>. All Rights Reserved.</span>
         </div>
 
-    </div><!-- /.content-area -->
-</div><!-- /.main-wrapper -->
-
-<!-- ── Charts ────────────────────────────────────────────────────────── -->
-<?php if ($customer_data && count($rx_trend) >= 2): ?>
+    </div></div><?php if ($customer_data && count($rx_trend) >= 2): ?>
 <script>
 (function(){
     const trend = <?= json_encode($rx_trend) ?>;
     const labels = trend.map(t => {
         const d = new Date(t.date);
-        return d.toLocaleDateString('id-ID', {day:'2-digit',month:'short',year:'2-digit'});
+        return d.toLocaleDateString('en-US', {day:'2-digit',month:'short',year:'2-digit'});
     });
     const grid  = 'rgba(255,255,255,0.04)';
     const ticks = '#555';

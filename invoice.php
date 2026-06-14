@@ -5,6 +5,17 @@
     include 'config_helper.php';
     include 'auth_check.php';
 
+    // Load lens lead times (in days) from settings table
+    $lensStockLeadTimeDays = 2;
+    $lensLabLeadTimeDays   = 10;
+    $resLead = mysqli_query($conn, "SELECT setting_key, setting_value FROM settings WHERE setting_key IN ('lens_stock_lead_time_days', 'lens_lab_lead_time_days')");
+    if ($resLead) {
+        while ($rowLead = mysqli_fetch_assoc($resLead)) {
+            if ($rowLead['setting_key'] === 'lens_stock_lead_time_days') $lensStockLeadTimeDays = (int)$rowLead['setting_value'];
+            if ($rowLead['setting_key'] === 'lens_lab_lead_time_days')   $lensLabLeadTimeDays   = (int)$rowLead['setting_value'];
+        }
+    }
+
     if (isset($_POST['save_modification'])) {
         $inv = mysqli_real_escape_string($conn, $_POST['invoice_number']);
         
@@ -1093,7 +1104,7 @@ function dsUpdateVisionNeed(age) {
     $lr_candidates = [];
 
     foreach ($lr_catalog as $source => $categories) {
-        $readiness = ($source === 'stock') ? 'Ready in 2 Days' : 'Lab Order, Ready 7-10 Days';
+        $readiness = ($source === 'stock') ? "Ready in {$lensStockLeadTimeDays} Days" : "Lab Order, Ready 7-{$lensLabLeadTimeDays} Days";
         foreach ($categories as $category => $types) {
 
             // Gate: skip categories not allowed for this patient type
@@ -1340,6 +1351,8 @@ function dsUpdateVisionNeed(age) {
                          $needDist, $needInter, $needNear,
                          $catalog, $typeConfig) {
 
+        global $lensStockLeadTimeDays, $lensLabLeadTimeDays;
+
         $maxSph = max(abs($r_sph), abs($l_sph));
         $maxCyl = max(abs($r_cyl), abs($l_cyl));
         $maxAdd = max(abs($r_add), abs($l_add));
@@ -1368,7 +1381,7 @@ function dsUpdateVisionNeed(age) {
 
         $candidates = [];
         foreach ($catalog as $source => $categories) {
-            $readiness = ($source === 'stock') ? 'Ready in 2 Days' : 'Lab Order, Ready 7-10 Days';
+            $readiness = ($source === 'stock') ? "Ready in {$lensStockLeadTimeDays} Days" : "Lab Order, Ready 7-{$lensLabLeadTimeDays} Days";
             foreach ($categories as $category => $types) {
                 if (!lr_catAllowed($category, $isPresbyopia, $farOnlySV)) continue;
                 foreach ($types as $type => $lens) {
@@ -4157,7 +4170,7 @@ function dsUpdateVisionNeed(age) {
                                                 <div style="font-size:7px;color:#555;letter-spacing:1px;margin-bottom:3px;">DUE DATE <span style="color:#444;font-weight:normal;">(editable)</span></div>
                                                 <input type="text" id="lr-due-date-box"
                                                     placeholder="— not set"
-                                                    value="<?php echo ($inv_purchase_type === 'frame') ? date('d/m/Y', strtotime($data['examination_date'] . ' +2 days')) : ''; ?>"
+                                                    value="<?php echo ($inv_purchase_type === 'frame') ? date('d/m/Y', strtotime($data['examination_date'] . ' +' . $lensStockLeadTimeDays . ' days')) : ''; ?>"
                                                     style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.04);border:1px solid rgba(0,207,255,0.20);border-radius:6px;padding:5px 8px;font-size:10px;color:<?php echo ($inv_purchase_type === 'frame') ? '#00cfff' : '#ccc'; ?>;font-family:monospace;outline:none;"
                                                     onfocus="this.style.borderColor='rgba(0,207,255,0.6)'"
                                                     onblur="this.style.borderColor='rgba(0,207,255,0.20)'">
@@ -4698,8 +4711,8 @@ function dsUpdateVisionNeed(age) {
                 var box = document.getElementById('lr-due-date-box');
                 if (!box || !window._lrOrderDate) return;
                 if (!source) { box.value = ''; box.style.color = '#ccc'; return; }
-                // days: stock lens=2, lab lens=10, frame-only=2
-                var days  = (source === 'stock') ? 2 : (source === 'frame') ? 2 : 10;
+                // days: stock lens = setting, lab lens = setting, frame-only = stock lead time
+                var days  = (source === 'stock') ? <?php echo $lensStockLeadTimeDays; ?> : (source === 'frame') ? <?php echo $lensStockLeadTimeDays; ?> : <?php echo $lensLabLeadTimeDays; ?>;
                 var color = (source === 'stock') ? '#00ff88' : (source === 'frame') ? '#00cfff' : '#ff8a4d';
                 var due   = new Date(window._lrOrderDate.getTime());
                 due.setDate(due.getDate() + days);

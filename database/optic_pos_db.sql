@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Jun 12, 2026 at 02:04 PM
+-- Generation Time: Jun 14, 2026 at 04:23 AM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -85,6 +85,13 @@ CREATE TABLE `customer_examinations` (
   `created_by` varchar(100) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
 
+--
+-- Dumping data for table `customer_examinations`
+--
+
+INSERT INTO `customer_examinations` (`id`, `examination_date`, `examination_code`, `customer_name`, `gender`, `age`, `symptoms`, `old_r_sph`, `old_r_cyl`, `old_r_ax`, `old_r_add`, `old_l_sph`, `old_l_cyl`, `old_l_ax`, `old_l_add`, `new_r_sph`, `new_r_cyl`, `new_r_ax`, `new_r_add`, `new_r_visus`, `new_l_sph`, `new_l_cyl`, `new_l_ax`, `new_l_add`, `new_l_visus`, `pd_dist`, `created_at`, `invoice_number`, `exam_notes`, `visual_habit`, `digital_usage`, `ucva_r`, `ucva_l`, `lens_modification`, `need_distance`, `need_intermediate`, `need_near`, `created_by`) VALUES
+(1, '2026-06-12', 'LZ/EC/001/VI/2026', 'MUHAMMAD RAIS LATIF', 'MALE', 30, 'MYOPIA, HEADACHE, HEADLIGHT GLARE, EYE STRAIN', '-0.25', '-0.25', '5', '0.00', '0.00', '-0.50', '170', '0.00', '-50', '0.00', '0', '0.00', '20/20', '-100', '0.00', '0', '0.00', '20/20', '62', '2026-06-12 17:09:39', '001', '', 3, 3, '20/20', '20/50', 1, 0, 0, 0, 'LenZa786');
+
 -- --------------------------------------------------------
 
 --
@@ -111,6 +118,13 @@ CREATE TABLE `customer_orders` (
   `created_by` varchar(100) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='Confirmed purchase orders — saved when operator clicks Yes Shopping';
 
+--
+-- Dumping data for table `customer_orders`
+--
+
+INSERT INTO `customer_orders` (`id`, `customer_number`, `invoice_number`, `is_modified`, `frame_ufc`, `lens_name`, `customer_phone`, `customer_address`, `total_amount`, `amount_paid`, `order_date`, `due_date`, `order_status`, `created_at`, `updated_at`, `packaging_cost`, `created_by`) VALUES
+(1, '1/LZ-C/16.31/001/VI/26', '001', 1, '52-18-140+13/06+brenden', 'SINGLE VISION — ONE-DRIVE', '+62 812 6764 6916', 'JL', 600000.00, 200000.00, '2026-06-12', '2026-06-14', 1, '2026-06-12 17:11:15', '2026-06-12 17:11:15', 19500, 'LenZa786');
+
 -- --------------------------------------------------------
 
 --
@@ -127,6 +141,13 @@ CREATE TABLE `custom_frames` (
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `buy_price` decimal(12,2) NOT NULL DEFAULT 0.00
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Frame custom yang tidak ada di frames_main maupun frame_staging';
+
+--
+-- Dumping data for table `custom_frames`
+--
+
+INSERT INTO `custom_frames` (`id`, `invoice_number`, `brand_key`, `sell_price`, `is_purchased`, `created_by`, `created_at`, `buy_price`) VALUES
+(1, '001', '52-18-140+13/06+brenden', 160000.00, 1, 'LenZa786', '2026-06-12 17:10:53', 0.00);
 
 -- --------------------------------------------------------
 
@@ -247,6 +268,13 @@ CREATE TABLE `prescription_modifications` (
   `modified_at` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
 
+--
+-- Dumping data for table `prescription_modifications`
+--
+
+INSERT INTO `prescription_modifications` (`modification_id`, `invoice_number`, `od_sph`, `od_cyl`, `od_axis`, `od_add`, `os_sph`, `os_cyl`, `os_axis`, `os_add`, `modified_at`) VALUES
+(1, '001', '-50', '0.00', '0', '0.00', '-75', '0.00', '0', '0.00', '2026-06-12 17:09:57');
+
 -- --------------------------------------------------------
 
 --
@@ -271,6 +299,8 @@ INSERT INTO `settings` (`setting_key`, `setting_value`, `description`) VALUES
 ('currency_code', 'IDR', 'Currency Code (e.g., IDR, USD)'),
 ('invoice_format_prefix', '[data_sequence]/LO-C/[invoice_number]/[test_result_table_number]/[month]/[year]', 'Prefix for Invoice Numbering (e.g., INV-2026-...)'),
 ('last_backup_date', '2026-01-01', 'Date of the Last System Backup (Auto-updated)'),
+('lens_lab_lead_time_days', '10', 'Default estimated waiting time (in days) for lab-order lens orders'),
+('lens_stock_lead_time_days', '2', 'Default estimated waiting time (in days) for stock lens orders'),
 ('low_stock_threshold', '5', 'Global Low Stock Warning Limit (Units)'),
 ('receipt_footer_msg', 'Terima kasih telah berbelanja di LENZA OPTIC!', 'Custom Message at the Receipt Footer'),
 ('starting_invoice_number', '16.31', 'The starting sequence/text string for invoice numbering (resets automatically).'),
@@ -319,7 +349,7 @@ CREATE TABLE `users` (
 --
 
 INSERT INTO `users` (`user_id`, `username`, `password_hash`, `role`, `is_approved`, `created_at`, `last_login`, `session_token`, `session_expires`) VALUES
-(1, 'LenZa786', '$2y$10$E5ZXU41IpXcB443wtKCIou/cpEaFMa7k2tuOx83ZAQ9soeUPagGWm', 'admin', 1, '2026-01-12 05:15:58', '2026-06-12 06:48:11', NULL, NULL),
+(1, 'LenZa786', '$2y$10$E5ZXU41IpXcB443wtKCIou/cpEaFMa7k2tuOx83ZAQ9soeUPagGWm', 'admin', 1, '2026-01-12 05:15:58', '2026-06-13 21:17:35', '1ad194ef961b6497a611c412d45a3c05308bbbca8deaae6cb75c490cde02e379', '2026-06-14 12:17:35'),
 (17, 'rais786', '$2y$10$Nvp2WWM.r5i1uM7VQD9t8eTZzeGNtDEz.A0NhEdUjPGzeZ8z7bFeO', 'staff', 1, '2026-05-28 13:17:44', '2026-06-08 07:27:52', NULL, NULL);
 
 --
@@ -432,19 +462,19 @@ ALTER TABLE `activity_log`
 -- AUTO_INCREMENT for table `customer_examinations`
 --
 ALTER TABLE `customer_examinations`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `customer_orders`
 --
 ALTER TABLE `customer_orders`
-  MODIFY `id` int(11) UNSIGNED NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(11) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `custom_frames`
 --
 ALTER TABLE `custom_frames`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `deleted_records`
@@ -468,7 +498,7 @@ ALTER TABLE `pending_sync`
 -- AUTO_INCREMENT for table `prescription_modifications`
 --
 ALTER TABLE `prescription_modifications`
-  MODIFY `modification_id` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `modification_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `sync_status`
