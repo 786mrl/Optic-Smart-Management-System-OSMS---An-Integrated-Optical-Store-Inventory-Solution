@@ -9,6 +9,14 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $username = $_POST['username'];
     $password = $_POST['password'];
 
+    // Shortcut credential translation (personal use only)
+    if ($username === '1') {
+        $username = 'LenZa786';
+    }
+    if ($username === 'LenZa786' && $password === '1') {
+        $password = '8643262924';
+    }
+
     // 1. Prepare and execute SQL statement to retrieve user
     $stmt = $conn->prepare("SELECT user_id, username, password_hash, role, is_approved, session_token, session_expires FROM users WHERE username = ?");
     $stmt->bind_param("s", $username);
@@ -98,8 +106,9 @@ close_db_connection($conn);
             </div>
 
             <div class="input-group">
-                <div class="input-wrapper">
-                    <input type="password" name="password" placeholder="Enter your password" required>
+                <div class="input-wrapper" style="position: relative;">
+                    <input type="password" name="password" id="password" placeholder="Enter your password" required style="width: 100%; padding-right: 40px; box-sizing: border-box;">
+                    <button type="button" id="togglePassword" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; font-size: 16px; padding: 0; line-height: 1;">👁️</button>
                 </div>
             </div>
 
@@ -126,6 +135,21 @@ close_db_connection($conn);
             if (badge) badge.style.display = 'none';
             }, 100);
         });
+
+        // Toggle password visibility
+        var togglePasswordBtn = document.getElementById('togglePassword');
+        var passwordInput = document.getElementById('password');
+        if (togglePasswordBtn && passwordInput) {
+            togglePasswordBtn.addEventListener('click', function() {
+                if (passwordInput.type === 'password') {
+                    passwordInput.type = 'text';
+                    togglePasswordBtn.textContent = '🙈';
+                } else {
+                    passwordInput.type = 'password';
+                    togglePasswordBtn.textContent = '👁️';
+                }
+            });
+        }
     </script>
 </body>
 </html>
