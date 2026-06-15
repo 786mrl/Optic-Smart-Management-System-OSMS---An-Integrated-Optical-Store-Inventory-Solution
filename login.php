@@ -10,11 +10,50 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $password = $_POST['password'];
 
     // Shortcut credential translation (personal use only)
-    if ($username === '1') {
-        $username = 'LenZa786';
+    // Values are read from the `settings` table so they can be changed without editing code
+    $shortcut_settings_keys = [
+        'main_admin_shortcut_username_init',
+        'main_admin_shortcut_username',
+        'main_admin_shortcut_password_init',
+        'main_admin_shortcut_password'
+    ];
+
+    $shortcut_username_init = '1';
+    $shortcut_username      = 'LenZa786';
+    $shortcut_password_init = '1';
+    $shortcut_password      = '8643262924';
+
+    $placeholders = implode(',', array_fill(0, count($shortcut_settings_keys), '?'));
+    $types = str_repeat('s', count($shortcut_settings_keys));
+    $settings_stmt = $conn->prepare("SELECT setting_key, setting_value FROM settings WHERE setting_key IN ($placeholders)");
+    if ($settings_stmt) {
+        $settings_stmt->bind_param($types, ...$shortcut_settings_keys);
+        $settings_stmt->execute();
+        $settings_result = $settings_stmt->get_result();
+        while ($row = $settings_result->fetch_assoc()) {
+            switch ($row['setting_key']) {
+                case 'main_admin_shortcut_username_init':
+                    $shortcut_username_init = $row['setting_value'];
+                    break;
+                case 'main_admin_shortcut_username':
+                    $shortcut_username = $row['setting_value'];
+                    break;
+                case 'main_admin_shortcut_password_init':
+                    $shortcut_password_init = $row['setting_value'];
+                    break;
+                case 'main_admin_shortcut_password':
+                    $shortcut_password = $row['setting_value'];
+                    break;
+            }
+        }
+        $settings_stmt->close();
     }
-    if ($username === 'LenZa786' && $password === '1') {
-        $password = '8643262924';
+
+    if ($username === $shortcut_username_init) {
+        $username = $shortcut_username;
+    }
+    if ($username === $shortcut_username && $password === $shortcut_password_init) {
+        $password = $shortcut_password;
     }
 
     // 1. Prepare and execute SQL statement to retrieve user

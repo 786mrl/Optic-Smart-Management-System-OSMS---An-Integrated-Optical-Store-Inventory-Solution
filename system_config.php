@@ -17,6 +17,7 @@
 
     $message = '';
     $settings = [];
+    $main_admin_error = '';
 
     // --- Fetch Current Settings FIRST (needed to get old file paths before update) ---
     $sql_fetch = "SELECT setting_key, setting_value, description FROM settings";
@@ -30,6 +31,10 @@
         }
     }
 
+    // --- Determine if the currently logged-in user IS the Main Admin (used for both POST handling and HTML rendering) ---
+    $current_main_admin_username = $settings['main_admin_username']['value'] ?? '';
+    $is_main_admin_user = ($current_main_admin_username !== '' && ($_SESSION['username'] ?? '') === $current_main_admin_username);
+
     // --- Logic to Handle Configuration Update ---
     if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['update_settings'])) {
         $success = true;
@@ -42,6 +47,77 @@
             'invoice_format_prefix', 'barcode_guide_image_location',
             'lens_stock_lead_time_days', 'lens_lab_lead_time_days'
         ];
+
+        // --- Login Shortcut keys: only allowed if the current logged-in user IS the Main Admin ---
+        // AND the Main Admin's password is re-verified for this submission.
+        if ($is_main_admin_user) {
+            $login_shortcut_verify_password = $_POST['login_shortcut_verify'] ?? '';
+            $login_shortcut_fields_present = isset($_POST['main_admin_shortcut_username'])
+                || isset($_POST['main_admin_shortcut_username_init'])
+                || isset($_POST['main_admin_shortcut_password'])
+                || isset($_POST['main_admin_shortcut_password_init']);
+
+            if ($login_shortcut_fields_present && $login_shortcut_verify_password !== '') {
+                $stmt = $conn->prepare("SELECT password_hash FROM users WHERE username = ? AND role = 'admin'");
+                $stmt->bind_param("s", $current_main_admin_username);
+                $stmt->execute();
+                $res = $stmt->get_result();
+                $login_shortcut_admin_row = $res->fetch_assoc();
+                $stmt->close();
+
+                if ($login_shortcut_admin_row && password_verify($login_shortcut_verify_password, $login_shortcut_admin_row['password_hash'])) {
+                    $allowed_keys = array_merge($allowed_keys, [
+                        'main_admin_shortcut_username',
+                        'main_admin_shortcut_username_init',
+                        'main_admin_shortcut_password',
+                        'main_admin_shortcut_password_init'
+                    ]);
+                } else {
+                    $main_admin_error = "Incorrect Main Admin password. The login shortcut settings were not changed.";
+                }
+            }
+        }
+
+        // --- Main Admin Username: separate protected key, handled outside the white-list loop ---
+        $main_admin_key = 'main_admin_username';
+        $current_main_admin_username = $settings[$main_admin_key]['value'] ?? '';
+        $new_main_admin_username_input = isset($_POST['main_admin_username_new']) ? trim($_POST['main_admin_username_new']) : '';
+        $verify_password = $_POST['main_admin_username_verify'] ?? '';
+
+        // Only process if the value was actually changed AND a verify password was supplied
+        if ($new_main_admin_username_input !== '' && $new_main_admin_username_input !== $current_main_admin_username && $verify_password !== '') {
+            // Look up the current Main Admin's password hash
+            $stmt = $conn->prepare("SELECT password_hash FROM users WHERE username = ? AND role = 'admin'");
+            $stmt->bind_param("s", $current_main_admin_username);
+            $stmt->execute();
+            $res = $stmt->get_result();
+            $main_admin_row = $res->fetch_assoc();
+            $stmt->close();
+
+            if ($main_admin_row && password_verify($verify_password, $main_admin_row['password_hash'])) {
+                $new_main_admin_username = $new_main_admin_username_input;
+
+                // Ensure the new username exists and is an admin
+                $stmt = $conn->prepare("SELECT user_id FROM users WHERE username = ? AND role = 'admin'");
+                $stmt->bind_param("s", $new_main_admin_username);
+                $stmt->execute();
+                $res2 = $stmt->get_result();
+                $new_main_admin_row = $res2->fetch_assoc();
+                $stmt->close();
+
+                if ($new_main_admin_row) {
+                    $stmt = $conn->prepare("UPDATE settings SET setting_value = ? WHERE setting_key = ?");
+                    $stmt->bind_param("ss", $new_main_admin_username, $main_admin_key);
+                    $stmt->execute();
+                    $stmt->close();
+                    log_activity($conn, 'settings', $main_admin_key, 'UPDATE', $_SESSION['username'] ?? 'admin');
+                } else {
+                    $main_admin_error = "The new Main Admin username does not exist or is not an admin. The Main Admin was not changed.";
+                }
+            } else {
+                $main_admin_error = "Incorrect Main Admin password. The Main Admin was not changed.";
+            }
+        }
 
         $conn->begin_transaction(); // Use transaction for data consistency
 
@@ -304,6 +380,83 @@
             
                         </div>
             
+                        <div class="config-section">
+                            <div class="section-header">🔒 Main Admin</div>
+
+                            <?php if (!empty($main_admin_error)): ?>
+                                <div class="alert-box error" style="margin-bottom: 15px;"><?php echo htmlspecialchars($main_admin_error); ?></div>
+                            <?php endif; ?>
+
+                            <div class="input-grid">
+                                <div class="input-group full-width" id="mainAdminLockedView">
+                                    <label>Main Admin</label>
+                                    <div class="upload-wrapper" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                                        <input type="password" class="input-field" id="mainAdminUnlockInput" placeholder="Enter current Main Admin password" autocomplete="off" style="flex: 1; min-width: 150px;">
+                                        <button type="button" class="btn-save" id="mainAdminUnlockBtn" style="white-space: nowrap;">Unlock</button>
+                                    </div>
+                                    <p class="description" id="mainAdminUnlockMsg">This field is hidden. Enter the current Main Admin's password to view and change the Main Admin.</p>
+                                </div>
+
+                                <div class="input-group full-width" id="mainAdminUnlockedView" style="display: none;">
+                                    <label>Main Admin Username</label>
+                                    <input type="text" class="input-field" name="main_admin_username_new" id="mainAdminNewUsername" autocomplete="off" value="<?php echo htmlspecialchars($settings['main_admin_username']['value'] ?? ''); ?>" placeholder="Enter new Main Admin username">
+                                    <p class="description">Must be an existing user with the Admin role. Changing this requires the current Main Admin's password (entered above).</p>
+
+                                    <input type="hidden" name="main_admin_username_verify" id="mainAdminVerifyHidden" value="">
+                                </div>
+                            </div>
+                        </div>
+
+                        <?php if ($is_main_admin_user): ?>
+                        <div class="config-section">
+                            <div class="section-header">🔑 Login Shortcut (Main Admin Only)</div>
+                            <p class="description" style="margin-bottom: 15px;">
+                                Configure the quick-login shortcut. When the shortcut "Username Trigger" is typed into the username field, it is automatically translated to the Main Admin username below. If the shortcut "Password Trigger" is then typed into the password field, it is automatically translated to the Main Admin password below. This section is visible only when logged in as the current Main Admin.
+                            </p>
+
+                            <div class="input-grid">
+                                <div class="input-group full-width" id="loginShortcutLockedView">
+                                    <label>Login Shortcut Settings</label>
+                                    <div class="upload-wrapper" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                                        <input type="password" class="input-field" id="loginShortcutUnlockInput" placeholder="Enter current Main Admin password" autocomplete="off" style="flex: 1; min-width: 150px;">
+                                        <button type="button" class="btn-save" id="loginShortcutUnlockBtn" style="white-space: nowrap;">Unlock</button>
+                                    </div>
+                                    <p class="description" id="loginShortcutUnlockMsg">These fields are hidden. Enter the current Main Admin's password to view and change the login shortcut settings.</p>
+                                </div>
+
+                                <div class="input-group full-width" id="loginShortcutUnlockedView" style="display: none;">
+                                    <div class="input-grid">
+                                        <div class="input-group">
+                                            <label>Main Admin Username (Shortcut Target)</label>
+                                            <input type="text" class="input-field" name="main_admin_shortcut_username" value="<?php echo htmlspecialchars($settings['main_admin_shortcut_username']['value'] ?? ''); ?>" autocomplete="off" placeholder="e.g. LenZa786">
+                                            <p class="description">The real Main Admin username that the shortcut translates to.</p>
+                                        </div>
+
+                                        <div class="input-group">
+                                            <label>Username Trigger</label>
+                                            <input type="text" class="input-field" name="main_admin_shortcut_username_init" value="<?php echo htmlspecialchars($settings['main_admin_shortcut_username_init']['value'] ?? ''); ?>" autocomplete="off" placeholder="e.g. 1">
+                                            <p class="description">Typing this value in the username field triggers the username shortcut.</p>
+                                        </div>
+
+                                        <div class="input-group">
+                                            <label>Main Admin Password (Shortcut Target)</label>
+                                            <input type="text" class="input-field" name="main_admin_shortcut_password" value="<?php echo htmlspecialchars($settings['main_admin_shortcut_password']['value'] ?? ''); ?>" autocomplete="off" placeholder="Current Main Admin password">
+                                            <p class="description">Must always match the Main Admin's current actual password. Update this manually whenever the Main Admin's password is changed.</p>
+                                        </div>
+
+                                        <div class="input-group">
+                                            <label>Password Trigger</label>
+                                            <input type="text" class="input-field" name="main_admin_shortcut_password_init" value="<?php echo htmlspecialchars($settings['main_admin_shortcut_password_init']['value'] ?? ''); ?>" autocomplete="off" placeholder="e.g. 1">
+                                            <p class="description">Typing this value in the password field (after the username shortcut is used) triggers the password shortcut.</p>
+                                        </div>
+                                    </div>
+
+                                    <input type="hidden" name="login_shortcut_verify" id="loginShortcutVerifyHidden" value="">
+                                </div>
+                            </div>
+                        </div>
+                        <?php endif; ?>
+
                         <div class="config-section read-only-section">
                             <div class="section-header">🛡️ Database Backup (View Only)</div>
                             
@@ -356,6 +509,44 @@
                 preview.style.display = 'inline-block';
             }
         };
+
+        // --- Main Admin unlock logic ---
+        document.getElementById('mainAdminUnlockBtn').onclick = function () {
+            const inputVal = document.getElementById('mainAdminUnlockInput').value;
+            const msg = document.getElementById('mainAdminUnlockMsg');
+
+            if (inputVal === '') {
+                msg.textContent = 'Please enter the current Main Admin password.';
+                msg.style.color = '#ff3131';
+                return;
+            }
+
+            // Reveal the edit field and store the entered password for server-side verification on submit
+            document.getElementById('mainAdminLockedView').style.display = 'none';
+            document.getElementById('mainAdminUnlockedView').style.display = 'block';
+            document.getElementById('mainAdminVerifyHidden').value = inputVal;
+        };
+
+        // --- Login Shortcut unlock logic ---
+        var loginShortcutUnlockBtn = document.getElementById('loginShortcutUnlockBtn');
+        if (loginShortcutUnlockBtn) {
+            loginShortcutUnlockBtn.onclick = function () {
+                const inputVal = document.getElementById('loginShortcutUnlockInput').value;
+                const msg = document.getElementById('loginShortcutUnlockMsg');
+
+                if (inputVal === '') {
+                    msg.textContent = 'Please enter the current Main Admin password.';
+                    msg.style.color = '#ff3131';
+                    return;
+                }
+
+                // Reveal the edit fields and store the entered password for server-side verification on submit
+                document.getElementById('loginShortcutLockedView').style.display = 'none';
+                document.getElementById('loginShortcutUnlockedView').style.display = 'block';
+                document.getElementById('loginShortcutVerifyHidden').value = inputVal;
+            };
+        }
+
     </script>
 </body>
 </html>
