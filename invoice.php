@@ -389,6 +389,60 @@
             exit();
         }
 
+        // ── Apply any pending customer-info edits sent alongside this request ──
+        // (e.g. the user corrected the placeholder "JOHN DOE" name right before
+        // confirming the order, without separately pressing SAVE INFO).
+        // Mirrors the logic in save_ds_pending_info — only overrides fields that
+        // were actually submitted.
+        if (isset($_POST['ci_customer_name']) || isset($_POST['ci_date']) || isset($_POST['ci_age'])
+            || isset($_POST['ci_gender']) || isset($_POST['ci_symptoms']) || isset($_POST['ci_exam_notes'])
+            || isset($_POST['ci_pd']) || isset($_POST['ci_r_sph'])) {
+
+            $dspPres = function($val) {
+                $v = trim($val);
+                if ($v === '') return '0.00';
+                if (is_numeric($v) && (float)$v > 0 && strpos($v, '+') === false) $v = '+' . $v;
+                return $v;
+            };
+
+            if (isset($_POST['ci_date'])) {
+                $dsp_date_raw = trim($_POST['ci_date']);
+                if ($dsp_date_raw !== '' && strtotime($dsp_date_raw)) {
+                    $p['date'] = date('Y-m-d', strtotime($dsp_date_raw));
+                }
+            }
+            if (isset($_POST['ci_customer_name'])) $p['name']   = strtoupper(trim($_POST['ci_customer_name'])) ?: $p['name'];
+            if (isset($_POST['ci_age']))           $p['age']    = (int)$_POST['ci_age'];
+            if (isset($_POST['ci_gender']))        $p['gender'] = ($_POST['ci_gender'] === 'MALE') ? 'MALE' : 'FEMALE';
+            if (isset($_POST['ci_symptoms']))      $p['symptoms']   = $_POST['ci_symptoms'];
+            if (isset($_POST['ci_exam_notes']))    $p['exam_notes'] = $_POST['ci_exam_notes'];
+
+            if (isset($_POST['ci_pd'])) {
+                $dsp_pd = trim($_POST['ci_pd']);
+                if ($dsp_pd !== '') $p['pd'] = $dsp_pd;
+            }
+
+            if (isset($_POST['ci_r_sph'])) {
+                $p['r_sph'] = $dspPres($_POST['ci_r_sph']);
+                $p['r_cyl'] = $dspPres($_POST['ci_r_cyl'] ?? '');
+                $p['r_ax']  = (int)($_POST['ci_r_ax'] ?? 0);
+                $p['r_add'] = $dspPres($_POST['ci_r_add'] ?? '');
+                $p['l_sph'] = $dspPres($_POST['ci_l_sph'] ?? '');
+                $p['l_cyl'] = $dspPres($_POST['ci_l_cyl'] ?? '');
+                $p['l_ax']  = (int)($_POST['ci_l_ax'] ?? 0);
+                $p['l_add'] = $dspPres($_POST['ci_l_add'] ?? '');
+            }
+
+            if (isset($_POST['ci_visual_habit']))  $p['visual_habit']  = max(1, min(3, (int)$_POST['ci_visual_habit']));
+            if (isset($_POST['ci_digital_usage'])) $p['digital_usage'] = max(1, min(3, (int)$_POST['ci_digital_usage']));
+
+            if ($p['age'] >= 39) {
+                if (isset($_POST['ci_need_distance']))     $p['need_distance'] = max(0, min(1, (int)$_POST['ci_need_distance']));
+                if (isset($_POST['ci_need_intermediate'])) $p['need_inter']    = max(0, min(1, (int)$_POST['ci_need_intermediate']));
+                if (isset($_POST['ci_need_near']))         $p['need_near']     = max(0, min(1, (int)$_POST['ci_need_near']));
+            }
+        }
+
         $ds_date   = $p['date'];
         $ds_month  = (int)date('n', strtotime($ds_date));
         $ds_year   = (int)date('Y', strtotime($ds_date));
@@ -456,6 +510,97 @@
             echo json_encode(['success'=>true,'inv_str'=>$ds_inv_str,'exam_code'=>$ds_exam_code]);
         } else {
             echo json_encode(['success'=>false,'error'=>$stmt->error]);
+        }
+        exit();
+    }
+
+    // ── Update a customer_examinations row that was already committed for a
+    // pending direct sale (e.g. via an early save_direct_sale triggered by
+    // saving a custom frame), applying the latest ci_* field edits — most
+    // importantly the corrected customer name — before the order is saved.
+    if (isset($_POST['update_ds_committed_info'])) {
+        header('Content-Type: application/json');
+
+        $upd_inv = mysqli_real_escape_string($conn, trim($_POST['invoice_number'] ?? ''));
+        if ($upd_inv === '') {
+            echo json_encode(['success'=>false,'error'=>'Missing invoice_number.']);
+            exit();
+        }
+
+        $dspPres = function($val) {
+            $v = trim($val);
+            if ($v === '') return '0.00';
+            if (is_numeric($v) && (float)$v > 0 && strpos($v, '+') === false) $v = '+' . $v;
+            return $v;
+        };
+
+        $sets = [];
+
+        if (isset($_POST['ci_date'])) {
+            $d_raw = trim($_POST['ci_date']);
+            if ($d_raw !== '' && strtotime($d_raw)) {
+                $sets[] = "examination_date = '" . mysqli_real_escape_string($conn, date('Y-m-d', strtotime($d_raw))) . "'";
+            }
+        }
+        if (isset($_POST['ci_customer_name'])) {
+            $name = strtoupper(trim($_POST['ci_customer_name']));
+            if ($name !== '') $sets[] = "customer_name = '" . mysqli_real_escape_string($conn, $name) . "'";
+        }
+        if (isset($_POST['ci_age'])) {
+            $sets[] = "age = " . (int)$_POST['ci_age'];
+        }
+        if (isset($_POST['ci_gender'])) {
+            $gender = ($_POST['ci_gender'] === 'MALE') ? 'MALE' : 'FEMALE';
+            $sets[] = "gender = '" . $gender . "'";
+        }
+        if (isset($_POST['ci_symptoms'])) {
+            $sets[] = "symptoms = '" . mysqli_real_escape_string($conn, $_POST['ci_symptoms']) . "'";
+        }
+        if (isset($_POST['ci_exam_notes'])) {
+            $sets[] = "exam_notes = '" . mysqli_real_escape_string($conn, $_POST['ci_exam_notes']) . "'";
+        }
+        if (isset($_POST['ci_pd'])) {
+            $pd = trim($_POST['ci_pd']);
+            if ($pd !== '') $sets[] = "pd_dist = '" . mysqli_real_escape_string($conn, $pd) . "'";
+        }
+        if (isset($_POST['ci_r_sph'])) {
+            $sets[] = "new_r_sph = '" . mysqli_real_escape_string($conn, $dspPres($_POST['ci_r_sph'])) . "'";
+            $sets[] = "new_r_cyl = '" . mysqli_real_escape_string($conn, $dspPres($_POST['ci_r_cyl'] ?? '')) . "'";
+            $sets[] = "new_r_ax = '"  . mysqli_real_escape_string($conn, (string)(int)($_POST['ci_r_ax'] ?? 0)) . "'";
+            $sets[] = "new_r_add = '" . mysqli_real_escape_string($conn, $dspPres($_POST['ci_r_add'] ?? '')) . "'";
+            $sets[] = "new_l_sph = '" . mysqli_real_escape_string($conn, $dspPres($_POST['ci_l_sph'] ?? '')) . "'";
+            $sets[] = "new_l_cyl = '" . mysqli_real_escape_string($conn, $dspPres($_POST['ci_l_cyl'] ?? '')) . "'";
+            $sets[] = "new_l_ax = '"  . mysqli_real_escape_string($conn, (string)(int)($_POST['ci_l_ax'] ?? 0)) . "'";
+            $sets[] = "new_l_add = '" . mysqli_real_escape_string($conn, $dspPres($_POST['ci_l_add'] ?? '')) . "'";
+        }
+        if (isset($_POST['ci_visual_habit'])) {
+            $sets[] = "visual_habit = " . max(1, min(3, (int)$_POST['ci_visual_habit']));
+        }
+        if (isset($_POST['ci_digital_usage'])) {
+            $sets[] = "digital_usage = " . max(1, min(3, (int)$_POST['ci_digital_usage']));
+        }
+        if (isset($_POST['ci_need_distance'])) {
+            $sets[] = "need_distance = " . max(0, min(1, (int)$_POST['ci_need_distance']));
+        }
+        if (isset($_POST['ci_need_intermediate'])) {
+            $sets[] = "need_intermediate = " . max(0, min(1, (int)$_POST['ci_need_intermediate']));
+        }
+        if (isset($_POST['ci_need_near'])) {
+            $sets[] = "need_near = " . max(0, min(1, (int)$_POST['ci_need_near']));
+        }
+
+        if (empty($sets)) {
+            echo json_encode(['success'=>true]); // nothing to update
+            exit();
+        }
+
+        $sql_upd = "UPDATE customer_examinations SET " . implode(', ', $sets) . " WHERE invoice_number = '$upd_inv'";
+        $ok = mysqli_query($conn, $sql_upd);
+        if ($ok) {
+            log_activity($conn, 'customer_examinations', $upd_inv, 'UPDATE', $_SESSION['username'] ?? 'system');
+            echo json_encode(['success'=>true]);
+        } else {
+            echo json_encode(['success'=>false,'error'=>mysqli_error($conn)]);
         }
         exit();
     }
@@ -3137,7 +3282,7 @@ dsUpdateVisionSummary();
                         <?php endif; ?>
                     <?php endif; ?>
                     <div class="info-grid">
-                        <div>
+                        <div class="full">
                             <label>EXAMINATION CODE</label>
                             <div class="read-only-box"><?php echo $data['examination_code']; ?></div>
                         </div>
@@ -4838,7 +4983,7 @@ dsUpdateVisionSummary();
                 if (count) count.textContent = d.count + ' lens matched';
             }
 
-            modYes.onclick = () => {
+            if (modYes) modYes.onclick = () => {
                 modYes.classList.add('active');
                 modNo.classList.remove('active');
                 saveContainer.style.display = 'block';
@@ -4863,7 +5008,7 @@ dsUpdateVisionSummary();
                 lrUpdateSelectionDisplay(false);
             };
 
-            modNo.onclick = () => {
+            if (modNo) modNo.onclick = () => {
                 modNo.classList.add('active');
                 modYes.classList.remove('active');
                 saveContainer.style.display = 'none';
@@ -5515,7 +5660,7 @@ dsUpdateVisionSummary();
                 <?php endif; ?>
 
                 const isModified = <?php echo $data['lens_modification'] == 1 ? 'true' : 'false'; ?>;
-                if (isModified) {
+                if (isModified && modYes && modNo) {
                     // Auto-open the collapsible panel
                     const modPanel = document.getElementById('mod-collapsible');
                     const modChev  = document.getElementById('mod-toggle-chev');
@@ -7687,6 +7832,15 @@ dsUpdateVisionSummary();
         // Direct sale pending flag (set server-side)
         var _isDirectPending = <?php echo $is_direct_pending ? 'true' : 'false'; ?>;
 
+        // If a pending direct sale's customer_examinations row gets committed
+        // early (e.g. because the user saved a custom frame before confirming
+        // the order), the resulting invoice number / exam code are cached here
+        // so confirmOrderYes() can reuse them instead of calling
+        // save_direct_sale again (which would fail — the session is cleared
+        // after the first successful commit).
+        var _dsCommittedInv      = null;
+        var _dsCommittedExamCode = null;
+
         // Toggle for the direct-sale pending card
         function dsPendingToggle() {
             var body    = document.getElementById('ds-pending-body');
@@ -7761,6 +7915,14 @@ dsUpdateVisionSummary();
                 frameName  = lrSelectedFrame.name  || '';
                 frameUfc   = lrSelectedFrame.ufc   || '';
                 framePrice = lrSelectedFrame.price || 0;
+            }
+            // Custom (non-stock) frames use their brandKey as a placeholder
+            // "ufc" for display/totals, but it does not exist in
+            // frames_main/frame_staging — don't send it as frame_ufc to
+            // save_order (its purchase status is tracked separately via
+            // custom_frame_save.php's is_purchased flag).
+            if (frameUfc && window._cfrSelectedBrandKey && frameUfc === window._cfrSelectedBrandKey) {
+                frameUfc = '';
             }
         
             var lensName  = '';
@@ -7849,7 +8011,27 @@ dsUpdateVisionSummary();
         function closeConfirmOrder() {
             document.getElementById('confirm-order-overlay').style.display = 'none';
         }
-        
+
+        // ── Read current values of the editable customer/examination fields ──
+        // Used when committing a pending direct sale (save_direct_sale), so
+        // any unsaved edits (e.g. a corrected customer name) are included
+        // even if the SAVE INFO button was not pressed separately.
+        function dsCollectPendingInfo(fd) {
+            var ids = [
+                'ci_date', 'ci_customer_name', 'ci_age', 'ci_gender', 'ci_symptoms', 'ci_exam_notes',
+                'ci_pd',
+                'ci_r_sph', 'ci_r_cyl', 'ci_r_ax', 'ci_r_add',
+                'ci_l_sph', 'ci_l_cyl', 'ci_l_ax', 'ci_l_add',
+                'ci_visual_habit', 'ci_digital_usage',
+                'ci_need_distance', 'ci_need_intermediate', 'ci_need_near'
+            ];
+            ids.forEach(function (id) {
+                var el = document.getElementById(id);
+                if (el) fd.append(id, el.value);
+            });
+            return fd;
+        }
+
         // ── YES SHOPPING — save to DB then open print page ───────────
         function confirmOrderYes() {
         
@@ -7929,10 +8111,40 @@ dsUpdateVisionSummary();
             }
 
             // ── If direct pending: save customer_examinations first ────────
-            if (_isDirectPending) {
+            // (unless it was already committed earlier, e.g. via a custom
+            // frame save — in that case reuse the cached invoice number,
+            // but first push any field edits made since then, such as a
+            // corrected customer name)
+            if (_isDirectPending && _dsCommittedInv) {
+                btn.textContent = '⏳ UPDATING CUSTOMER DATA…';
+                var fdUpd = new FormData();
+                fdUpd.append('update_ds_committed_info', '1');
+                fdUpd.append('invoice_number', _dsCommittedInv);
+                dsCollectPendingInfo(fdUpd);
+                fetch('invoice.php', { method: 'POST', body: fdUpd })
+                    .then(function (r) { return r.json(); })
+                    .then(function (upd) {
+                        if (!upd.success) {
+                            errBox.textContent   = 'Failed to update customer data: ' + (upd.error || 'Unknown error');
+                            errBox.style.display = 'block';
+                            btn.disabled         = false;
+                            btn.textContent      = '✅ YES SHOPPING — SAVE & PRINT';
+                            return;
+                        }
+                        btn.textContent = '⏳ SAVING ORDER…';
+                        doSaveOrder(_dsCommittedInv, _dsCommittedExamCode);
+                    })
+                    .catch(function () {
+                        errBox.textContent   = 'Network error updating customer data. Please try again.';
+                        errBox.style.display = 'block';
+                        btn.disabled         = false;
+                        btn.textContent      = '✅ YES SHOPPING — SAVE & PRINT';
+                    });
+            } else if (_isDirectPending) {
                 btn.textContent = '⏳ SAVING CUSTOMER DATA…';
                 var fd1 = new FormData();
                 fd1.append('save_direct_sale', '1');
+                dsCollectPendingInfo(fd1);
                 fetch('invoice.php', { method: 'POST', body: fd1 })
                     .then(function (r) { return r.json(); })
                     .then(function (ds) {
@@ -8163,11 +8375,12 @@ dsUpdateVisionSummary();
 
             // ── Toggle select / deselect a custom frame ──────────────────
             window.cfrToggleSelect = function (brandKey) {
-                var inv = <?php echo json_encode($invoice_num); ?>;
+                var inv = _dsCommittedInv || <?php echo json_encode($invoice_num); ?>;
 
                 if (_cfrSelected === brandKey) {
                     // Deselect: set is_purchased = 0 for this frame
                     _cfrSelected = null;
+                    window._cfrSelectedBrandKey = null;
                     cfrSetPurchased(inv, brandKey, 0, function () {
                         cfrRenderList();
                         // Clear the global frame selection
@@ -8181,6 +8394,7 @@ dsUpdateVisionSummary();
                         cfrSetPurchased(inv, _cfrSelected, 0, function () {});
                     }
                     _cfrSelected = brandKey;
+                    window._cfrSelectedBrandKey = brandKey;
                     // Set is_purchased = 1 for newly selected frame
                     cfrSetPurchased(inv, brandKey, 1, function () {
                         cfrRenderList();
@@ -8213,9 +8427,10 @@ dsUpdateVisionSummary();
             // Resets is_purchased = 0 in DB for the currently selected custom frame
             window.cfrResetPurchased = function () {
                 if (!_cfrSelected) return;
-                var inv = <?php echo json_encode($invoice_num); ?>;
+                var inv = _dsCommittedInv || <?php echo json_encode($invoice_num); ?>;
                 cfrSetPurchased(inv, _cfrSelected, 0, function () {});
                 _cfrSelected = null;
+                window._cfrSelectedBrandKey = null;
                 cfrRenderList();
             };
 
@@ -8240,9 +8455,66 @@ dsUpdateVisionSummary();
                 }
 
                 var brandKey = cfrBuildKey(brand, size);
-                var inv      = <?php echo json_encode($invoice_num); ?>;
+                var inv      = _dsCommittedInv || <?php echo json_encode($invoice_num); ?>;
 
                 var btn = document.getElementById('cfr-save-btn');
+
+                // Custom frames need an invoice number to be saved against.
+                // For a PENDING direct sale, no invoice number exists yet —
+                // it's normally only assigned when the order is confirmed.
+                // In that case, commit the customer_examinations row now
+                // (same as Confirm Order would do) so we get a real invoice
+                // number, then proceed with the custom frame save.
+                if (!inv && _isDirectPending) {
+                    btn.disabled    = true;
+                    btn.textContent = '⏳ PREPARING…';
+
+                    var fdDs = new FormData();
+                    fdDs.append('save_direct_sale', '1');
+                    dsCollectPendingInfo(fdDs);
+                    fetch('invoice.php', { method: 'POST', body: fdDs })
+                        .then(function (r) { return r.json(); })
+                        .then(function (ds) {
+                            if (ds.success) {
+                                _dsCommittedInv      = ds.inv_str;
+                                _dsCommittedExamCode = ds.exam_code;
+                                // Update the modal's stash too, so Confirm Order
+                                // (if it still calls save_direct_sale on its own
+                                // path) stays consistent.
+                                var ov = document.getElementById('confirm-order-overlay');
+                                if (ov) {
+                                    ov.dataset.inv      = ds.inv_str;
+                                    ov.dataset.examCode = ds.exam_code;
+                                }
+                                cfrDoSave(ds.inv_str, brandKey, brand, size, btn, errEl);
+                            } else {
+                                btn.disabled    = false;
+                                btn.textContent = '💾 SAVE TO DATABASE';
+                                errEl.textContent   = '✕ Failed to prepare invoice: ' + (ds.error || 'Unknown error');
+                                errEl.style.display = 'block';
+                            }
+                        })
+                        .catch(function () {
+                            btn.disabled    = false;
+                            btn.textContent = '💾 SAVE TO DATABASE';
+                            errEl.textContent   = '✕ Connection error while preparing invoice. Please try again.';
+                            errEl.style.display = 'block';
+                        });
+                    return;
+                }
+
+                if (!inv) {
+                    errEl.textContent   = '⚠ Invoice number is missing. Please reload the page and try again.';
+                    errEl.style.display = 'block';
+                    return;
+                }
+
+                cfrDoSave(inv, brandKey, brand, size, btn, errEl);
+            };
+
+            // ── Actual custom-frame save request (shared by cfrSave) ──────
+            function cfrDoSave(inv, brandKey, brand, size, btn, errEl) {
+
                 btn.disabled    = true;
                 btn.textContent = '⏳ SAVING…';
 
@@ -8260,7 +8532,13 @@ dsUpdateVisionSummary();
                         btn.textContent = '💾 SAVE TO DATABASE';
 
                         if (!data.success) {
-                            errEl.textContent   = '✕ Failed to save: ' + (data.error || 'Unknown error');
+                            // Translate known backend (Indonesian) error messages to English
+                            var rawErr = data.error || 'Unknown error';
+                            var translations = {
+                                'invoice_number, brand_key, dan sell_price wajib diisi.': 'invoice_number, brand_key, and sell_price are required.',
+                                'invoice_number dan brand_key wajib diisi.': 'invoice_number and brand_key are required.'
+                            };
+                            errEl.textContent   = '✕ Failed to save: ' + (translations[rawErr] || rawErr);
                             errEl.style.display = 'block';
                             return;
                         }
@@ -8287,7 +8565,7 @@ dsUpdateVisionSummary();
                         errEl.textContent   = '✕ Connection error. Please try again.';
                         errEl.style.display = 'block';
                     });
-            };
+            }
 
             // ============================================================
             // EDITABLE CUSTOMER / EXAMINATION INFO CARD

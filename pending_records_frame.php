@@ -487,14 +487,11 @@
                                                                                 EDIT
                                                                             </button>
                                                                             
-                                                                            <form method="POST" action="" style="display:inline;">
-                                                                                <input type="hidden" name="action" value="delete">
-                                                                                <input type="hidden" name="ufc" value="<?php echo htmlspecialchars($rowStaging['ufc']); ?>">
-                                                                                <button type="submit" class="btn-table btn-delete-row" 
-                                                                                        onclick="return confirm('Permanently delete this record?')">
-                                                                                    DELETE
-                                                                                </button>
-                                                                            </form>
+                                                                            <!-- DELETE button uses a standalone form submitted via JS to avoid nesting inside #printForm -->
+                                                                            <button type="button" class="btn-table btn-delete-row"
+                                                                                    onclick="deleteStagingRecord('<?php echo htmlspecialchars($rowStaging['ufc'], ENT_QUOTES); ?>')">
+                                                                                DELETE
+                                                                            </button>
                                                                         </div>
                                                                     </td>
                                                                 </tr>
@@ -542,7 +539,19 @@
             </footer>
         </div>        
 
+        <!-- Standalone hidden form for staging DELETE — kept outside #printForm to avoid nested form conflict -->
+        <form id="stagingDeleteForm" method="POST" action="pending_records_frame.php" style="display:none;">
+            <input type="hidden" name="action" value="delete">
+            <input type="hidden" name="ufc" id="stagingDeleteUfc" value="">
+        </form>
+
         <script>
+            function deleteStagingRecord(ufc) {
+                if (!confirm('Permanently delete this record?')) return;
+                document.getElementById('stagingDeleteUfc').value = ufc;
+                document.getElementById('stagingDeleteForm').submit();
+            }
+
             function updateButtonState() {
                 const btnPrint = document.getElementById('btnPrint');
                 const btnSave = document.getElementById('btnSave');
