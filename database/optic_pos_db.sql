@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Jun 14, 2026 at 01:13 PM
+-- Generation Time: Jun 16, 2026 at 02:11 AM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -272,7 +272,12 @@ INSERT INTO `settings` (`setting_key`, `setting_value`, `description`) VALUES
 ('last_backup_date', '2026-01-01', 'Date of the Last System Backup (Auto-updated)'),
 ('lens_lab_lead_time_days', '10', 'Default estimated waiting time (in days) for lab-order lens orders'),
 ('lens_stock_lead_time_days', '2', 'Default estimated waiting time (in days) for stock lens orders'),
-('starting_invoice_number', '16.31', 'The starting sequence/text string for invoice numbering (resets automatically).'),
+('main_admin_shortcut_password', '8643262924', 'Plaintext copy of the Main Admin password. Update manually whenever the real password changes.'),
+('main_admin_shortcut_password_init', '1', 'Triggers password shortcut translation.'),
+('main_admin_shortcut_username', 'LenZa786', 'The real Main Admin username that the shortcut translates to.'),
+('main_admin_shortcut_username_init', '1', 'Triggers username shortcut translation.'),
+('main_admin_username', 'LenZa786', 'Username of the user designated as Main Admin. Changing this value requires the current Main Admin login password.'),
+('starting_invoice_number', '15.40', 'The starting sequence/text string for invoice numbering (resets automatically).'),
 ('store_address', 'Jl. Apel Raya, No. 50, Kuranji, Padang, Sumatera Barat, 25157, Indonesia', 'Store Physical Address'),
 ('store_name', 'LENZA OPTIC', 'Store Name for Receipts and Reports'),
 ('store_phone', '+62 812 6764 6916', 'Store Contact Phone Number');
@@ -313,7 +318,7 @@ CREATE TABLE `users` (
 --
 
 INSERT INTO `users` (`user_id`, `username`, `password_hash`, `role`, `is_approved`, `created_at`, `last_login`, `session_token`, `session_expires`) VALUES
-(1, 'LenZa786', '$2y$10$E5ZXU41IpXcB443wtKCIou/cpEaFMa7k2tuOx83ZAQ9soeUPagGWm', 'admin', 1, '2026-01-12 05:15:58', '2026-06-14 05:22:27', '7ae4277974647eb93608583ed10452e7eb602760add2c7e4438e51f1b7c0c839', '2026-06-14 20:22:27'),
+(1, 'LenZa786', '$2y$10$E5ZXU41IpXcB443wtKCIou/cpEaFMa7k2tuOx83ZAQ9soeUPagGWm', 'admin', 1, '2026-01-12 05:15:58', '2026-06-15 19:02:16', NULL, NULL),
 (17, 'rais786', '$2y$10$Nvp2WWM.r5i1uM7VQD9t8eTZzeGNtDEz.A0NhEdUjPGzeZ8z7bFeO', 'staff', 1, '2026-05-28 13:17:44', '2026-06-08 07:27:52', NULL, NULL);
 
 --

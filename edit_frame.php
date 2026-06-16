@@ -1,9 +1,10 @@
 <?php
     session_start();
     include 'db_config.php';
-include 'activity_helper.php';
+    include 'activity_helper.php';
     include 'config_helper.php';
-    include 'phpqrcode/qrlib.php'; 
+    include 'phpqrcode/qrlib.php';
+    include 'auth_check.php'; 
 
     if (!isset($_SESSION['user_id'])) { header("Location: index.php"); exit(); }
 
@@ -72,6 +73,28 @@ include 'activity_helper.php';
 
         $input_stock = (int)$_POST['total_frame'];
         $buy_price = ($role === 'admin') ? (float)$_POST['buy_price'] : (float)$current_data['buy_price'];
+
+        // --- CREATED_BY STOCK TRACKING ---
+        // Compare new stock vs old stock to detect changes made by this user
+        $old_stock = (int)$current_data['stock'];
+        $stock_delta = $input_stock - $old_stock;
+        $current_editor = $_SESSION['username'] ?? 'unknown';
+
+        $existing_created_by = trim($current_data['created_by'] ?? '');
+
+        if ($stock_delta !== 0) {
+            // Format: "username (delta)" — positive delta has no sign, negative has minus sign
+            $delta_label = ($stock_delta > 0)
+                ? $current_editor . ' (' . $stock_delta . ')'
+                : $current_editor . ' (' . $stock_delta . ')';
+
+            $new_created_by = ($existing_created_by !== '')
+                ? $existing_created_by . ', ' . $delta_label
+                : $delta_label;
+        } else {
+            // No stock change — keep created_by as-is
+            $new_created_by = $existing_created_by;
+        }
         $stock_age = $_POST['stock_age'] ?? 'new';
 
         // Re-calculate Price
@@ -114,19 +137,19 @@ include 'activity_helper.php';
                 if (file_exists("qrcodes/$old_ufc.png")) unlink("qrcodes/$old_ufc.png");
             }
 
-            // Save or Update data to frame_staging
+            // Save or Update data to frame_staging (including created_by stock tracking)
             $stmt = $conn->prepare("INSERT INTO frame_staging 
-                (ufc, brand, frame_code, frame_size, color_code, material, lens_shape, structure, size_range, gender_category, buy_price, sell_price, price_secret_code, stock, stock_age) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (ufc, brand, frame_code, frame_size, color_code, material, lens_shape, structure, size_range, gender_category, buy_price, sell_price, price_secret_code, stock, stock_age, created_by) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON DUPLICATE KEY UPDATE 
                 brand=VALUES(brand), frame_code=VALUES(frame_code), frame_size=VALUES(frame_size), color_code=VALUES(color_code), 
                 material=VALUES(material), lens_shape=VALUES(lens_shape), structure=VALUES(structure), size_range=VALUES(size_range), 
                 gender_category=VALUES(gender_category), buy_price=VALUES(buy_price), sell_price=VALUES(sell_price), price_secret_code=VALUES(price_secret_code), 
-                stock=VALUES(stock), stock_age=VALUES(stock_age)");
+                stock=VALUES(stock), stock_age=VALUES(stock_age), created_by=VALUES(created_by)");
             
-            $stmt->bind_param("ssssssssssddsis", $new_ufc, $brand, $f_code, $f_size, $color_code, $_POST['material'], 
+            $stmt->bind_param("ssssssssssddsiss", $new_ufc, $brand, $f_code, $f_size, $color_code, $_POST['material'], 
                             $_POST['lens_shape'], $_POST['structure'], $_POST['size_range'], $gender_category, $buy_price, $sell_price, 
-                            $secret_code, $input_stock, $stock_age);
+                            $secret_code, $input_stock, $stock_age, $new_created_by);
             $stmt->execute();
             log_activity($conn, 'frame_staging', $new_ufc, 'UPDATE', $_SESSION['username'] ?? 'staff');
 
