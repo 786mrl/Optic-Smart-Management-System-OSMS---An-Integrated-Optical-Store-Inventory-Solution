@@ -18,13 +18,14 @@
 
     // ── Save edited customer/examination info (top info card) ─────────
     if (isset($_POST['save_customer_info'])) {
-        $ci_inv = mysqli_real_escape_string($conn, $_POST['invoice_number'] ?? '');
+        $ci_inv  = mysqli_real_escape_string($conn, $_POST['invoice_number'] ?? '');
+        $ci_ajax = !empty($_POST['ajax']); // true when called via fetch (no page reload)
 
         // Fetch current values so we only update columns that actually changed
         $curRes = mysqli_query($conn, "SELECT examination_date, customer_name, age, gender, symptoms, exam_notes FROM customer_examinations WHERE invoice_number = '$ci_inv' LIMIT 1");
         $cur    = $curRes ? mysqli_fetch_assoc($curRes) : null;
 
-        $ci_date     = $_POST['ci_date'] ?? '';                                   // YYYY-MM-DD from <input type="date">
+        $ci_date     = $_POST['ci_date'] ?? '';
         $ci_name     = strtoupper(trim($_POST['ci_customer_name'] ?? ''));
         $ci_age      = (string)(int)($_POST['ci_age'] ?? 0);
         $ci_gender   = $_POST['ci_gender'] ?? '';
@@ -54,7 +55,7 @@
         }
 
         if (empty($setParts)) {
-            // Nothing actually changed — treat as success without touching the DB
+            if ($ci_ajax) { header('Content-Type: application/json'); echo json_encode(['success'=>true]); exit(); }
             header("Location: invoice.php?inv=$ci_inv&info_status=success");
             exit();
         }
@@ -63,9 +64,11 @@
 
         if (mysqli_query($conn, $sql_ci_update)) {
             log_activity($conn, 'customer_examinations', $ci_inv, 'UPDATE', $_SESSION['username'] ?? 'system');
+            if ($ci_ajax) { header('Content-Type: application/json'); echo json_encode(['success'=>true]); exit(); }
             header("Location: invoice.php?inv=$ci_inv&info_status=success");
             exit();
         } else {
+            if ($ci_ajax) { header('Content-Type: application/json'); echo json_encode(['success'=>false,'error'=>mysqli_error($conn)]); exit(); }
             header("Location: invoice.php?inv=$ci_inv&info_status=error");
             exit();
         }
@@ -8727,11 +8730,51 @@ dsUpdateVisionSummary();
                 });
 
                 if (saveForm) {
-                    saveForm.addEventListener('submit', function() {
+                    saveForm.addEventListener('submit', function(e) {
+                        e.preventDefault(); // prevent full page reload
+
+                        // Copy field values into hidden inputs (existing pattern)
                         fields.forEach(function(f) {
                             var hidden = document.getElementById(f.id + '_hidden');
                             if (hidden) hidden.value = f.value;
                         });
+
+                        var submitBtn = saveForm.querySelector('button[name="save_customer_info"]');
+                        var origText  = submitBtn ? submitBtn.textContent : '';
+                        if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = '⏳ SAVING…'; }
+
+                        var fd = new FormData(saveForm);
+                        fd.append('ajax', '1'); // tell PHP to return JSON instead of redirecting
+
+                        fetch('invoice.php', { method: 'POST', body: fd })
+                            .then(function(r) { return r.json(); })
+                            .then(function(data) {
+                                if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = origText; }
+                                if (data.success) {
+                                    // Update originalValues so dirty-check resets cleanly
+                                    fields.forEach(function(f) { originalValues[f.id] = f.value; });
+                                    refreshState(); // hides SAVE INFO row, unlocks print button
+
+                                    // Update the read-only display box for customer name
+                                    var nameDisplay = document.querySelector('#ci_customer_name.read-only-box');
+                                    if (!nameDisplay) {
+                                        // fallback: find any read-only-box near the label "CUSTOMER NAME"
+                                        document.querySelectorAll('.read-only-box').forEach(function(el) {
+                                            if (el.id === 'ci_customer_name') nameDisplay = el;
+                                        });
+                                    }
+                                    var nameField = document.getElementById('ci_customer_name');
+                                    if (nameField && nameDisplay && nameDisplay !== nameField) {
+                                        nameDisplay.textContent = nameField.value.trim().toUpperCase();
+                                    }
+                                } else {
+                                    alert('Failed to save: ' + (data.error || 'Unknown error'));
+                                }
+                            })
+                            .catch(function() {
+                                if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = origText; }
+                                alert('Network error. Please try again.');
+                            });
                     });
                 }
             })();
