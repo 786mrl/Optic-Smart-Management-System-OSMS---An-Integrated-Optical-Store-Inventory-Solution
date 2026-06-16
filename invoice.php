@@ -230,9 +230,8 @@
 
     if (!isset($_SESSION['user_id'])) { header("Location: index.php"); exit(); }
 
-    // ── DIRECT SALE: save pending data to session, redirect to invoice page ──
+    // ── DIRECT SALE: immediately save to customer_examinations, then redirect to invoice page ──
     // Triggered when the user submits the direct-sale entry form.
-    // NO DB insert here — insertion happens only when PRINT INVOICE is confirmed.
     if (isset($_POST['create_direct_sale'])) {
 
         // Helper: age from raw input
@@ -261,6 +260,13 @@
             return $v;
         };
 
+        // Helper: Roman numeral month
+        function getRomawi($month) {
+            $r = [1=>'I',2=>'II',3=>'III',4=>'IV',5=>'V',6=>'VI',
+                  7=>'VII',8=>'VIII',9=>'IX',10=>'X',11=>'XI',12=>'XII'];
+            return $r[(int)$month] ?? 'I';
+        }
+
         // Symptoms array
         $symptoms_arr = json_decode($_POST['ds_symptoms_json'] ?? '[]', true) ?? [];
         $symptoms_arr = array_map('strtoupper', $symptoms_arr);
@@ -279,33 +285,69 @@
         $ds_date_raw = trim($_POST['ds_date'] ?? '');
         $ds_date = (!empty($ds_date_raw) && strtotime($ds_date_raw)) ? date('Y-m-d', strtotime($ds_date_raw)) : date('Y-m-d');
 
-        // Store all form data in session — will be committed to DB only at print time
-        $_SESSION['ds_pending'] = [
-            'date'          => $ds_date,
-            'name'          => strtoupper(trim($_POST['ds_customer_name'] ?? '')),
-            'gender'        => strtoupper(trim($_POST['ds_gender'] ?? 'FEMALE')),
-            'age'           => $ds_age,
-            'purchase_type' => $ds_purchase_type,
-            'r_sph'         => $dsPres($_POST['ds_r_sph'] ?? ''),
-            'r_cyl'         => $dsPres($_POST['ds_r_cyl'] ?? ''),
-            'r_ax'          => (int)($_POST['ds_r_ax'] ?? 0),
-            'r_add'         => $dsPres($_POST['ds_r_add'] ?? ''),
-            'l_sph'         => $dsPres($_POST['ds_l_sph'] ?? ''),
-            'l_cyl'         => $dsPres($_POST['ds_l_cyl'] ?? ''),
-            'l_ax'          => (int)($_POST['ds_l_ax'] ?? 0),
-            'l_add'         => $dsPres($_POST['ds_l_add'] ?? ''),
-            'pd'            => trim($_POST['ds_pd'] ?? '62') ?: '62',
-            'visual_habit'  => max(1, min(3, (int)($_POST['ds_visual_habit']  ?? 1))),
-            'digital_usage' => max(1, min(3, (int)($_POST['ds_digital_usage'] ?? 1))),
-            'symptoms'      => implode(', ', $symptoms_arr),
-            'exam_notes'    => 'Direct sale — Lens from customer.',
-            'need_distance' => $ds_nd,
-            'need_inter'    => $ds_ni,
-            'need_near'     => $ds_nn,
-            'created_by'    => $_SESSION['username'] ?? 'system',
-        ];
+        $ds_month = (int)date('n', strtotime($ds_date));
+        $ds_year  = (int)date('Y', strtotime($ds_date));
 
-        header("Location: invoice.php?direct=1&ptype=" . $ds_purchase_type);
+        // Get next invoice number
+        $invRes = mysqli_query($conn, "SELECT MAX(CAST(invoice_number AS UNSIGNED)) AS max_inv FROM customer_examinations WHERE invoice_number REGEXP '^[0-9]+$'");
+        $invRow = mysqli_fetch_assoc($invRes);
+        $ds_inv_num = max(1, (int)($invRow['max_inv'] ?? 0) + 1);
+        $ds_inv_str = str_pad((string)$ds_inv_num, 3, '0', STR_PAD_LEFT);
+
+        $ds_exam_code  = 'LZ/EC/000-' . $ds_inv_str . '/' . getRomawi($ds_month) . '/' . $ds_year;
+        $ds_created_by = $_SESSION['username'] ?? 'system';
+
+        $ds_name     = mysqli_real_escape_string($conn, strtoupper(trim($_POST['ds_customer_name'] ?? '')));
+        $ds_gender   = strtoupper(trim($_POST['ds_gender'] ?? 'FEMALE'));
+        $ds_symptoms = mysqli_real_escape_string($conn, implode(', ', $symptoms_arr));
+        $ds_r_sph    = mysqli_real_escape_string($conn, $dsPres($_POST['ds_r_sph'] ?? ''));
+        $ds_r_cyl    = mysqli_real_escape_string($conn, $dsPres($_POST['ds_r_cyl'] ?? ''));
+        $ds_r_ax     = (int)($_POST['ds_r_ax'] ?? 0);
+        $ds_r_add    = mysqli_real_escape_string($conn, $dsPres($_POST['ds_r_add'] ?? ''));
+        $ds_l_sph    = mysqli_real_escape_string($conn, $dsPres($_POST['ds_l_sph'] ?? ''));
+        $ds_l_cyl    = mysqli_real_escape_string($conn, $dsPres($_POST['ds_l_cyl'] ?? ''));
+        $ds_l_ax     = (int)($_POST['ds_l_ax'] ?? 0);
+        $ds_l_add    = mysqli_real_escape_string($conn, $dsPres($_POST['ds_l_add'] ?? ''));
+        $ds_pd       = mysqli_real_escape_string($conn, trim($_POST['ds_pd'] ?? '62') ?: '62');
+        $ds_hab      = max(1, min(3, (int)($_POST['ds_visual_habit']  ?? 1)));
+        $ds_dig      = max(1, min(3, (int)($_POST['ds_digital_usage'] ?? 1)));
+        $ds_notes    = mysqli_real_escape_string($conn, 'Direct sale — Lens from customer.');
+
+        $ds_zero = '0.00'; $ds_zero_ax = '0'; $ds_va = '20/20';
+
+        $stmt = $conn->prepare("INSERT INTO customer_examinations (
+            examination_date, examination_code, customer_name, gender, age, symptoms,
+            old_r_sph, old_r_cyl, old_r_ax, old_r_add,
+            old_l_sph, old_l_cyl, old_l_ax, old_l_add,
+            new_r_sph, new_r_cyl, new_r_ax, new_r_add, new_r_visus,
+            new_l_sph, new_l_cyl, new_l_ax, new_l_add, new_l_visus,
+            pd_dist, invoice_number,
+            visual_habit, digital_usage, ucva_r, ucva_l, exam_notes,
+            need_distance, need_intermediate, need_near,
+            created_by
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+
+        $stmt->bind_param('ssssisssssssssssssssssssssiisssiiis',
+            $ds_date, $ds_exam_code, $ds_name, $ds_gender, $ds_age, $ds_symptoms,
+            $ds_zero, $ds_zero, $ds_zero_ax, $ds_zero,
+            $ds_zero, $ds_zero, $ds_zero_ax, $ds_zero,
+            $ds_r_sph, $ds_r_cyl, $ds_r_ax, $ds_r_add, $ds_va,
+            $ds_l_sph, $ds_l_cyl, $ds_l_ax, $ds_l_add, $ds_va,
+            $ds_pd, $ds_inv_str,
+            $ds_hab, $ds_dig, $ds_va, $ds_va, $ds_notes,
+            $ds_nd, $ds_ni, $ds_nn, $ds_created_by
+        );
+
+        if ($stmt->execute()) {
+            log_activity($conn, 'customer_examinations', $ds_inv_str, 'INSERT', $ds_created_by);
+            // Redirect to the invoice page exactly like customer_prescription does —
+            // now that the row exists in the DB, all downstream flows (save_order,
+            // print, custom frames) work identically to the prescription path.
+            header("Location: invoice.php?inv=" . urlencode($ds_inv_str) . "&ptype=" . urlencode($ds_purchase_type));
+        } else {
+            // Redirect back to entry form with an error flag
+            header("Location: invoice.php?ds_err=" . urlencode($stmt->error));
+        }
         exit();
     }
 
@@ -657,7 +699,7 @@
     // ── DIRECT SALE ENTRY FORM (shown when no invoice number is given AND not a pending direct sale) ──
     if (!$is_direct_pending && (empty($invoice_num) || $invoice_num === '00' || $invoice_num === '000')) {
         // Show the direct-sale entry form instead of dying
-        $ds_err_msg = '';
+        $ds_err_msg = !empty($_GET['ds_err']) ? htmlspecialchars($_GET['ds_err']) : '';
         ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -7886,24 +7928,18 @@ dsUpdateVisionSummary();
         // ── Open the confirmation modal ───────────────────────────────
         function openPrintPage() {
 
-            // ── Direct sale guard: block printing while customer name is still the placeholder "JOHN DOE" ──
-            if (_isDirectPending) {
-                var nameField = document.getElementById('ci_customer_name');
-                if (nameField) {
-                    var nameVal = nameField.value.trim().toUpperCase();
-                    if (nameVal === 'JOHN DOE' || nameVal === '') {
-                        // Expand the Customer & Sale Info section so the field is visible
-                        var infoSection = document.getElementById('dsp_sec_info');
-                        if (infoSection) infoSection.classList.remove('collapsed');
-
-                        // Scroll to and focus the customer name field
-                        nameField.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                        nameField.focus();
-                        nameField.select();
-
-                        alert('Please change the customer name before printing the invoice.\n\n"JOHN DOE" is a placeholder and must be replaced with the actual customer name.');
-                        return;
-                    }
+            // ── Guard: block printing while customer name is still the placeholder "JOHN DOE" ──
+            // Works for both direct sale (new flow: already in DB) and prescription paths.
+            var nameField = document.getElementById('ci_customer_name');
+            if (nameField) {
+                var nameVal = nameField.value.trim().toUpperCase();
+                if (nameVal === 'JOHN DOE' || nameVal === '') {
+                    // Scroll to and focus the customer name field so user can fix it
+                    nameField.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    nameField.focus();
+                    nameField.select();
+                    alert('Please update the customer name before printing the invoice.\n\n"JOHN DOE" is a placeholder — replace it with the actual customer name, then press SAVE INFO.');
+                    return;
                 }
             }
 
