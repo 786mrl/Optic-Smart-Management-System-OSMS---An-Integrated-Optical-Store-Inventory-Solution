@@ -16,7 +16,6 @@
         }
     }
 
-    
     // ── Save edited customer/examination info (top info card) ─────────
     if (isset($_POST['save_customer_info'])) {
         $ci_inv = mysqli_real_escape_string($conn, $_POST['invoice_number'] ?? '');
@@ -31,26 +30,6 @@
         $ci_gender   = $_POST['ci_gender'] ?? '';
         $ci_symptoms = $_POST['ci_symptoms'] ?? '';
         $ci_notes    = $_POST['ci_exam_notes'] ?? '';
-
-        // Handle case where this is a pending direct sale stored in session instead of DB
-        if ($cur === null && isset($_SESSION['ds_pending']) && !empty($_GET['direct'])) {
-            if ($ci_date !== '' && strtotime($ci_date)) {
-                $_SESSION['ds_pending']['date'] = date('Y-m-d', strtotime($ci_date));
-            }
-            $_SESSION['ds_pending']['name']       = $ci_name ?: $_SESSION['ds_pending']['name'];
-            $_SESSION['ds_pending']['age']        = (int)$ci_age;
-            $_SESSION['ds_pending']['gender']     = ($ci_gender === 'MALE') ? 'MALE' : 'FEMALE';
-            $_SESSION['ds_pending']['symptoms']   = $ci_symptoms;
-            $_SESSION['ds_pending']['exam_notes'] = $ci_notes;
-
-            if (isset($_POST['ajax'])) {
-                header('Content-Type: application/json');
-                echo json_encode(['success' => true]);
-                exit();
-            }
-            header("Location: invoice.php?direct=1&ptype=" . ($_GET['ptype'] ?? '') . "&info_status=success");
-            exit();
-        }
 
         $cur_date = $cur ? date('Y-m-d', strtotime($cur['examination_date'])) : null;
 
@@ -75,13 +54,7 @@
         }
 
         if (empty($setParts)) {
-            if (isset($_POST['ajax'])) {
-                header('Content-Type: application/json');
-                echo json_encode(['success' => true]);
-                exit();
-            }
-            $redirectUrl = !empty($_GET['direct']) ? "invoice.php?direct=1&inv=$ci_inv&info_status=success" : "invoice.php?inv=$ci_inv&info_status=success";
-            header("Location: " . $redirectUrl);
+            header("Location: invoice.php?inv=$ci_inv&info_status=success");
             exit();
         }
 
@@ -89,22 +62,10 @@
 
         if (mysqli_query($conn, $sql_ci_update)) {
             log_activity($conn, 'customer_examinations', $ci_inv, 'UPDATE', $_SESSION['username'] ?? 'system');
-            if (isset($_POST['ajax'])) {
-                header('Content-Type: application/json');
-                echo json_encode(['success' => true]);
-                exit();
-            }
-            $redirectUrl = !empty($_GET['direct']) ? "invoice.php?direct=1&inv=$ci_inv&info_status=success" : "invoice.php?inv=$ci_inv&info_status=success";
-            header("Location: " . $redirectUrl);
+            header("Location: invoice.php?inv=$ci_inv&info_status=success");
             exit();
         } else {
-            if (isset($_POST['ajax'])) {
-                header('Content-Type: application/json');
-                echo json_encode(['success' => false, 'error' => mysqli_error($conn)]);
-                exit();
-            }
-            $redirectUrl = !empty($_GET['direct']) ? "invoice.php?direct=1&inv=$ci_inv&info_status=error" : "invoice.php?inv=$ci_inv&info_status=error";
-            header("Location: " . $redirectUrl);
+            header("Location: invoice.php?inv=$ci_inv&info_status=error");
             exit();
         }
     }
@@ -394,6 +355,7 @@
     // still held in $_SESSION['ds_pending'] (not yet in the DB).
     if (isset($_POST['save_ds_pending_info'])) {
         if (isset($_SESSION['ds_pending'])) {
+            // Helper: format prescription value (mirrors $dsPres in create_direct_sale)
             $dspPres = function($val) {
                 $v = trim($val);
                 if ($v === '') return '0.00';
@@ -411,9 +373,11 @@
             $_SESSION['ds_pending']['symptoms']   = $_POST['ci_symptoms']   ?? $_SESSION['ds_pending']['symptoms'];
             $_SESSION['ds_pending']['exam_notes'] = $_POST['ci_exam_notes'] ?? $_SESSION['ds_pending']['exam_notes'];
 
+            // PD (pupillary distance)
             $dsp_pd = trim($_POST['ci_pd'] ?? '');
             $_SESSION['ds_pending']['pd'] = ($dsp_pd !== '') ? $dsp_pd : $_SESSION['ds_pending']['pd'];
 
+            // Prescription (only when fields were submitted — frame-only mode omits them)
             if (isset($_POST['ci_r_sph'])) {
                 $_SESSION['ds_pending']['r_sph'] = $dspPres($_POST['ci_r_sph']);
                 $_SESSION['ds_pending']['r_cyl'] = $dspPres($_POST['ci_r_cyl'] ?? '');
@@ -425,9 +389,11 @@
                 $_SESSION['ds_pending']['l_add'] = $dspPres($_POST['ci_l_add'] ?? '');
             }
 
+            // Visual habit / digital usage (1-3)
             $_SESSION['ds_pending']['visual_habit']  = max(1, min(3, (int)($_POST['ci_visual_habit']  ?? $_SESSION['ds_pending']['visual_habit'])));
             $_SESSION['ds_pending']['digital_usage'] = max(1, min(3, (int)($_POST['ci_digital_usage'] ?? $_SESSION['ds_pending']['digital_usage'])));
 
+            // Vision need (only relevant if age >= 39)
             if ($_SESSION['ds_pending']['age'] >= 39) {
                 $_SESSION['ds_pending']['need_distance'] = max(0, min(1, (int)($_POST['ci_need_distance']     ?? 0)));
                 $_SESSION['ds_pending']['need_inter']    = max(0, min(1, (int)($_POST['ci_need_intermediate'] ?? 0)));
@@ -438,19 +404,9 @@
                 $_SESSION['ds_pending']['need_near']     = 0;
             }
 
-            if (isset($_POST['ajax'])) {
-                header('Content-Type: application/json');
-                echo json_encode(['success' => true]);
-                exit();
-            }
             header("Location: invoice.php?direct=1&ptype=" . ($_GET['ptype'] ?? '') . "&info_status=success");
             exit();
         } else {
-            if (isset($_POST['ajax'])) {
-                header('Content-Type: application/json');
-                echo json_encode(['success' => false, 'error' => 'No session data found']);
-                exit();
-            }
             header("Location: invoice.php?direct=1&ptype=" . ($_GET['ptype'] ?? '') . "&info_status=error");
             exit();
         }
