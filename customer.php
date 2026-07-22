@@ -55,7 +55,7 @@
 
     // Customer Prescription and Invoice share the same tracked items, but
     // are still checked independently of each other.
-    $customerPrescriptionItems = ['customer_examinations', 'customer_orders', 'custom_frames', 'prescription_modifications', 'data_json [folder]'];
+    $customerPrescriptionItems = ['customer_examinations', 'customer_orders', 'custom_frames', 'prescription_modifications', 'data_json [folder]', 'pdf_file [folder]'];
     $customerPrescriptionLocked = isAnyItemLogged($conn, $customerPrescriptionItems) && $timeReached;
 
     $invoiceItems = ['customer_examinations', 'customer_orders', 'custom_frames', 'prescription_modifications'];
@@ -403,7 +403,7 @@
                             <div class="led"></div>
                         </button>
                     <?php else: ?>
-                        <button class="neu-button" data-url="customer_prescription.php" data-affected-items="customer_examinations, customer_orders, custom_frames, prescription_modifications, data_json [folder]" onclick="handleButtonClick(this)">
+                        <button class="neu-button" data-url="customer_prescription.php" data-affected-items="customer_examinations, customer_orders, custom_frames, prescription_modifications, data_json [folder], pdf_file [folder]" onclick="handleButtonClick(this)">
                             <span class="icon">📋</span>
                             Customer Prescription
                             <div class="led"></div>
