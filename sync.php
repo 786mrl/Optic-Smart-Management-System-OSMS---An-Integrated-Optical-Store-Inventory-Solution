@@ -1721,12 +1721,25 @@ if (isset($_POST['action'])) {
         $dirEntries = array_filter($allEntryNames, function ($n) { return substr($n, -1) === '/'; });
         $extracted = $zip->extractTo($htdocsDir, array_merge($dirEntries, $entriesToExtractNormally));
 
+        $syncPhpVerifyNote = null;
         if ($syncPhpEntryName !== null) {
             $syncPhpContent = $zip->getFromName($syncPhpEntryName);
             if ($syncPhpContent !== false) {
-                $tempSyncPath = $htdocsDir . '/sync.php.new_' . uniqid();
+                // $syncPhpEntryName is like "optic_pos/sync.php" — the real file
+                // lives at $appDir/sync.php (i.e. $htdocsDir/optic_pos/sync.php),
+                // NOT directly under $htdocsDir. Write the temp file in the SAME
+                // folder as the real target so rename() stays atomic.
+                $realSyncPhpPath = $appDir . '/sync.php';
+                $tempSyncPath = $appDir . '/sync.php.new_' . uniqid();
                 file_put_contents($tempSyncPath, $syncPhpContent);
-                rename($tempSyncPath, $htdocsDir . '/sync.php'); // atomic on the same filesystem
+                if (!rename($tempSyncPath, $realSyncPhpPath)) {
+                    // Rename can fail on some setups (permissions, filesystem
+                    // quirks) — fall back to a direct overwrite rather than
+                    // silently leaving sync.php un-updated.
+                    file_put_contents($realSyncPhpPath, $syncPhpContent);
+                    @unlink($tempSyncPath);
+                    $syncPhpVerifyNote = 'sync.php updated via direct write (atomic rename failed, used fallback).';
+                }
             }
         }
 
@@ -1753,7 +1766,7 @@ if (isset($_POST['action'])) {
         if (ob_get_level() > 0) { ob_clean(); }
         echo json_encode([
             'ok' => $extracted,
-            'message' => $extracted ? "Source code updated — $numFiles files overlaid from PC." : 'Extraction failed.',
+            'message' => ($extracted ? "Source code updated — $numFiles files overlaid from PC." : 'Extraction failed.') . ($syncPhpVerifyNote ? ' ' . $syncPhpVerifyNote : ''),
             'updated_files' => $updatedFiles,
             'verification' => [
                 'available' => true,
