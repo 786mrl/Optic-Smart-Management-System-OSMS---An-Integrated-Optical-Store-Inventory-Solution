@@ -516,6 +516,7 @@
 
         /* ── Order card ──────────────────────────────────────── */
         .cs-card {
+            position: relative;
             background: var(--bg-color);
             border-radius: 20px;
             padding: 20px 22px;
@@ -569,6 +570,31 @@
         .cs-chip.cust  { color: #aa88ff; border-color: rgba(170,136,255,0.25);  background: rgba(170,136,255,0.07); }
         .cs-chip.age   { color: #ffaa00; border-color: rgba(255,170,0,0.25);    background: rgba(255,170,0,0.07); }
         .cs-chip.done  { color: #00ff88; border-color: rgba(0,255,136,0.25);    background: rgba(0,255,136,0.07); }
+
+        /* ── Symptom analysis PDF button ─────────────────────── */
+        .cs-pdf-btn {
+            position: absolute;
+            top: 16px;
+            right: 20px;
+            font-size: 1.05rem;
+            line-height: 1;
+            padding: 0;
+            background: none;
+            border: none;
+            color: var(--text-main);
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
+            font-family: inherit;
+            transition: transform 0.2s ease, filter 0.2s ease;
+        }
+        .cs-pdf-btn b { font-weight: 900; }
+        .cs-pdf-btn:hover {
+            transform: scale(1.15) translateY(-1px);
+            filter: drop-shadow(0 2px 6px rgba(255,59,59,0.5));
+        }
+        .cs-pdf-btn:active { transform: scale(1.02); }
 
         /* ── Finished badge ──────────────────────────────────── */
         .cs-status-badge {
@@ -1475,6 +1501,13 @@
 
             // ── Net profit ────────────────────────────────────────────
             $netProfit   = $totalAmt - $lensCost - $frameCost - $pkgTotal;
+
+            // ── Symptom analysis PDF (matched by examination_code) ─────
+            // DB stores as "LZ/EC/028/IX/2025", file is saved as "LZ-EC-028-IX-2025.pdf"
+            $examCode    = trim($o['examination_code'] ?? '');
+            $examCodeFile= str_replace('/', '-', $examCode);
+            $pdfFileName = $examCodeFile . '.pdf';
+            $hasPdfFile  = ($examCode !== '') && file_exists(__DIR__ . '/pdf_file/' . $pdfFileName);
         ?>
         <div class="cs-card"
              data-name="<?php echo htmlspecialchars(strtolower($name)); ?>"
@@ -1502,7 +1535,9 @@
             <!-- Header (clickable) -->
             <div class="cs-card-header cs-card-top" onclick="csToggleCard(this)">
                 <div class="cs-patient-info">
-                    <div class="cs-patient-name"><?php echo htmlspecialchars($name); ?> <?php echo $genderIcon; ?></div>
+                    <div class="cs-patient-name">
+                        <?php echo htmlspecialchars($name); ?> <?php echo $genderIcon; ?>
+                    </div>
                     <div class="cs-meta-row">
                         <span class="cs-chip inv">INV: <?php echo htmlspecialchars($o['invoice_number'] ?? '—'); ?></span>
                         <span class="cs-chip cust"><?php echo htmlspecialchars($o['customer_number'] ?? '—'); ?></span>
@@ -1512,6 +1547,10 @@
                         <span class="cs-chip done">🏁 FINISHED</span>
                     </div>
                 </div>
+                <?php if ($hasPdfFile): ?>
+                <button type="button" class="cs-pdf-btn" title="View symptom analysis PDF"
+                        onclick="event.stopPropagation(); window.open('pdf_file/<?php echo rawurlencode($pdfFileName); ?>', '_blank');">📕<b>PDF</b></button>
+                <?php endif; ?>
                 <div style="display:flex;align-items:center;gap:10px;flex-shrink:0;">
                     <div style="text-align:right;">
                         <div class="ph-header-total" style="font-size:0.72rem;font-weight:800;color:#ffaa00;font-family:monospace;">
