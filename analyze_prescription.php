@@ -128,39 +128,64 @@ $system_prompt = <<<SYS
 You are an experienced optometry clinical assistant helping a licensed optometrist interpret refractive examination results. Your role is to provide a clear, structured, contextual analysis of the numbers — NOT to diagnose the patient. The optometrist is always the final decision-maker.
 
 IMPORTANT GUIDELINES:
-- Integrate the patient's age, gender, reported symptoms, visual habits, and digital device usage into your interpretation. This contextual reasoning is your main value.
+- Integrate the patient's age, gender, reported symptoms (both selected from the options AND any manually typed symptoms), visual habits, and digital device usage into your interpretation. This contextual reasoning is your main value.
 - If a previous prescription is provided, comment on progression (stable, progressing, regressing).
 - Use standard optometric severity categories (mild / moderate / high / severe).
 - Be concise but informative. This is a clinical reference, not a textbook.
-- Write in clear English. Use plain language the optometrist can discuss with the patient.
+- LANGUAGE: Write ALL descriptive/explanatory text (summary, description, symptoms, causes, management, contextual_insights, recommendations, referral reason) in BAHASA INDONESIA, clear and easy for the optometrist to discuss with the patient.
+- EXCEPTION: the "name" field of every condition (in main_findings, right_eye, and left_eye) must stay in ENGLISH, in UPPERCASE (e.g. MODERATE MYOPIA, CATARACT, ASTIGMATISM, EARLY PRESBYOPIA, EMMETROPIA / NORMAL), because it is used as a machine-readable tag elsewhere in the system.
 - Never use markdown formatting like **bold** or *italics* in your output values.
+- AVOID REPETITION: do not restate the same sentence or fact in multiple fields (e.g. do not repeat the referral reason inside contextual_insights, or repeat a main_findings explanation inside an eye's description). Each field must add distinct information. Keep every field as short as possible while staying clear — this keeps the response efficient and avoids wasting output tokens.
 
 RESPONSE FORMAT:
 Respond with a single valid JSON object using this exact structure:
 
 {
+  "referral": {
+    "recommended": true or false,
+    "specialist": "Jenis dokter spesialis yang disarankan, mis. Dokter Spesialis Mata (Oftalmologis), dalam Bahasa Indonesia. Kosongkan string jika recommended = false.",
+    "reason": "1-2 kalimat dalam Bahasa Indonesia menjelaskan MENGAPA pasien perlu dirujuk ke dokter spesialis (bukan cukup ditangani optician), misal dugaan katarak, tekanan bola mata tinggi, penurunan tajam penglihatan signifikan, atau kondisi di luar kelainan refraksi biasa. Kosongkan string jika recommended = false."
+  },
+  "main_findings": [
+    {
+      "name": "OVERALL CONDITION NAME IN UPPERCASE ENGLISH (e.g. CATARACT, MODERATE MYOPIA, ASTIGMATISM, EARLY PRESBYOPIA, EMMETROPIA / NORMAL). This is the patient's likely condition considering BOTH eyes and their full context together, not just raw refractive numbers.",
+      "severity": "one of: normal | mild | moderate | high | severe",
+      "explanation": "2-4 sentences in Bahasa Indonesia explaining what this condition is and why it applies to this patient, considering both eyes and context together",
+      "causes": ["Penyebab / faktor risiko 1 dalam Bahasa Indonesia", "Penyebab 2", "..."],
+      "management": ["Langkah penanggulangan / tindakan yang disarankan 1 dalam Bahasa Indonesia", "Langkah 2", "..."]
+    }
+  ],
   "right_eye": {
-    "summary": "One-sentence summary of the right eye status",
+    "summary": "Ringkasan satu kalimat kondisi mata kanan, dalam Bahasa Indonesia",
     "conditions": [
       {
-        "name": "CONDITION NAME IN UPPERCASE (e.g. MODERATE MYOPIA, MILD ASTIGMATISM, EARLY PRESBYOPIA, EMMETROPIA / NORMAL)",
+        "name": "CONDITION NAME IN UPPERCASE ENGLISH (e.g. MODERATE MYOPIA, MILD ASTIGMATISM, EARLY PRESBYOPIA, EMMETROPIA / NORMAL)",
         "severity": "one of: normal | mild | moderate | high | severe",
         "value": "the refractive value e.g. -4.25 or +1.50",
-        "description": "1-2 sentences explaining what this condition is in plain language",
-        "symptoms": ["specific symptom 1", "specific symptom 2"],
-        "causes": ["cause or risk factor 1", "cause 2"]
+        "description": "1-2 kalimat dalam Bahasa Indonesia menjelaskan kondisi ini secara sederhana",
+        "symptoms": ["gejala spesifik 1 (Bahasa Indonesia)", "gejala 2"],
+        "causes": ["penyebab / faktor risiko 1 (Bahasa Indonesia)", "penyebab 2"]
       }
     ]
   },
-  "left_eye": { "summary": "...", "conditions": [ ... ] },
-  "contextual_insights": "2-5 sentences connecting the prescription findings to this specific patient's age, symptoms, lifestyle, and (if available) progression from the previous prescription. This is the MOST IMPORTANT part — make it truly personalized, not generic.",
+  "left_eye": { "summary": "...(Bahasa Indonesia)", "conditions": [ ... ] },
+  "contextual_insights": "2-5 kalimat dalam Bahasa Indonesia yang menghubungkan hasil pemeriksaan dengan usia, gejala, gaya hidup pasien ini secara spesifik, dan (jika tersedia) progres dibanding resep sebelumnya. Bagian ini PALING PENTING — buat benar-benar personal, bukan generik.",
   "recommendations": [
-    "Specific lens / coating / care recommendation 1",
-    "Recommendation 2"
+    "Rekomendasi lensa / coating / perawatan 1, dalam Bahasa Indonesia",
+    "Rekomendasi 2"
   ]
 }
 
-RULES FOR CONDITIONS:
+RULES FOR referral:
+- Set "recommended" to true ONLY when something suggests the patient needs an eye specialist beyond a routine glasses prescription — e.g. suspected cataract, very high/asymmetric refractive error, sudden or severe vision loss reported in symptoms, signs of eye disease, or unusual symptoms unrelated to simple refractive error.
+- A routine myopia/hyperopia/astigmatism/presbyopia case with no red flags should have "recommended": false.
+
+RULES FOR main_findings:
+- Usually ONE entry summarizing the patient's overall likely condition. Only add a second entry if there are two clearly distinct, unrelated conditions worth separating (e.g. a refractive error AND a suspected pathology like cataract mentioned in symptoms).
+- If there is no significant refractive error or reported pathology (patient is essentially normal), use name "EMMETROPIA / NORMAL", severity "normal", and explain there is no significant abnormality found; causes and management can be short/preventive in nature (empty arrays are also acceptable here).
+- Base main_findings on ALL available context, not just the raw SPH/CYL/AXIS/ADD numbers — factor in reported symptoms (including manually typed ones), age, visual habits, digital usage, and prescription progression.
+
+RULES FOR right_eye / left_eye CONDITIONS:
 - If an eye has no significant refractive error (all values are 0 or near 0), include a SINGLE condition with name "EMMETROPIA / NORMAL", severity "normal", value "0.00", and appropriate description. symptoms and causes should be empty arrays [] in that case.
 - List each refractive error present as a separate condition (e.g. a myopic astigmatic eye will have TWO conditions: myopia + astigmatism).
 - Only include ADD as a condition if it is greater than 0.
@@ -175,8 +200,10 @@ $user_message = "Please analyze the following refractive examination.\n\n" .
 
 // 9. CALL GEMINI API
 // Using gemini-2.5-flash (free tier: 10 RPM, 500 RPD, best balance for medical reasoning)
-$model = 'gemini-2.5-flash';
+$model = 'gemini-3.5-flash';
 $url = "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key=" . GEMINI_API_KEY;
+
+$max_output_tokens = 6144;
 
 $payload = [
     'system_instruction' => [
@@ -194,8 +221,14 @@ $payload = [
     ],
     'generationConfig' => [
         'temperature'       => 0.4,
-        'maxOutputTokens'   => 2500,
-        'responseMimeType'  => 'application/json'  // Force JSON output - no markdown fences!
+        'maxOutputTokens'   => $max_output_tokens,
+        'responseMimeType'  => 'application/json',  // Force JSON output - no markdown fences!
+        // Gemini 3.x replaced "thinkingBudget" with "thinkingLevel".
+        // "low" keeps some reasoning (useful for this clinical-interpretation
+        // task) while leaving plenty of token budget for the JSON answer.
+        'thinkingConfig' => [
+            'thinkingLevel' => 'low'
+        ]
     ]
 ];
 
@@ -290,23 +323,34 @@ $ai_text_cleaned = trim($ai_text_cleaned);
 
 $analysis = json_decode($ai_text_cleaned, true);
 if (!is_array($analysis)) {
+    $finish_reason = $api_response['candidates'][0]['finishReason'] ?? 'UNKNOWN';
+    $reason_hint = '';
+    if ($finish_reason === 'MAX_TOKENS') {
+        $reason_hint = ' The response was cut off because it ran out of tokens (finishReason: MAX_TOKENS). Try increasing maxOutputTokens further in analyze_prescription.php.';
+    }
     http_response_code(500);
     echo json_encode([
-        'error' => 'Failed to parse AI response as JSON.',
-        'raw'   => mb_substr($ai_text, 0, 500)
+        'error'         => 'Failed to parse AI response as JSON.' . $reason_hint,
+        'finish_reason' => $finish_reason,
+        'raw'           => mb_substr($ai_text, 0, 1000)
     ]);
     exit();
 }
 
 // 11. RETURN SUCCESS
 $usage = $api_response['usageMetadata'] ?? [];
+$output_tokens_used = $usage['candidatesTokenCount'] ?? null;
+$remaining_tokens = is_numeric($output_tokens_used) ? max(0, $max_output_tokens - $output_tokens_used) : null;
+
 echo json_encode([
     'success'  => true,
     'analysis' => $analysis,
     'meta'     => [
-        'model'         => $model,
-        'provider'      => 'Google Gemini',
-        'input_tokens'  => $usage['promptTokenCount']     ?? null,
-        'output_tokens' => $usage['candidatesTokenCount'] ?? null,
+        'model'             => $model,
+        'provider'          => 'Google Gemini',
+        'input_tokens'      => $usage['promptTokenCount']     ?? null,
+        'output_tokens'     => $output_tokens_used,
+        'max_output_tokens' => $max_output_tokens,
+        'remaining_tokens'  => $remaining_tokens,
     ]
 ]);

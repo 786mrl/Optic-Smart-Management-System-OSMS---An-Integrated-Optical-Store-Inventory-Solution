@@ -1308,6 +1308,42 @@
                 margin-right: auto !important;
                 width: fit-content !important;
             }
+
+            /* Referral-to-specialist alert (shown at the very top when recommended) */
+            .referral-alert {
+                background: #4a1f1f;
+                border: 2px solid #ff3355;
+                border-radius: 10px;
+                padding: 16px 18px;
+                margin: 15px 0;
+                color: #ffb3b3;
+                animation: referralPulse 1.6s ease-in-out infinite;
+            }
+            .referral-alert strong {
+                color: #ff6677;
+                font-size: 1.05em;
+                letter-spacing: 1px;
+            }
+            .referral-alert p {
+                margin: 8px 0 0 0;
+                color: #ffcccc;
+                font-size: 0.9em;
+            }
+            @keyframes referralPulse {
+                0%, 100% { box-shadow: 0 0 6px 0 rgba(255,51,85,0.5); border-color: #ff3355; }
+                50%      { box-shadow: 0 0 22px 4px rgba(255,51,85,0.9); border-color: #ff8899; }
+            }
+
+            /* Applied to #prescription_analysis when a specialist referral is recommended */
+            #prescription_analysis.analysis-warning-glow {
+                animation: analysisGlow 1.6s ease-in-out infinite;
+                border: 2px solid #ff3355;
+                border-radius: 10px;
+            }
+            @keyframes analysisGlow {
+                0%, 100% { box-shadow: 0 0 6px 0 rgba(255,51,85,0.4); }
+                50%      { box-shadow: 0 0 20px 4px rgba(255,51,85,0.85); }
+            }
         </style>
         <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     </head>
@@ -1992,12 +2028,14 @@
                             </div>
 
                             <!-- PRESCRIPTION ANALYSIS PANEL (AUTO-GENERATED) -->
+                            <div id="analysis_referral_alert"></div>
                             <div id="prescription_analysis" class="collapsible">
                                 <h3 class="analysis-title collapsible-header" onclick="toggleCollapsible(this)">
                                     <span>◆ CLINICAL ANALYSIS &amp; INTERPRETATION ◆</span>
                                     <span class="chevron">▼</span>
                                 </h3>
                                 <div class="collapsible-content">
+                                    <div id="analysis_main_findings"></div>
                                     <div id="analysis_right" class="analysis-eye-block collapsible"></div>
                                     <div id="analysis_left" class="analysis-eye-block collapsible"></div>
                                     <div id="analysis_summary"></div>
@@ -2661,12 +2699,80 @@
                 `;
             }
 
+            // Build HTML for the top-level "possible conditions" card (open by default)
+            function buildMainFindings(findings) {
+                if (!Array.isArray(findings) || !findings.length) return '';
+
+                let inner = '';
+                findings.forEach(f => {
+                    const sev = (f.severity || 'normal').toLowerCase();
+                    const validSev = ['normal','mild','moderate','high','severe'].includes(sev) ? sev : 'normal';
+                    const badgeClass = 'badge-' + validSev;
+                    const causes     = Array.isArray(f.causes)     ? f.causes     : [];
+                    const management = Array.isArray(f.management) ? f.management : [];
+
+                    inner += `
+                        <div class="analysis-condition">
+                            <span class="analysis-badge ${badgeClass}">${escHtml(f.name || 'UNKNOWN')}</span>
+                            <p class="analysis-text">${escHtml(f.explanation || '')}</p>
+                            ${causes.length ? `
+                                <div class="analysis-label">▸ Penyebab:</div>
+                                <div class="analysis-text"><ul>${causes.map(s => `<li>${escHtml(s)}</li>`).join('')}</ul></div>
+                            ` : ''}
+                            ${management.length ? `
+                                <div class="analysis-label">▸ Penanggulangan:</div>
+                                <div class="analysis-text"><ul>${management.map(s => `<li>${escHtml(s)}</li>`).join('')}</ul></div>
+                            ` : ''}
+                        </div>
+                    `;
+                });
+
+                // Not marked "collapsed" -> opens by default, unlike the other sections
+                return `
+                    <div class="analysis-main-findings collapsible">
+                        <h4 class="collapsible-header" onclick="toggleCollapsible(this)">
+                            <span>★ POSSIBLE CONDITIONS, CAUSES &amp; MANAGEMENT</span>
+                            <span class="chevron">▼</span>
+                        </h4>
+                        <div class="collapsible-content">
+                            ${inner}
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Adds the AI-identified condition name(s) into the symptoms list, tagged
+            // "(AI ANALYSIS)", in English/uppercase. Re-running analysis replaces
+            // any previously AI-added tags rather than duplicating them.
+            function applyAIConditionsToSymptoms(findings) {
+                // Remove any AI tags from a previous run
+                selectedSymptoms = selectedSymptoms.filter(s => !s.endsWith('(AI ANALYSIS)'));
+
+                if (Array.isArray(findings)) {
+                    findings.forEach(f => {
+                        const name = (f.name || '').toUpperCase().trim();
+                        if (!name || name.includes('NORMAL') || name.includes('EMMETROPIA')) return;
+                        const tag = `${name} (AI ANALYSIS)`;
+                        if (!selectedSymptoms.includes(tag)) selectedSymptoms.push(tag);
+                    });
+                }
+
+                updateSymptomListJson();
+            }
+
             // Render complete AI analysis into the panel
             function renderAIAnalysis(analysis) {
                 // All sections start COLLAPSED — user clicks the header(s) they want to expand
                 document.getElementById('prescription_analysis').classList.add('collapsed');
                 document.getElementById('analysis_right').classList.add('collapsed');
                 document.getElementById('analysis_left').classList.add('collapsed');
+
+                // New card: possible conditions / causes / management — open by default
+                document.getElementById('analysis_main_findings').innerHTML =
+                    buildMainFindings(analysis.main_findings || []);
+
+                // Tag the AI-identified condition(s) into the symptoms list (English, uppercase)
+                applyAIConditionsToSymptoms(analysis.main_findings || []);
 
                 document.getElementById('analysis_right').innerHTML =
                     buildEyeFromAI('RIGHT EYE (OD)', analysis.right_eye || {});
@@ -2787,6 +2893,57 @@
                 };
             }
 
+            // Shows the top-of-page referral alert and toggles the glow animation
+            // on the Clinical Analysis card when a specialist referral is recommended.
+            function applyReferralAlert(referral) {
+                const alertBox = document.getElementById('analysis_referral_alert');
+                const panel = document.getElementById('prescription_analysis');
+
+                if (referral && referral.recommended) {
+                    alertBox.innerHTML = `
+                        <div class="referral-alert">
+                            <strong>⚠ REFERRAL TO SPECIALIST RECOMMENDED${referral.specialist ? ': ' + escHtml(referral.specialist) : ''}</strong>
+                            <p>${escHtml(referral.reason || '')}</p>
+                        </div>
+                    `;
+                    panel.classList.add('analysis-warning-glow');
+                } else {
+                    alertBox.innerHTML = '';
+                    panel.classList.remove('analysis-warning-glow');
+                }
+            }
+
+            // Sends the exam + analysis data to generate_pdf.php, which saves the
+            // PDF automatically into /pdf_file/{exam_code}.pdf on the server.
+            async function savePrescriptionPDF(payload, analysis) {
+                const examCode = document.getElementById('hidden_exam_code')?.value || '';
+                if (!examCode) return;
+
+                try {
+                    const res = await fetch('generate_pdf.php', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            exam_code: examCode,
+                            patient: {
+                                name:   document.getElementById('customer_name')?.value || '',
+                                gender: payload.gender,
+                                age:    payload.age
+                            },
+                            new_prescription: payload.new_prescription,
+                            old_prescription: payload.old_prescription,
+                            analysis
+                        })
+                    });
+                    const data = await res.json().catch(() => ({}));
+                    if (!res.ok || !data.success) {
+                        console.warn('PDF auto-save failed:', data.error || res.status);
+                    }
+                } catch (e) {
+                    console.warn('PDF auto-save request failed:', e);
+                }
+            }
+
             // Main trigger function — called when user clicks "Generate AI Analysis"
             async function requestAIAnalysis() {
                 const payload = collectAnalysisPayload();
@@ -2840,16 +2997,26 @@
                     }
 
                     renderAIAnalysis(data.analysis);
+                    applyReferralAlert(data.analysis.referral || null);
 
-                    // Show token usage if provided (debugging / cost visibility)
+                    // Auto-scroll so the result is immediately visible/focused
+                    panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+                    // Show token usage + remaining token budget for this request
                     if (data.meta && (data.meta.input_tokens || data.meta.output_tokens)) {
                         const meta = data.meta;
+                        const remainingTxt = (meta.remaining_tokens !== null && meta.remaining_tokens !== undefined)
+                            ? ` · sisa token (batas request ini): ${meta.remaining_tokens}/${meta.max_output_tokens}`
+                            : '';
                         document.getElementById('analysis_summary').innerHTML += `
                             <p style="text-align: center; font-size: 0.7em; color: #555; margin-top: 10px;">
-                                model: ${escHtml(meta.model)} · tokens in/out: ${meta.input_tokens || '?'}/${meta.output_tokens || '?'}
+                                model: ${escHtml(meta.model)} · tokens in/out: ${meta.input_tokens || '?'}/${meta.output_tokens || '?'}${remainingTxt}
                             </p>
                         `;
                     }
+
+                    // Auto-save the PDF summary (fire-and-forget, does not block the UI)
+                    savePrescriptionPDF(payload, data.analysis);
 
                 } catch (err) {
                     document.getElementById('analysis_right').innerHTML = `
