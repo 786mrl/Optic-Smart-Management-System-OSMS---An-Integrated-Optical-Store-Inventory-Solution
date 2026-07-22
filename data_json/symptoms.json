@@ -1,0 +1,44 @@
+[
+    {
+        "id": "catarct001",
+        "label": "CATARACT",
+        "value": "CATARACT",
+        "full_width": false,
+        "detail_id": null
+    },
+    {
+        "id": "headac001",
+        "label": "HEADACHE",
+        "value": "HEADACHE",
+        "full_width": false,
+        "detail_id": null
+    },
+    {
+        "id": "hlglare001",
+        "label": "HEADLIGHT GLARE",
+        "value": "HEADLIGHT GLARE",
+        "full_width": false,
+        "detail_id": null
+    },
+    {
+        "id": "eyestr001",
+        "label": "EYE STRAIN",
+        "value": "EYE STRAIN",
+        "full_width": false,
+        "detail_id": null
+    },
+    {
+        "id": "diabet001",
+        "label": "DIABETES",
+        "value": "Diabetes",
+        "full_width": false,
+        "detail_id": "dm_detail"
+    },
+    {
+        "id": "hypert001",
+        "label": "HYPERTENSION",
+        "value": "Hypertension",
+        "full_width": false,
+        "detail_id": "ht_detail"
+    }
+]

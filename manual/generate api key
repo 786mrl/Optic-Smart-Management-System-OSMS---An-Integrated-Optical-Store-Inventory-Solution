@@ -1,0 +1,25 @@
+Berarti cukup update API key saja. Masalahnya ada di `config_helper.php` — key lama sudah expired. Solusinya:
+
+**1. Buat API key baru (gratis, 2 menit):**
+- Buka: https://aistudio.google.com/app/apikey
+- Login dengan Google account
+- Klik **"Create API Key"**
+- Copy key-nya (format: `AIzaSy...`)
+
+**2. Update `config_helper.php`:**
+Cari baris yang ada `GEMINI_API_KEY` dan ganti valuenya:
+```php
+define('GEMINI_API_KEY', 'AIzaSy_KEY_BARU_ANDA_DISINI');
+```
+
+Kalau belum ada baris itu sama sekali di `config_helper.php`, tambahkan baris tersebut.
+
+**3. Test** — klik Generate AI Analysis lagi.
+
+---
+
+`analyze_prescription.php`-nya sudah benar dan lengkap, tidak perlu diubah apapun. Masalahnya murni di API key yang sudah tidak valid. File ini sudah handle:
+- Free tier limits (500 req/day)
+- SSL bypass untuk localhost/XAMPP
+- Error handling yang baik
+- Model `gemini-2.5-flash` yang paling hemat

@@ -1,0 +1,7 @@
+# Add these lines to your project's .gitignore file
+# so the API key file is NEVER pushed to GitLab again:
+
+local_secrets.php
+config_helper.php
+*.env
+.env

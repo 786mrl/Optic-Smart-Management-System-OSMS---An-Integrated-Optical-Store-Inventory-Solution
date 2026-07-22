@@ -1,0 +1,8779 @@
+<?php
+    session_start();
+    include 'db_config.php';
+    include 'activity_helper.php';
+    include 'config_helper.php';
+    include 'auth_check.php';
+
+    // Load lens lead times (in days) from settings table
+    $lensStockLeadTimeDays = 2;
+    $lensLabLeadTimeDays   = 10;
+    $resLead = mysqli_query($conn, "SELECT setting_key, setting_value FROM settings WHERE setting_key IN ('lens_stock_lead_time_days', 'lens_lab_lead_time_days')");
+    if ($resLead) {
+        while ($rowLead = mysqli_fetch_assoc($resLead)) {
+            if ($rowLead['setting_key'] === 'lens_stock_lead_time_days') $lensStockLeadTimeDays = (int)$rowLead['setting_value'];
+            if ($rowLead['setting_key'] === 'lens_lab_lead_time_days')   $lensLabLeadTimeDays   = (int)$rowLead['setting_value'];
+        }
+    }
+
+    // ── Save edited customer/examination info (top info card) ─────────
+    if (isset($_POST['save_customer_info'])) {
+        $ci_inv = mysqli_real_escape_string($conn, $_POST['invoice_number'] ?? '');
+
+        // Fetch current values so we only update columns that actually changed
+        $curRes = mysqli_query($conn, "SELECT examination_date, customer_name, age, gender, symptoms, exam_notes FROM customer_examinations WHERE invoice_number = '$ci_inv' LIMIT 1");
+        $cur    = $curRes ? mysqli_fetch_assoc($curRes) : null;
+
+        $ci_date     = $_POST['ci_date'] ?? '';
+        $ci_name     = strtoupper(trim($_POST['ci_customer_name'] ?? ''));
+        $ci_age      = (string)(int)($_POST['ci_age'] ?? 0);
+        $ci_gender   = $_POST['ci_gender'] ?? '';
+        $ci_symptoms = $_POST['ci_symptoms'] ?? '';
+        $ci_notes    = $_POST['ci_exam_notes'] ?? '';
+
+        $cur_date = $cur ? date('Y-m-d', strtotime($cur['examination_date'])) : null;
+
+        $setParts = [];
+        if ($cur === null || ($ci_date !== '' && $ci_date !== $cur_date)) {
+            $setParts[] = "examination_date = '" . mysqli_real_escape_string($conn, $ci_date) . "'";
+        }
+        if ($cur === null || $ci_name !== $cur['customer_name']) {
+            $setParts[] = "customer_name = '" . mysqli_real_escape_string($conn, $ci_name) . "'";
+        }
+        if ($cur === null || $ci_age !== (string)(int)$cur['age']) {
+            $setParts[] = "age = '" . mysqli_real_escape_string($conn, $ci_age) . "'";
+        }
+        if ($cur === null || $ci_gender !== $cur['gender']) {
+            $setParts[] = "gender = '" . mysqli_real_escape_string($conn, $ci_gender) . "'";
+        }
+        if ($cur === null || $ci_symptoms !== $cur['symptoms']) {
+            $setParts[] = "symptoms = '" . mysqli_real_escape_string($conn, $ci_symptoms) . "'";
+        }
+        if ($cur === null || $ci_notes !== $cur['exam_notes']) {
+            $setParts[] = "exam_notes = '" . mysqli_real_escape_string($conn, $ci_notes) . "'";
+        }
+
+        if (empty($setParts)) {
+            header("Location: invoice.php?inv=$ci_inv&info_status=success");
+            exit();
+        }
+
+        $sql_ci_update = "UPDATE customer_examinations SET " . implode(', ', $setParts) . " WHERE invoice_number = '$ci_inv'";
+
+        if (mysqli_query($conn, $sql_ci_update)) {
+            log_activity($conn, 'customer_examinations', $ci_inv, 'UPDATE', $_SESSION['username'] ?? 'system');
+            header("Location: invoice.php?inv=$ci_inv&info_status=success");
+            exit();
+        } else {
+            header("Location: invoice.php?inv=$ci_inv&info_status=error");
+            exit();
+        }
+    }
+
+    if (isset($_POST['save_modification'])) {
+        $inv = mysqli_real_escape_string($conn, $_POST['invoice_number']);
+        
+        // Fetch input data
+        $od_sph = mysqli_real_escape_string($conn, $_POST['od_sph']);
+        $od_cyl = mysqli_real_escape_string($conn, $_POST['od_cyl']);
+        $od_axis = mysqli_real_escape_string($conn, $_POST['od_axis']);
+        $od_add = mysqli_real_escape_string($conn, $_POST['od_add']);
+        $os_sph = mysqli_real_escape_string($conn, $_POST['os_sph']);
+        $os_cyl = mysqli_real_escape_string($conn, $_POST['os_cyl']);
+        $os_axis = mysqli_real_escape_string($conn, $_POST['os_axis']);
+        $os_add = mysqli_real_escape_string($conn, $_POST['os_add']);
+    
+        // Save to modification table
+        $sql_mod = "INSERT INTO prescription_modifications (invoice_number, od_sph, od_cyl, od_axis, od_add, os_sph, os_cyl, os_axis, os_add) 
+                    VALUES ('$inv', '$od_sph', '$od_cyl', '$od_axis', '$od_add', '$os_sph', '$os_cyl', '$os_axis', '$os_add')";
+        
+        // Update status in customer_examinations table
+        $sql_update = "UPDATE customer_examinations SET lens_modification = 1 WHERE invoice_number = '$inv'";
+    
+        if (mysqli_query($conn, $sql_mod) && mysqli_query($conn, $sql_update)) {
+            log_activity($conn, 'prescription_modifications', $inv, 'INSERT', $_SESSION['username'] ?? 'system');
+            log_activity($conn, 'customer_examinations', $inv, 'UPDATE', $_SESSION['username'] ?? 'system');
+            header("Location: invoice.php?inv=$inv&status=success");
+            exit();
+        }
+    }
+
+    // ── Save order to customer_orders ─────────────────────────────────
+    if (isset($_POST['save_order'])) {
+ 
+        $inv          = mysqli_real_escape_string($conn, $_POST['inv']);
+        $invoiceSheet = mysqli_real_escape_string($conn, $_POST['invoice_sheet']);   // e.g. "16.31" — used for customer_number, not stored separately
+        $isModified   = (int)$_POST['is_modified'];
+        // frame_ufc: fallback to frame_name in case JS sends UFC code via that field
+        $frameUfc     = mysqli_real_escape_string($conn, $_POST['frame_ufc'] ?? $_POST['frame_name'] ?? '');
+        // frame_price & lens_price: kept for print page (passed via URL), not stored in DB
+        $framePrice   = (float)($_POST['frame_price'] ?? 0);
+        $lensName     = mysqli_real_escape_string($conn, $_POST['lens_name']   ?? '');
+        $lensPrice    = (float)($_POST['lens_price']  ?? 0);
+        $phone        = mysqli_real_escape_string($conn, $_POST['phone']       ?? '');
+        $address      = mysqli_real_escape_string($conn, $_POST['address']     ?? '');
+        $totalAmount  = (float)($_POST['total_amount'] ?? 0);
+        $amountPaid   = (float)($_POST['amount_paid']  ?? 0);
+        $examCode     = mysqli_real_escape_string($conn, $_POST['exam_code']   ?? '');
+ 
+        // ── Parse dates ───────────────────────────────────────────────
+        // order_date: convert dd/mm/yyyy → yyyy-mm-dd
+        $orderDateRaw = $_POST['order_date'] ?? '';
+        $orderDateParts = explode('/', $orderDateRaw);
+        $orderDate = (count($orderDateParts) === 3)
+            ? $orderDateParts[2] . '-' . $orderDateParts[1] . '-' . $orderDateParts[0]
+            : date('Y-m-d');
+ 
+        // due_date: same conversion, NULL when empty or placeholder
+        $dueDateRaw = $_POST['due_date'] ?? '';
+        $dueDate    = 'NULL';
+        if (!empty($dueDateRaw) && $dueDateRaw !== '— select a lens' && $dueDateRaw !== '— not set') {
+            $ddParts = explode('/', $dueDateRaw);
+            if (count($ddParts) === 3) {
+                $dueDate = "'" . $ddParts[2] . '-' . $ddParts[1] . '-' . $ddParts[0] . "'";
+            }
+        }
+ 
+        // ── Build customer_number ─────────────────────────────────────
+        // Pattern: aa/LZ-C/00.00/bbb/MM/YY
+        //   aa  = next sequence number (auto from table)
+        //   00.00 = invoice_sheet (e.g. 16.31)
+        //   bbb = 3-digit part from examination_code (LZ/EC/028/IV/2026 → 028)
+        //   MM  = Roman numeral month of order_date
+        //   YY  = last 2 digits of order year
+ 
+        // Get next sequence number
+        $seqResult = mysqli_query($conn, "SELECT COUNT(*) AS cnt FROM customer_orders");
+        $seqRow    = mysqli_fetch_assoc($seqResult);
+        $seqNum    = (int)$seqRow['cnt'] + 1;
+ 
+        // Extract bbb from exam code  (e.g. "LZ/EC/028/IV/2026" → "028")
+        $bbb = '000';
+        if (!empty($examCode)) {
+            $parts = explode('/', $examCode);
+            if (isset($parts[2]) && preg_match('/^\d{3}$/', $parts[2])) {
+                $bbb = $parts[2];
+            }
+        }
+ 
+        // Roman numeral month
+        $romanMonths = ['I','II','III','IV','V','VI','VII','VIII','IX','X','XI','XII'];
+        $monthIndex  = (int)date('n', strtotime($orderDate)) - 1;
+        $romanMonth  = $romanMonths[$monthIndex] ?? date('n', strtotime($orderDate));
+ 
+        // YY
+        $yy = date('y', strtotime($orderDate));
+ 
+        $customerNumber = $seqNum . '/LZ-C/' . $invoiceSheet . '/' . $bbb . '/' . $romanMonth . '/' . $yy;
+        $customerNumber = mysqli_real_escape_string($conn, $customerNumber);
+ 
+        // ── Stock deduction (when a frame was purchased) ───────────────
+        $stockOk = true;
+        if (!empty($frameUfc)) {
+            // Try frames_main first, then frame_staging
+            $stockOk = false;
+            foreach (['frames_main', 'frame_staging'] as $tbl) {
+                $chk = mysqli_query($conn,
+                    "SELECT stock FROM `$tbl` WHERE ufc = '$frameUfc' AND stock > 0 LIMIT 1");
+                if ($chk && mysqli_num_rows($chk) > 0) {
+                    $upd = mysqli_query($conn,
+                        "UPDATE `$tbl` SET stock = stock - 1 WHERE ufc = '$frameUfc'");
+                    if ($upd) log_activity($conn, $tbl, $frameUfc, 'UPDATE', $_SESSION['username'] ?? 'system');
+                    if ($upd) { $stockOk = true; break; }
+                }
+            }
+        }
+ 
+        // ── Insert into customer_orders ────────────────────────────────
+        // Removed: invoice_sheet (embedded in customer_number), frame_name,
+        //          frame_price, lens_price (not stored in DB)
+        $frameUfcVal = !empty($frameUfc) ? "'$frameUfc'" : 'NULL';
+        $lensNameVal = !empty($lensName) ? "'$lensName'" : 'NULL';
+        $phoneVal    = !empty($phone)    ? "'$phone'"    : 'NULL';
+        $addressVal  = !empty($address)  ? "'$address'"  : 'NULL';
+ 
+        $createdBy = mysqli_real_escape_string($conn, $_SESSION['username'] ?? 'system');
+
+        $sql_order = "INSERT INTO customer_orders
+            (customer_number, invoice_number, is_modified,
+             frame_ufc, lens_name,
+             customer_phone, customer_address,
+             total_amount, amount_paid, order_date, due_date, order_status, created_by)
+            VALUES
+            ('$customerNumber', '$inv', $isModified,
+             $frameUfcVal, $lensNameVal,
+             $phoneVal, $addressVal,
+             $totalAmount, $amountPaid, '$orderDate', $dueDate, 1, '$createdBy')";
+ 
+        $saved = mysqli_query($conn, $sql_order);
+        if ($saved) {
+            $order_id = mysqli_insert_id($conn);
+            log_activity($conn, 'customer_orders', (string)$order_id, 'INSERT', $_SESSION['username'] ?? 'system');
+        }
+ 
+        // ── JSON response (called via fetch from JS) ───────────────────
+        header('Content-Type: application/json');
+        if ($saved) {
+            echo json_encode([
+                'success'         => true,
+                'customer_number' => $customerNumber,
+            ]);
+        } else {
+            echo json_encode([
+                'success' => false,
+                'error'   => mysqli_error($conn),
+            ]);
+        }
+        exit();
+    }
+
+    if (!isset($_SESSION['user_id'])) { header("Location: index.php"); exit(); }
+
+    // ── DIRECT SALE: immediately save to customer_examinations, then redirect to invoice page ──
+    // Triggered when the user submits the direct-sale entry form.
+    if (isset($_POST['create_direct_sale'])) {
+
+        // Helper: age from raw input
+        $raw_age = trim($_POST['ds_age'] ?? '');
+        $ds_age  = 0;
+        if (!empty($raw_age)) {
+            if (strpos($raw_age, '.') !== false) {
+                $year_input = str_replace('.', '', $raw_age);
+                $year_val   = (int)$year_input;
+                if (strlen($year_input) <= 2) {
+                    $full_year = ($year_val > (int)date('y')) ? 1900 + $year_val : 2000 + $year_val;
+                } else {
+                    $full_year = $year_val;
+                }
+                $ds_age = (int)date('Y') - $full_year;
+            } else {
+                $ds_age = (int)$raw_age;
+            }
+        }
+
+        // Helper: format prescription value
+        $dsPres = function($val) {
+            $v = trim($val);
+            if ($v === '') return '0.00';
+            if (is_numeric($v) && (float)$v > 0 && strpos($v, '+') === false) $v = '+' . $v;
+            return $v;
+        };
+
+        // Helper: Roman numeral month
+        function getRomawi($month) {
+            $r = [1=>'I',2=>'II',3=>'III',4=>'IV',5=>'V',6=>'VI',
+                  7=>'VII',8=>'VIII',9=>'IX',10=>'X',11=>'XI',12=>'XII'];
+            return $r[(int)$month] ?? 'I';
+        }
+
+        // Symptoms array
+        $symptoms_arr = json_decode($_POST['ds_symptoms_json'] ?? '[]', true) ?? [];
+        $symptoms_arr = array_map('strtoupper', $symptoms_arr);
+        if (!empty($_POST['ds_other_symptoms'])) {
+            $symptoms_arr[] = 'OTHERS: ' . strtoupper(trim($_POST['ds_other_symptoms']));
+        }
+        array_unshift($symptoms_arr, 'DIRECT SALE');
+
+        $ds_purchase_type = ($_POST['ds_purchase_type'] ?? '') === 'frame' ? 'frame' : 'complete';
+
+        // Vision need (only relevant if age >= 39)
+        $ds_nd = ($ds_age >= 39) ? max(0, min(1, (int)($_POST['ds_need_distance']     ?? 0))) : 0;
+        $ds_ni = ($ds_age >= 39) ? max(0, min(1, (int)($_POST['ds_need_intermediate'] ?? 0))) : 0;
+        $ds_nn = ($ds_age >= 39) ? max(0, min(1, (int)($_POST['ds_need_near']         ?? 0))) : 0;
+
+        $ds_date_raw = trim($_POST['ds_date'] ?? '');
+        $ds_date = (!empty($ds_date_raw) && strtotime($ds_date_raw)) ? date('Y-m-d', strtotime($ds_date_raw)) : date('Y-m-d');
+
+        $ds_month = (int)date('n', strtotime($ds_date));
+        $ds_year  = (int)date('Y', strtotime($ds_date));
+
+        // Get next invoice number
+        $invRes = mysqli_query($conn, "SELECT MAX(CAST(invoice_number AS UNSIGNED)) AS max_inv FROM customer_examinations WHERE invoice_number REGEXP '^[0-9]+$'");
+        $invRow = mysqli_fetch_assoc($invRes);
+        $ds_inv_num = max(1, (int)($invRow['max_inv'] ?? 0) + 1);
+        $ds_inv_str = str_pad((string)$ds_inv_num, 3, '0', STR_PAD_LEFT);
+
+        $ds_exam_code  = 'LZ/EC/000-' . $ds_inv_str . '/' . getRomawi($ds_month) . '/' . $ds_year;
+        $ds_created_by = $_SESSION['username'] ?? 'system';
+
+        $ds_name     = mysqli_real_escape_string($conn, strtoupper(trim($_POST['ds_customer_name'] ?? '')));
+        $ds_gender   = strtoupper(trim($_POST['ds_gender'] ?? 'FEMALE'));
+        $ds_symptoms = mysqli_real_escape_string($conn, implode(', ', $symptoms_arr));
+        $ds_r_sph    = mysqli_real_escape_string($conn, $dsPres($_POST['ds_r_sph'] ?? ''));
+        $ds_r_cyl    = mysqli_real_escape_string($conn, $dsPres($_POST['ds_r_cyl'] ?? ''));
+        $ds_r_ax     = (int)($_POST['ds_r_ax'] ?? 0);
+        $ds_r_add    = mysqli_real_escape_string($conn, $dsPres($_POST['ds_r_add'] ?? ''));
+        $ds_l_sph    = mysqli_real_escape_string($conn, $dsPres($_POST['ds_l_sph'] ?? ''));
+        $ds_l_cyl    = mysqli_real_escape_string($conn, $dsPres($_POST['ds_l_cyl'] ?? ''));
+        $ds_l_ax     = (int)($_POST['ds_l_ax'] ?? 0);
+        $ds_l_add    = mysqli_real_escape_string($conn, $dsPres($_POST['ds_l_add'] ?? ''));
+        $ds_pd       = mysqli_real_escape_string($conn, trim($_POST['ds_pd'] ?? '62') ?: '62');
+        $ds_hab      = max(1, min(3, (int)($_POST['ds_visual_habit']  ?? 1)));
+        $ds_dig      = max(1, min(3, (int)($_POST['ds_digital_usage'] ?? 1)));
+        $ds_notes    = mysqli_real_escape_string($conn, 'Direct sale — Lens from customer.');
+
+        $ds_zero = '0.00'; $ds_zero_ax = '0'; $ds_va = '20/20';
+
+        $stmt = $conn->prepare("INSERT INTO customer_examinations (
+            examination_date, examination_code, customer_name, gender, age, symptoms,
+            old_r_sph, old_r_cyl, old_r_ax, old_r_add,
+            old_l_sph, old_l_cyl, old_l_ax, old_l_add,
+            new_r_sph, new_r_cyl, new_r_ax, new_r_add, new_r_visus,
+            new_l_sph, new_l_cyl, new_l_ax, new_l_add, new_l_visus,
+            pd_dist, invoice_number,
+            visual_habit, digital_usage, ucva_r, ucva_l, exam_notes,
+            need_distance, need_intermediate, need_near,
+            created_by
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+
+        $stmt->bind_param('ssssisssssssssssssssssssssiisssiiis',
+            $ds_date, $ds_exam_code, $ds_name, $ds_gender, $ds_age, $ds_symptoms,
+            $ds_zero, $ds_zero, $ds_zero_ax, $ds_zero,
+            $ds_zero, $ds_zero, $ds_zero_ax, $ds_zero,
+            $ds_r_sph, $ds_r_cyl, $ds_r_ax, $ds_r_add, $ds_va,
+            $ds_l_sph, $ds_l_cyl, $ds_l_ax, $ds_l_add, $ds_va,
+            $ds_pd, $ds_inv_str,
+            $ds_hab, $ds_dig, $ds_va, $ds_va, $ds_notes,
+            $ds_nd, $ds_ni, $ds_nn, $ds_created_by
+        );
+
+        if ($stmt->execute()) {
+            log_activity($conn, 'customer_examinations', $ds_inv_str, 'INSERT', $ds_created_by);
+            // Redirect to the invoice page exactly like customer_prescription does —
+            // now that the row exists in the DB, all downstream flows (save_order,
+            // print, custom frames) work identically to the prescription path.
+            header("Location: invoice.php?inv=" . urlencode($ds_inv_str) . "&ptype=" . urlencode($ds_purchase_type));
+        } else {
+            // Redirect back to entry form with an error flag
+            header("Location: invoice.php?ds_err=" . urlencode($stmt->error));
+        }
+        exit();
+    }
+
+    // ── Update pending direct-sale customer/examination info (session only) ──
+    // Same purpose as save_customer_info, but for direct-sale data that is
+    // still held in $_SESSION['ds_pending'] (not yet in the DB).
+    if (isset($_POST['save_ds_pending_info'])) {
+        if (isset($_SESSION['ds_pending'])) {
+            // Helper: format prescription value (mirrors $dsPres in create_direct_sale)
+            $dspPres = function($val) {
+                $v = trim($val);
+                if ($v === '') return '0.00';
+                if (is_numeric($v) && (float)$v > 0 && strpos($v, '+') === false) $v = '+' . $v;
+                return $v;
+            };
+
+            $dsp_date_raw = trim($_POST['ci_date'] ?? '');
+            if ($dsp_date_raw !== '' && strtotime($dsp_date_raw)) {
+                $_SESSION['ds_pending']['date'] = date('Y-m-d', strtotime($dsp_date_raw));
+            }
+            $_SESSION['ds_pending']['name']       = strtoupper(trim($_POST['ci_customer_name'] ?? $_SESSION['ds_pending']['name']));
+            $_SESSION['ds_pending']['age']        = (int)($_POST['ci_age'] ?? $_SESSION['ds_pending']['age']);
+            $_SESSION['ds_pending']['gender']     = ($_POST['ci_gender'] ?? $_SESSION['ds_pending']['gender']) === 'MALE' ? 'MALE' : 'FEMALE';
+            $_SESSION['ds_pending']['symptoms']   = $_POST['ci_symptoms']   ?? $_SESSION['ds_pending']['symptoms'];
+            $_SESSION['ds_pending']['exam_notes'] = $_POST['ci_exam_notes'] ?? $_SESSION['ds_pending']['exam_notes'];
+
+            // PD (pupillary distance)
+            $dsp_pd = trim($_POST['ci_pd'] ?? '');
+            $_SESSION['ds_pending']['pd'] = ($dsp_pd !== '') ? $dsp_pd : $_SESSION['ds_pending']['pd'];
+
+            // Prescription (only when fields were submitted — frame-only mode omits them)
+            if (isset($_POST['ci_r_sph'])) {
+                $_SESSION['ds_pending']['r_sph'] = $dspPres($_POST['ci_r_sph']);
+                $_SESSION['ds_pending']['r_cyl'] = $dspPres($_POST['ci_r_cyl'] ?? '');
+                $_SESSION['ds_pending']['r_ax']  = (int)($_POST['ci_r_ax'] ?? 0);
+                $_SESSION['ds_pending']['r_add'] = $dspPres($_POST['ci_r_add'] ?? '');
+                $_SESSION['ds_pending']['l_sph'] = $dspPres($_POST['ci_l_sph'] ?? '');
+                $_SESSION['ds_pending']['l_cyl'] = $dspPres($_POST['ci_l_cyl'] ?? '');
+                $_SESSION['ds_pending']['l_ax']  = (int)($_POST['ci_l_ax'] ?? 0);
+                $_SESSION['ds_pending']['l_add'] = $dspPres($_POST['ci_l_add'] ?? '');
+            }
+
+            // Visual habit / digital usage (1-3)
+            $_SESSION['ds_pending']['visual_habit']  = max(1, min(3, (int)($_POST['ci_visual_habit']  ?? $_SESSION['ds_pending']['visual_habit'])));
+            $_SESSION['ds_pending']['digital_usage'] = max(1, min(3, (int)($_POST['ci_digital_usage'] ?? $_SESSION['ds_pending']['digital_usage'])));
+
+            // Vision need (only relevant if age >= 39)
+            if ($_SESSION['ds_pending']['age'] >= 39) {
+                $_SESSION['ds_pending']['need_distance'] = max(0, min(1, (int)($_POST['ci_need_distance']     ?? 0)));
+                $_SESSION['ds_pending']['need_inter']    = max(0, min(1, (int)($_POST['ci_need_intermediate'] ?? 0)));
+                $_SESSION['ds_pending']['need_near']     = max(0, min(1, (int)($_POST['ci_need_near']         ?? 0)));
+            } else {
+                $_SESSION['ds_pending']['need_distance'] = 0;
+                $_SESSION['ds_pending']['need_inter']    = 0;
+                $_SESSION['ds_pending']['need_near']     = 0;
+            }
+
+            header("Location: invoice.php?direct=1&ptype=" . ($_GET['ptype'] ?? '') . "&info_status=success");
+            exit();
+        } else {
+            header("Location: invoice.php?direct=1&ptype=" . ($_GET['ptype'] ?? '') . "&info_status=error");
+            exit();
+        }
+    }
+
+
+    // Called via fetch() from confirmOrderYes() when direct=1.
+    // Returns JSON {success, inv_str, exam_code}.
+    if (isset($_POST['save_direct_sale'])) {
+
+        function getRomawiDirect($month) {
+            $r = [1=>'I',2=>'II',3=>'III',4=>'IV',5=>'V',6=>'VI',
+                  7=>'VII',8=>'VIII',9=>'IX',10=>'X',11=>'XI',12=>'XII'];
+            return $r[(int)$month] ?? 'I';
+        }
+
+        $p = $_SESSION['ds_pending'] ?? null;
+        if (!$p) {
+            header('Content-Type: application/json');
+            echo json_encode(['success'=>false,'error'=>'Session expired. Please re-enter direct sale data.']);
+            exit();
+        }
+
+        // ── Apply any pending customer-info edits sent alongside this request ──
+        // (e.g. the user corrected the placeholder "JOHN DOE" name right before
+        // confirming the order, without separately pressing SAVE INFO).
+        // Mirrors the logic in save_ds_pending_info — only overrides fields that
+        // were actually submitted.
+        if (isset($_POST['ci_customer_name']) || isset($_POST['ci_date']) || isset($_POST['ci_age'])
+            || isset($_POST['ci_gender']) || isset($_POST['ci_symptoms']) || isset($_POST['ci_exam_notes'])
+            || isset($_POST['ci_pd']) || isset($_POST['ci_r_sph'])) {
+
+            $dspPres = function($val) {
+                $v = trim($val);
+                if ($v === '') return '0.00';
+                if (is_numeric($v) && (float)$v > 0 && strpos($v, '+') === false) $v = '+' . $v;
+                return $v;
+            };
+
+            if (isset($_POST['ci_date'])) {
+                $dsp_date_raw = trim($_POST['ci_date']);
+                if ($dsp_date_raw !== '' && strtotime($dsp_date_raw)) {
+                    $p['date'] = date('Y-m-d', strtotime($dsp_date_raw));
+                }
+            }
+            if (isset($_POST['ci_customer_name'])) $p['name']   = strtoupper(trim($_POST['ci_customer_name'])) ?: $p['name'];
+            if (isset($_POST['ci_age']))           $p['age']    = (int)$_POST['ci_age'];
+            if (isset($_POST['ci_gender']))        $p['gender'] = ($_POST['ci_gender'] === 'MALE') ? 'MALE' : 'FEMALE';
+            if (isset($_POST['ci_symptoms']))      $p['symptoms']   = $_POST['ci_symptoms'];
+            if (isset($_POST['ci_exam_notes']))    $p['exam_notes'] = $_POST['ci_exam_notes'];
+
+            if (isset($_POST['ci_pd'])) {
+                $dsp_pd = trim($_POST['ci_pd']);
+                if ($dsp_pd !== '') $p['pd'] = $dsp_pd;
+            }
+
+            if (isset($_POST['ci_r_sph'])) {
+                $p['r_sph'] = $dspPres($_POST['ci_r_sph']);
+                $p['r_cyl'] = $dspPres($_POST['ci_r_cyl'] ?? '');
+                $p['r_ax']  = (int)($_POST['ci_r_ax'] ?? 0);
+                $p['r_add'] = $dspPres($_POST['ci_r_add'] ?? '');
+                $p['l_sph'] = $dspPres($_POST['ci_l_sph'] ?? '');
+                $p['l_cyl'] = $dspPres($_POST['ci_l_cyl'] ?? '');
+                $p['l_ax']  = (int)($_POST['ci_l_ax'] ?? 0);
+                $p['l_add'] = $dspPres($_POST['ci_l_add'] ?? '');
+            }
+
+            if (isset($_POST['ci_visual_habit']))  $p['visual_habit']  = max(1, min(3, (int)$_POST['ci_visual_habit']));
+            if (isset($_POST['ci_digital_usage'])) $p['digital_usage'] = max(1, min(3, (int)$_POST['ci_digital_usage']));
+
+            if ($p['age'] >= 39) {
+                if (isset($_POST['ci_need_distance']))     $p['need_distance'] = max(0, min(1, (int)$_POST['ci_need_distance']));
+                if (isset($_POST['ci_need_intermediate'])) $p['need_inter']    = max(0, min(1, (int)$_POST['ci_need_intermediate']));
+                if (isset($_POST['ci_need_near']))         $p['need_near']     = max(0, min(1, (int)$_POST['ci_need_near']));
+            }
+        }
+
+        $ds_date   = $p['date'];
+        $ds_month  = (int)date('n', strtotime($ds_date));
+        $ds_year   = (int)date('Y', strtotime($ds_date));
+
+        // Get next invoice number
+        $invRes = mysqli_query($conn, "SELECT MAX(CAST(invoice_number AS UNSIGNED)) AS max_inv FROM customer_examinations WHERE invoice_number REGEXP '^[0-9]+$'");
+        $invRow = mysqli_fetch_assoc($invRes);
+        $ds_inv_num = max(1, (int)($invRow['max_inv'] ?? 0) + 1);
+        $ds_inv_str = str_pad((string)$ds_inv_num, 3, '0', STR_PAD_LEFT);
+
+        $ds_exam_code = 'LZ/EC/000-' . $ds_inv_str . '/' . getRomawiDirect($ds_month) . '/' . $ds_year;
+
+        $ds_name       = mysqli_real_escape_string($conn, $p['name']);
+        $ds_gender     = mysqli_real_escape_string($conn, $p['gender']);
+        $ds_age        = (int)$p['age'];
+        $ds_symptoms   = mysqli_real_escape_string($conn, $p['symptoms']);
+        $ds_r_sph      = mysqli_real_escape_string($conn, $p['r_sph']);
+        $ds_r_cyl      = mysqli_real_escape_string($conn, $p['r_cyl']);
+        $ds_r_ax       = mysqli_real_escape_string($conn, (string)(int)$p['r_ax']);
+        $ds_r_add      = mysqli_real_escape_string($conn, $p['r_add']);
+        $ds_l_sph      = mysqli_real_escape_string($conn, $p['l_sph']);
+        $ds_l_cyl      = mysqli_real_escape_string($conn, $p['l_cyl']);
+        $ds_l_ax       = mysqli_real_escape_string($conn, (string)(int)$p['l_ax']);
+        $ds_l_add      = mysqli_real_escape_string($conn, $p['l_add']);
+        $ds_pd         = mysqli_real_escape_string($conn, $p['pd']);
+        $ds_hab        = (int)$p['visual_habit'];
+        $ds_dig        = (int)$p['digital_usage'];
+        $ds_nd         = (int)$p['need_distance'];
+        $ds_ni         = (int)$p['need_inter'];
+        $ds_nn         = (int)$p['need_near'];
+        $ds_created_by = mysqli_real_escape_string($conn, $p['created_by']);
+        $ds_inv_esc    = mysqli_real_escape_string($conn, $ds_inv_str);
+        $ds_ec_esc     = mysqli_real_escape_string($conn, $ds_exam_code);
+
+        $ds_zero = '0.00'; $ds_zero_ax = '0'; $ds_va = '20/20';
+        $ds_notes = mysqli_real_escape_string($conn, $p['exam_notes'] ?? 'Direct sale — Lens from customer.');
+
+        $stmt = $conn->prepare("INSERT INTO customer_examinations (
+            examination_date, examination_code, customer_name, gender, age, symptoms,
+            old_r_sph, old_r_cyl, old_r_ax, old_r_add,
+            old_l_sph, old_l_cyl, old_l_ax, old_l_add,
+            new_r_sph, new_r_cyl, new_r_ax, new_r_add, new_r_visus,
+            new_l_sph, new_l_cyl, new_l_ax, new_l_add, new_l_visus,
+            pd_dist, invoice_number,
+            visual_habit, digital_usage, ucva_r, ucva_l, exam_notes,
+            need_distance, need_intermediate, need_near,
+            created_by
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+
+        $stmt->bind_param('ssssisssssssssssssssssssssiisssiiis',
+            $ds_date, $ds_exam_code, $ds_name, $ds_gender, $ds_age, $ds_symptoms,
+            $ds_zero, $ds_zero, $ds_zero_ax, $ds_zero,
+            $ds_zero, $ds_zero, $ds_zero_ax, $ds_zero,
+            $ds_r_sph, $ds_r_cyl, $ds_r_ax, $ds_r_add, $ds_va,
+            $ds_l_sph, $ds_l_cyl, $ds_l_ax, $ds_l_add, $ds_va,
+            $ds_pd, $ds_inv_str,
+            $ds_hab, $ds_dig, $ds_va, $ds_va, $ds_notes,
+            $ds_nd, $ds_ni, $ds_nn, $ds_created_by
+        );
+
+        header('Content-Type: application/json');
+        if ($stmt->execute()) {
+            log_activity($conn, 'customer_examinations', $ds_inv_str, 'INSERT', $p['created_by']);
+            unset($_SESSION['ds_pending']); // clear after successful commit
+            echo json_encode(['success'=>true,'inv_str'=>$ds_inv_str,'exam_code'=>$ds_exam_code]);
+        } else {
+            echo json_encode(['success'=>false,'error'=>$stmt->error]);
+        }
+        exit();
+    }
+
+    // ── Update a customer_examinations row that was already committed for a
+    // pending direct sale (e.g. via an early save_direct_sale triggered by
+    // saving a custom frame), applying the latest ci_* field edits — most
+    // importantly the corrected customer name — before the order is saved.
+    if (isset($_POST['update_ds_committed_info'])) {
+        header('Content-Type: application/json');
+
+        $upd_inv = mysqli_real_escape_string($conn, trim($_POST['invoice_number'] ?? ''));
+        if ($upd_inv === '') {
+            echo json_encode(['success'=>false,'error'=>'Missing invoice_number.']);
+            exit();
+        }
+
+        $dspPres = function($val) {
+            $v = trim($val);
+            if ($v === '') return '0.00';
+            if (is_numeric($v) && (float)$v > 0 && strpos($v, '+') === false) $v = '+' . $v;
+            return $v;
+        };
+
+        $sets = [];
+
+        if (isset($_POST['ci_date'])) {
+            $d_raw = trim($_POST['ci_date']);
+            if ($d_raw !== '' && strtotime($d_raw)) {
+                $sets[] = "examination_date = '" . mysqli_real_escape_string($conn, date('Y-m-d', strtotime($d_raw))) . "'";
+            }
+        }
+        if (isset($_POST['ci_customer_name'])) {
+            $name = strtoupper(trim($_POST['ci_customer_name']));
+            if ($name !== '') $sets[] = "customer_name = '" . mysqli_real_escape_string($conn, $name) . "'";
+        }
+        if (isset($_POST['ci_age'])) {
+            $sets[] = "age = " . (int)$_POST['ci_age'];
+        }
+        if (isset($_POST['ci_gender'])) {
+            $gender = ($_POST['ci_gender'] === 'MALE') ? 'MALE' : 'FEMALE';
+            $sets[] = "gender = '" . $gender . "'";
+        }
+        if (isset($_POST['ci_symptoms'])) {
+            $sets[] = "symptoms = '" . mysqli_real_escape_string($conn, $_POST['ci_symptoms']) . "'";
+        }
+        if (isset($_POST['ci_exam_notes'])) {
+            $sets[] = "exam_notes = '" . mysqli_real_escape_string($conn, $_POST['ci_exam_notes']) . "'";
+        }
+        if (isset($_POST['ci_pd'])) {
+            $pd = trim($_POST['ci_pd']);
+            if ($pd !== '') $sets[] = "pd_dist = '" . mysqli_real_escape_string($conn, $pd) . "'";
+        }
+        if (isset($_POST['ci_r_sph'])) {
+            $sets[] = "new_r_sph = '" . mysqli_real_escape_string($conn, $dspPres($_POST['ci_r_sph'])) . "'";
+            $sets[] = "new_r_cyl = '" . mysqli_real_escape_string($conn, $dspPres($_POST['ci_r_cyl'] ?? '')) . "'";
+            $sets[] = "new_r_ax = '"  . mysqli_real_escape_string($conn, (string)(int)($_POST['ci_r_ax'] ?? 0)) . "'";
+            $sets[] = "new_r_add = '" . mysqli_real_escape_string($conn, $dspPres($_POST['ci_r_add'] ?? '')) . "'";
+            $sets[] = "new_l_sph = '" . mysqli_real_escape_string($conn, $dspPres($_POST['ci_l_sph'] ?? '')) . "'";
+            $sets[] = "new_l_cyl = '" . mysqli_real_escape_string($conn, $dspPres($_POST['ci_l_cyl'] ?? '')) . "'";
+            $sets[] = "new_l_ax = '"  . mysqli_real_escape_string($conn, (string)(int)($_POST['ci_l_ax'] ?? 0)) . "'";
+            $sets[] = "new_l_add = '" . mysqli_real_escape_string($conn, $dspPres($_POST['ci_l_add'] ?? '')) . "'";
+        }
+        if (isset($_POST['ci_visual_habit'])) {
+            $sets[] = "visual_habit = " . max(1, min(3, (int)$_POST['ci_visual_habit']));
+        }
+        if (isset($_POST['ci_digital_usage'])) {
+            $sets[] = "digital_usage = " . max(1, min(3, (int)$_POST['ci_digital_usage']));
+        }
+        if (isset($_POST['ci_need_distance'])) {
+            $sets[] = "need_distance = " . max(0, min(1, (int)$_POST['ci_need_distance']));
+        }
+        if (isset($_POST['ci_need_intermediate'])) {
+            $sets[] = "need_intermediate = " . max(0, min(1, (int)$_POST['ci_need_intermediate']));
+        }
+        if (isset($_POST['ci_need_near'])) {
+            $sets[] = "need_near = " . max(0, min(1, (int)$_POST['ci_need_near']));
+        }
+
+        if (empty($sets)) {
+            echo json_encode(['success'=>true]); // nothing to update
+            exit();
+        }
+
+        $sql_upd = "UPDATE customer_examinations SET " . implode(', ', $sets) . " WHERE invoice_number = '$upd_inv'";
+        $ok = mysqli_query($conn, $sql_upd);
+        if ($ok) {
+            log_activity($conn, 'customer_examinations', $upd_inv, 'UPDATE', $_SESSION['username'] ?? 'system');
+            echo json_encode(['success'=>true]);
+        } else {
+            echo json_encode(['success'=>false,'error'=>mysqli_error($conn)]);
+        }
+        exit();
+    }
+
+    // Check 'inv' parameter (manual) or 'code' (from customer_prescription.php)
+    $invoice_num = $_GET['inv'] ?? $_GET['code'] ?? '';
+    $invoice_num = mysqli_real_escape_string($conn, $invoice_num);
+
+    // Purchase type passed from direct-sale form: 'frame' = frame only (no lens/prescription)
+    $inv_purchase_type = ($_GET['ptype'] ?? '') === 'frame' ? 'frame' : 'complete';
+
+    // ── DIRECT SALE: when ?direct=1, build $data from session so main page renders ──
+    $is_direct_pending = (!empty($_GET['direct']) && $_GET['direct'] === '1' && isset($_SESSION['ds_pending']));
+
+    if ($is_direct_pending) {
+        $p = $_SESSION['ds_pending'];
+        // Build a $data array that mirrors customer_examinations so the rest of the page works.
+        $data = [
+            'examination_date'  => $p['date'],
+            'examination_code'  => 'LZ/EC/000-PENDING',
+            'customer_name'     => $p['name'],
+            'gender'            => $p['gender'],
+            'age'               => $p['age'],
+            'symptoms'          => $p['symptoms'],
+            'new_r_sph'         => $p['r_sph'],
+            'new_r_cyl'         => $p['r_cyl'],
+            'new_r_ax'          => $p['r_ax'],
+            'new_r_add'         => $p['r_add'],
+            'new_r_visus'       => '20/20',
+            'new_l_sph'         => $p['l_sph'],
+            'new_l_cyl'         => $p['l_cyl'],
+            'new_l_ax'          => $p['l_ax'],
+            'new_l_add'         => $p['l_add'],
+            'new_l_visus'       => '20/20',
+            'old_r_sph' => '0.00','old_r_cyl' => '0.00','old_r_ax' => '0','old_r_add' => '0.00',
+            'old_l_sph' => '0.00','old_l_cyl' => '0.00','old_l_ax' => '0','old_l_add' => '0.00',
+            'pd_dist'           => $p['pd'],
+            'invoice_number'    => '',
+            'visual_habit'      => $p['visual_habit'],
+            'digital_usage'     => $p['digital_usage'],
+            'ucva_r'            => '20/20',
+            'ucva_l'            => '20/20',
+            'exam_notes'        => $p['exam_notes'] ?? 'Direct sale — Lens from customer.',
+            'need_distance'     => $p['need_distance'],
+            'need_intermediate' => $p['need_inter'],
+            'need_near'         => $p['need_near'],
+            'lens_modification' => 0,
+            'mod_r_sph' => null,'mod_r_cyl' => null,'mod_r_ax' => null,'mod_r_add' => null,
+            'mod_l_sph' => null,'mod_l_cyl' => null,'mod_l_ax' => null,'mod_l_add' => null,
+        ];
+        $invoice_num = ''; // no inv number yet — assigned at save_direct_sale time
+    }
+
+    // ── DIRECT SALE ENTRY FORM (shown when no invoice number is given AND not a pending direct sale) ──
+    if (!$is_direct_pending && (empty($invoice_num) || $invoice_num === '00' || $invoice_num === '000')) {
+        // Show the direct-sale entry form instead of dying
+        $ds_err_msg = !empty($_GET['ds_err']) ? htmlspecialchars($_GET['ds_err']) : '';
+        ?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Direct Sale - <?php echo htmlspecialchars($STORE_NAME); ?></title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .ds-card { background:#25282a; padding:20px; border-radius:15px; border:1px solid #444; box-shadow:inset 5px 5px 10px #1a1c1d; margin-bottom:18px; box-sizing:border-box; }
+        .ds-pres-grid { display:grid; grid-template-columns:1.2fr repeat(4,1fr); gap:8px; align-items:center; width:100%; }
+        .ds-pres-grid.header { font-size:0.7em; color:#888; text-align:center; font-weight:bold; text-transform:uppercase; }
+        .ds-pres-grid input { width:100%; background:#1a1c1d!important; border:1px solid #333!important; border-radius:8px!important; padding:10px 5px!important; color:#00ff88!important; text-align:center; font-family:monospace; font-size:0.9em; }
+        .eye-lbl { font-size:0.8em; font-weight:bold; color:#eee; }
+        .ds-section-label { font-size:0.65em; color:#888; letter-spacing:2px; text-transform:uppercase; font-weight:bold; margin-bottom:10px; }
+
+        /* Collapsible card */
+        .ds-collapsible { cursor:pointer; user-select:none; transition:background 0.2s; }
+        .ds-collapsible .ds-card-header { display:flex; align-items:center; justify-content:space-between; }
+        .ds-collapsible .ds-card-chevron { font-size:0.75em; color:#666; transition:transform 0.25s ease; flex-shrink:0; margin-left:10px; }
+        .ds-collapsible.collapsed .ds-card-chevron { transform:rotate(-90deg); }
+        .ds-collapsible .ds-card-body { overflow:hidden; max-height:2000px; transition:max-height 0.3s ease, opacity 0.25s ease, margin-top 0.3s ease; opacity:1; margin-top:14px; }
+        .ds-collapsible.collapsed .ds-card-body { max-height:0; opacity:0; margin-top:0; }
+        .ds-collapsible .ds-card-summary { font-size:0.75em; color:#00ff88; font-weight:bold; display:none; }
+        .ds-collapsible.collapsed .ds-card-summary { display:block; }
+        .ds-done-row { display:flex; justify-content:center; margin-top:16px; }
+        .ds-done-btn { background:rgba(0,255,136,0.10); border:1px solid rgba(0,255,136,0.5); color:#00ff88; font-family:inherit; font-weight:800; letter-spacing:1.5px; font-size:0.78em; padding:12px 30px; border-radius:12px; cursor:pointer; transition:all 0.2s; }
+        .ds-done-btn:hover { background:rgba(0,255,136,0.18); }
+
+        @media (max-width: 480px) {
+            .ds-card { padding:16px 14px; }
+            .ds-section-label { font-size:0.62em; }
+            .ds-pres-grid { gap:5px; }
+            .ds-pres-grid input { padding:8px 3px!important; font-size:0.8em; }
+        }
+    </style>
+</head>
+<body>
+<div class="main-wrapper">
+    <div class="content-area" style="flex-direction:column">
+        <div class="header-container" style="margin:0 auto;width:100%;">
+            <button class="logout-btn" onclick="window.location.href='logout.php';"><span>Logout</span></button>
+            <div class="brand-section">
+                <div class="logo-box"><img src="<?php echo htmlspecialchars($BRAND_IMAGE_PATH); ?>" alt="Logo" style="height:40px;"></div>
+                <h1 class="company-name"><?php echo htmlspecialchars($STORE_NAME); ?></h1>
+                <p class="company-address"><?php echo htmlspecialchars($STORE_ADDRESS); ?></p>
+            </div>
+        </div>
+
+        <div class="main-card" style="margin:0 auto;width:100%;">
+            <h2 style="text-align:center;margin-bottom:25px;font-weight:700;">DIRECT SALE</h2>
+            <p style="text-align:center;font-size:0.82em;color:#888;margin-bottom:25px;line-height:1.6;">
+                Customer is purchasing directly without a prior examination.<br>
+                Prescription is provided by the customer (sequence code will be <span style="color:#00ff88;">000</span>).
+            </p>
+
+            <?php if ($ds_err_msg): ?>
+            <div style="background:rgba(255,77,77,0.1);border:1px solid #ff4d4d;border-radius:10px;padding:12px 16px;margin-bottom:18px;color:#ff8888;font-size:0.85em;">
+                ⚠ <?php echo htmlspecialchars($ds_err_msg); ?>
+            </div>
+            <?php endif; ?>
+
+            <form method="POST" action="invoice.php">
+                <input type="hidden" name="create_direct_sale" value="1">
+
+                <!-- Sale Date -->
+                <div class="input-group" style="margin-bottom:15px;">
+                    <label>DATE</label>
+                    <input type="date" name="ds_date" id="ds_date"
+                           value="<?php echo date('Y-m-d'); ?>"
+                           style="color-scheme:dark;">
+                </div>
+
+                <!-- PURCHASE TYPE SELECTOR (always visible, not collapsible) -->
+                <input type="hidden" name="ds_purchase_type" id="ds_purchase_type" value="">
+                <div id="ds_purchase_type_section" style="margin-bottom:20px;">
+                    <div style="text-align:center;margin-bottom:14px;">
+                        <div style="font-size:0.65em;color:#888;letter-spacing:2px;text-transform:uppercase;font-weight:bold;margin-bottom:12px;">CUSTOMER PURCHASE TYPE</div>
+                        <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
+                            <button type="button" id="ds_btn_frame_only" onclick="dsPurchaseType('frame')" style="flex:1;max-width:180px;padding:18px 12px;border-radius:16px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.03);color:#888;font-family:inherit;cursor:pointer;transition:all 0.2s;display:flex;flex-direction:column;align-items:center;gap:8px;">
+                                <span style="font-size:2rem;">🕶️</span>
+                                <span style="font-size:0.75em;font-weight:800;letter-spacing:1.5px;">FRAME ONLY</span>
+                                <span style="font-size:0.65em;color:#555;">No lens needed</span>
+                                <div class="led" style="width:8px;height:8px;border-radius:50%;background:#333;transition:all 0.2s;"></div>
+                            </button>
+                            <button type="button" id="ds_btn_complete" onclick="dsPurchaseType('complete')" style="flex:1;max-width:180px;padding:18px 12px;border-radius:16px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.03);color:#888;font-family:inherit;cursor:pointer;transition:all 0.2s;display:flex;flex-direction:column;align-items:center;gap:8px;">
+                                <span style="font-size:2rem;">🔬</span>
+                                <span style="font-size:0.75em;font-weight:800;letter-spacing:1.5px;">FRAME + LENS</span>
+                                <span style="font-size:0.65em;color:#555;">With prescription</span>
+                                <div class="led" style="width:8px;height:8px;border-radius:50%;background:#333;transition:all 0.2s;"></div>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Customer Name -->
+                <div class="ds-card ds-collapsible collapsed" id="ds_card_name" onclick="dsCardToggle(this, event)">
+                    <div class="ds-card-header">
+                        <div class="ds-section-label" style="margin-bottom:0;">CUSTOMER NAME</div>
+                        <span class="ds-card-chevron">▼</span>
+                    </div>
+                    <div class="ds-card-summary" id="ds_summary_name">JOHN DOE</div>
+                    <div class="ds-card-body">
+                        <div class="input-group" style="margin-bottom:0;" onclick="event.stopPropagation()">
+                            <label>CUSTOMER NAME <span style="color:#ff4d4d;">*</span></label>
+                            <input type="text" name="ds_customer_name" id="ds_customer_name" required value="JOHN DOE" placeholder="CUSTOMER NAME"
+                                   style="text-transform:uppercase;" oninput="this.value=this.value.toUpperCase(); dsUpdateNameSummary();">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Gender -->
+                <div class="ds-card ds-collapsible collapsed" id="ds_card_gender" onclick="dsCardToggle(this, event)">
+                    <div class="ds-card-header">
+                        <div class="ds-section-label" style="margin-bottom:0;">GENDER</div>
+                        <span class="ds-card-chevron">▼</span>
+                    </div>
+                    <div class="ds-card-summary" id="ds_summary_gender">FEMALE</div>
+                    <div class="ds-card-body">
+                        <input type="hidden" name="ds_gender" id="ds_gender" value="FEMALE">
+                        <div class="selection-wrapper" onclick="event.stopPropagation()">
+                            <button type="button" class="neu-btn active" value="FEMALE" onclick="dsToggleGender(this)"><span>FEMALE</span><div class="led"></div></button>
+                            <button type="button" class="neu-btn" value="MALE" onclick="dsToggleGender(this)"><span>MALE</span><div class="led"></div></button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Age -->
+                <div class="ds-card ds-collapsible collapsed" id="ds_card_age" onclick="dsCardToggle(this, event)">
+                    <div class="ds-card-header">
+                        <div class="ds-section-label" style="margin-bottom:0;">AGE / BIRTH YEAR</div>
+                        <span class="ds-card-chevron">▼</span>
+                    </div>
+                    <div class="ds-card-summary" id="ds_summary_age">—</div>
+                    <div class="ds-card-body">
+                        <div class="input-group" style="margin-bottom:0;" onclick="event.stopPropagation()">
+                            <label>AGE / BIRTH YEAR</label>
+                            <input type="text" id="ds_age" name="ds_age" inputmode="tel"
+                                   placeholder="e.g. 35 (age) or .95 (birth year)"
+                                   autocomplete="off">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Complete purchase sections (FRAME + LENS only) -->
+                <div id="ds_complete_sections" style="display:none;">
+
+                <!-- Prescription -->
+                <div class="ds-card ds-collapsible collapsed" id="ds_card_pres" onclick="dsCardToggle(this, event)">
+                    <div class="ds-card-header">
+                        <div class="ds-section-label" style="margin-bottom:0;">PRESCRIPTION</div>
+                        <span class="ds-card-chevron">▼</span>
+                    </div>
+                    <div class="ds-card-summary" id="ds_summary_pres">Not set</div>
+                    <div class="ds-card-body" onclick="event.stopPropagation()">
+                    <div class="ds-pres-grid header" style="margin-bottom:6px;">
+                        <div>EYE</div><div>SPH</div><div>CYL</div><div>AXIS</div><div>ADD</div>
+                    </div>
+                    <div class="ds-pres-grid" style="margin-bottom:8px;">
+                        <div class="eye-lbl">RIGHT</div>
+                        <input type="text" inputmode="tel" name="ds_r_sph" placeholder="0.00">
+                        <input type="text" inputmode="tel" name="ds_r_cyl" placeholder="0.00">
+                        <input type="text" inputmode="tel" name="ds_r_ax"  placeholder="0">
+                        <input type="text" inputmode="tel" name="ds_r_add" placeholder="0.00" id="ds_r_add">
+                    </div>
+                    <div class="ds-pres-grid">
+                        <div class="eye-lbl">LEFT</div>
+                        <input type="text" inputmode="tel" name="ds_l_sph" placeholder="0.00">
+                        <input type="text" inputmode="tel" name="ds_l_cyl" placeholder="0.00">
+                        <input type="text" inputmode="tel" name="ds_l_ax"  placeholder="0">
+                        <input type="text" inputmode="tel" name="ds_l_add" placeholder="0.00" id="ds_l_add">
+                    </div>
+                    <div style="margin-top:16px;display:flex;justify-content:center;">
+                        <div class="input-group" style="width:200px;">
+                            <label style="font-size:0.75em;color:#888;text-align:center;display:block;">PD (PUPILLARY DISTANCE)</label>
+                            <input type="text" inputmode="tel" name="ds_pd" id="ds_pd" placeholder="62" style="background:#1a1c1d;border:1px solid #333;color:#00ff88;border-radius:8px;padding:10px;width:100%;text-align:center;font-family:monospace;">
+                        </div>
+                    </div>
+                    <div class="ds-done-row">
+                        <button type="button" class="ds-done-btn" onclick="dsUpdatePresSummary(); dsSectionDone('ds_card_pres', 'ds_card_visual')">DONE</button>
+                    </div>
+                    </div>
+                </div>
+
+                <!-- Visual Habit -->
+                <div class="ds-card ds-collapsible collapsed" id="ds_card_visual" onclick="dsCardToggle(this, event)">
+                    <div class="ds-card-header">
+                        <div class="ds-section-label" style="margin-bottom:0;">VISUAL HABITS</div>
+                        <span class="ds-card-chevron">▼</span>
+                    </div>
+                    <div class="ds-card-summary" id="ds_summary_visual">INDOOR</div>
+                    <div class="ds-card-body">
+                        <input type="hidden" name="ds_visual_habit" id="ds_visual_habit" value="1">
+                        <div class="selection-wrapper" onclick="event.stopPropagation()">
+                            <button type="button" class="neu-btn active" value="1" onclick="dsToggleBtn(this,'ds_visual_habit'); dsSectionDone('ds_card_visual','ds_card_digital');"><span>INDOOR</span><div class="led"></div></button>
+                            <button type="button" class="neu-btn" value="2" onclick="dsToggleBtn(this,'ds_visual_habit'); dsSectionDone('ds_card_visual','ds_card_digital');"><span>OUTDOOR</span><div class="led"></div></button>
+                            <button type="button" class="neu-btn" value="3" onclick="dsToggleBtn(this,'ds_visual_habit'); dsSectionDone('ds_card_visual','ds_card_digital');"><span>BOTH</span><div class="led"></div></button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Digital Device Usage -->
+                <div class="ds-card ds-collapsible collapsed" id="ds_card_digital" onclick="dsCardToggle(this, event)">
+                    <div class="ds-card-header">
+                        <div class="ds-section-label" style="margin-bottom:0;">DIGITAL DEVICE USAGE</div>
+                        <span class="ds-card-chevron">▼</span>
+                    </div>
+                    <div class="ds-card-summary" id="ds_summary_digital">LOW (&lt; 2H)</div>
+                    <div class="ds-card-body">
+                        <input type="hidden" name="ds_digital_usage" id="ds_digital_usage" value="1">
+                        <div class="selection-wrapper" onclick="event.stopPropagation()">
+                            <button type="button" class="neu-btn active" value="1" onclick="dsToggleBtn(this,'ds_digital_usage'); dsSectionDone('ds_card_digital','ds_card_symptoms');"><span>LOW<br>(&lt; 2H)</span><div class="led"></div></button>
+                            <button type="button" class="neu-btn" value="2" onclick="dsToggleBtn(this,'ds_digital_usage'); dsSectionDone('ds_card_digital','ds_card_symptoms');"><span>MODERATE<br>(2H-5H)</span><div class="led"></div></button>
+                            <button type="button" class="neu-btn" value="3" onclick="dsToggleBtn(this,'ds_digital_usage'); dsSectionDone('ds_card_digital','ds_card_symptoms');"><span>HIGH<br>(&gt; 5H)</span><div class="led"></div></button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Symptoms -->
+                <div class="ds-card ds-collapsible collapsed" id="ds_card_symptoms" onclick="dsCardToggle(this, event)">
+                    <div class="ds-card-header">
+                        <div class="ds-section-label" style="margin-bottom:0;">SYMPTOMS / COMPLAINTS <span style="color:#444;font-weight:normal;">(optional)</span></div>
+                        <span class="ds-card-chevron">▼</span>
+                    </div>
+                    <div class="ds-card-summary" id="ds_summary_symptoms">None selected</div>
+                    <div class="ds-card-body" onclick="event.stopPropagation()">
+                    <input type="hidden" name="ds_symptoms_json" id="ds_symptoms_json" value="[]">
+                    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:10px;">
+                        <button type="button" class="neu-btn" onclick="dsToggleSymptom(this,'HEADACHE')"><span>HEADACHE</span><div class="led"></div></button>
+                        <button type="button" class="neu-btn" onclick="dsToggleSymptom(this,'EYE STRAIN')"><span>EYE STRAIN</span><div class="led"></div></button>
+                        <button type="button" class="neu-btn" onclick="dsToggleSymptom(this,'HEADLIGHT GLARE')"><span>HEADLIGHT GLARE</span><div class="led"></div></button>
+                        <button type="button" class="neu-btn" onclick="dsToggleSymptom(this,'CATARACT')"><span>CATARACT</span><div class="led"></div></button>
+                        <button type="button" class="neu-btn" style="grid-column:1/-1;" onclick="dsToggleSymptom(this,'DRIVING')"><span>FREQUENT DRIVING</span><div class="led"></div></button>
+                    </div>
+                    <textarea name="ds_other_symptoms" id="ds_other_symptoms" placeholder="OTHER COMPLAINTS..." oninput="this.value=this.value.toUpperCase()" style="width:100%;background:#1a1c1d;color:white;border:1px solid #444;padding:10px;border-radius:10px;font-family:monospace;resize:vertical;min-height:60px;box-sizing:border-box;"></textarea>
+                    <div class="ds-done-row">
+                        <button type="button" class="ds-done-btn" onclick="dsSectionDone('ds_card_symptoms', 'ds_vision_need_card')">DONE</button>
+                    </div>
+                    </div>
+                </div>
+
+                <!-- Vision Need (auto-show if age >= 39) -->
+                <div id="ds_vision_need_section" style="display:none;margin-bottom:15px;">
+                <div class="ds-card ds-collapsible collapsed" id="ds_vision_need_card" onclick="dsCardToggle(this, event)">
+                    <div class="ds-card-header">
+                        <div style="display:flex;align-items:center;gap:8px;">
+                            <span style="color:#ffcc00;font-size:0.78em;font-weight:bold;letter-spacing:2px;">⚑ VISION NEED</span>
+                            <span style="background:#3a3200;border:1px solid rgba(255,204,0,0.4);color:#ffcc00;font-size:0.65em;padding:2px 8px;border-radius:20px;">AGE ≥ 39</span>
+                        </div>
+                        <span class="ds-card-chevron">▼</span>
+                    </div>
+                    <div class="ds-card-summary" id="ds_summary_vision">DISTANCE, NEAR</div>
+                    <div class="ds-card-body" onclick="event.stopPropagation()">
+                    <p style="text-align:center;font-size:0.72em;color:#888;margin:0 0 12px 0;">Select required vision needs (multiple selection allowed)</p>
+                    <input type="hidden" name="ds_need_distance"     id="ds_need_distance"     value="0">
+                    <input type="hidden" name="ds_need_intermediate" id="ds_need_intermediate" value="0">
+                    <input type="hidden" name="ds_need_near"         id="ds_need_near"         value="0">
+                    <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
+                        <button type="button" class="neu-btn" id="ds_btn_dist"  onclick="dsToggleVisionNeed(this,'ds_need_distance')"    style="flex:1;min-width:90px;flex-direction:column;align-items:center;gap:4px;padding:12px 8px;"><span style="font-size:1.3em;">🔭</span><span>DISTANCE</span><div class="led"></div></button>
+                        <button type="button" class="neu-btn" id="ds_btn_inter" onclick="dsToggleVisionNeed(this,'ds_need_intermediate')" style="flex:1;min-width:90px;flex-direction:column;align-items:center;gap:4px;padding:12px 8px;"><span style="font-size:1.3em;">🖥️</span><span>INTERMEDIATE</span><div class="led"></div></button>
+                        <button type="button" class="neu-btn" id="ds_btn_near"  onclick="dsToggleVisionNeed(this,'ds_need_near')"         style="flex:1;min-width:90px;flex-direction:column;align-items:center;gap:4px;padding:12px 8px;"><span style="font-size:1.3em;">📖</span><span>NEAR</span><div class="led"></div></button>
+                    </div>
+                    <div class="ds-done-row">
+                        <button type="button" class="ds-done-btn" onclick="dsSectionDone('ds_vision_need_card', null)">DONE</button>
+                    </div>
+                    </div>
+                </div>
+                </div><!-- /ds_vision_need_section -->
+
+                </div><!-- /ds_complete_sections -->
+
+                <div id="ds_submit_btn" style="display:none;margin-top:25px;justify-content:center;">
+                    <button type="submit" class="submit-main" style="width:100%;max-width:400px;">
+                        PROCEED TO INVOICE →
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="btn-group">
+        <button type="button" class="back-main" onclick="window.location.href='customer.php'">BACK TO PREVIOUS PAGE</button>
+    </div>
+
+    <footer class="footer-container">
+        <p class="footer-text"><?php echo $COPYRIGHT_FOOTER; ?></p>
+    </footer>
+</div>
+<script>
+function dsToggleGender(btn) {
+    btn.closest('.selection-wrapper').querySelectorAll('.neu-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    var val = btn.getAttribute('value');
+    document.getElementById('ds_gender').value = val;
+    document.getElementById('ds_summary_gender').textContent = val;
+    dsSectionDone('ds_card_gender', 'ds_card_age');
+}
+
+// Age: supports direct input (35) or birth year with dot (.95 / .1995)
+// On blur: convert to calculated age and display, same logic as customer_prescription
+function calculateAddByAge(age) {
+    if (age < 40) return '';
+    if (age >= 40 && age <= 42) return '+1.00';
+    if (age >= 43 && age <= 44) return '+1.25';
+    if (age >= 45 && age <= 47) return '+1.50';
+    if (age >= 48 && age <= 49) return '+1.75';
+    if (age >= 50 && age <= 52) return '+2.00';
+    if (age >= 53 && age <= 54) return '+2.25';
+    if (age >= 55 && age <= 57) return '+2.50';
+    if (age >= 58 && age <= 59) return '+2.75';
+    if (age > 60) return '+3.00';
+    return '';
+}
+
+document.getElementById('ds_age').addEventListener('blur', function() {
+    var val = this.value.trim();
+    if (!val) return;
+    var currentYear = 2026;
+    var age = 0;
+    if (val.includes('.')) {
+        var yearInput = val.replace('.', '');
+        var yearVal   = parseInt(yearInput);
+        var fullYear  = yearInput.length <= 2
+            ? (yearVal > parseInt(String(currentYear).slice(-2)) ? 1900 + yearVal : 2000 + yearVal)
+            : yearVal;
+        age = currentYear - fullYear;
+    } else {
+        age = parseInt(val) || 0;
+    }
+    if (!isNaN(age) && age > 0) {
+        this.value = age;
+        document.getElementById('ds_summary_age').textContent = age;
+        // Auto-fill ADD if age >= 40 AND purchase type is complete (frame+lens)
+        var purchaseType = document.getElementById('ds_purchase_type').value;
+        if (purchaseType === 'complete') {
+            var rAdd = document.getElementById('ds_r_add');
+            var lAdd = document.getElementById('ds_l_add');
+            var suggestedAdd = calculateAddByAge(age);
+            if (rAdd && lAdd) {
+                // Always update ADD when age changes (suggestedAdd empty = age < 40, reset to 0.00)
+                rAdd.value = suggestedAdd || '0.00';
+                lAdd.value = suggestedAdd || '0.00';
+                dsPdUpdate();
+            }
+        }
+        // Show/hide vision need section
+        dsUpdateVisionNeed(age);
+        // Auto-advance: complete -> Prescription card, frame -> collapse only
+        if (purchaseType === 'complete') {
+            dsSectionDone('ds_card_age', 'ds_card_pres');
+        } else {
+            dsSectionDone('ds_card_age', null);
+        }
+    }
+});
+
+// Sync R-ADD → L-ADD
+document.getElementById('ds_r_add').addEventListener('input', function() {
+    document.getElementById('ds_l_add').value = this.value;
+});
+// Auto-update PD placeholder based on ADD
+function dsPdUpdate() {
+    var rAdd = document.getElementById('ds_r_add').value.trim();
+    var lAdd = document.getElementById('ds_l_add').value.trim();
+    var hasAdd = (rAdd !== '' && rAdd !== '0.00') || (lAdd !== '' && lAdd !== '0.00');
+    document.getElementById('ds_pd').placeholder = hasAdd ? '62/60' : '62';
+}
+document.getElementById('ds_r_add').addEventListener('blur', dsPdUpdate);
+document.getElementById('ds_l_add').addEventListener('blur', dsPdUpdate);
+
+// Purchase type selector
+// frame only: show submit immediately, all detail sections use defaults
+// complete  : show prescription + visual habit + digital + symptoms + vision need
+function dsPurchaseType(type) {
+    document.getElementById('ds_purchase_type').value = type;
+
+    var btnFrame    = document.getElementById('ds_btn_frame_only');
+    var btnComplete = document.getElementById('ds_btn_complete');
+    var activeColor   = '#00ff88';
+    var inactiveColor = '#888';
+
+    // Reset both buttons
+    [btnFrame, btnComplete].forEach(function(b) {
+        b.style.borderColor = 'rgba(255,255,255,0.12)';
+        b.style.background  = 'rgba(255,255,255,0.03)';
+        b.style.color       = inactiveColor;
+        b.querySelector('.led').style.background = '#333';
+        b.querySelector('.led').style.boxShadow  = 'none';
+    });
+
+    // Highlight selected button
+    var active = (type === 'frame') ? btnFrame : btnComplete;
+    active.style.borderColor = 'rgba(0,255,136,0.6)';
+    active.style.background  = 'rgba(0,255,136,0.10)';
+    active.style.color       = activeColor;
+    active.querySelector('.led').style.background = '#00ff88';
+    active.querySelector('.led').style.boxShadow  = '0 0 8px #00ff88';
+
+    if (type === 'frame') {
+        // Frame only: hide all complete sections, show submit directly
+        document.getElementById('ds_complete_sections').style.display = 'none';
+    } else {
+        // Complete: show all detail sections
+        document.getElementById('ds_complete_sections').style.display = 'block';
+        // Re-check vision need based on current age
+        var ageVal = parseInt(document.getElementById('ds_age').value) || 0;
+        if (ageVal >= 39) dsUpdateVisionNeed(ageVal);
+    }
+
+    // Always show submit button once type is chosen
+    document.getElementById('ds_submit_btn').style.display = 'flex';
+
+    // Auto-expand the first card (Customer Name) once a purchase type is chosen
+    var nameCard = document.getElementById('ds_card_name');
+    if (nameCard && nameCard.classList.contains('collapsed')) {
+        dsExpandCard(nameCard);
+    }
+}
+
+// Generic toggle for single-select button groups (visual habit, digital usage)
+function dsToggleBtn(btn, hiddenId) {
+    btn.closest('.selection-wrapper').querySelectorAll('.neu-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById(hiddenId).value = btn.getAttribute('value');
+}
+
+// Symptoms multi-select
+var dsSelectedSymptoms = [];
+function dsToggleSymptom(btn, value) {
+    btn.classList.toggle('active');
+    if (btn.classList.contains('active')) {
+        dsSelectedSymptoms.push(value);
+    } else {
+        dsSelectedSymptoms = dsSelectedSymptoms.filter(function(s) { return s !== value; });
+    }
+    document.getElementById('ds_symptoms_json').value = JSON.stringify(dsSelectedSymptoms);
+    dsUpdateSymptomsSummary();
+}
+
+// Vision need toggle (multi-select, each tied to a hidden 0/1 field)
+function dsToggleVisionNeed(btn, hiddenId) {
+    btn.classList.toggle('active');
+    document.getElementById(hiddenId).value = btn.classList.contains('active') ? '1' : '0';
+    dsUpdateVisionSummary();
+}
+
+// Show / hide vision need section based on age (same rule: age >= 39)
+function dsUpdateVisionNeed(age) {
+    var sec = document.getElementById('ds_vision_need_section');
+    if (!sec) return;
+    if (age >= 39) {
+        sec.style.display = 'block';
+        // Auto-activate Distance + Near as defaults
+        var distBtn = document.getElementById('ds_btn_dist');
+        var nearBtn = document.getElementById('ds_btn_near');
+        if (distBtn && !distBtn.classList.contains('active')) {
+            distBtn.classList.add('active');
+            document.getElementById('ds_need_distance').value = '1';
+        }
+        if (nearBtn && !nearBtn.classList.contains('active')) {
+            nearBtn.classList.add('active');
+            document.getElementById('ds_need_near').value = '1';
+        }
+    } else {
+        sec.style.display = 'none';
+        ['ds_btn_dist','ds_btn_inter','ds_btn_near'].forEach(function(id) {
+            var b = document.getElementById(id);
+            if (b) b.classList.remove('active');
+        });
+        ['ds_need_distance','ds_need_intermediate','ds_need_near'].forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el) el.value = '0';
+        });
+    }
+    dsUpdateVisionSummary();
+}
+
+// ── Collapsible card helpers ─────────────────────────────────────
+function dsExpandCard(card) {
+    card.classList.remove('collapsed');
+}
+function dsCollapseCard(card) {
+    card.classList.add('collapsed');
+}
+// Click anywhere on a card header/summary toggles expand/collapse
+function dsCardToggle(card, evt) {
+    if (evt.target.closest('.ds-card-body')) return; // clicks inside body handled separately
+    card.classList.toggle('collapsed');
+}
+
+// Mark current card done: collapse it and (optionally) expand the next card
+function dsSectionDone(currentId, nextId) {
+    var current = document.getElementById(currentId);
+    if (current) dsCollapseCard(current);
+    if (nextId) {
+        var next = document.getElementById(nextId);
+        if (next) dsExpandCard(next);
+    }
+}
+
+// ── Live summary updaters ────────────────────────────────────────
+function dsUpdateNameSummary() {
+    var val = document.getElementById('ds_customer_name').value.trim();
+    document.getElementById('ds_summary_name').textContent = val || 'JOHN DOE';
+}
+
+function dsUpdateSymptomsSummary() {
+    var el = document.getElementById('ds_summary_symptoms');
+    if (!el) return;
+    el.textContent = dsSelectedSymptoms.length ? dsSelectedSymptoms.join(', ') : 'None selected';
+}
+
+function dsUpdateVisionSummary() {
+    var el = document.getElementById('ds_summary_vision');
+    if (!el) return;
+    var labels = [];
+    if (document.getElementById('ds_need_distance').value === '1') labels.push('DISTANCE');
+    if (document.getElementById('ds_need_intermediate').value === '1') labels.push('INTERMEDIATE');
+    if (document.getElementById('ds_need_near').value === '1') labels.push('NEAR');
+    el.textContent = labels.length ? labels.join(', ') : 'None selected';
+}
+
+function dsUpdatePresSummary() {
+    var el = document.getElementById('ds_summary_pres');
+    if (!el) return;
+    var rSph = document.querySelector('[name="ds_r_sph"]').value.trim();
+    var lSph = document.querySelector('[name="ds_l_sph"]').value.trim();
+    if (rSph || lSph) {
+        el.textContent = 'OD ' + (rSph || '0.00') + ' / OS ' + (lSph || '0.00');
+    } else {
+        el.textContent = 'Not set';
+    }
+}
+
+// Initial summary sync on page load
+dsUpdateNameSummary();
+dsUpdateSymptomsSummary();
+dsUpdateVisionSummary();
+</script>
+</body>
+</html>
+        <?php
+        exit();
+    }
+
+    // Query customer_examinations — skip when direct pending session already built $data above
+    if (!$is_direct_pending) {
+        $query = "SELECT ce.*, 
+                pm.od_sph AS mod_r_sph, pm.od_cyl AS mod_r_cyl, pm.od_axis AS mod_r_ax, pm.od_add AS mod_r_add,
+                pm.os_sph AS mod_l_sph, pm.os_cyl AS mod_l_cyl, pm.os_axis AS mod_l_ax, pm.os_add AS mod_l_add
+                FROM customer_examinations ce
+                LEFT JOIN prescription_modifications pm ON ce.invoice_number = pm.invoice_number
+                WHERE ce.invoice_number = '$invoice_num' 
+                LIMIT 1";
+
+        $result = mysqli_query($conn, $query);
+        $data = mysqli_fetch_assoc($result);
+
+        if (!$data) {
+            die("
+                <div style='background:#1a1c1d; color:#ff4d4d; height:100vh; display:flex; align-items:center; justify-content:center; font-family:sans-serif;'>
+                    Invoice data for <b>$invoice_num</b> was not found in the database.
+                </div>
+            ");
+        }
+    }
+
+    // ============================================================
+    // LENS RECOMMENDATION ENGINE v4
+    // Step 1 — check Rx fits limits (HARD FILTER)
+    // Step 2 — score by habits / digital / symptoms / design
+    // Step 3 — sort: stock first (within same score tier), then lab
+    // Step 4 — show top 5, expand button for rest
+    // ============================================================
+
+    // ── Active prescription ───────────────────────────────────
+    $lr_rMod = ($data['lens_modification'] == 1);
+
+    // lrValRaw: convert a single raw DB value to diopters float
+    // DB may store as "-900" (shorthand) or "-9.00" (full)
+    function lrValRaw($raw) {
+        $val = floatval(str_replace('+', '', $raw ?? '0'));
+        if (abs($val) >= 10) $val /= 100.0;
+        return round($val, 2);
+    }
+
+    // ── ORIGINAL Rx (always from customer_examinations) ──────
+    $lr_orig_r_sph = lrValRaw($data['new_r_sph'] ?? '0');
+    $lr_orig_r_cyl = lrValRaw($data['new_r_cyl'] ?? '0');
+    $lr_orig_r_add = lrValRaw($data['new_r_add'] ?? '0');
+    $lr_orig_l_sph = lrValRaw($data['new_l_sph'] ?? '0');
+    $lr_orig_l_cyl = lrValRaw($data['new_l_cyl'] ?? '0');
+    $lr_orig_l_add = lrValRaw($data['new_l_add'] ?? '0');
+
+    // Lens recommendation is only meaningful when at least one prescription value is non-zero.
+    // If all values are 0 (frame-only purchase), hide the section entirely.
+    $lr_hasPrescription = (
+        abs($lr_orig_r_sph) > 0.01 || abs($lr_orig_r_cyl) > 0.01 || abs($lr_orig_r_add) > 0.01 ||
+        abs($lr_orig_l_sph) > 0.01 || abs($lr_orig_l_cyl) > 0.01 || abs($lr_orig_l_add) > 0.01
+    );
+
+    // ── MODIFIED Rx (from prescription_modifications if exists) ──
+    $lr_hasModData  = ($data['lens_modification'] == 1
+                       && isset($data['mod_r_sph']) && $data['mod_r_sph'] !== '');
+    $lr_mod_r_sph  = $lr_hasModData ? lrValRaw($data['mod_r_sph']) : $lr_orig_r_sph;
+    $lr_mod_r_cyl  = $lr_hasModData ? lrValRaw($data['mod_r_cyl']) : $lr_orig_r_cyl;
+    $lr_mod_r_add  = $lr_hasModData ? lrValRaw($data['mod_r_add']) : $lr_orig_r_add;
+    $lr_mod_l_sph  = $lr_hasModData ? lrValRaw($data['mod_l_sph']) : $lr_orig_l_sph;
+    $lr_mod_l_cyl  = $lr_hasModData ? lrValRaw($data['mod_l_cyl']) : $lr_orig_l_cyl;
+    $lr_mod_l_add  = $lr_hasModData ? lrValRaw($data['mod_l_add']) : $lr_orig_l_add;
+
+    // ── Active Rx (used by legacy code below — determined by toggle state at page load) ──
+    // For initial render: if lens_modification==1 show modified, else show original.
+    // Both sets are rendered and the JS toggle swaps visibility.
+    $lr_r_sph = $lr_rMod ? $lr_mod_r_sph : $lr_orig_r_sph;
+    $lr_r_cyl = $lr_rMod ? $lr_mod_r_cyl : $lr_orig_r_cyl;
+    $lr_r_add = $lr_rMod ? $lr_mod_r_add : $lr_orig_r_add;
+    $lr_l_sph = $lr_rMod ? $lr_mod_l_sph : $lr_orig_l_sph;
+    $lr_l_cyl = $lr_rMod ? $lr_mod_l_cyl : $lr_orig_l_cyl;
+    $lr_l_add = $lr_rMod ? $lr_mod_l_add : $lr_orig_l_add;
+
+    // ── Patient context ───────────────────────────────────────
+    $lr_age     = (int)($data['age']           ?? 0);
+    $lr_habit   = (int)($data['visual_habit']  ?? 1); // 1=indoor 2=outdoor 3=both
+    $lr_digital = (int)($data['digital_usage'] ?? 1); // 1=low 2=moderate 3=high
+    $lr_txt     = strtolower(($data['symptoms'] ?? '') . ' ' . ($data['exam_notes'] ?? ''));
+
+    // Vision need (only populated when age >= 39)
+    $lr_needDist  = (int)($data['need_distance']     ?? 0);
+    $lr_needInter = (int)($data['need_intermediate'] ?? 0);
+    $lr_needNear  = (int)($data['need_near']         ?? 0);
+
+    // ── Derived Rx metrics ────────────────────────────────────
+    $lr_maxSph = max(abs($lr_r_sph), abs($lr_l_sph));
+    $lr_maxCyl = max(abs($lr_r_cyl), abs($lr_l_cyl));
+    $lr_maxAdd = max(abs($lr_r_add), abs($lr_l_add));
+    $lr_seR    = abs($lr_r_sph) + abs($lr_r_cyl) / 2.0;
+    $lr_seL    = abs($lr_l_sph) + abs($lr_l_cyl) / 2.0;
+    $lr_maxSE  = max($lr_seR, $lr_seL);
+
+    // ── Power flags ───────────────────────────────────────────
+    $lr_isHighPow     = ($lr_maxSE >= 4.0 || $lr_maxCyl >= 2.0);
+    $lr_isVeryHighPow = ($lr_maxSE >= 6.0 || $lr_maxCyl >= 3.0);
+
+    // Presbyopia: ADD present AND age ≥ 39
+    $lr_isPresbyopia = ($lr_maxAdd >= 0.75 && $lr_age >= 39);
+
+    // ── Symptom flags ─────────────────────────────────────────
+    $lr_hasGlare        = (bool)preg_match('/glare|silau/', $lr_txt);
+    $lr_hasHeadlightGlare = (bool)preg_match('/headlight.?glare|silau.?lampu/', $lr_txt);
+    $lr_hasEyeStrain = (bool)preg_match('/eye.?strain|mata.?lelah|\blelah\b/', $lr_txt);
+    $lr_hasHeadache  = (bool)preg_match('/headache|sakit.?kepala/', $lr_txt);
+    $lr_hasDM        = (strpos($lr_txt, 'diabetes')     !== false);
+    $lr_hasHT        = (strpos($lr_txt, 'hypertension') !== false);
+    $lr_hasDryEye    = (bool)preg_match('/dry.?eye|mata.?kering/', $lr_txt);
+    $lr_hasDriving   = (bool)preg_match('/bawa.?mobil|mengemudi|driving|berkendara/', $lr_txt);
+    $lr_hasImpact    = (bool)preg_match('/olahraga|sport|bentur|impact/', $lr_txt);
+
+    // ── Load catalog ──────────────────────────────────────────
+    $lr_catalog  = [];
+    $lr_jsonPath = __DIR__ . '/data_json/lense_prices.json';
+    if (is_readable($lr_jsonPath)) {
+        $raw = @file_get_contents($lr_jsonPath);
+        if ($raw !== false) $lr_catalog = json_decode($raw, true) ?? [];
+    }
+
+    // ── Presbyopia design type ────────────────────────────────
+    // Priority: explicit vision_need > symptom keywords > habits
+    // Returns: 'all_distance' | 'dynamic' | 'far_near' | 'near' | 'far_only'
+    function lr_presbyDesign($needDist, $needInter, $needNear, $habit, $digital, $txt) {
+        $anySet = ($needDist || $needInter || $needNear);
+        if ($anySet) {
+            if ( $needDist &&  $needInter &&  $needNear) return 'all_distance';
+            if ( $needDist &&  $needInter && !$needNear) return 'dynamic';
+            if ( $needDist && !$needInter &&  $needNear) return 'far_near';
+            if (!$needDist &&  $needInter &&  $needNear) return 'near';
+            if (!$needDist && !$needInter &&  $needNear) return 'near';
+            if ( $needDist && !$needInter && !$needNear) return 'far_only'; // SV only
+            if (!$needDist &&  $needInter && !$needNear) return 'dynamic';
+        }
+        if (preg_match('/baca|membaca|jahit|sewing|close.?work|near.?work/', $txt)) return 'near';
+        if (preg_match('/mengemudi|bawa.?mobil|driving|berkendara/', $txt))          return 'far_near';
+        if ($habit == 3 || ($digital >= 2 && $habit >= 2)) return 'all_distance';
+        if ($habit == 2) return 'far_near';
+        return 'far_near';
+    }
+    $lr_presbyType  = $lr_isPresbyopia
+        ? lr_presbyDesign($lr_needDist, $lr_needInter, $lr_needNear, $lr_habit, $lr_digital, $lr_txt)
+        : '';
+    $lr_farOnlySV   = ($lr_isPresbyopia && $lr_presbyType === 'far_only');
+
+    // ============================================================
+    // STEP 1 — Rx fit check
+    // JSON limits are in 1/100 D integers (e.g. -800 = -8.00 D).
+    // Prescription values are floats in diopters (e.g. -9.00 D).
+    //
+    // Special cases for SPH:
+    //   sph_from and sph_to define the accepted sphere range (inclusive).
+    //   The order may be reversed in the JSON (e.g. sph_from=+600, sph_to=-200);
+    //   min/max are derived automatically. Both eyes must fall within the range.
+    //   sph_from=0 AND sph_to=0 → no sphere restriction.
+    //
+    // Special cases for CYL:
+    //   cyl_from=0, cyl_to=0  → lens accepts NO cylinder (plano-only)
+    //   cyl_from=-25, cyl_to=-200 → lens accepts CYL -0.25 to -2.00
+    //
+    // ADD range check applies to PROGRESSIVE, KRYPTOK, and FLATTOP lenses.
+    // ============================================================
+    function lr_rxFits($r_sph, $r_cyl, $l_sph, $l_cyl, $r_add, $l_add, $lim) {
+        $maxC   = max(abs($r_cyl), abs($l_cyl));
+        $maxAdd = max(abs($r_add), abs($l_add));
+
+        // ── Sphere range check ────────────────────────────────
+        // Both eyes must fall within [sph_from, sph_to] (order may be reversed in JSON).
+        // sph_from=0 AND sph_to=0 → no restriction.
+        $rawFrom = isset($lim['sph_from']) ? (int)$lim['sph_from'] : 0;
+        $rawTo   = isset($lim['sph_to'])   ? (int)$lim['sph_to']   : 0;
+        if ($rawFrom != 0 || $rawTo != 0) {
+            $limSphMin = min($rawFrom, $rawTo) / 100.0;
+            $limSphMax = max($rawFrom, $rawTo) / 100.0;
+            if ($r_sph < $limSphMin || $r_sph > $limSphMax) return false;
+            if ($l_sph < $limSphMin || $l_sph > $limSphMax) return false;
+        }
+
+        // ── Cylinder check ────────────────────────────────────
+        // cyl_from=0 AND cyl_to=0 → lens only accepts plano (no CYL at all)
+        // cyl_to != 0              → lens accepts CYL up to abs(cyl_to)/100
+        if ($lim['cyl_from'] == 0 && $lim['cyl_to'] == 0) {
+            // Plano-only lens: reject any cylinder
+            if ($maxC > 0.0) return false;
+        } elseif ($lim['cyl_to'] != 0) {
+            $limCyl = abs($lim['cyl_to']) / 100.0;
+            if ($maxC > $limCyl) return false;
+        }
+
+        // ── Combined SPH+CYL check ────────────────────────────
+        // comb_max=0 means no restriction
+        $limComb = ($lim['comb_max'] != 0) ? abs($lim['comb_max']) / 100.0 : 0.0;
+        $maxS    = max(abs($r_sph), abs($l_sph));
+        if ($limComb > 0.0 && ($maxS + $maxC) > $limComb) return false;
+
+        // ── ADD range check ───────────────────────────────────
+        // Applies to PROGRESSIVE, KRYPTOK, and FLATTOP lenses.
+        // add_to=0 means this lens has no ADD requirement.
+        if ($lim['add_to'] != 0) {
+            $limAddMin = abs($lim['add_from']) / 100.0;
+            $limAddMax = abs($lim['add_to'])   / 100.0;
+            if ($maxAdd < $limAddMin || $maxAdd > $limAddMax) return false;
+        }
+        return true;
+    }
+
+    // ── Lens category gate ────────────────────────────────────
+    // Returns true when the lens category is allowed for this patient.
+    function lr_catAllowed($category, $isPresby, $farOnlySV) {
+        $cat    = strtoupper(trim($category));
+        $isSV   = ($cat === 'SINGLE VISION');
+        $isProg = in_array($cat, ['PROGRESSIVE', 'KRYPTOK', 'FLATTOP']);
+        if ($farOnlySV) return $isSV;          // presbyopia but only needs far → SV
+        if ($isPresby)  return $isProg;         // presbyopia → progressive only
+        return $isSV;                           // normal → SV only
+    }
+
+    // ============================================================
+    // STEP 2 — Relevance score (lifestyle + symptoms + design)
+    // Higher = better match. Stock/lab weighting done in step 3.
+    // ============================================================
+    function lr_score($features, $category, $isPresby, $presbyType, $farOnlySV,
+                      $habit, $digital, $maxSE, $maxCyl, $age,
+                      $hasGlare, $hasEyeStrain, $hasHeadache, $hasDryEye,
+                      $hasDriving, $hasImpact, $hasHeadlightGlare) {
+        $s   = 0;
+        $cat = strtoupper(trim($category));
+
+        // ── Progressive design match ─────────────────────────
+        if ($isPresby && !$farOnlySV) {
+            $hasAllDist = in_array('ALL-DISTANCE PROGRESSIVE', $features);
+            $hasFarNear = in_array('FAR & NEAR OPTIMIZED LENS', $features);
+            $hasDynamic = in_array('DYNAMIC DISTANCE LENS',     $features);
+            $hasNearOpt = in_array('NEAR-OPTIMIZED LENS',       $features);
+            $hasEnhNear = in_array('ENHANCED NEAR VISION',      $features);
+
+            $designScores = [
+                'all_distance' => [$hasAllDist=>40, $hasFarNear=>25, $hasDynamic=>15,
+                                   ($hasNearOpt||$hasEnhNear)=>5],
+                'dynamic'      => [$hasDynamic=>40, $hasAllDist=>30, $hasFarNear=>20,
+                                   ($hasNearOpt||$hasEnhNear)=>5],
+                'far_near'     => [$hasFarNear=>40, $hasAllDist=>28, $hasDynamic=>15,
+                                   ($hasNearOpt||$hasEnhNear)=>5],
+                'near'         => [$hasNearOpt=>40, $hasEnhNear=>35, $hasFarNear=>15,
+                                   $hasAllDist=>10],
+            ];
+            if (isset($designScores[$presbyType])) {
+                foreach ($designScores[$presbyType] as $matches => $pts) {
+                    if ($matches) { $s += $pts; break; }
+                }
+            } else {
+                if ($hasAllDist)  $s += 30;
+                elseif ($hasFarNear) $s += 25;
+            }
+            if ($cat === 'KRYPTOK' || $cat === 'FLATTOP') $s += ($age >= 65) ? 10 : 2;
+        }
+
+        // ── Feature × lifestyle ──────────────────────────────
+        foreach ($features as $feat) {
+            switch (strtoupper(trim($feat))) {
+                case 'BLUE LIGHT BLOCKING':
+                    if ($digital == 3)     $s += 28;
+                    elseif ($digital == 2) $s += 15;
+                    if (($hasEyeStrain || $hasHeadache) && $digital >= 2) $s += 8;
+                    if ($hasDryEye && $digital >= 2) $s += 4;
+                    break;
+                case 'PHOTOCHROMIC':
+                    if ($habit == 2)     $s += 22;
+                    elseif ($habit == 3) $s += 14;
+                    else                 $s -= 12;
+                    if ($hasGlare && $habit >= 2) $s += 10;
+                    break;
+                case 'NIGHT DRIVE COATING':
+                    if ($hasDriving || $hasHeadlightGlare) $s += 20;
+                    elseif ($habit >= 2)                   $s += 8;
+                    else                                   $s -= 10;
+                    break;
+                case 'HIGH INDEX 1.67':
+                case 'HIGHT INDEX 1.67':
+                    if ($maxSE >= 6.0)     $s += 35;
+                    elseif ($maxSE >= 4.0) $s += 22;
+                    elseif ($maxSE >= 2.0) $s += 10;
+                    break;
+                case 'HIGH-INDEX UV400 PROTECTION':
+                    $s += 4;
+                    if ($habit >= 2) $s += 5;
+                    break;
+                case 'HIGH POWER RX':
+                    if ($maxSE >= 8.0)     $s += 35;
+                    elseif ($maxSE >= 6.0) $s += 22;
+                    elseif ($maxSE >= 4.0) $s += 8;
+                    break;
+                case 'IMPACT-RESISTANT':
+                    if ($hasImpact)      $s += 20;
+                    elseif ($habit >= 2) $s += 6;
+                    break;
+                case 'SUPER HYDROPHOBIC': $s += ($habit >= 2) ? 8 : 2;  break;
+                case 'HYDROPHOBIC':       $s += ($habit >= 2) ? 5 : 1;  break;
+                case 'SMUDGE-RESISTANT':  $s += 3;  break;
+                case 'ANTI-STATIC':       $s += 2;  break;
+                case 'SCRATCH-RESISTANT COATING': $s += ($habit >= 2) ? 4 : 1; break;
+                case 'ANTI-REFLECTIVE (AR) COATING':
+                    if ($hasGlare)                          $s += 12;
+                    elseif ($hasEyeStrain || $digital >= 2) $s += 6;
+                    else                                    $s += 2;
+                    break;
+                case 'UV PROTECTION': $s += ($habit >= 2) ? 5 : 0; break;
+                // progressive design features scored above — skip here
+                case 'ALL-DISTANCE PROGRESSIVE':
+                case 'FAR & NEAR OPTIMIZED LENS':
+                case 'DYNAMIC DISTANCE LENS':
+                case 'NEAR-OPTIMIZED LENS':
+                case 'ENHANCED NEAR VISION':
+                    break;
+            }
+        }
+        return $s;
+    }
+
+    // ============================================================
+    // STEP 3 — Build candidate list: fit → score → sort
+    // Sort key: stock before lab (within same score band),
+    //           then descending score, then ascending price.
+    // ============================================================
+    $lr_candidates = [];
+
+    foreach ($lr_catalog as $source => $categories) {
+        $readiness = ($source === 'stock') ? "Ready in {$lensStockLeadTimeDays} Days" : "Lab Order, Ready 7-{$lensLabLeadTimeDays} Days";
+        foreach ($categories as $category => $types) {
+
+            // Gate: skip categories not allowed for this patient type
+            if (!lr_catAllowed($category, $lr_isPresbyopia, $lr_farOnlySV)) continue;
+
+            foreach ($types as $type => $lens) {
+                $lim      = $lens['limits']   ?? [];
+                $features = $lens['features'] ?? [];
+                $selling  = (int)($lens['selling'] ?? 0);
+                $lensNote = $lens['limits']['note'] ?? '';
+
+                // HARD FILTER 1: Rx must fit limits
+                if (!empty($lim) && !lr_rxFits(
+                        $lr_r_sph, $lr_r_cyl, $lr_l_sph, $lr_l_cyl,
+                        $lr_r_add, $lr_l_add, $lim)) continue;
+
+                // HARD FILTER 2: skip high-index/lenticular if power too low to benefit
+                $isHiIdx = in_array('HIGH INDEX 1.67', $features)
+                        || in_array('HIGHT INDEX 1.67', $features)
+                        || in_array('HIGH POWER RX',    $features);
+                if ($isHiIdx && $lr_maxSE < 3.0 && $lr_maxCyl < 3.0) continue;
+
+                $score = lr_score(
+                    $features, $category,
+                    $lr_isPresbyopia, $lr_presbyType, $lr_farOnlySV,
+                    $lr_habit, $lr_digital,
+                    $lr_maxSE, $lr_maxCyl, $lr_age,
+                    $lr_hasGlare, $lr_hasEyeStrain, $lr_hasHeadache,
+                    $lr_hasDryEye, $lr_hasDriving, $lr_hasImpact, $lr_hasHeadlightGlare
+                );
+
+                $lr_candidates[] = [
+                    'source'    => $source,         // 'stock' | 'lab'
+                    'category'  => $category,
+                    'type'      => $type,
+                    'selling'   => $selling,
+                    'features'  => $features,
+                    'note'      => $lensNote,
+                    'score'     => $score,
+                    'readiness' => $readiness,
+                ];
+            }
+        }
+    }
+
+    // Sort: stock first within same score band, then score desc, then price asc
+    usort($lr_candidates, function($a, $b) {
+        // Primary: score descending
+        if ($b['score'] !== $a['score']) return ($b['score'] > $a['score']) ? 1 : -1;
+        // Secondary: stock beats lab
+        $aStock = ($a['source'] === 'stock') ? 0 : 1;
+        $bStock = ($b['source'] === 'stock') ? 0 : 1;
+        if ($aStock !== $bStock) return $aStock - $bStock;
+        // Tertiary: price ascending
+        return $a['selling'] - $b['selling'];
+    });
+
+    // ── Deduplication: if a (STOCK) variant exists, suppress the non-STOCK twin ──
+    // e.g. "BLUGARD (STOCK)" in lab → suppress "BLUGARD" from the same category.
+    // Build a set of base names that already have a (STOCK) version present.
+    $lr_stockBaseNames = [];
+    foreach ($lr_candidates as $c) {
+        if (preg_match('/^(.+?)\s*\(STOCK\)\s*$/i', $c['type'], $m)) {
+            $baseKey = strtoupper(trim($c['category'])) . '||' . strtoupper(trim($m[1]));
+            $lr_stockBaseNames[$baseKey] = true;
+        }
+    }
+    // Filter out any non-STOCK entry whose base name is already covered by a (STOCK) entry
+    if (!empty($lr_stockBaseNames)) {
+        $lr_candidates = array_values(array_filter($lr_candidates, function($c) use ($lr_stockBaseNames) {
+            // Keep all (STOCK) entries as-is
+            if (preg_match('/\(STOCK\)\s*$/i', $c['type'])) return true;
+            // Suppress non-STOCK entry if its category+type matches a known (STOCK) base name
+            $baseKey = strtoupper(trim($c['category'])) . '||' . strtoupper(trim($c['type']));
+            return !isset($lr_stockBaseNames[$baseKey]);
+        }));
+    }
+
+    // ── Deduplication pass 2: suppress lab entry if identical category+type exists in stock ──
+    // e.g. stock→"SINGLE VISION / HMC" and lab→"SINGLE VISION / HMC" → keep only stock.
+    $lr_stockExactKeys = [];
+    foreach ($lr_candidates as $c) {
+        if ($c['source'] === 'stock') {
+            $key = strtoupper(trim($c['category'])) . '||' . strtoupper(trim($c['type']));
+            $lr_stockExactKeys[$key] = true;
+        }
+    }
+    if (!empty($lr_stockExactKeys)) {
+        $lr_candidates = array_values(array_filter($lr_candidates, function($c) use ($lr_stockExactKeys) {
+            if ($c['source'] !== 'lab') return true; // keep stock & any other source
+            $key = strtoupper(trim($c['category'])) . '||' . strtoupper(trim($c['type']));
+            return !isset($lr_stockExactKeys[$key]); // drop lab if stock twin exists
+        }));
+    }
+
+    // ── Deduplication pass 3: same lens name with variant suffix e.g. "(2)", "(3)" ──
+    // "BLUGARD (STOCK) (2)" and "BLUGARD (STOCK) (3)" share the same base name.
+    // Strip trailing " (N)" suffix, then keep only the cheapest entry per
+    // source + category + base-name group.
+    function lr_stripVariantSuffix($type) {
+        return trim(preg_replace('/\s*\(\d+\)\s*$/', '', $type));
+    }
+    $lr_cheapestByBase = [];
+    foreach ($lr_candidates as $c) {
+        $base = lr_stripVariantSuffix($c['type']);
+        $key  = strtoupper(trim($c['source'])) . '||' . strtoupper(trim($c['category'])) . '||' . strtoupper($base);
+        if (!isset($lr_cheapestByBase[$key]) || $c['selling'] < $lr_cheapestByBase[$key]) {
+            $lr_cheapestByBase[$key] = $c['selling'];
+        }
+    }
+    $lr_usedBase = [];
+    $lr_candidates = array_values(array_filter($lr_candidates, function($c) use ($lr_cheapestByBase, &$lr_usedBase) {
+        $base = lr_stripVariantSuffix($c['type']);
+        $key  = strtoupper(trim($c['source'])) . '||' . strtoupper(trim($c['category'])) . '||' . strtoupper($base);
+        if ($c['selling'] === $lr_cheapestByBase[$key] && !isset($lr_usedBase[$key])) {
+            $lr_usedBase[$key] = true;
+            return true;
+        }
+        return false;
+    }));
+
+    // ── Special warning notes ─────────────────────────────────
+    $lr_specialNotes = [];
+    if ($lr_hasDM)
+        $lr_specialNotes[] = ['🩸', 'DIABETES — Higher cataract risk. UV protection & blue light blocking lens recommended.'];
+    if ($lr_hasHT)
+        $lr_specialNotes[] = ['❤️', 'HYPERTENSION — Monitor vision changes regularly.'];
+    if ($lr_isVeryHighPow)
+        $lr_specialNotes[] = ['⚡', 'Very high prescription (SE ≥ 6.00D) — High Index 1.67 or Lenticular lens strongly advised.'];
+    if ($lr_isPresbyopia && $lr_farOnlySV)
+        $lr_specialNotes[] = ['👓', 'Distance only needed — SINGLE VISION lens recommended.'];
+    elseif ($lr_isPresbyopia && $lr_presbyType === 'all_distance')
+        $lr_specialNotes[] = ['👁️', 'Presbyopia: all distances needed — ALL-DISTANCE PROGRESSIVE is the best fit.'];
+    elseif ($lr_isPresbyopia && $lr_presbyType === 'dynamic')
+        $lr_specialNotes[] = ['🚀', 'Presbyopia: dominant far & intermediate — DYNAMIC DISTANCE LENS is the best fit.'];
+    elseif ($lr_isPresbyopia && $lr_presbyType === 'far_near')
+        $lr_specialNotes[] = ['👓', 'Presbyopia: dominant far & near — FAR & NEAR OPTIMIZED lens recommended.'];
+    elseif ($lr_isPresbyopia && $lr_presbyType === 'near')
+        $lr_specialNotes[] = ['📚', 'Presbyopia: dominant near — ENHANCED NEAR VISION / SHORT CORD lens is the best fit.'];
+    if ($lr_hasEyeStrain || $lr_hasHeadache)
+        $lr_specialNotes[] = ['😣', 'Eye strain / headache complaints — Blue Light Blocking lens may help.'];
+    if ($lr_hasDryEye)
+        $lr_specialNotes[] = ['💧', 'Dry Eye — Blue Light Blocking & Super Hydrophobic lens reduces screen irritation.'];
+    if ($lr_hasDriving)
+        $lr_specialNotes[] = ['🚗', 'Frequent driving — Night Drive Coating & Photochromic lens strongly advised.'];
+
+    // Helper: format price
+    function lr_fmt_price($v) {
+        if ((int)$v <= 0) return '<span style="color:#555;font-size:9.5px;font-style:italic;">Contact Staff</span>';
+        return 'Rp&nbsp;' . number_format((int)$v, 0, ',', '.');
+    }
+
+    // ── Helper: bucket a list into 4 price tabs ───────────────
+    function lr_priceBuckets($list) {
+        return [
+            'recommended' => ['label'=>'★ RECOMMENDED', 'data'=>$list,  'color'=>'#ffaa00', 'limit'=>5],
+            'budget'      => ['label'=>'BUDGET',         'data'=>array_values(array_filter($list, function($c){ return $c['selling'] > 0      && $c['selling'] <= 600000;  })), 'color'=>'#00ff88', 'limit'=>999],
+            'midrange'      => ['label'=>'MID-RANGE',      'data'=>array_values(array_filter($list, function($c){ return $c['selling'] > 600000  && $c['selling'] <= 1000000; })), 'color'=>'#00cfff', 'limit'=>999],
+            'premium'      => ['label'=>'PREMIUM',        'data'=>array_values(array_filter($list, function($c){ return $c['selling'] > 1000000; })),                           'color'=>'#ff8a4d', 'limit'=>999],
+        ];
+    }
+
+    // ── Design-need match ─────────────────────────────────────
+    // Returns true when $cand satisfies the patient's vision need.
+    // Kryptok & Flattop are bifocals — they implicitly cover far+near needs.
+    function lr_meetsDesign($cand, $wantedFeats, $presbyType) {
+        if (empty($wantedFeats) && $presbyType !== 'far_only') return false;
+        $cat    = strtoupper(trim($cand['category']));
+        $isProg = in_array($cat, array('PROGRESSIVE','KRYPTOK','FLATTOP'));
+        if (!$isProg) return false;
+        if ($cat === 'KRYPTOK' || $cat === 'FLATTOP') {
+            return in_array($presbyType, array('far_near','far_only','all_distance','dynamic'));
+        }
+        foreach ($wantedFeats as $wf) {
+            if (in_array($wf, $cand['features'])) return true;
+        }
+        return false;
+    }
+
+    // ── Vision-need design features ───────────────────────────
+    $lr_designFeatureMap = [
+        'all_distance' => ['ALL-DISTANCE PROGRESSIVE'],
+        'dynamic'      => ['DYNAMIC DISTANCE LENS','ALL-DISTANCE PROGRESSIVE'],
+        'far_near'     => ['FAR & NEAR OPTIMIZED LENS','ALL-DISTANCE PROGRESSIVE'],
+        'near'         => ['ENHANCED NEAR VISION','NEAR-OPTIMIZED LENS','ALL-DISTANCE PROGRESSIVE'],
+        'far_only'     => [],
+    ];
+    $lr_wantedDesignFeats = ($lr_isPresbyopia && isset($lr_designFeatureMap[$lr_presbyType]))
+        ? $lr_designFeatureMap[$lr_presbyType] : [];
+
+    // ── Lens type config ──────────────────────────────────────
+    $lr_typeConfig = [
+        'sv'          => ['label'=>'SINGLE VISION', 'icon'=>'👓', 'color'=>'#00ff88'],
+        'kryptok'     => ['label'=>'KRYPTOK',       'icon'=>'🔵', 'color'=>'#00cfff'],
+        'progressive' => ['label'=>'PROGRESSIVE',   'icon'=>'🔭', 'color'=>'#aa88ff'],
+        'flattop'     => ['label'=>'FLAT TOP',      'icon'=>'📐', 'color'=>'#ff8a4d'],
+    ];
+
+    // ── Split candidates by lens type ─────────────────────────
+    $lr_byType = [];
+    foreach ($lr_candidates as $c) {
+        $cat = strtoupper(trim($c['category']));
+        if      ($cat === 'SINGLE VISION') $key = 'sv';
+        elseif  ($cat === 'KRYPTOK')       $key = 'kryptok';
+        elseif  ($cat === 'PROGRESSIVE')   $key = 'progressive';
+        elseif  ($cat === 'FLATTOP')       $key = 'flattop';
+        else                               $key = 'sv';
+        $lr_byType[$key][] = $c;
+    }
+
+    // First active type
+    $lr_firstType = '';
+    foreach ($lr_typeConfig as $tk => $tc) {
+        if (!empty($lr_byType[$tk])) { $lr_firstType = $tk; break; }
+    }
+
+    // ── Pre-compute design match per type+price ───────────────
+    $lr_hasDesign = array();
+    foreach ($lr_typeConfig as $tk => $tc) {
+        $lr_hasDesign[$tk] = array();
+        $tList = isset($lr_byType[$tk]) ? $lr_byType[$tk] : [];
+        $typeHas = false;
+        foreach ($tList as $c) {
+            if (lr_meetsDesign($c, $lr_wantedDesignFeats, $lr_presbyType)) { $typeHas = true; break; }
+        }
+        $lr_hasDesign[$tk]['_type'] = $typeHas;
+        $buckets = lr_priceBuckets($tList);
+        foreach ($buckets as $pk => $pb) {
+            $has = false;
+            foreach ($pb['data'] as $c) {
+                if (lr_meetsDesign($c, $lr_wantedDesignFeats, $lr_presbyType)) { $has = true; break; }
+            }
+            $lr_hasDesign[$tk][$pk] = $has;
+        }
+    }
+
+    // ============================================================
+    // BUILD BOTH Rx SETS for dynamic toggle (ORIGINAL & MODIFIED)
+    // So that switching YES/NO in the UI instantly swaps lens cards
+    // without a page reload.
+    // ============================================================
+    function lr_buildSet($r_sph, $r_cyl, $r_add, $l_sph, $l_cyl, $l_add,
+                         $age, $habit, $digital, $txt,
+                         $needDist, $needInter, $needNear,
+                         $catalog, $typeConfig) {
+
+        global $lensStockLeadTimeDays, $lensLabLeadTimeDays;
+
+        $maxSph = max(abs($r_sph), abs($l_sph));
+        $maxCyl = max(abs($r_cyl), abs($l_cyl));
+        $maxAdd = max(abs($r_add), abs($l_add));
+        $seR    = abs($r_sph) + abs($r_cyl) / 2.0;
+        $seL    = abs($l_sph) + abs($l_cyl) / 2.0;
+        $maxSE  = max($seR, $seL);
+
+        $isHighPow     = ($maxSE >= 4.0 || $maxCyl >= 2.0);
+        $isVeryHighPow = ($maxSE >= 6.0 || $maxCyl >= 3.0);
+        $isPresbyopia  = ($maxAdd >= 0.75 && $age >= 39);
+
+        $hasGlare     = (bool)preg_match('/glare|silau/', $txt);
+        $hasEyeStrain = (bool)preg_match('/eye.?strain|mata.?lelah|\blelah\b/', $txt);
+        $hasHeadache  = (bool)preg_match('/headache|sakit.?kepala/', $txt);
+        $hasDM        = (strpos($txt, 'diabetes')     !== false);
+        $hasHT        = (strpos($txt, 'hypertension') !== false);
+        $hasDryEye    = (bool)preg_match('/dry.?eye|mata.?kering/', $txt);
+        $hasDriving        = (bool)preg_match('/bawa.?mobil|mengemudi|driving|berkendara/', $txt);
+        $hasImpact         = (bool)preg_match('/olahraga|sport|bentur|impact/', $txt);
+        $hasHeadlightGlare = (bool)preg_match('/headlight.?glare|silau.?lampu/', $txt);
+
+        $presbyType = $isPresbyopia
+            ? lr_presbyDesign($needDist, $needInter, $needNear, $habit, $digital, $txt)
+            : '';
+        $farOnlySV  = ($isPresbyopia && $presbyType === 'far_only');
+
+        $candidates = [];
+        foreach ($catalog as $source => $categories) {
+            $readiness = ($source === 'stock') ? "Ready in {$lensStockLeadTimeDays} Days" : "Lab Order, Ready 7-{$lensLabLeadTimeDays} Days";
+            foreach ($categories as $category => $types) {
+                if (!lr_catAllowed($category, $isPresbyopia, $farOnlySV)) continue;
+                foreach ($types as $type => $lens) {
+                    $lim      = $lens['limits']   ?? [];
+                    $features = $lens['features'] ?? [];
+                    $selling  = (int)($lens['selling'] ?? 0);
+                    $lensNote = $lens['limits']['note'] ?? '';
+                    if (!empty($lim) && !lr_rxFits($r_sph,$r_cyl,$l_sph,$l_cyl,$r_add,$l_add,$lim)) continue;
+                    $isHiIdx = in_array('HIGH INDEX 1.67', $features)
+                            || in_array('HIGHT INDEX 1.67', $features)
+                            || in_array('HIGH POWER RX',    $features);
+                    if ($isHiIdx && $maxSE < 3.0 && $maxCyl < 3.0) continue;
+                    $score = lr_score($features, $category,
+                        $isPresbyopia, $presbyType, $farOnlySV,
+                        $habit, $digital, $maxSE, $maxCyl, $age,
+                        $hasGlare, $hasEyeStrain, $hasHeadache,
+                        $hasDryEye, $hasDriving, $hasImpact, $hasHeadlightGlare);
+                    $candidates[] = [
+                        'source'=>$source,'category'=>$category,'type'=>$type,
+                        'selling'=>$selling,'features'=>$features,'note'=>$lensNote,
+                        'score'=>$score,'readiness'=>$readiness,
+                    ];
+                }
+            }
+        }
+
+        usort($candidates, function($a,$b){
+            if ($b['score'] !== $a['score']) return ($b['score']>$a['score'])?1:-1;
+            $aS = ($a['source']==='stock')?0:1; $bS = ($b['source']==='stock')?0:1;
+            if ($aS !== $bS) return $aS-$bS;
+            return $a['selling']-$b['selling'];
+        });
+
+        // Dedup pass 1 — (STOCK) suppresses non-stock twin
+        $stockBase = [];
+        foreach ($candidates as $c) {
+            if (preg_match('/^(.+?)\s*\(STOCK\)\s*$/i', $c['type'], $m)) {
+                $stockBase[strtoupper(trim($c['category'])).'||'.strtoupper(trim($m[1]))] = true;
+            }
+        }
+        if (!empty($stockBase)) {
+            $candidates = array_values(array_filter($candidates, function($c) use ($stockBase){
+                if (preg_match('/\(STOCK\)\s*$/i', $c['type'])) return true;
+                return !isset($stockBase[strtoupper(trim($c['category'])).'||'.strtoupper(trim($c['type']))]);
+            }));
+        }
+        // Dedup pass 2 — lab suppressed if exact stock twin
+        $stockExact = [];
+        foreach ($candidates as $c) {
+            if ($c['source']==='stock')
+                $stockExact[strtoupper(trim($c['category'])).'||'.strtoupper(trim($c['type']))] = true;
+        }
+        if (!empty($stockExact)) {
+            $candidates = array_values(array_filter($candidates, function($c) use ($stockExact){
+                if ($c['source']!=='lab') return true;
+                return !isset($stockExact[strtoupper(trim($c['category'])).'||'.strtoupper(trim($c['type']))]);
+            }));
+        }
+        // Dedup pass 3 — cheapest per base name
+        $cheapest=[]; $usedBase=[];
+        foreach ($candidates as $c) {
+            $base = trim(preg_replace('/\s*\(\d+\)\s*$/','',$c['type']));
+            $key  = strtoupper(trim($c['source'])).'||'.strtoupper(trim($c['category'])).'||'.strtoupper($base);
+            if (!isset($cheapest[$key]) || $c['selling']<$cheapest[$key]) $cheapest[$key]=$c['selling'];
+        }
+        $candidates = array_values(array_filter($candidates, function($c) use ($cheapest,&$usedBase){
+            $base = trim(preg_replace('/\s*\(\d+\)\s*$/','',$c['type']));
+            $key  = strtoupper(trim($c['source'])).'||'.strtoupper(trim($c['category'])).'||'.strtoupper($base);
+            if ($c['selling']===$cheapest[$key] && !isset($usedBase[$key])) { $usedBase[$key]=true; return true; }
+            return false;
+        }));
+
+        // Special notes
+        $specialNotes = [];
+        if ($hasDM)  $specialNotes[]=['🩸','DIABETES — Higher cataract risk. UV protection & blue light blocking lens recommended.'];
+        if ($hasHT)  $specialNotes[]=['❤️','HYPERTENSION — Monitor vision changes regularly.'];
+        if ($isVeryHighPow) $specialNotes[]=['⚡','Very high prescription (SE ≥ 6.00D) — High Index 1.67 or Lenticular lens strongly advised.'];
+        if ($isPresbyopia && $farOnlySV)              $specialNotes[]=['👓','Distance only needed — SINGLE VISION lens recommended.'];
+        elseif ($isPresbyopia && $presbyType==='all_distance') $specialNotes[]=['👁️','Presbyopia: all distances needed — ALL-DISTANCE PROGRESSIVE is the best fit.'];
+        elseif ($isPresbyopia && $presbyType==='dynamic')      $specialNotes[]=['🚀','Presbyopia: dominant far & intermediate — DYNAMIC DISTANCE LENS is the best fit.'];
+        elseif ($isPresbyopia && $presbyType==='far_near')     $specialNotes[]=['👓','Presbyopia: dominant far & near — FAR & NEAR OPTIMIZED lens recommended.'];
+        elseif ($isPresbyopia && $presbyType==='near')         $specialNotes[]=['📚','Presbyopia: dominant near — ENHANCED NEAR VISION / SHORT CORD lens is the best fit.'];
+        if ($hasEyeStrain||$hasHeadache) $specialNotes[]=['😣','Eye strain / headache complaints — Blue Light Blocking lens may help.'];
+        if ($hasDryEye)   $specialNotes[]=['💧','Dry Eye — Blue Light Blocking & Super Hydrophobic lens reduces screen irritation.'];
+        if ($hasDriving)  $specialNotes[]=['🚗','Frequent driving — Night Drive Coating & Photochromic lens strongly advised.'];
+
+        // Split by type
+        $byType=[];
+        foreach ($candidates as $c) {
+            $cat=strtoupper(trim($c['category']));
+            if      ($cat==='SINGLE VISION') $key='sv';
+            elseif  ($cat==='KRYPTOK')       $key='kryptok';
+            elseif  ($cat==='PROGRESSIVE')   $key='progressive';
+            elseif  ($cat==='FLATTOP')       $key='flattop';
+            else                             $key='sv';
+            $byType[$key][]=$c;
+        }
+
+        $designFeatureMap = [
+            'all_distance'=>['ALL-DISTANCE PROGRESSIVE'],
+            'dynamic'=>['DYNAMIC DISTANCE LENS','ALL-DISTANCE PROGRESSIVE'],
+            'far_near'=>['FAR & NEAR OPTIMIZED LENS','ALL-DISTANCE PROGRESSIVE'],
+            'near'=>['ENHANCED NEAR VISION','NEAR-OPTIMIZED LENS','ALL-DISTANCE PROGRESSIVE'],
+            'far_only'=>[],
+        ];
+        $wantedDesignFeats = ($isPresbyopia && isset($designFeatureMap[$presbyType]))
+            ? $designFeatureMap[$presbyType] : [];
+
+        $hasDesign=[];
+        foreach ($typeConfig as $tk=>$tc) {
+            $hasDesign[$tk]=[];
+            $tList=isset($byType[$tk])?$byType[$tk]:[];
+            $typeHas=false;
+            foreach($tList as $c){if(lr_meetsDesign($c,$wantedDesignFeats,$presbyType)){$typeHas=true;break;}}
+            $hasDesign[$tk]['_type']=$typeHas;
+            $bkts=lr_priceBuckets($tList);
+            foreach($bkts as $pk=>$pb){
+                $has=false;
+                foreach($pb['data'] as $c){if(lr_meetsDesign($c,$wantedDesignFeats,$presbyType)){$has=true;break;}}
+                $hasDesign[$tk][$pk]=$has;
+            }
+        }
+
+        $firstType='';
+        foreach($typeConfig as $tk=>$tc){if(!empty($byType[$tk])){$firstType=$tk;break;}}
+
+        return compact('candidates','specialNotes','byType','hasDesign','firstType',
+                       'isPresbyopia','farOnlySV','presbyType','isHighPow','isVeryHighPow',
+                       'maxSph','maxCyl','maxAdd','maxSE','r_sph','r_cyl','r_add','l_sph','l_cyl','l_add',
+                       'wantedDesignFeats');
+    }
+
+    // Build ORIGINAL set
+    $lr_SET_ORIG = lr_buildSet(
+        $lr_orig_r_sph, $lr_orig_r_cyl, $lr_orig_r_add,
+        $lr_orig_l_sph, $lr_orig_l_cyl, $lr_orig_l_add,
+        $lr_age, $lr_habit, $lr_digital, $lr_txt,
+        $lr_needDist, $lr_needInter, $lr_needNear,
+        $lr_catalog, $lr_typeConfig
+    );
+
+    // Build MODIFIED set (only meaningful if mod data exists; otherwise identical to orig)
+    $lr_SET_MOD = $lr_hasModData ? lr_buildSet(
+        $lr_mod_r_sph, $lr_mod_r_cyl, $lr_mod_r_add,
+        $lr_mod_l_sph, $lr_mod_l_cyl, $lr_mod_l_add,
+        $lr_age, $lr_habit, $lr_digital, $lr_txt,
+        $lr_needDist, $lr_needInter, $lr_needNear,
+        $lr_catalog, $lr_typeConfig
+    ) : $lr_SET_ORIG;
+
+
+    // Load starting invoice sheet number from settings table
+    $startingInvoiceNumber = '1.01';
+    $resSheet = mysqli_query($conn, "SELECT setting_value FROM settings WHERE setting_key = 'starting_invoice_number' LIMIT 1");
+    if ($resSheet && $rowSheet = mysqli_fetch_assoc($resSheet)) {
+        $startingInvoiceNumber = $rowSheet['setting_value'];
+    }
+
+    // ── Helper: increment invoice sheet number ──────────────────────
+    // Rules:
+    //   - Format: XX.YY  (integer part . sub-part, sub always 2 digits)
+    //   - Sub-part increments by 1 each order (01, 02, … 50)
+    //   - When sub-part reaches 50, next is (XX+1).01  (e.g. 16.50 → 17.01)
+    function incrementInvoiceSheet($sheet) {
+        $parts = explode('.', $sheet);
+        if (count($parts) !== 2) return $sheet; // fallback: return as-is
+        $major = (int)$parts[0];
+        $minor = (int)$parts[1];
+        $minor++;
+        if ($minor > 50) {
+            $major++;
+            $minor = 1;
+        }
+        return $major . '.' . str_pad($minor, 2, '0', STR_PAD_LEFT);
+    }
+
+    // ── Compute the next invoice sheet from the latest order in DB ──
+    // Extracts the sheet portion (3rd segment) from customer_number, e.g.
+    // "5/LZ-C/16.31/028/V/26" → "16.31"
+    $nextInvoiceSheet = $startingInvoiceNumber; // default: use settings value
+    $resLast = mysqli_query($conn,
+        "SELECT customer_number FROM customer_orders ORDER BY id DESC LIMIT 1");
+    if ($resLast && $rowLast = mysqli_fetch_assoc($resLast)) {
+        $cn = $rowLast['customer_number'];
+        $cnParts = explode('/', $cn);
+        // customer_number pattern: seq/LZ-C/XX.YY/bbb/MM/YY
+        if (isset($cnParts[2]) && preg_match('/^\d+\.\d{1,2}$/', $cnParts[2])) {
+            $nextInvoiceSheet = incrementInvoiceSheet($cnParts[2]);
+        }
+    }
+
+    // Load frame-shape color mapping (optional — fails silently if missing/invalid)
+    $frameShapeColors = [];
+    $colorJsonPath = __DIR__ . '/data_json/color_shape.json';
+    if (is_readable($colorJsonPath)) {
+        $raw = @file_get_contents($colorJsonPath);
+        if ($raw !== false) {
+            $decoded = json_decode($raw, true);
+            if (is_array($decoded)) {
+                // Normalize keys to uppercase for consistent JS lookup
+                foreach ($decoded as $k => $v) {
+                    $frameShapeColors[strtoupper(trim($k))] = $v;
+                }
+            }
+        }
+    }
+?>
+
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
+        <title>Invoice - <?php echo $data['examination_code']; ?></title>
+        <link rel="stylesheet" href="style.css">
+        <style  id="mediapipe-styles">
+            .mp-wrapper {
+                position: relative;
+                width: 300px;
+                height: 400px;
+                margin: 0 auto;
+                border-radius: 20px;
+                overflow: hidden;
+                background: #000;
+                -webkit-mask-image: -webkit-radial-gradient(white, black);
+            }
+
+            #mp-video {
+                width: 100%;
+                height: 100%;
+                object-fit: cover;
+                transform: scaleX(1); /* default: not mirrored (back camera) */
+            }
+            .mp-wrapper.mirror #mp-video { transform: scaleX(-1); } /* front camera only */
+
+            #mp-canvas {
+                position: absolute;
+                top: 0; left: 0;
+                width: 100%;
+                height: 100%;
+                transform: scaleX(1); /* default: not mirrored (back camera) */
+                pointer-events: none;
+            }
+            .mp-wrapper.mirror #mp-canvas { transform: scaleX(-1); } /* front camera only */
+
+            .mp-guide {
+                position: absolute;
+                top: 0; left: 0;
+                width: 100%;
+                height: 100%;
+                z-index: 20;
+                pointer-events: none;
+                background: rgba(0,0,0,0.35);
+                backdrop-filter: blur(6px);
+                -webkit-backdrop-filter: blur(6px);
+                -webkit-mask-image: radial-gradient(ellipse 42% 52% at 50% 50%, transparent 95%, black 100%);
+                mask-image: radial-gradient(ellipse 42% 52% at 50% 50%, transparent 95%, black 100%);
+                transition: opacity 0.4s;
+            }
+
+            .mp-guide::after {
+                content: "";
+                position: absolute;
+                top: 50%; left: 50%;
+                transform: translate(-50%, -50%);
+                width: 76%;
+                height: 82%;
+                border: 2px solid #00ff88;
+                border-radius: 50% 50% 50% 50% / 45% 45% 55% 55%;
+                box-shadow: 0 0 15px rgba(0,255,136,0.5), inset 0 0 10px rgba(0,255,136,0.2);
+                transition: border-color 0.3s, box-shadow 0.3s;
+            }
+
+            .mp-guide.locked::after {
+                border-color: #00cfff;
+                box-shadow: 0 0 20px rgba(0,207,255,0.6), inset 0 0 12px rgba(0,207,255,0.2);
+            }
+
+            /* Confidence bar */
+            .conf-bar-wrap {
+                width: 100%;
+                height: 6px;
+                background: rgba(255,255,255,0.1);
+                border-radius: 3px;
+                margin-top: 8px;
+                overflow: hidden;
+            }
+            .conf-bar-fill {
+                height: 100%;
+                border-radius: 3px;
+                background: linear-gradient(90deg, #00ff88, #00cfff);
+                transition: width 0.4s ease;
+            }
+
+            #mp-result {
+                min-height: 90px;
+                transition: all 0.3s ease;
+                border: 1px solid rgba(0,255,136,0.2);
+                margin-top: 15px !important;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                padding: 15px;
+            }
+
+            .shape-badge {
+                font-size: 1.4rem;
+                font-weight: 800;
+                letter-spacing: 2px;
+                color: #00ff88;
+                text-shadow: 0 0 12px rgba(0,255,136,0.5);
+            }
+
+            .metrics-row {
+                display: flex;
+                gap: 10px;
+                margin-top: 8px;
+                flex-wrap: wrap;
+                justify-content: center;
+            }
+            .metric-chip {
+                font-size: 10px;
+                color: #888;
+                background: rgba(255,255,255,0.05);
+                border: 1px solid rgba(255,255,255,0.08);
+                border-radius: 20px;
+                padding: 3px 8px;
+            }
+
+            .pd-row {
+                display: flex;
+                gap: 8px;
+                margin-top: 10px;
+                flex-wrap: wrap;
+                justify-content: center;
+            }
+            .pd-chip {
+                font-size: 11px;
+                font-weight: 700;
+                color: #00cfff;
+                background: rgba(0, 207, 255, 0.08);
+                border: 1px solid rgba(0, 207, 255, 0.25);
+                border-radius: 20px;
+                padding: 4px 10px;
+                letter-spacing: 0.5px;
+            }
+            .pd-chip.total {
+                color: #fff;
+                background: rgba(0, 207, 255, 0.18);
+                border-color: rgba(0, 207, 255, 0.5);
+                font-size: 12px;
+            }
+            .pd-note {
+                font-size: 9px;
+                color: #444;
+                margin-top: 4px;
+                text-align: center;
+            }
+
+            /* IOC preset buttons */
+            .ioc-preset {
+                background: var(--bg-color);
+                border: 1px solid rgba(255,255,255,0.08);
+                border-radius: 20px;
+                color: #555;
+                font-size: 9px;
+                padding: 4px 10px;
+                cursor: pointer;
+                font-family: inherit;
+                letter-spacing: 0.5px;
+                transition: all 0.2s;
+            }
+            .ioc-preset:hover { color: #888; border-color: rgba(0,255,136,0.2); }
+            .ioc-preset.active {
+                color: #00ff88;
+                border-color: rgba(0,255,136,0.4);
+                background: rgba(0,255,136,0.07);
+            }
+
+            /* Step indicator */
+            .mp-step {
+                display: flex;
+                align-items: center;
+                gap: 5px;
+                font-size: 9px;
+                letter-spacing: 1px;
+                color: #444;
+                padding: 4px 8px;
+                border-radius: 20px;
+                border: 1px solid rgba(255,255,255,0.05);
+                background: rgba(255,255,255,0.03);
+                transition: all 0.3s;
+            }
+            .mp-step.active {
+                color: #00ff88;
+                border-color: rgba(0,255,136,0.3);
+                background: rgba(0,255,136,0.06);
+            }
+            .mp-step.done {
+                color: #00cfff;
+                border-color: rgba(0,207,255,0.2);
+            }
+            .mp-step .step-num {
+                width: 16px;
+                height: 16px;
+                border-radius: 50%;
+                background: rgba(255,255,255,0.06);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-weight: 700;
+                font-size: 9px;
+            }
+            .mp-step.active .step-num { background: rgba(0,255,136,0.2); }
+            .step-arrow { color: #333; font-size: 14px; line-height: 1; }
+
+            /* Loading state */
+            .mp-loading {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                color: var(--text-muted);
+                font-size: 0.75rem;
+            }
+            .spinner {
+                width: 14px; height: 14px;
+                border: 2px solid rgba(0,255,136,0.2);
+                border-top-color: #00ff88;
+                border-radius: 50%;
+                animation: spin 0.8s linear infinite;
+            }
+            @keyframes spin { to { transform: rotate(360deg); } }
+
+            @media (max-width: 600px) {
+                .mp-wrapper { width: 100%; height: 460px; }
+            }
+            .invoice-body { padding: 20px; max-width: 800px; margin: auto; }
+            .neumorph-card {
+                background: var(--bg-color);
+                padding: 30px;
+                border-radius: 25px;
+                box-shadow: 20px 20px 60px var(--shadow-dark), -20px -20px 60px var(--shadow-light);
+            }
+            .info-grid {
+                display: grid;
+                grid-template-columns: repeat(2, 1fr);
+                gap: 20px;
+                margin-top: 20px;
+            }
+            .read-only-box {
+                background: var(--bg-color);
+                padding: 12px 15px;
+                border-radius: 12px;
+                color: var(--accent-color);
+                box-shadow: inset 4px 4px 8px var(--shadow-dark), inset -4px -4px 8px var(--shadow-light);
+                min-height: 45px;
+                display: flex;
+                align-items: center;
+                font-weight: 600;
+            }
+            label { color: var(--text-muted); font-size: 0.8rem; margin-left: 5px; margin-bottom: 5px; display: block; }
+            .full { grid-column: span 2; }
+
+            /* Table Neumorphic Style */
+            .prescription-container {
+                background: var(--bg-color);
+                padding: 30px;
+                border-radius: 25px;
+                box-shadow: 8px 8px 16px var(--shadow-dark), -8px -8px 16px var(--shadow-light);
+                margin-top: 20px;
+                border: 1px solid rgba(255,255,255,0.05);
+            }
+
+            .selection-wrapper {
+                display: flex;
+                gap: 15px;
+                justify-content: center; /* Button centered within the container */
+            }
+
+            .prescription-table {
+                width: 100%;
+                border-collapse: separate;
+                border-spacing: 15px 10px; /* Provides spacing between cells */
+            }
+
+            .prescription-table th {
+                color: var(--text-muted);
+                font-size: 0.7rem;
+                letter-spacing: 1px;
+                text-transform: uppercase;
+                padding-bottom: 10px;
+            }
+
+            .prescription-table td {
+                padding: 0;
+            }
+
+            .input-table-neu {
+                width: 100%;
+                background: var(--bg-color);
+                border: none;
+                padding: 15px 5px;
+                border-radius: 15px;
+                color: var(--text-main);
+                text-align: center;
+                font-weight: 700;
+                font-size: 1rem;
+                /* Characteristic Neumorphic inset (concave) effect */
+                box-shadow: inset 6px 6px 12px var(--shadow-dark), 
+                            inset -6px -6px 12px var(--shadow-light);
+                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            }
+
+            .input-table-neu:not([readonly]) {
+                color: #00ff88; /* Neon green for contrast during editing */
+                text-shadow: 0 0 8px rgba(0, 255, 136, 0.3);
+            }
+
+            .input-table-neu:focus {
+                outline: none;
+                color: var(--accent-color);
+            }
+
+            .eye-indicator {
+                width: 45px;
+                height: 45px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                border-radius: 50%;
+                background: var(--bg-color);
+                font-weight: 800;
+                color: var(--accent-color);
+                box-shadow: 4px 4px 8px var(--shadow-dark), -4px -4px 8px var(--shadow-light);
+                border: 1px solid rgba(255,255,255,0.05);
+            }
+
+            .eye-label {
+                vertical-align: middle;
+            }
+
+            /* Scan Line Animation */
+            .scan-line {
+                position: absolute;
+                width: 100%;
+                height: 4px;
+                background: rgba(0, 255, 136, 0.5);
+                box-shadow: 0 0 15px #00ff88;
+                top: 0;
+                left: 0;
+                z-index: 10;
+                display: none;
+                animation: scanMove 2s linear infinite;
+            }
+
+            @keyframes scanMove {
+                0% { top: 0; }
+                100% { top: 100%; }
+            }
+
+            .video-wrapper {
+                position: relative;
+                width: 300px; /* Standard mobile size to prevent overload */
+                height: 400px; /* Portrait ratio is better for face tracking on mobile */
+                margin: 0 auto;
+                overflow: hidden;
+                border-radius: 20px;
+                background: #000;
+                -webkit-mask-image: -webkit-radial-gradient(white, black); /* Fix for rounded corner bugs in Safari/iOS */
+            }
+
+            /* Video container must fill the wrapper */
+            #video-container {
+                width: 100%;
+                height: 100%;
+                position: absolute;
+                top: 0;
+                left: 0;
+            }
+
+            /* Face Guide mobile fix: Centered and smaller oval adjustment */
+            .face-guide {
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                z-index: 20;
+                pointer-events: none;
+                background: rgba(0, 0, 0, 0.4);
+                backdrop-filter: blur(8px);
+                -webkit-backdrop-filter: blur(8px);
+                
+                /* Center cutout reduced to 30% width and 45% height */
+                -webkit-mask-image: radial-gradient(ellipse 30% 45% at 50% 50%, transparent 95%, black 100%);
+                mask-image: radial-gradient(ellipse 30% 45% at 50% 50%, transparent 95%, black 100%);
+            }
+
+            /* Green Outline: Matching the mask size above */
+            .face-guide::after {
+                content: "";
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                /* Size matched to mask dimensions (50% x 65%) */
+                width: 60%; 
+                height: 90%;
+                border: 2px solid #00ff88;
+                border-radius: 50% 50% 50% 50% / 45% 45% 55% 55%;
+                box-shadow: 0 0 15px rgba(0, 255, 136, 0.5), inset 0 0 10px rgba(0, 255, 136, 0.2);
+            }
+            
+            /* Small instruction message above the video */
+            .scan-instruction {
+                font-size: 11px;
+                color: var(--text-muted);
+                margin-bottom: 8px;
+                text-transform: uppercase;
+            }
+
+            #face-result {
+                min-height: 80px;
+                transition: all 0.3s ease;
+                border: 1px solid rgba(0, 255, 136, 0.2);
+                margin-top: 20px !important;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+            }
+
+            #overlay {
+                max-width: 100%;
+                height: auto;
+                border-radius: 20px;
+                box-shadow: 10px 10px 20px var(--shadow-dark);
+            }
+
+            #video {
+                width: 100%;
+                height: 100%;
+                object-fit: cover; /* Ensures video fills the container without distortion */
+                transform: scaleX(-1); /* Mirror front camera */
+            }
+
+            /* --- Global Adjustments for Mobile --- */
+            @media (max-width: 600px) {
+                .invoice-body {
+                    padding: 10px;
+                }
+
+                /* Change grid to single column on mobile */
+                .info-grid {
+                    grid-template-columns: 1fr; 
+                    gap: 15px;
+                }
+
+                .info-grid div.full {
+                    grid-column: span 1;
+                }
+
+                /* Reduce card padding for more screen space */
+                .neumorph-card, .main-card, .prescription-container {
+                    padding: 15px;
+                    border-radius: 15px;
+                }
+
+                /* Prescription Table Adjustments (Critical) */
+                .prescription-table {
+                    border-spacing: 5px 8px;
+                }
+
+                .prescription-table th {
+                    font-size: 0.6rem;
+                }
+
+                .input-table-neu {
+                    padding: 10px 2px;
+                    font-size: 0.85rem;
+                    border-radius: 10px;
+                }
+
+                .eye-indicator {
+                    width: 35px;
+                    height: 35px;
+                    font-size: 0.9rem;
+                }
+
+                /* Video Scanner Adjustments */
+                .video-wrapper {
+                    width: 100%;      /* Follows the mobile screen width */
+                    height: 380px;    /* Sufficient height for face positioning */
+                    position: relative;
+                }
+
+                #video, #overlay {
+                    width: 100% !important;
+                    height: auto !important;
+                }
+
+                .face-guide {
+                    -webkit-mask-image: radial-gradient(ellipse 30% 45% at 50% 50%, transparent 95%, black 100%);
+                    mask-image: radial-gradient(ellipse 30% 45% at 50% 50%, transparent 95%, black 100%);
+                }
+
+                .face-guide::after {
+                    width: 60%;
+                    height: 90%;
+                    border: 2px solid #00ff88;
+                    border-radius: 50%;
+                }
+
+                /* Optimize buttons for touch targets */
+                .neu-btn {
+                    padding: 12px 10px;
+                    font-size: 0.8rem;
+                    flex: 1; /* Buttons share space equally */
+                }
+
+                .selection-wrapper {
+                    flex-wrap: nowrap; /* Keep aligned horizontally */
+                }
+
+                .btn-action {
+                    width: 100%;
+                    padding: 15px;
+                }
+            }
+
+            /* Enable horizontal scroll for very small screens (e.g., iPhone SE) */
+            .table-responsive {
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+                margin-top: 10px;
+            }
+
+            @keyframes pulse {
+                0% { opacity: 0.6; }
+                50% { opacity: 1; }
+                100% { opacity: 0.6; }
+            }
+
+            /* Per-check position indicators */
+            #pose-checks { display: flex; }
+            .pose-check {
+                font-size: 10px;
+                letter-spacing: 0.5px;
+                padding: 3px 9px;
+                border-radius: 20px;
+                background: rgba(255,255,255,0.04);
+                border: 1px solid rgba(255,255,255,0.08);
+                color: #666;
+                transition: all 0.25s;
+            }
+            .pose-check.ok {
+                color: #00ff88;
+                border-color: rgba(0,255,136,0.35);
+                background: rgba(0,255,136,0.07);
+            }
+            .pose-check.bad {
+                color: #ff8a4d;
+                border-color: rgba(255,138,77,0.35);
+                background: rgba(255,138,77,0.07);
+            }
+            #autocap-hint { animation: blink 1s linear infinite; }
+
+            /* ==========================================================
+               FULLSCREEN CAMERA MODE (fix #6)
+               ========================================================== */
+            body.fullscreen-cam-active { overflow: hidden; }
+            body.fullscreen-cam-active #mp-scan-card {
+                position: fixed !important;
+                inset: 0 !important;
+                z-index: 9999 !important;
+                width: 100vw !important;
+                height: 100vh !important;
+                height: 100dvh !important;
+                max-width: none !important;
+                margin: 0 !important;
+                padding: 56px 12px calc(32px + env(safe-area-inset-bottom, 0px)) 12px !important;
+                background: #0a0a0a !important;
+                border-radius: 0 !important;
+                box-shadow: none !important;
+                overflow-y: auto !important;
+                overscroll-behavior: contain;
+                -webkit-overflow-scrolling: touch;
+                display: flex !important;
+                flex-direction: column !important;
+                align-items: center !important;
+            }
+            /* In fullscreen, hide card 1 (frame purchase) and card 3 (barcode) — only face scan is shown */
+            body.fullscreen-cam-active #frame-purchase-toggle-wrap {
+                display: none !important;
+            }
+            body.fullscreen-cam-active #fbs-card {
+                display: none !important;
+            }
+            /* Face section card becomes the fullscreen content */
+            body.fullscreen-cam-active #mp-face-section {
+                display: block !important;
+                margin-top: 0 !important;
+                width: 100%;
+                max-width: 520px;
+            }
+            body.fullscreen-cam-active #mp-face-section > .prescription-container {
+                background: transparent !important;
+                box-shadow: none !important;
+                border: none !important;
+                padding: 10px;
+                flex-shrink: 0;
+            }
+            /* Always expand fsa-body in fullscreen */
+            body.fullscreen-cam-active #fsa-body {
+                display: block !important;
+            }
+            body.fullscreen-cam-active .mp-wrapper {
+                width: min(92vw, 440px);
+                height: min(58vh, 520px);
+            }
+            body.fullscreen-cam-active .selection-wrapper {
+                flex-shrink: 0;
+                padding-bottom: 8px;
+            }
+
+            /* In fullscreen scan mode: hide FACE SHAPE ANALYSIS header & SELECT FACE SHAPE button */
+            body.fullscreen-cam-active #mp-face-section > .prescription-container > div:first-child {
+                display: none !important;
+            }
+            body.fullscreen-cam-active #mp-manual-shape-btn {
+                display: none !important;
+            }
+
+            /* Back button overlay — only visible in fullscreen */
+            #mp-back-btn {
+                display: none;
+                position: fixed;
+                top: 12px;
+                left: 12px;
+                z-index: 10000;
+                background: rgba(0,0,0,0.7);
+                border: 1px solid rgba(0,255,136,0.4);
+                color: #00ff88;
+                padding: 9px 14px;
+                border-radius: 22px;
+                font-size: 0.8rem;
+                font-weight: 700;
+                letter-spacing: 1px;
+                cursor: pointer;
+                font-family: inherit;
+                backdrop-filter: blur(8px);
+                -webkit-backdrop-filter: blur(8px);
+                box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+            }
+            #mp-back-btn:active { transform: scale(0.96); }
+            body.fullscreen-cam-active #mp-back-btn { display: inline-flex; align-items: center; gap: 6px; }
+
+            @media (max-width: 600px) {
+                body.fullscreen-cam-active #mp-scan-card {
+                    padding: 52px 6px calc(28px + env(safe-area-inset-bottom, 0px)) 6px !important;
+                }
+                body.fullscreen-cam-active .mp-wrapper { width: 96vw; height: 52vh; }
+            }
+
+            /* =================================================================
+               MOBILE LAYOUT HARDENING — prevents content from overflowing the
+               outer container on phones. Added last so it wins the cascade.
+               ================================================================= */
+
+            /* Global box-sizing so padding never adds to declared widths */
+            *, *::before, *::after { box-sizing: border-box; }
+
+            /* Kill any horizontal scroll at the root level */
+            html, body {
+                max-width: 100%;
+                overflow-x: hidden;
+            }
+
+            /* Images/canvas/video should never push the layout wider than their parent */
+            img, video, canvas, svg { max-width: 100%; height: auto; }
+
+            /* Read-only boxes sometimes hold long IDs or addresses — let them wrap */
+            .read-only-box {
+                word-break: break-word;
+                overflow-wrap: anywhere;
+                min-width: 0;
+            }
+
+            /* Generic container overflow guard */
+            .main-wrapper, .content-area, .main-card, .neumorph-card,
+            .prescription-container, .info-grid, .full {
+                max-width: 100%;
+                min-width: 0;
+            }
+
+            /* Make the prescription table adapt on narrow screens */
+            .prescription-table { width: 100%; table-layout: fixed; }
+            .prescription-table td, .prescription-table th {
+                word-break: break-word;
+                overflow-wrap: anywhere;
+            }
+            .input-table-neu { width: 100%; min-width: 0; }
+
+            /* Chips/metrics rows wrap instead of overflow */
+            .metrics-row, .pd-row {
+                flex-wrap: wrap;
+                max-width: 100%;
+            }
+            .metric-chip, .pd-chip { max-width: 100%; }
+
+            /* The scan-result card sometimes had width:90% pushing beyond the parent */
+            #mp-result, #mp-frame-rec { width: 100%; max-width: 100%; }
+            #mp-result > div, #mp-frame-rec > div { max-width: 100%; }
+
+            /* Selection-wrapper was set to nowrap on mobile — force wrap so 3+ buttons
+               (START/RESCAN, SWITCH, CAPTURE, RESET) never spill out of the container */
+            .selection-wrapper { flex-wrap: wrap; }
+
+            /* --- Mobile-specific sizing --- */
+            @media (max-width: 600px) {
+                /* Soften the big neumorphic shadow so it doesn't create apparent overflow */
+                .neumorph-card, .main-card, .prescription-container {
+                    box-shadow: 6px 6px 14px var(--shadow-dark), -6px -6px 14px var(--shadow-light);
+                    padding: 14px;
+                }
+                .invoice-body { padding: 8px; }
+
+                /* Reduce nested-container padding (prescription inside prescription) */
+                .prescription-container .prescription-container { padding: 10px; margin-top: 10px; }
+
+                /* Tighten the prescription table so all 5 columns fit */
+                .prescription-table { border-spacing: 3px 6px; }
+                .prescription-table th { font-size: 0.55rem; padding-bottom: 4px; }
+                .input-table-neu {
+                    padding: 8px 2px;
+                    font-size: 0.75rem;
+                    box-shadow: inset 3px 3px 6px var(--shadow-dark),
+                                inset -3px -3px 6px var(--shadow-light);
+                }
+                .eye-indicator { width: 30px; height: 30px; font-size: 0.8rem; }
+
+                /* Buttons: allow wrapping, let them grow but never exceed the row */
+                .selection-wrapper { flex-wrap: wrap !important; gap: 6px; }
+                .neu-btn {
+                    flex: 1 1 calc(50% - 6px);
+                    min-width: 0;
+                    padding: 10px 8px;
+                    font-size: 0.72rem;
+                    white-space: nowrap;
+                }
+
+                /* Buttons below the card (PRINT, BACK TO PREVIOUS PAGE) */
+                .btn-action, .back-main { width: 100%; max-width: 100%; }
+                .btn-group { width: 100%; padding: 0; }
+
+                /* Face-scan card: keep the video inside the card */
+                .mp-wrapper { width: 100%; height: 460px; }
+
+                /* IOC preset buttons — wrap nicely on small screens */
+                .ioc-preset { font-size: 8px; padding: 3px 7px; }
+
+                /* PD calibration header won't let the IOC label overflow */
+                #cal-header { gap: 8px; }
+                #cal-header > div:first-child { min-width: 0; flex: 1; }
+                #cal-active-label { white-space: nowrap; }
+
+                /* Header / brand section */
+                .header-container { padding: 10px; }
+                .company-name { font-size: 1rem; }
+                .company-address { font-size: 0.7rem; }
+                .logout-btn { padding: 6px 12px; font-size: 0.7rem; }
+
+                /* Result box typography a notch smaller so the badge fits */
+                .shape-badge { font-size: 1.2rem; letter-spacing: 1.5px; }
+            }
+
+            /* Extra-narrow (iPhone SE-class ~360px) */
+            @media (max-width: 380px) {
+                .invoice-body { padding: 6px; }
+                .neumorph-card, .main-card, .prescription-container { padding: 10px; }
+                .prescription-table th { font-size: 0.5rem; }
+                .input-table-neu { font-size: 0.7rem; padding: 6px 1px; }
+                .eye-indicator { width: 26px; height: 26px; font-size: 0.7rem; }
+                .neu-btn { flex: 1 1 100%; }
+            }
+
+            /* ================================================================
+               MOBILE POLISH — tambahan perbaikan tampilan di HP
+               ================================================================ */
+
+            /* Pastikan konten tidak overflow ke kiri/kanan */
+            * { box-sizing: border-box; }
+            html, body { overflow-x: hidden; max-width: 100%; }
+
+            @media (max-width: 768px) {
+
+                /* --- Header / Brand --- */
+                .header-container {
+                    padding: 12px 10px !important;
+                    flex-direction: column;
+                    align-items: center;
+                    text-align: center;
+                    gap: 8px;
+                }
+                .brand-section {
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    gap: 4px;
+                }
+                .company-name { font-size: 1rem !important; }
+                .company-address { font-size: 0.68rem !important; }
+                .logout-btn {
+                    position: static !important;
+                    align-self: flex-end;
+                    padding: 6px 14px !important;
+                    font-size: 0.7rem !important;
+                }
+
+                /* --- Main card wrapper --- */
+                .invoice-body { padding: 8px !important; }
+                .main-card, .neumorph-card {
+                    padding: 14px !important;
+                    border-radius: 16px !important;
+                }
+
+                /* --- Info grid: 2 kolom → 1 kolom --- */
+                .info-grid {
+                    grid-template-columns: 1fr !important;
+                    gap: 12px !important;
+                }
+                .info-grid .full { grid-column: span 1 !important; }
+
+                /* --- Read-only boxes --- */
+                .read-only-box {
+                    font-size: 0.85rem;
+                    padding: 10px 12px !important;
+                    min-height: 40px !important;
+                    word-break: break-word;
+                    overflow-wrap: anywhere;
+                }
+
+                /* --- Labels --- */
+                label { font-size: 0.72rem !important; margin-bottom: 4px !important; }
+
+                /* --- Prescription container --- */
+                .prescription-container {
+                    padding: 12px !important;
+                    border-radius: 14px !important;
+                }
+
+                /* --- Prescription table: compact & scrollable --- */
+                .table-responsive { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+                .prescription-table { border-spacing: 4px 6px !important; min-width: 300px; }
+                .prescription-table th { font-size: 0.55rem !important; letter-spacing: 0.5px !important; padding-bottom: 6px !important; }
+                .input-table-neu {
+                    padding: 8px 3px !important;
+                    font-size: 0.78rem !important;
+                    border-radius: 10px !important;
+                }
+                .eye-indicator { width: 30px !important; height: 30px !important; font-size: 0.8rem !important; }
+
+                /* --- Buttons --- */
+                .neu-btn {
+                    padding: 10px 8px !important;
+                    font-size: 0.72rem !important;
+                    flex: 1 1 calc(50% - 8px) !important;
+                    min-width: 0 !important;
+                    white-space: nowrap;
+                }
+                .selection-wrapper {
+                    flex-wrap: wrap !important;
+                    gap: 8px !important;
+                }
+                .btn-action {
+                    width: 100% !important;
+                    padding: 14px !important;
+                    font-size: 0.82rem !important;
+                }
+                .btn-group { padding: 10px !important; }
+                .back-main { width: 100% !important; font-size: 0.8rem !important; }
+
+                /* --- Lens recommendation header: bungkus badge kecil --- */
+                #lens-rec-wrap .prescription-container > div:first-child {
+                    flex-wrap: wrap !important;
+                    gap: 8px !important;
+                }
+                #lens-rec-wrap .prescription-container > div:first-child > div:last-child {
+                    flex-wrap: wrap !important;
+                    gap: 5px !important;
+                }
+
+                /* Badge lens type & count — ukurankan agar tidak overflow */
+                #lens-rec-wrap span[style*="letter-spacing"] {
+                    font-size: 7.5px !important;
+                    padding: 3px 7px !important;
+                    max-width: 100%;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                }
+
+                /* --- Power summary bar dalam lens rec --- */
+                #lr-body > div[style*="flex-wrap:wrap"] > div {
+                    min-width: 44px;
+                }
+
+                /* --- PD Calibration IOC input --- */
+                #cal-ioc-ref { width: 58px !important; font-size: 14px !important; }
+                #cal-header { flex-wrap: nowrap; gap: 6px; }
+
+                /* --- MediaPipe scan card --- */
+                .mp-wrapper { width: 100% !important; height: 460px !important; }
+
+                /* --- Footer --- */
+                .footer-container { padding: 10px !important; text-align: center; }
+                .footer-text { font-size: 0.65rem !important; }
+
+                /* --- Print button area --- */
+                div[style*="margin-top: 40px"] { margin-top: 20px !important; }
+
+                /* --- H2 Invoice title --- */
+                .main-card h2 {
+                    font-size: 1.1rem;
+                    margin-bottom: 10px;
+                }
+
+                /* Pose check chips: wrap & smaller */
+                #pose-checks { flex-wrap: wrap !important; gap: 5px !important; }
+                .pose-check { font-size: 9px !important; padding: 2px 7px !important; }
+            }
+
+            /* Sangat sempit (≤ 360px) */
+            @media (max-width: 360px) {
+                .neu-btn { flex: 1 1 100% !important; }
+                .prescription-table th { font-size: 0.48rem !important; }
+                .input-table-neu { font-size: 0.68rem !important; padding: 5px 1px !important; }
+                .eye-indicator { width: 24px !important; height: 24px !important; font-size: 0.68rem !important; }
+                .read-only-box { font-size: 0.78rem !important; }
+            }
+            /* ── Direct Sale Pending Card — collapsible sub-sections ──── */
+            .dsp-section {
+                background: rgba(255,255,255,0.03);
+                border-radius: 10px;
+                padding: 12px 14px;
+                margin-bottom: 10px;
+                cursor: pointer;
+                user-select: none;
+                transition: background 0.2s;
+            }
+            .dsp-section-header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 10px;
+            }
+            .dsp-section-header-left {
+                display: flex;
+                align-items: baseline;
+                gap: 10px;
+                min-width: 0;
+                flex: 1;
+            }
+            .dsp-section-title {
+                font-size: 0.72em;
+                color: #888;
+                letter-spacing: 1.5px;
+                font-weight: 700;
+                text-transform: uppercase;
+                flex-shrink: 0;
+            }
+            .dsp-chevron {
+                font-size: 0.85em;
+                color: #666;
+                transition: transform 0.25s ease;
+                flex-shrink: 0;
+                margin-left: 10px;
+            }
+            .dsp-section.collapsed .dsp-chevron { transform: rotate(-90deg); }
+            .dsp-section-body {
+                overflow: hidden;
+                max-height: 2000px;
+                opacity: 1;
+                margin-top: 12px;
+                transition: max-height 0.3s ease, opacity 0.25s ease, margin-top 0.3s ease;
+            }
+            .dsp-section.collapsed .dsp-section-body {
+                max-height: 0;
+                opacity: 0;
+                margin-top: 0;
+            }
+            .dsp-section-summary {
+                font-size: 0.85em;
+                color: #00ff88;
+                font-weight: 700;
+                display: none;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+                min-width: 0;
+            }
+            .dsp-section.collapsed .dsp-section-summary { display: block; }
+
+            /* Larger, more legible field labels & values inside pending card */
+            #ds-pending-card .dsp-field-label { font-size: 0.72em !important; color: #777 !important; letter-spacing: 1px; margin-bottom: 5px !important; }
+            #ds-pending-card .ci-field { font-size: 0.95em !important; }
+            #ds-pending-card input[type="text"].ci-field,
+            #ds-pending-card input[type="date"].ci-field,
+            #ds-pending-card input[type="number"].ci-field,
+            #ds-pending-card select.ci-field { font-size: 0.95em !important; }
+
+            /* Prescription table inside pending card — bigger */
+            #ds-pending-card .dsp-pres-grid { display: grid; grid-template-columns: 1.1fr repeat(4, 1fr); gap: 8px; }
+            #ds-pending-card .dsp-pres-grid.header { font-size: 0.78em; }
+            #ds-pending-card .dsp-pres-grid .eye-lbl { font-size: 0.85em; }
+            #ds-pending-card .ds-rx-field {
+                font-size: 1.05em !important;
+                padding: 10px 4px !important;
+            }
+
+            @media (max-width: 600px) {
+                .dsp-section { padding: 10px 12px; }
+                .dsp-section-title { font-size: 0.68em; }
+                .dsp-section-summary { font-size: 0.75em; }
+                .dsp-section-header-left { gap: 6px; }
+                #ds-pending-card .dsp-field-label { font-size: 0.7em !important; }
+                #ds-pending-card .ci-field { font-size: 0.9em !important; }
+                #ds-pending-card .dsp-pres-grid { gap: 5px; }
+                #ds-pending-card .dsp-pres-grid.header { font-size: 0.68em; }
+                #ds-pending-card .ds-rx-field {
+                    font-size: 0.95em !important;
+                    padding: 9px 2px !important;
+                }
+            }
+
+        </style>
+    </head>
+
+    <body style="background: var(--bg-color);">
+        <div class="main-wrapper">
+            <div class="content-area" style="flex-direction: column">
+                <div class="header-container" style="
+                margin-left: auto; 
+                margin-right: auto; 
+                width: 100%;">
+                    <button class="logout-btn" onclick="window.location.href='logout.php';">
+                        <span>Logout</span>
+                    </button>
+            
+                    <div class="brand-section">
+                        <div class="logo-box">
+                            <img src="<?php echo htmlspecialchars($BRAND_IMAGE_PATH); ?>" alt="Brand Logo" style="height: 40px;">
+                        </div>
+                        <h1 class="company-name"><?php echo htmlspecialchars($STORE_NAME); ?></h1>
+                        <p class="company-address"><?php echo htmlspecialchars($STORE_ADDRESS); ?></p>
+                    </div>
+                </div>
+                
+                <div class="main-card" style="
+                margin-left: auto; 
+                margin-right: auto; 
+                width: 100%;">
+                    <h2>INVOICE<?php if (!empty($_GET['direct'])): ?> <span style="font-size:0.55em;background:rgba(0,255,136,0.15);color:#00ff88;border:1px solid rgba(0,255,136,0.4);border-radius:20px;padding:3px 10px;letter-spacing:1px;vertical-align:middle;">DIRECT SALE</span><?php endif; ?></h2>
+            
+                    <?php if ($is_direct_pending):
+                        $pCard = $_SESSION['ds_pending'];
+                        $presHasPrescription = ($pCard['r_sph'] !== '0.00' || $pCard['r_cyl'] !== '0.00' || $pCard['r_add'] !== '0.00' || $pCard['l_sph'] !== '0.00' || $pCard['l_cyl'] !== '0.00' || $pCard['l_add'] !== '0.00');
+                    ?>
+                    <!-- ── DIRECT SALE PENDING CARD ─────────────────────────── -->
+                    <div id="ds-pending-card" style="background:rgba(0,255,136,0.05);border:1px solid rgba(0,255,136,0.35);border-radius:14px;margin-bottom:22px;overflow:hidden;">
+                        <!-- Card header / toggle -->
+                        <div onclick="dsPendingToggle()" style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;cursor:pointer;user-select:none;">
+                            <div style="display:flex;align-items:center;gap:10px;">
+                                <span style="font-size:0.6em;letter-spacing:2px;color:#00ff88;font-weight:800;">📋 DIRECT SALE DATA</span>
+                                <span style="font-size:0.55em;background:rgba(255,170,0,0.15);color:#ffaa00;border:1px solid rgba(255,170,0,0.4);border-radius:20px;padding:2px 8px;">PENDING — saved at print</span>
+                            </div>
+                            <span id="ds-pending-chevron" style="color:#00ff88;font-size:0.9em;transition:transform 0.2s;">▾</span>
+                        </div>
+                        <!-- Card body -->
+                        <div id="ds-pending-body" style="padding:0 16px 14px;display:block;">
+
+                            <!-- Section: Customer & Sale Info -->
+                            <div class="dsp-section collapsed" id="dsp_sec_info" onclick="dspToggle(this, event)">
+                                <div class="dsp-section-header">
+                                    <div class="dsp-section-header-left">
+                                        <div class="dsp-section-title">CUSTOMER &amp; SALE INFO</div>
+                                        <div class="dsp-section-summary" id="dsp_summary_info"><?php echo htmlspecialchars($pCard['name']); ?></div>
+                                    </div>
+                                    <span class="dsp-chevron">▾</span>
+                                </div>
+                                <div class="dsp-section-body" onclick="event.stopPropagation()">
+                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
+                                <div class="full" style="grid-column:1/-1;background:rgba(255,255,255,0.03);border-radius:8px;padding:8px 10px;">
+                                    <div class="dsp-field-label" style="margin-bottom:3px;">CUSTOMER NAME</div>
+                                    <input type="text" class="ci-field" id="ci_customer_name"
+                                        value="<?php echo htmlspecialchars($pCard['name']); ?>"
+                                        placeholder="— (not set)"
+                                        oninput="this.value=this.value.toUpperCase(); dspUpdateInfoSummary();"
+                                        style="width:100%;box-sizing:border-box;background:transparent;border:none;color:#eee;font-weight:700;font-family:inherit;padding:0;">
+                                </div>
+                                <div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:8px 10px;">
+                                    <div class="dsp-field-label" style="margin-bottom:3px;">DATE</div>
+                                    <input type="date" class="ci-field" id="ci_date"
+                                        value="<?php echo date('Y-m-d', strtotime($pCard['date'])); ?>"
+                                        style="width:100%;box-sizing:border-box;background:transparent;border:none;color:#eee;font-family:inherit;padding:0;color-scheme:dark;">
+                                </div>
+                                <div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:8px 10px;">
+                                    <div class="dsp-field-label" style="margin-bottom:3px;">GENDER / AGE</div>
+                                    <div style="display:flex;gap:6px;align-items:center;">
+                                        <select class="ci-field" id="ci_gender" onchange="dspToggleClose('dsp_sec_info')"
+                                            style="background:transparent;border:none;color:#eee;font-family:inherit;padding:0;flex:1;min-width:0;">
+                                            <option value="MALE" <?php echo (strtoupper($pCard['gender']) === 'MALE') ? 'selected' : ''; ?>>MALE</option>
+                                            <option value="FEMALE" <?php echo (strtoupper($pCard['gender']) === 'FEMALE') ? 'selected' : ''; ?>>FEMALE</option>
+                                        </select>
+                                        <input type="number" class="ci-field" id="ci_age" min="0" max="150"
+                                            value="<?php echo (int)$pCard['age']; ?>"
+                                            style="width:48px;background:transparent;border:none;color:#eee;font-family:inherit;padding:0;">
+                                        <span style="font-size:0.85em;color:#eee;">YRS</span>
+                                    </div>
+                                </div>
+                                <div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:8px 10px;">
+                                    <div class="dsp-field-label" style="margin-bottom:3px;">PURCHASE TYPE</div>
+                                    <div style="font-size:0.95em;color:<?php echo $inv_purchase_type === 'frame' ? '#ffaa00' : '#00cfff'; ?>;font-weight:700;"><?php echo $inv_purchase_type === 'frame' ? '🕶️ FRAME ONLY' : '🔬 FRAME + LENS'; ?></div>
+                                </div>
+                                <div style="background:rgba(255,255,255,0.03);border-radius:8px;padding:8px 10px;">
+                                    <div class="dsp-field-label" style="margin-bottom:3px;">PD (PUPILLARY DISTANCE)</div>
+                                    <div style="display:flex;align-items:center;gap:4px;">
+                                        <input type="text" inputmode="tel" class="ci-field" id="ci_pd"
+                                            value="<?php echo htmlspecialchars($pCard['pd']); ?>"
+                                            style="width:100%;box-sizing:border-box;background:transparent;border:none;color:#eee;font-family:inherit;padding:0;">
+                                        <span style="font-size:0.85em;color:#eee;">mm</span>
+                                    </div>
+                                </div>
+                            </div>
+                                </div>
+                            </div>
+                            <!-- /Section: Customer & Sale Info -->
+
+                            <?php if ($inv_purchase_type !== 'frame'): ?>
+                            <!-- Section: Prescription -->
+                            <div class="dsp-section collapsed" id="dsp_sec_pres" onclick="dspToggle(this, event)">
+                                <div class="dsp-section-header">
+                                    <div class="dsp-section-header-left">
+                                        <div class="dsp-section-title">PRESCRIPTION</div>
+                                        <div class="dsp-section-summary">OD <?php echo htmlspecialchars($pCard['r_sph']); ?> / OS <?php echo htmlspecialchars($pCard['l_sph']); ?></div>
+                                    </div>
+                                    <span class="dsp-chevron">▾</span>
+                                </div>
+                                <div class="dsp-section-body" onclick="event.stopPropagation()">
+                                <div class="dsp-pres-grid header" style="margin-bottom:6px;">
+                                    <div style="color:#555;text-align:center;font-weight:700;">EYE</div>
+                                    <div style="color:#555;text-align:center;font-weight:700;">SPH</div>
+                                    <div style="color:#555;text-align:center;font-weight:700;">CYL</div>
+                                    <div style="color:#555;text-align:center;font-weight:700;">AXIS</div>
+                                    <div style="color:#555;text-align:center;font-weight:700;">ADD</div>
+                                </div>
+                                <div class="dsp-pres-grid" style="margin-bottom:6px;">
+                                    <div class="eye-lbl" style="color:#aaa;font-weight:700;display:flex;align-items:center;">RIGHT</div>
+                                    <input type="text" inputmode="tel" class="ci-field ds-rx-field" id="ci_r_sph" value="<?php echo htmlspecialchars($pCard['r_sph']); ?>" style="width:100%;box-sizing:border-box;background:#1a1c1d;border:1px solid #333;border-radius:6px;color:#00ff88;font-family:monospace;text-align:center;">
+                                    <input type="text" inputmode="tel" class="ci-field ds-rx-field" id="ci_r_cyl" value="<?php echo htmlspecialchars($pCard['r_cyl']); ?>" style="width:100%;box-sizing:border-box;background:#1a1c1d;border:1px solid #333;border-radius:6px;color:#00ff88;font-family:monospace;text-align:center;">
+                                    <input type="text" inputmode="tel" class="ci-field ds-rx-field" id="ci_r_ax"  value="<?php echo htmlspecialchars($pCard['r_ax']); ?>"  style="width:100%;box-sizing:border-box;background:#1a1c1d;border:1px solid #333;border-radius:6px;color:#00cfff;font-family:monospace;text-align:center;">
+                                    <input type="text" inputmode="tel" class="ci-field ds-rx-field" id="ci_r_add" value="<?php echo htmlspecialchars($pCard['r_add']); ?>" style="width:100%;box-sizing:border-box;background:#1a1c1d;border:1px solid #333;border-radius:6px;color:#00ff88;font-family:monospace;text-align:center;">
+                                </div>
+                                <div class="dsp-pres-grid">
+                                    <div class="eye-lbl" style="color:#aaa;font-weight:700;display:flex;align-items:center;">LEFT</div>
+                                    <input type="text" inputmode="tel" class="ci-field ds-rx-field" id="ci_l_sph" value="<?php echo htmlspecialchars($pCard['l_sph']); ?>" style="width:100%;box-sizing:border-box;background:#1a1c1d;border:1px solid #333;border-radius:6px;color:#00ff88;font-family:monospace;text-align:center;">
+                                    <input type="text" inputmode="tel" class="ci-field ds-rx-field" id="ci_l_cyl" value="<?php echo htmlspecialchars($pCard['l_cyl']); ?>" style="width:100%;box-sizing:border-box;background:#1a1c1d;border:1px solid #333;border-radius:6px;color:#00ff88;font-family:monospace;text-align:center;">
+                                    <input type="text" inputmode="tel" class="ci-field ds-rx-field" id="ci_l_ax"  value="<?php echo htmlspecialchars($pCard['l_ax']); ?>"  style="width:100%;box-sizing:border-box;background:#1a1c1d;border:1px solid #333;border-radius:6px;color:#00cfff;font-family:monospace;text-align:center;">
+                                    <input type="text" inputmode="tel" class="ci-field ds-rx-field" id="ci_l_add" value="<?php echo htmlspecialchars($pCard['l_add']); ?>" style="width:100%;box-sizing:border-box;background:#1a1c1d;border:1px solid #333;border-radius:6px;color:#00ff88;font-family:monospace;text-align:center;">
+                                </div>
+                                </div>
+                            </div>
+                            <!-- /Section: Prescription -->
+                            <?php endif; ?>
+
+                            <!-- Section: Visual Habits -->
+                            <div class="dsp-section collapsed" id="dsp_sec_visual" onclick="dspToggle(this, event)">
+                                <div class="dsp-section-header">
+                                    <div class="dsp-section-header-left">
+                                        <div class="dsp-section-title">VISUAL HABITS</div>
+                                        <div class="dsp-section-summary" id="dsp_summary_visual"><?php
+                                            $vhLabels = [1=>'INDOOR', 2=>'OUTDOOR', 3=>'BOTH'];
+                                            echo $vhLabels[(int)$pCard['visual_habit']] ?? 'INDOOR';
+                                        ?></div>
+                                    </div>
+                                    <span class="dsp-chevron">▾</span>
+                                </div>
+                                <div class="dsp-section-body" onclick="event.stopPropagation()">
+                                <input type="hidden" class="ci-field" id="ci_visual_habit" value="<?php echo (int)$pCard['visual_habit']; ?>">
+                                <div class="selection-wrapper" id="ci_visual_habit_wrapper">
+                                    <button type="button" class="neu-btn ds-pending-toggle <?php echo ((int)$pCard['visual_habit'] === 1) ? 'active' : ''; ?>" data-target="ci_visual_habit" data-value="1" data-section="dsp_sec_visual" data-summary="dsp_summary_visual" data-label="INDOOR"><span>INDOOR</span><div class="led"></div></button>
+                                    <button type="button" class="neu-btn ds-pending-toggle <?php echo ((int)$pCard['visual_habit'] === 2) ? 'active' : ''; ?>" data-target="ci_visual_habit" data-value="2" data-section="dsp_sec_visual" data-summary="dsp_summary_visual" data-label="OUTDOOR"><span>OUTDOOR</span><div class="led"></div></button>
+                                    <button type="button" class="neu-btn ds-pending-toggle <?php echo ((int)$pCard['visual_habit'] === 3) ? 'active' : ''; ?>" data-target="ci_visual_habit" data-value="3" data-section="dsp_sec_visual" data-summary="dsp_summary_visual" data-label="BOTH"><span>BOTH</span><div class="led"></div></button>
+                                </div>
+                                </div>
+                            </div>
+                            <!-- /Section: Visual Habits -->
+
+                            <!-- Section: Digital Device Usage -->
+                            <div class="dsp-section collapsed" id="dsp_sec_digital" onclick="dspToggle(this, event)">
+                                <div class="dsp-section-header">
+                                    <div class="dsp-section-header-left">
+                                        <div class="dsp-section-title">DIGITAL DEVICE USAGE</div>
+                                        <div class="dsp-section-summary" id="dsp_summary_digital"><?php
+                                            $duLabels = [1=>'LOW (< 2H)', 2=>'MODERATE (2H-5H)', 3=>'HIGH (> 5H)'];
+                                            echo $duLabels[(int)$pCard['digital_usage']] ?? 'LOW (< 2H)';
+                                        ?></div>
+                                    </div>
+                                    <span class="dsp-chevron">▾</span>
+                                </div>
+                                <div class="dsp-section-body" onclick="event.stopPropagation()">
+                                <input type="hidden" class="ci-field" id="ci_digital_usage" value="<?php echo (int)$pCard['digital_usage']; ?>">
+                                <div class="selection-wrapper" id="ci_digital_usage_wrapper">
+                                    <button type="button" class="neu-btn ds-pending-toggle <?php echo ((int)$pCard['digital_usage'] === 1) ? 'active' : ''; ?>" data-target="ci_digital_usage" data-value="1" data-section="dsp_sec_digital" data-summary="dsp_summary_digital" data-label="LOW (< 2H)"><span>LOW<br>(&lt; 2H)</span><div class="led"></div></button>
+                                    <button type="button" class="neu-btn ds-pending-toggle <?php echo ((int)$pCard['digital_usage'] === 2) ? 'active' : ''; ?>" data-target="ci_digital_usage" data-value="2" data-section="dsp_sec_digital" data-summary="dsp_summary_digital" data-label="MODERATE (2H-5H)"><span>MODERATE<br>(2H-5H)</span><div class="led"></div></button>
+                                    <button type="button" class="neu-btn ds-pending-toggle <?php echo ((int)$pCard['digital_usage'] === 3) ? 'active' : ''; ?>" data-target="ci_digital_usage" data-value="3" data-section="dsp_sec_digital" data-summary="dsp_summary_digital" data-label="HIGH (> 5H)"><span>HIGH<br>(&gt; 5H)</span><div class="led"></div></button>
+                                </div>
+                                </div>
+                            </div>
+                            <!-- /Section: Digital Device Usage -->
+
+                            <?php if ((int)$pCard['age'] >= 39): ?>
+                            <!-- Section: Vision Need -->
+                            <div class="dsp-section collapsed" id="dsp_sec_vision" onclick="dspToggle(this, event)">
+                                <div class="dsp-section-header">
+                                    <div class="dsp-section-header-left">
+                                        <span style="color:#ffcc00;font-size:0.78em;font-weight:bold;letter-spacing:2px;flex-shrink:0;">⚑ VISION NEED</span>
+                                        <span style="background:#3a3200;border:1px solid rgba(255,204,0,0.4);color:#ffcc00;font-size:0.7em;padding:2px 8px;border-radius:20px;flex-shrink:0;">AGE ≥ 39</span>
+                                        <div class="dsp-section-summary" id="dsp_summary_vision"><?php
+                                            $vnLabels = [];
+                                            if ((int)$pCard['need_distance'] === 1) $vnLabels[] = 'DISTANCE';
+                                            if ((int)$pCard['need_inter'] === 1) $vnLabels[] = 'INTERMEDIATE';
+                                            if ((int)$pCard['need_near'] === 1) $vnLabels[] = 'NEAR';
+                                            echo $vnLabels ? htmlspecialchars(implode(', ', $vnLabels)) : 'None selected';
+                                        ?></div>
+                                    </div>
+                                    <span class="dsp-chevron">▾</span>
+                                </div>
+                                <div class="dsp-section-body" onclick="event.stopPropagation()">
+                                <input type="hidden" class="ci-field" id="ci_need_distance"     value="<?php echo (int)$pCard['need_distance']; ?>">
+                                <input type="hidden" class="ci-field" id="ci_need_intermediate" value="<?php echo (int)$pCard['need_inter']; ?>">
+                                <input type="hidden" class="ci-field" id="ci_need_near"          value="<?php echo (int)$pCard['need_near']; ?>">
+                                <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
+                                    <button type="button" class="neu-btn ds-pending-vision-toggle <?php echo ((int)$pCard['need_distance'] === 1) ? 'active' : ''; ?>" data-target="ci_need_distance" data-summary="dsp_summary_vision" style="flex:1;min-width:80px;flex-direction:column;align-items:center;gap:4px;padding:10px 6px;"><span style="font-size:1.2em;">🔭</span><span style="font-size:0.7em;">DISTANCE</span><div class="led"></div></button>
+                                    <button type="button" class="neu-btn ds-pending-vision-toggle <?php echo ((int)$pCard['need_inter'] === 1) ? 'active' : ''; ?>" data-target="ci_need_intermediate" data-summary="dsp_summary_vision" style="flex:1;min-width:80px;flex-direction:column;align-items:center;gap:4px;padding:10px 6px;"><span style="font-size:1.2em;">🖥️</span><span style="font-size:0.7em;">INTERMEDIATE</span><div class="led"></div></button>
+                                    <button type="button" class="neu-btn ds-pending-vision-toggle <?php echo ((int)$pCard['need_near'] === 1) ? 'active' : ''; ?>" data-target="ci_need_near" data-summary="dsp_summary_vision" style="flex:1;min-width:80px;flex-direction:column;align-items:center;gap:4px;padding:10px 6px;"><span style="font-size:1.2em;">📖</span><span style="font-size:0.7em;">NEAR</span><div class="led"></div></button>
+                                </div>
+                                </div>
+                            </div>
+                            <!-- /Section: Vision Need -->
+                            <?php endif; ?>
+
+                            <div style="font-size:0.7em;color:#555;text-align:center;margin-top:4px;">⚠ This data will be saved to the database only after PRINT INVOICE is confirmed</div>
+                        </div>
+                    </div>
+                    <?php elseif (!empty($_GET['direct'])): ?>
+                    <div style="background:rgba(0,255,136,0.05);border:1px solid rgba(0,255,136,0.2);border-radius:12px;padding:12px 16px;margin-bottom:18px;font-size:0.8em;color:#888;text-align:center;line-height:1.7;">
+                        Prescription provided by customer · Sequence code: <span style="color:#00ff88;font-weight:bold;">000</span>
+                    </div>
+                    <?php endif; ?>
+                    <?php if (isset($_GET['info_status'])): ?>
+                        <?php if ($_GET['info_status'] === 'success'): ?>
+                        <div style="background:rgba(0,255,136,0.08);border:1px solid rgba(0,255,136,0.35);color:#00ff88;border-radius:12px;padding:10px 16px;margin-bottom:16px;font-size:0.8em;text-align:center;font-weight:700;letter-spacing:0.5px;">
+                            ✓ CUSTOMER INFORMATION SAVED
+                        </div>
+                        <?php else: ?>
+                        <div style="background:rgba(255,77,77,0.08);border:1px solid rgba(255,77,77,0.35);color:#ff4d4d;border-radius:12px;padding:10px 16px;margin-bottom:16px;font-size:0.8em;text-align:center;font-weight:700;letter-spacing:0.5px;">
+                            ✕ FAILED TO SAVE CUSTOMER INFORMATION
+                        </div>
+                        <?php endif; ?>
+                    <?php endif; ?>
+                    <div class="info-grid">
+                        <div class="full">
+                            <label>EXAMINATION CODE</label>
+                            <div class="read-only-box"><?php echo $data['examination_code']; ?></div>
+                        </div>
+
+                        <?php if (!$is_direct_pending): ?>
+                        <!-- ============================================================
+                             EDITABLE CUSTOMER / EXAMINATION INFO
+                             Fields below can be edited inline. Editing reveals a
+                             SAVE INFO button; until saved, Order Details and the
+                             Print Invoice button remain locked.
+                             ============================================================ -->
+                        <div>
+                            <label>DATE</label>
+                            <input type="date" class="read-only-box ci-field" id="ci_date"
+                                value="<?php echo date('Y-m-d', strtotime($data['examination_date'])); ?>"
+                                style="width:100%;box-sizing:border-box;border:none;font-family:inherit;color-scheme:dark;">
+                        </div>
+
+                        <div class="full">
+                            <label>CUSTOMER NAME</label>
+                            <input type="text" class="read-only-box ci-field" id="ci_customer_name"
+                                value="<?php echo strtoupper($data['customer_name']); ?>"
+                                oninput="this.value=this.value.toUpperCase()"
+                                style="width:100%;box-sizing:border-box;border:none;font-family:inherit;">
+                        </div>
+
+                        <div>
+                            <label>AGE</label>
+                            <input type="number" class="read-only-box ci-field" id="ci_age"
+                                value="<?php echo (int)$data['age']; ?>" min="0" max="150"
+                                style="width:100%;box-sizing:border-box;border:none;font-family:inherit;">
+                        </div>
+
+                        <div>
+                            <label>GENDER</label>
+                            <select class="read-only-box ci-field" id="ci_gender"
+                                style="width:100%;box-sizing:border-box;border:none;font-family:inherit;">
+                                <option value="MALE" <?php echo (strtoupper($data['gender']) === 'MALE') ? 'selected' : ''; ?>>MALE</option>
+                                <option value="FEMALE" <?php echo (strtoupper($data['gender']) === 'FEMALE') ? 'selected' : ''; ?>>FEMALE</option>
+                            </select>
+                        </div>
+
+                        <div class="full">
+                            <label>SYMPTOMS</label>
+                            <textarea class="read-only-box ci-field" id="ci_symptoms"
+                                style="width:100%;box-sizing:border-box;height:auto;min-height:45px;border:none;font-family:inherit;resize:vertical;"><?php echo htmlspecialchars($data['symptoms']); ?></textarea>
+                        </div>
+
+                        <div class="full">
+                            <label>EXAM NOTES</label>
+                            <textarea class="read-only-box ci-field" id="ci_exam_notes"
+                                style="width:100%;box-sizing:border-box;height:auto;min-height:80px;border:none;font-family:inherit;resize:vertical;"><?php echo htmlspecialchars($data['exam_notes']); ?></textarea>
+                        </div>
+
+                        <!-- Save Customer Info button — hidden until a field changes -->
+                        <div class="full" id="ci-save-row" style="display:none;justify-content:center;">
+                            <form method="POST" id="ci-save-form" style="width:100%;max-width:320px;">
+                                <input type="hidden" name="invoice_number" value="<?php echo $data['invoice_number']; ?>">
+                                <input type="hidden" name="ci_date" id="ci_date_hidden">
+                                <input type="hidden" name="ci_customer_name" id="ci_customer_name_hidden">
+                                <input type="hidden" name="ci_age" id="ci_age_hidden">
+                                <input type="hidden" name="ci_gender" id="ci_gender_hidden">
+                                <input type="hidden" name="ci_symptoms" id="ci_symptoms_hidden">
+                                <input type="hidden" name="ci_exam_notes" id="ci_exam_notes_hidden">
+                                <button type="submit" name="save_customer_info" value="1" class="btn-action" style="width:100%;">SAVE INFO</button>
+                            </form>
+                        </div>
+                        <?php else: ?>
+                        <!-- ============================================================
+                             DIRECT SALE PENDING — remaining editable fields
+                             (CUSTOMER NAME, DATE, GENDER, AGE are edited directly in the
+                             DIRECT SALE DATA card above — not duplicated here)
+                             ============================================================ -->
+                        <div class="full">
+                            <label>SYMPTOMS</label>
+                            <textarea class="read-only-box ci-field" id="ci_symptoms"
+                                style="width:100%;box-sizing:border-box;height:auto;min-height:45px;border:none;font-family:inherit;resize:vertical;"><?php echo htmlspecialchars($data['symptoms']); ?></textarea>
+                        </div>
+
+                        <div class="full">
+                            <label>EXAM NOTES</label>
+                            <textarea class="read-only-box ci-field" id="ci_exam_notes"
+                                style="width:100%;box-sizing:border-box;height:auto;min-height:80px;border:none;font-family:inherit;resize:vertical;"><?php echo htmlspecialchars($data['exam_notes']); ?></textarea>
+                        </div>
+
+                        <!-- Save Pending Info button — hidden until a field changes -->
+                        <div class="full" id="ci-save-row" style="display:none;justify-content:center;">
+                            <form method="POST" id="ci-save-form" style="width:100%;max-width:320px;">
+                                <input type="hidden" name="ci_date" id="ci_date_hidden">
+                                <input type="hidden" name="ci_customer_name" id="ci_customer_name_hidden">
+                                <input type="hidden" name="ci_age" id="ci_age_hidden">
+                                <input type="hidden" name="ci_gender" id="ci_gender_hidden">
+                                <input type="hidden" name="ci_symptoms" id="ci_symptoms_hidden">
+                                <input type="hidden" name="ci_exam_notes" id="ci_exam_notes_hidden">
+                                <input type="hidden" name="ci_pd" id="ci_pd_hidden">
+                                <input type="hidden" name="ci_r_sph" id="ci_r_sph_hidden">
+                                <input type="hidden" name="ci_r_cyl" id="ci_r_cyl_hidden">
+                                <input type="hidden" name="ci_r_ax" id="ci_r_ax_hidden">
+                                <input type="hidden" name="ci_r_add" id="ci_r_add_hidden">
+                                <input type="hidden" name="ci_l_sph" id="ci_l_sph_hidden">
+                                <input type="hidden" name="ci_l_cyl" id="ci_l_cyl_hidden">
+                                <input type="hidden" name="ci_l_ax" id="ci_l_ax_hidden">
+                                <input type="hidden" name="ci_l_add" id="ci_l_add_hidden">
+                                <input type="hidden" name="ci_visual_habit" id="ci_visual_habit_hidden">
+                                <input type="hidden" name="ci_digital_usage" id="ci_digital_usage_hidden">
+                                <input type="hidden" name="ci_need_distance" id="ci_need_distance_hidden">
+                                <input type="hidden" name="ci_need_intermediate" id="ci_need_intermediate_hidden">
+                                <input type="hidden" name="ci_need_near" id="ci_need_near_hidden">
+                                <button type="submit" name="save_ds_pending_info" value="1" class="btn-action" style="width:100%;">SAVE INFO</button>
+                            </form>
+                        </div>
+                        <?php endif; ?>
+
+                        <!-- ============================================================
+                             ORDER DETAILS GROUP
+                             Prescription Modification · Frame Purchase · Lens Recommended
+                             ============================================================ -->
+                        <div class="full" id="order-details-group" style="background:rgba(255,255,255,0.01);border:1px solid rgba(255,255,255,0.06);border-radius:20px;padding:16px;display:flex;flex-direction:column;gap:12px;">
+                            <!-- Group header label (clickable toggle) -->
+                            <div onclick="toggleOrderDetails()" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;padding-bottom:10px;border-bottom:1px solid rgba(255,255,255,0.05);">
+                                <div style="display:flex;align-items:center;gap:8px;">
+                                    <span style="font-size:0.85rem;">📋</span>
+                                    <span style="font-size:0.6rem;letter-spacing:2.5px;font-weight:800;color:#666;">ORDER DETAILS</span>
+                                </div>
+                                <span id="order-details-chev" style="font-size:11px;color:#666;transition:transform 0.25s;display:inline-block;">▼</span>
+                            </div>
+                            <div id="order-details-body" style="display:flex;flex-direction:column;gap:12px;">
+
+                        <?php if ($inv_purchase_type !== 'frame'): ?>
+                        <div class="full">
+                            <div class="prescription-container" style="text-align:center; border:1px solid rgba(255,170,0,0.2); background:linear-gradient(135deg,rgba(255,170,0,0.03) 0%,transparent 60%);">
+                                <label id="mod-toggle-label" onclick="toggleModSection()" style="cursor:pointer; user-select:none; display:flex; align-items:center; justify-content:space-between; margin-bottom:0;">
+                                    <div style="display:flex; align-items:center; gap:10px;">
+                                        <span style="font-size:1.25rem;">✏️</span>
+                                        <div style="text-align:left;">
+                                            <div style="font-size:0.7rem; letter-spacing:2px; color:#ffaa00; font-weight:700;">PRESCRIPTION MODIFICATION</div>
+                                            <div style="font-size:8.5px; color:#555; margin-top:1px; letter-spacing:0.5px;">Tap to expand · select YES or NO</div>
+                                        </div>
+                                    </div>
+                                    <div style="display:flex; align-items:center; gap:8px;">
+                                        <span style="font-size:8px; background:rgba(255,170,0,0.1); color:#ffaa00; border:1px solid rgba(255,170,0,0.3); border-radius:20px; padding:3px 9px; letter-spacing:0.5px;"><?php echo ($data['lens_modification'] == 1) ? '✓ MODIFIED' : 'ORIGINAL'; ?></span>
+                                        <span id="mod-toggle-chev" style="font-size:11px; color:#ffaa00; transition:transform 0.25s; display:inline-block;">▼</span>
+                                    </div>
+                                </label>
+
+                                <div id="mod-collapsible" style="display:none; margin-top:10px;">
+                                <div class="selection-wrapper">
+                                    <button type="button" class="neu-btn active" id="mod-no">
+                                        <div class="led"></div> NO
+                                    </button>
+                                    <button type="button" class="neu-btn" id="mod-yes">
+                                        <div class="led"></div> YES (MODIFY)
+                                    </button>
+                                </div>
+
+                                <form method="POST" class="full">
+                                    <input type="hidden" name="invoice_number" value="<?php echo $data['invoice_number']; ?>">
+                                    
+                                    <div class="prescription-container">
+                                        <h3 style="color: var(--accent-color); font-size: 0.85rem; margin-bottom: 20px; text-align: center; opacity: 0.8;">
+                                            — MEASUREMENT —
+                                        </h3>
+                                        <div class="table-responsive">
+                                            <table class="prescription-table">
+                                                <thead>
+                                                    <tr>
+                                                        <th>SIDE</th>
+                                                        <th>SPH</th>
+                                                        <th>CYL</th>
+                                                        <th>AXIS</th>
+                                                        <th>ADD</th>
+                                                    </tr>
+                                                </thead>
+            
+                                                <tbody>
+                                                    <tr>
+                                                        <td class="eye-label"><div class="eye-indicator">R</div></td>
+                                                        <td><input type="text" name="od_sph" class="input-table-neu mod-field" 
+                                                            data-original="<?php echo $data['new_r_sph']; ?>" 
+                                                            data-modified="<?php echo $data['mod_r_sph'] ?? $data['new_r_sph']; ?>"
+                                                            value="<?php echo ($data['lens_modification'] == 1) ? $data['mod_r_sph'] : $data['new_r_sph']; ?>" readonly></td>
+                                                        
+                                                        <td><input type="text" name="od_cyl" class="input-table-neu mod-field" 
+                                                            data-original="<?php echo $data['new_r_cyl']; ?>" 
+                                                            data-modified="<?php echo $data['mod_r_cyl'] ?? $data['new_r_cyl']; ?>"
+                                                            value="<?php echo ($data['lens_modification'] == 1) ? $data['mod_r_cyl'] : $data['new_r_cyl']; ?>" readonly></td>
+                                                        
+                                                        <td><input type="text" name="od_axis" class="input-table-neu mod-field" 
+                                                            data-original="<?php echo $data['new_r_ax']; ?>" 
+                                                            data-modified="<?php echo $data['mod_r_ax'] ?? $data['new_r_ax']; ?>"
+                                                            value="<?php echo ($data['lens_modification'] == 1) ? $data['mod_r_ax'] : $data['new_r_ax']; ?>" readonly></td>
+                                                        
+                                                        <td><input type="text" name="od_add" class="input-table-neu mod-field" 
+                                                            data-original="<?php echo $data['new_r_add']; ?>" 
+                                                            data-modified="<?php echo $data['mod_r_add'] ?? $data['new_r_add']; ?>"
+                                                            value="<?php echo ($data['lens_modification'] == 1) ? $data['mod_r_add'] : $data['new_r_add']; ?>" readonly></td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td class="eye-label"><div class="eye-indicator">L</div></td>
+                                                        <td><input type="text" name="os_sph" class="input-table-neu mod-field" 
+                                                            data-original="<?php echo $data['new_l_sph']; ?>" 
+                                                            data-modified="<?php echo $data['mod_l_sph'] ?? $data['new_l_sph']; ?>"
+                                                            value="<?php echo ($data['lens_modification'] == 1) ? $data['mod_l_sph'] : $data['new_l_sph']; ?>" readonly></td>
+                                                        <td><input type="text" name="os_cyl" class="input-table-neu mod-field" 
+                                                            data-original="<?php echo $data['new_l_cyl']; ?>" 
+                                                            data-modified="<?php echo $data['mod_l_cyl'] ?? $data['new_l_cyl']; ?>"
+                                                            value="<?php echo ($data['lens_modification'] == 1) ? $data['mod_l_cyl'] : $data['new_l_cyl']; ?>" readonly></td>
+                                                        <td><input type="text" name="os_axis" class="input-table-neu mod-field" 
+                                                            data-original="<?php echo $data['new_l_ax']; ?>" 
+                                                            data-modified="<?php echo $data['mod_l_ax'] ?? $data['new_l_ax']; ?>"
+                                                            value="<?php echo ($data['lens_modification'] == 1) ? $data['mod_l_ax'] : $data['new_l_ax']; ?>" readonly></td>
+                                                        <td><input type="text" name="os_add" class="input-table-neu mod-field" 
+                                                            data-original="<?php echo $data['new_l_add']; ?>" 
+                                                            data-modified="<?php echo $data['mod_l_add'] ?? $data['new_l_add']; ?>"
+                                                            value="<?php echo ($data['lens_modification'] == 1) ? $data['mod_l_add'] : $data['new_l_add']; ?>" readonly></td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+        
+                                    <div id="save-btn-container" style="display: none; margin-top: 30px; text-align: center;">
+                                        <button type="submit" name="save_modification" class="btn-action" style="width: 100%; max-width: 400px; border-radius: 50px;">
+                                            CONFIRM & SAVE MODIFICATION
+                                        </button>
+                                    </div>
+                                </form>
+                                </div><!-- /#mod-collapsible -->
+                            </div>
+                        </div>
+                        <?php endif; // ptype !== 'frame' ?>
+
+                        <div class="full" id="mp-scan-card">
+                            <!-- Back button (only visible in fullscreen scan mode) -->
+                            <button type="button" id="mp-back-btn" onclick="exitFullscreenCam()">← BACK</button>
+
+                                <!-- ══════════════════════════════════════════════════
+                                     GROUP CONTAINER — Frame Selection Hub
+                                     (wraps Card 1, Card 2, Card 3)
+                                     ══════════════════════════════════════════════════ -->
+                                <div id="frame-selection-group" style="
+                                    border: 1px solid rgba(255,255,255,0.10);
+                                    border-radius: 20px;
+                                    padding: 6px 6px 10px;
+                                    background: rgba(255,255,255,0.015);
+                                    position: relative;
+                                    margin-top: 4px;
+                                ">
+                                    <!-- Group label -->
+                                    <div style="
+                                        position: absolute;
+                                        top: -10px;
+                                        left: 50%;
+                                        transform: translateX(-50%);
+                                        background: var(--bg-color, #1a1c1d);
+                                        padding: 0 10px;
+                                        font-size: 8px;
+                                        letter-spacing: 2px;
+                                        color: #444;
+                                        white-space: nowrap;
+                                        font-weight: 700;
+                                    ">▸ FRAME SELECTION</div>
+
+                                <!-- ══════════════════════════════════════════════════
+                                     CARD 1 — CUSTOMER PURCHASE FRAME?
+                                     ══════════════════════════════════════════════════ -->
+                                <div id="frame-purchase-toggle-wrap" class="prescription-container" style="text-align:center; border:1px solid rgba(255,255,255,0.09);">
+                                    <label id="fp-toggle-label" onclick="toggleFpSection()" style="cursor:pointer; user-select:none; display:flex; align-items:center; justify-content:space-between; margin-bottom:0;">
+                                        <div style="display:flex; align-items:center; gap:10px;">
+                                            <span style="font-size:1.25rem;">🛍️</span>
+                                            <div style="text-align:left;">
+                                                <div style="font-size:0.7rem; letter-spacing:2px; color:var(--accent-color); font-weight:700;">CUSTOMER PURCHASE FRAME?</div>
+                                                <div style="font-size:8.5px; color:#555; margin-top:1px; letter-spacing:0.5px;">Tap to expand · select YES or NO</div>
+                                            </div>
+                                        </div>
+                                        <span id="fp-toggle-chev" style="font-size:11px; color:var(--accent-color); transition:transform 0.25s; display:inline-block;">▼</span>
+                                    </label>
+                                    <div id="fp-collapsible" style="display:none; margin-top:14px;">
+                                        <div class="selection-wrapper" style="margin-top:6px;">
+                                            <button type="button" class="neu-btn active" id="frame-purchase-no" onclick="setFramePurchase(0)">
+                                                <div class="led"></div> NO
+                                            </button>
+                                            <button type="button" class="neu-btn" id="frame-purchase-yes" onclick="setFramePurchase(1)">
+                                                <div class="led"></div> YES
+                                            </button>
+                                        </div>
+                                    </div><!-- /#fp-collapsible -->
+                                </div><!-- /frame-purchase card -->
+
+                                <!-- ══════════════════════════════════════════════════
+                                     CARD 2 — FACE SHAPE ANALYSIS
+                                     Kept inside mp-scan-card so fullscreen works correctly.
+                                     ══════════════════════════════════════════════════ -->
+                                <div id="mp-face-section" style="display:none; margin-top:12px;">
+                                <div class="prescription-container" style="text-align:center; border:1px solid rgba(0,207,255,0.28); background:linear-gradient(135deg,rgba(0,207,255,0.04) 0%,transparent 60%);">
+
+                                    <!-- Header (collapsible) -->
+                                    <div onclick="toggleFsaSection()" style="display:flex; align-items:center; justify-content:space-between; cursor:pointer;">
+                                        <div style="display:flex; align-items:center; gap:10px;">
+                                            <span style="font-size:1.25rem;">🧬</span>
+                                            <div style="text-align:left;">
+                                                <div style="font-size:0.7rem; letter-spacing:2px; color:#00cfff; font-weight:700;">FACE SHAPE ANALYSIS</div>
+                                                <div style="font-size:8.5px; color:#555; margin-top:1px; letter-spacing:0.5px;">AI · Camera · Frame matching</div>
+                                            </div>
+                                        </div>
+                                        <div style="display:flex; align-items:center; gap:8px;">
+                                            <span style="font-size:8px; background:rgba(0,207,255,0.1); color:#00cfff; border:1px solid rgba(0,207,255,0.3); border-radius:20px; padding:3px 9px; letter-spacing:0.5px;">SCAN FACE</span>
+                                            <span id="fsa-chev" style="color:#00cfff; font-size:11px; display:inline-block; transition:transform 0.3s;">▼</span>
+                                        </div>
+                                    </div>
+
+                                    <!-- Collapsible body — contains all camera UI -->
+                                    <div id="fsa-body" style="display:none; margin-top:14px;">
+
+                                <!-- STEP INDICATOR (hidden initially — only shown inside fullscreen scan) -->
+                                <div id="mp-steps" style="display:none;justify-content:center;gap:6px;margin-bottom:14px;">
+                                    <div class="mp-step active" id="step1-ind">
+                                        <span class="step-num">1</span> CAMERA
+                                    </div>
+                                    <div class="step-arrow">›</div>
+                                    <div class="mp-step" id="step2-ind">
+                                        <span class="step-num">2</span> CAPTURE
+                                    </div>
+                                    <div class="step-arrow">›</div>
+                                    <div class="mp-step" id="step3-ind">
+                                        <span class="step-num">3</span> ANALYZE
+                                    </div>
+                                </div>
+
+                                <!-- PD CALIBRATION: IOC ratio only (collapsible) -->
+                                <div id="cal-box" style="display:none; margin-bottom:14px; border:1px solid rgba(0,255,136,0.15); border-radius:14px; overflow:hidden;">
+                                    <div id="cal-header" onclick="toggleCalBody()" style="background:rgba(0,255,136,0.05); padding:9px 14px; display:flex; align-items:center; justify-content:space-between; cursor:pointer; user-select:none;">
+                                        <div>
+                                            <div style="font-size:0.6rem; color:#00ff88; letter-spacing:1px;">📐 PD CALIBRATION — IOC RATIO</div>
+                                            <div style="font-size:9px; color:#555; margin-top:2px;">Tap to adjust IOC reference (advanced)</div>
+                                        </div>
+                                        <div style="display:flex; align-items:center; gap:8px;">
+                                            <span id="cal-active-label" style="color:#00ff88; font-size:10px; font-weight:700;">IOC 95mm</span>
+                                            <span id="cal-chevron" style="color:#00ff88; font-size:11px; transition:transform 0.25s; display:inline-block;">▼</span>
+                                        </div>
+                                    </div>
+                                    <div id="cal-body" style="padding:12px 14px; display:none;">
+                                        <div style="font-size:10px; color:#777; margin-bottom:10px; line-height:1.6; text-align:left;">
+                                            PD is calculated from the ratio of <b style="color:#00cfff;">inter-pupil distance</b> ÷ <b style="color:#00cfff;">inter-outer-canthus distance (IOC)</b>.<br>
+                                            Because both are measured in the same pixel space, the result is not affected by camera distance or zoom.
+                                        </div>
+                                        <div style="display:flex; align-items:center; gap:10px; justify-content:center; flex-wrap:wrap;">
+                                            <div style="text-align:left;">
+                                                <div style="font-size:9px; color:#555; letter-spacing:0.5px; margin-bottom:4px;">IOC REFERENCE (mm)</div>
+                                                <div style="display:flex; align-items:center; gap:6px;">
+                                                    <button type="button" onclick="adjustIOC(-0.5)" style="width:28px; height:28px; background:var(--bg-color); border:1px solid rgba(255,255,255,0.1); border-radius:8px; color:#aaa; font-size:16px; cursor:pointer; line-height:1;">−</button>
+                                                    <input type="number" id="cal-ioc-ref" value="95" min="85" max="110" step="0.5"
+                                                        style="width:68px; background:var(--bg-color); border:1px solid rgba(0,255,136,0.3); border-radius:10px; color:#00ff88; padding:6px 4px; font-size:16px; font-weight:800; text-align:center;">
+                                                    <button type="button" onclick="adjustIOC(0.5)" style="width:28px; height:28px; background:var(--bg-color); border:1px solid rgba(255,255,255,0.1); border-radius:8px; color:#aaa; font-size:16px; cursor:pointer; line-height:1;">+</button>
+                                                    <span style="font-size:11px; color:#555;">mm</span>
+                                                </div>
+                                            </div>
+                                            <button type="button" onclick="applyAutoCal()" style="padding:7px 14px; font-size:10px; font-weight:700; letter-spacing:0.8px; background:rgba(0,255,136,0.08); border:1px solid rgba(0,255,136,0.35); border-radius:10px; color:#00ff88; cursor:pointer; font-family:inherit; flex:0 0 auto; white-space:nowrap; align-self:flex-end; height:32px; line-height:1;">
+                                                ✓ APPLY
+                                            </button>
+                                        </div>
+                                        <div id="cal-auto-status" style="font-size:10px; color:#00ff88; margin-top:8px; text-align:center;">✓ Active — IOC ref: 95mm</div>
+                                        <!-- Quick reference -->
+                                        <div style="margin-top:10px; display:flex; gap:6px; justify-content:center; flex-wrap:wrap;">
+                                            <div style="font-size:9px; color:#444; letter-spacing:0.5px; width:100%; text-align:center; margin-bottom:3px;">QUICK REFERENCE</div>
+                                            <button type="button" onclick="setIOCPreset(90)" class="ioc-preset">Small · 90mm</button>
+                                            <button type="button" onclick="setIOCPreset(93)" class="ioc-preset">Female · 93mm</button>
+                                            <button type="button" onclick="setIOCPreset(95)" class="ioc-preset active">Average · 95mm</button>
+                                            <button type="button" onclick="setIOCPreset(98)" class="ioc-preset">Male · 98mm</button>
+                                            <button type="button" onclick="setIOCPreset(102)" class="ioc-preset">Large · 102mm</button>
+                                        </div>
+
+                                        <!-- AUTO-CAPTURE DURATION -->
+                                        <div style="margin-top:14px; padding-top:10px; border-top:1px dashed rgba(255,255,255,0.06);">
+                                            <div style="font-size:9px; color:#555; letter-spacing:0.5px; text-align:center; margin-bottom:6px;">AUTO-CAPTURE DURATION</div>
+                                            <div style="display:flex; align-items:center; gap:6px; justify-content:center; flex-wrap:wrap;">
+                                                <button type="button" onclick="setAutoCapSeconds(parseFloat(document.getElementById('autocap-sec-input').value||3)-1)" style="width:28px; height:28px; background:var(--bg-color); border:1px solid rgba(255,255,255,0.1); border-radius:8px; color:#aaa; font-size:16px; cursor:pointer; line-height:1;">−</button>
+                                                <input type="number" id="autocap-sec-input" value="3" min="1" max="15" step="1"
+                                                    oninput="setAutoCapSeconds(this.value)"
+                                                    style="width:58px; background:var(--bg-color); border:1px solid rgba(0,255,136,0.3); border-radius:10px; color:#00ff88; padding:6px 4px; font-size:15px; font-weight:800; text-align:center;">
+                                                <button type="button" onclick="setAutoCapSeconds(parseFloat(document.getElementById('autocap-sec-input').value||3)+1)" style="width:28px; height:28px; background:var(--bg-color); border:1px solid rgba(255,255,255,0.1); border-radius:8px; color:#aaa; font-size:16px; cursor:pointer; line-height:1;">+</button>
+                                                <span style="font-size:11px; color:#555;">seconds</span>
+                                            </div>
+                                            <div style="font-size:9px; color:#444; text-align:center; margin-top:5px;">Range 1–15s · Default 3s</div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- LIVE CAMERA VIEW (hidden initially — shown when camera starts) -->
+                                <div id="mp-live-view" style="display:none;">
+                                    <p class="scan-instruction" id="mp-instruction">Position your face inside the green outline</p>
+                                    <div class="mp-wrapper">
+                                        <video id="mp-video" autoplay muted playsinline></video>
+                                        <canvas id="mp-canvas"></canvas>
+                                        <div class="mp-guide" id="mp-guide"></div>
+                                        <!-- Pose quality indicators -->
+                                        <div id="mp-pose-indicator" style="position:absolute;bottom:10px;left:50%;transform:translateX(-50%);z-index:30;display:none;">
+                                            <div id="pose-warn" style="background:rgba(255,100,0,0.85);color:#fff;font-size:10px;padding:4px 10px;border-radius:20px;letter-spacing:1px;"></div>
+                                        </div>
+                                    </div>
+                                    <!-- SUB-CHECK INDICATORS -->
+                                    <div id="pose-checks" style="display:none;margin-top:10px;gap:6px;justify-content:center;flex-wrap:wrap;">
+                                        <span class="pose-check" id="chk-center">◎ Centering</span>
+                                        <span class="pose-check" id="chk-distance">↔ Distance</span>
+                                        <span class="pose-check" id="chk-tilt">⟲ Tilt</span>
+                                        <span class="pose-check" id="chk-yaw">↻ Rotation</span>
+                                    </div>
+
+                                    <!-- AUTO-CAPTURE COUNTDOWN -->
+                                    <div id="autocap-hint" style="display:none;margin-top:8px;font-size:11px;color:#00ff88;letter-spacing:1px;">
+                                        Hold still… auto-capture in <span id="autocap-sec">3</span>
+                                    </div>
+
+                                    <!-- BRIGHTNESS / POSE QUALITY BAR -->
+                                    <div id="quality-bar-wrap" style="display:none;margin-top:8px;">
+                                        <div style="font-size:9px;color:#555;letter-spacing:1px;margin-bottom:3px;">POSITION QUALITY</div>
+                                        <div style="width:100%;height:5px;background:rgba(255,255,255,0.08);border-radius:3px;overflow:hidden;">
+                                            <div id="quality-bar-fill" style="height:100%;border-radius:3px;background:linear-gradient(90deg,#ff4d4d,#ffaa00,#00ff88);width:0%;transition:width 0.3s;"></div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- CAPTURED PHOTO VIEW (hidden initially) -->
+                                <div id="mp-captured-view" style="display:none;">
+                                    <p class="scan-instruction" style="color:#00cfff;">📸 Photo captured — ready to analyze</p>
+                                    <div class="mp-wrapper" style="position:relative;">
+                                        <canvas id="mp-photo-canvas" style="width:100%;height:100%;object-fit:cover;border-radius:20px;"></canvas>
+                                        <!-- Retake overlay button -->
+                                        <button type="button" id="mp-retake-overlay" style="position:absolute;top:10px;right:10px;background:rgba(0,0,0,0.6);border:1px solid #555;color:#fff;border-radius:20px;padding:5px 12px;font-size:10px;z-index:30;cursor:pointer;">
+                                            ↩ RETAKE
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <!-- RESULT BOX (hidden initially — shown after analysis / BACK) -->
+                                <div id="mp-result" class="read-only-box" style="display:none; color: #00ff88; flex-direction:column; min-height:90px; padding:15px; margin-top:15px;">
+                                    <span style="color:var(--text-muted);font-size:0.75rem">Press START CAMERA to begin</span>
+                                </div>
+
+                                <!-- FRAME RECOMMENDATION BOX (hidden until result) -->
+                                <div id="mp-frame-rec" style="display:none; margin-top:12px; padding:14px 16px; background:rgba(255,170,0,0.06); border:1px solid rgba(255,170,0,0.2); border-radius:14px; text-align:left;">
+                                    <div style="font-size:0.6rem;color:#ffaa00;letter-spacing:1px;margin-bottom:8px;text-align:center;">✦ EYEGLASS FRAME RECOMMENDATION</div>
+                                    <div id="frame-rec-content"></div>
+                                </div>
+
+                                <!-- BUTTON ROW -->
+                                <div class="selection-wrapper" style="margin-top: 15px; flex-wrap:wrap; gap:8px;">
+                                    <button type="button" class="neu-btn" id="mp-result-toggle-btn" onclick="toggleFaceResult()" style="display:none; border-color:rgba(0,207,255,0.4); color:#00cfff;">
+                                        <div class="led" style="background:#00cfff; box-shadow:0 0 6px #00cfff;"></div>
+                                        <span id="mp-result-toggle-label">👁 VIEW RESULT</span>
+                                    </button>
+                                    <button type="button" class="neu-btn" id="mp-start-btn">
+                                        <div class="led"></div> START CAMERA
+                                    </button>
+                                    <button type="button" class="neu-btn" id="mp-manual-shape-btn" onclick="openManualFaceShape()" style="border-color:rgba(170,136,255,0.4); color:#aa88ff;">
+                                        <div class="led" style="background:#aa88ff; box-shadow:0 0 6px #aa88ff;"></div> ✋ SELECT FACE SHAPE
+                                    </button>
+                                    <button type="button" class="neu-btn" id="mp-switch-btn" style="display:none;">
+                                        <div class="led"></div> SWITCH CAM
+                                    </button>
+                                    <button type="button" class="neu-btn" id="mp-capture-btn" style="display:none; border-color:rgba(0,255,136,0.4);">
+                                        <div class="led" style="background:#00ff88;box-shadow:0 0 6px #00ff88;"></div> 📸 CAPTURE
+                                    </button>
+                                    <button type="button" class="neu-btn" id="mp-reset-btn" style="display:none;">
+                                        <div class="led"></div> RESTART SCAN
+                                    </button>
+                                </div>
+
+                                    </div><!-- /fsa-body -->
+                                </div><!-- /prescription-container card-2 -->
+                                </div><!-- /mp-face-section -->
+
+                                <!-- ══════════════════════════════════════════════════
+                                     CARD 3 — FRAME BARCODE SCANNER
+                                     Kept inside mp-scan-card (never enters fullscreen).
+                                     ══════════════════════════════════════════════════ -->
+                                <div id="fbs-card" style="display:none; margin-top:12px;">
+                                <div class="prescription-container" style="text-align:center; border:1px solid rgba(0,255,136,0.22); background:linear-gradient(135deg,rgba(0,255,136,0.03) 0%,transparent 60%);">
+
+                                    <!-- Header (collapsible) -->
+                                    <div onclick="toggleFbsSection()" style="display:flex; align-items:center; justify-content:space-between; cursor:pointer;">
+                                        <div style="display:flex; align-items:center; gap:10px;">
+                                            <span style="font-size:1.25rem;">📷</span>
+                                            <div style="text-align:left;">
+                                                <div style="font-size:0.7rem; letter-spacing:2px; color:#00ff88; font-weight:700;">FRAME BARCODE SCAN</div>
+                                                <div style="font-size:8.5px; color:#555; margin-top:1px; letter-spacing:0.5px;">Camera · UFC lookup · Stock check</div>
+                                            </div>
+                                        </div>
+                                        <div style="display:flex; align-items:center; gap:8px;">
+                                            <span style="font-size:8px; background:rgba(0,255,136,0.08); color:#00ff88; border:1px solid rgba(0,255,136,0.25); border-radius:20px; padding:3px 9px; letter-spacing:0.5px;">SCAN BARCODE</span>
+                                            <span id="fbs-chev" style="color:#00ff88; font-size:11px; display:inline-block; transition:transform 0.3s;">▼</span>
+                                        </div>
+                                    </div>
+
+                                    <!-- Collapsible body -->
+                                    <div id="fbs-body" style="display:none; margin-top:14px;">
+
+                                <!-- ── MODE TABS: UFC / ATTRIBUTE SEARCH ─────── -->
+                                <div style="display:flex;gap:6px;margin-bottom:14px;">
+                                    <button type="button" id="fbs-tab-ufc" onclick="fbsSwitchTab('ufc')"
+                                        style="flex:1;padding:7px 4px;border-radius:10px;border:1px solid rgba(0,255,136,0.45);background:rgba(0,255,136,0.08);color:#00ff88;font-size:9px;font-weight:700;letter-spacing:0.8px;cursor:pointer;font-family:inherit;transition:all 0.2s;">
+                                        📷 SCAN / UFC
+                                    </button>
+                                    <button type="button" id="fbs-tab-attr" onclick="fbsSwitchTab('attr')"
+                                        style="flex:1;padding:7px 4px;border-radius:10px;border:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.02);color:#888;font-size:9px;font-weight:700;letter-spacing:0.8px;cursor:pointer;font-family:inherit;transition:all 0.2s;">
+                                        🔍 BRAND / CODE / SIZE
+                                    </button>
+                                </div>
+
+                                <!-- ── PANEL A: SCAN / UFC ───────────────────── -->
+                                <div id="fbs-panel-ufc">
+
+                                <!-- Camera viewfinder — hidden until START SCANNER is pressed -->
+                                <div id="fbs-viewfinder" style="display:none; margin-top:14px;">
+                                    <div style="position:relative; width:100%; max-width:300px; height:220px; margin:0 auto; border-radius:16px; overflow:hidden; background:#000; box-sizing:border-box;">
+                                        <video id="fbs-video" autoplay muted playsinline style="width:100%; height:100%; object-fit:cover;"></video>
+                                        <div id="fbs-scanline" style="position:absolute;left:10%;width:80%;height:2px;background:rgba(0,255,136,0.7);box-shadow:0 0 8px rgba(0,255,136,0.6);top:50%;animation:fbs-slide 2s linear infinite;pointer-events:none;"></div>
+                                        <div style="position:absolute;top:12px;left:12px;width:28px;height:28px;border-top:2px solid #00ff88;border-left:2px solid #00ff88;border-radius:3px 0 0 0;pointer-events:none;"></div>
+                                        <div style="position:absolute;top:12px;right:12px;width:28px;height:28px;border-top:2px solid #00ff88;border-right:2px solid #00ff88;border-radius:0 3px 0 0;pointer-events:none;"></div>
+                                        <div style="position:absolute;bottom:12px;left:12px;width:28px;height:28px;border-bottom:2px solid #00ff88;border-left:2px solid #00ff88;border-radius:0 0 0 3px;pointer-events:none;"></div>
+                                        <div style="position:absolute;bottom:12px;right:12px;width:28px;height:28px;border-bottom:2px solid #00ff88;border-right:2px solid #00ff88;border-radius:0 0 3px 0;pointer-events:none;"></div>
+                                        <div id="fbs-cam-status" style="position:absolute;bottom:10px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.65);color:#00ff88;font-size:9px;padding:3px 10px;border-radius:20px;letter-spacing:1px;white-space:nowrap;">&#9679; SCANNING…</div>
+                                        <canvas id="fbs-canvas" style="display:none;"></canvas>
+                                    </div>
+                                </div>
+
+                                <!-- Manual UFC fallback input -->
+                                <div style="margin:12px auto 0; max-width:300px; position:relative;">
+                                    <input type="text" id="fbs-manual-input" placeholder="Or type UFC manually…"
+                                           style="width:100%; box-sizing:border-box; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); border-radius:10px; color:#ccc; font-size:11px; padding:9px 36px 9px 12px; letter-spacing:0.5px; outline:none;">
+                                    <button type="button" onclick="fbsLookupManual()" title="Search"
+                                            style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:#00ff88;font-size:14px;cursor:pointer;padding:0;">&#128269;</button>
+                                </div>
+
+                                <!-- Result card (UFC mode) -->
+                                <div id="fbs-result" style="margin:12px auto 0; max-width:300px; min-height:54px; display:flex; align-items:center; justify-content:center; border:1px solid rgba(0,255,136,0.18); border-radius:12px; padding:12px 14px; background:rgba(0,255,136,0.03);">
+                                    <span style="font-size:10px; color:#444; letter-spacing:0.5px;">Press START SCANNER or type a UFC to begin</span>
+                                </div>
+
+                                <!-- Button row -->
+                                <div class="selection-wrapper" style="margin-top:14px; flex-wrap:wrap; gap:8px;">
+                                    <button type="button" class="neu-btn" id="fbs-start-btn" onclick="fbsStartCamera()">
+                                        <div class="led"></div> START SCANNER
+                                    </button>
+                                    <button type="button" class="neu-btn" id="fbs-stop-btn" style="display:none;" onclick="fbsStopCamera()">
+                                        <div class="led" style="background:#ff4d4d;box-shadow:0 0 6px #ff4d4d;"></div> STOP SCANNER
+                                    </button>
+                                    <button type="button" class="neu-btn" id="fbs-clear-btn" style="display:none;" onclick="fbsClearResult()">
+                                        <div class="led"></div> CLEAR
+                                    </button>
+                                </div>
+
+                                </div><!-- /fbs-panel-ufc -->
+
+                                <!-- ── PANEL B: BRAND / CODE / SIZE SEARCH ───── -->
+                                <div id="fbs-panel-attr" style="display:none;">
+
+                                    <!-- Input fields -->
+                                    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px;">
+
+                                        <!-- Brand Name -->
+                                        <div>
+                                            <label style="font-size:8px;color:#555;letter-spacing:1px;display:block;margin-bottom:3px;">BRAND NAME</label>
+                                            <input type="text" id="fbs-attr-brand" placeholder="e.g. Oakley, Ray-Ban…"
+                                                   oninput="fbsAttrAutoSearch()"
+                                                   style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:#ccc;font-size:11px;padding:9px 12px;letter-spacing:0.5px;outline:none;">
+                                        </div>
+
+                                        <!-- Frame Code -->
+                                        <div>
+                                            <label style="font-size:8px;color:#555;letter-spacing:1px;display:block;margin-bottom:3px;">FRAME CODE</label>
+                                            <input type="text" id="fbs-attr-code" placeholder="e.g. OX8156, RB3025…"
+                                                   oninput="fbsAttrAutoSearch()"
+                                                   style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:#ccc;font-size:11px;padding:9px 12px;letter-spacing:0.5px;outline:none;">
+                                        </div>
+
+                                        <!-- Frame Size -->
+                                        <div>
+                                            <label style="font-size:8px;color:#555;letter-spacing:1px;display:block;margin-bottom:3px;">FRAME SIZE</label>
+                                            <input type="text" id="fbs-attr-size" placeholder="e.g. 52-18-140, 54□17…"
+                                                   oninput="fbsAttrAutoSearch()"
+                                                   style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:10px;color:#ccc;font-size:11px;padding:9px 12px;letter-spacing:0.5px;outline:none;">
+                                        </div>
+                                    </div>
+
+                                    <!-- Search button -->
+                                    <button type="button" onclick="fbsAttrSearch()"
+                                            style="width:100%;padding:10px;border-radius:10px;background:rgba(0,255,136,0.08);border:1px solid rgba(0,255,136,0.35);color:#00ff88;font-size:10px;font-weight:700;letter-spacing:1px;cursor:pointer;font-family:inherit;margin-bottom:12px;">
+                                        🔍 SEARCH FRAMES
+                                    </button>
+
+                                    <!-- Loading indicator -->
+                                    <div id="fbs-attr-loading" style="display:none;text-align:center;padding:8px;">
+                                        <div style="display:inline-flex;align-items:center;gap:8px;">
+                                            <div style="width:12px;height:12px;border:2px solid #00ff88;border-top-color:transparent;border-radius:50%;animation:fbs-spin 0.7s linear infinite;"></div>
+                                            <span style="font-size:10px;color:#00ff88;letter-spacing:1px;">SEARCHING…</span>
+                                        </div>
+                                    </div>
+
+                                    <!-- Results list -->
+                                    <div id="fbs-attr-results" style="display:none;">
+                                        <div style="font-size:8px;color:#555;letter-spacing:1px;margin-bottom:8px;" id="fbs-attr-count">0 RESULTS</div>
+                                        <div id="fbs-attr-list" style="display:flex;flex-direction:column;gap:7px;max-height:340px;overflow-y:auto;padding-right:2px;"></div>
+                                    </div>
+
+                                    <!-- No results message -->
+                                    <div id="fbs-attr-none" style="display:none;text-align:center;padding:12px;font-size:10px;color:#666;border:1px solid rgba(255,255,255,0.06);border-radius:10px;">
+                                        ⊘ No frames matched your search.<br>
+                                        <span style="font-size:9px;color:#444;">Try fewer filters or different keywords.</span>
+                                    </div>
+
+                                    <!-- Attr clear button -->
+                                    <button type="button" id="fbs-attr-clear-btn" style="display:none;width:100%;margin-top:8px;padding:8px;border-radius:10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);color:#666;font-size:9px;font-weight:700;letter-spacing:1px;cursor:pointer;font-family:inherit;" onclick="fbsAttrClear()">
+                                        ✕ CLEAR SEARCH
+                                    </button>
+
+                                </div><!-- /fbs-panel-attr -->
+
+                                <style>
+                                    @keyframes fbs-slide { 0% { top:15%; } 50% { top:80%; } 100% { top:15%; } }
+                                    @keyframes fbs-spin  { to { transform: rotate(360deg); } }
+                                    .fbs-frame-row {
+                                        display:flex;align-items:flex-start;gap:10px;padding:10px 12px;
+                                        background:rgba(255,255,255,0.025);border:1.5px solid rgba(255,255,255,0.07);
+                                        border-radius:12px;cursor:pointer;transition:background 0.18s,border-color 0.18s;
+                                        text-align:left;width:100%;box-sizing:border-box;font-family:inherit;
+                                        color:inherit;
+                                    }
+                                    .fbs-frame-row:hover  { background:rgba(0,255,136,0.07);border-color:rgba(0,255,136,0.35); }
+                                    .fbs-frame-row.selected { background:rgba(0,255,136,0.13);border-color:rgba(0,255,136,0.70);box-shadow:0 0 0 1px rgba(0,255,136,0.25); }
+                                    .fbs-frame-row.oos { cursor:not-allowed !important; pointer-events:none !important; opacity:0.45; }
+                                    .fbs-frame-row.oos:hover { background:rgba(255,255,255,0.025) !important; border-color:rgba(255,255,255,0.07) !important; }
+                                </style>
+
+                                    </div><!-- /fbs-body -->
+                                </div><!-- /prescription-container card-3 -->
+                                </div><!-- /fbs-card -->
+
+                                <!-- ══════════════════════════════════════════════════
+                                     CARD 4 — NEW FRAME INPUT (not in database)
+                                     ══════════════════════════════════════════════════ -->
+                                <div id="cfr-card" style="display:none; margin-top:12px;">
+                                <div class="prescription-container" style="text-align:center; border:1px solid rgba(255,138,77,0.28); background:linear-gradient(135deg,rgba(255,138,77,0.04) 0%,transparent 60%);">
+
+                                    <!-- Header (collapsible) -->
+                                    <div onclick="toggleCfrSection()" style="display:flex; align-items:center; justify-content:space-between; cursor:pointer;">
+                                        <div style="display:flex; align-items:center; gap:10px;">
+                                            <span style="font-size:1.25rem;">✏️</span>
+                                            <div style="text-align:left;">
+                                                <div style="font-size:0.7rem; letter-spacing:2px; color:#ff8a4d; font-weight:700;">NEW FRAME INPUT</div>
+                                                <div style="font-size:8.5px; color:#555; margin-top:1px; letter-spacing:0.5px;">Frame not in database · Manual entry</div>
+                                            </div>
+                                        </div>
+                                        <div style="display:flex; align-items:center; gap:8px;">
+                                            <span style="font-size:8px; background:rgba(255,138,77,0.1); color:#ff8a4d; border:1px solid rgba(255,138,77,0.3); border-radius:20px; padding:3px 9px; letter-spacing:0.5px;">MANUAL INPUT</span>
+                                            <span id="cfr-chev" style="color:#ff8a4d; font-size:11px; display:inline-block; transition:transform 0.3s;">▼</span>
+                                        </div>
+                                    </div>
+
+                                    <!-- Collapsible body -->
+                                    <div id="cfr-body" style="display:none; margin-top:14px;">
+
+                                        <div style="font-size:9px; color:#666; text-align:left; margin-bottom:12px; padding:8px 10px; background:rgba(255,138,77,0.06); border:1px solid rgba(255,138,77,0.15); border-radius:10px; line-height:1.6;">
+                                            ℹ️ Use this form if the frame is not found via <b style="color:#ff8a4d;">Scan Barcode</b> or <b style="color:#00cfff;">Manual Search</b>. Data will be saved to the database and listed below — tap a frame to select it as the customer's choice.
+                                        </div>
+
+                                        <!-- Saved custom frames list -->
+                                        <div id="cfr-list" style="display:none; margin-bottom:12px; text-align:left;">
+                                            <div style="font-size:8px; color:#888; letter-spacing:1px; margin-bottom:6px;">SAVED FRAMES — TAP TO SELECT / DESELECT</div>
+                                            <div id="cfr-list-inner" style="display:flex; flex-direction:column; gap:6px;"></div>
+                                        </div>
+
+                                        <!-- Input fields -->
+                                        <div style="display:flex; flex-direction:column; gap:10px; text-align:left;">
+
+                                            <!-- Brand Name -->
+                                            <div>
+                                                <div style="font-size:8px; color:#555; letter-spacing:1px; margin-bottom:4px;">BRAND NAME <span style="color:#ff4d4d;">*</span></div>
+                                                <input type="text" id="cfr-brand" placeholder="e.g. Brenden, Police, Silhouette…"
+                                                       style="width:100%; box-sizing:border-box; background:rgba(255,255,255,0.04); border:1px solid rgba(255,138,77,0.35); border-radius:10px; color:#ccc; font-size:11px; padding:10px 12px; letter-spacing:0.5px; outline:none; font-family:inherit;"
+                                                       oninput="cfrUpdatePreview()"
+                                                       onfocus="this.style.borderColor='rgba(255,138,77,0.7)'"
+                                                       onblur="this.style.borderColor='rgba(255,138,77,0.35)'">
+                                            </div>
+
+                                            <!-- Sell Price -->
+                                            <div>
+                                                <div style="font-size:8px; color:#555; letter-spacing:1px; margin-bottom:4px;">SELL PRICE (IDR) <span style="color:#ff4d4d;">*</span></div>
+                                                <input type="text" id="cfr-price" placeholder="e.g. 350000"
+                                                       inputmode="numeric"
+                                                       style="width:100%; box-sizing:border-box; background:rgba(255,255,255,0.04); border:1px solid rgba(255,138,77,0.35); border-radius:10px; color:#ffaa00; font-size:13px; font-weight:700; padding:10px 12px; letter-spacing:0.5px; outline:none; font-family:monospace;"
+                                                       onfocus="cfrPriceFocus(this)"
+                                                       onblur="cfrPriceBlur(this)"
+                                                       oninput="cfrPriceInput(this)">
+                                            </div>
+
+                                            <!-- Frame Size -->
+                                            <div>
+                                                <div style="font-size:8px; color:#555; letter-spacing:1px; margin-bottom:4px;">FRAME SIZE</div>
+                                                <input type="text" id="cfr-size" placeholder="e.g. 52-18-140, 54□17, M"
+                                                       style="width:100%; box-sizing:border-box; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.12); border-radius:10px; color:#ccc; font-size:11px; padding:10px 12px; letter-spacing:0.5px; outline:none; font-family:inherit;"
+                                                       onfocus="this.style.borderColor='rgba(255,138,77,0.5)'"
+                                                       onblur="this.style.borderColor='rgba(255,255,255,0.12)'">
+                                            </div>
+
+                                        </div>
+
+                                        <!-- Preview brand_key format -->
+                                        <div id="cfr-key-preview" style="margin-top:10px; padding:7px 12px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.07); border-radius:8px; font-size:9px; color:#555; text-align:left; display:none;">
+                                            <span style="color:#888;">Brand Key:</span> <span id="cfr-key-value" style="color:#ff8a4d; font-family:monospace;"></span>
+                                        </div>
+
+                                        <!-- Error box -->
+                                        <div id="cfr-error" style="display:none; margin-top:10px; padding:8px 12px; background:rgba(255,77,77,0.10); border:1px solid rgba(255,77,77,0.3); border-radius:8px; font-size:10px; color:#ff4d4d; text-align:left;"></div>
+
+                                        <!-- Save button -->
+                                        <button type="button" id="cfr-save-btn" onclick="cfrSave()"
+                                                style="width:100%; margin-top:14px; padding:12px; border-radius:12px; border:1px solid rgba(255,138,77,0.5); background:rgba(255,138,77,0.12); color:#ff8a4d; font-size:11px; font-weight:800; letter-spacing:1.2px; cursor:pointer; font-family:inherit; transition:all 0.2s;">
+                                            💾 SAVE TO DATABASE
+                                        </button>
+
+                                    </div><!-- /cfr-body -->
+                                </div><!-- /prescription-container card-4 -->
+                                </div><!-- /cfr-card -->
+
+                                </div><!-- /frame-selection-group -->
+
+                        </div><!-- /mp-scan-card -->
+
+                        <!-- ============================================================
+                             LENS RECOMMENDED — appears only when prescription exists
+                             ============================================================ -->
+                        <?php if ($lr_hasPrescription): ?>
+                        <div class="full" id="lens-rec-wrap">
+                            <div class="prescription-container" style="border:1px solid rgba(255,170,0,0.18);">
+
+                                <!-- ── HEADER (click to open/close) ─────────────────── -->
+                                <div onclick="lrToggle()" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;">
+                                    <div style="display:flex;align-items:center;gap:10px;">
+                                        <span style="font-size:1.25rem;">🔬</span>
+                                        <div>
+                                            <div style="font-size:0.7rem;letter-spacing:2px;color:#ffaa00;font-weight:700;">LENS RECOMMENDED</div>
+                                            <div style="font-size:8.5px;color:#555;margin-top:1px;letter-spacing:0.5px;">Based on size · habit · symptoms</div>
+                                        </div>
+                                    </div>
+                                    <div style="display:flex;align-items:center;gap:8px;">
+                                        <span id="lr-header-badge" style="font-size:8px;background:rgba(255,170,0,0.1);color:#ffaa00;border:1px solid rgba(255,170,0,0.28);border-radius:20px;padding:3px 9px;letter-spacing:0.5px;">
+                                            <?php
+                                            // Use ORIG set for initial header (will be updated by JS on toggle)
+                                            $lr__init = $lr_SET_ORIG;
+                                            if (!$lr__init['isPresbyopia']) {
+                                                echo 'SINGLE VISION';
+                                            } elseif ($lr__init['farOnlySV']) {
+                                                echo 'PRESBYOPIA → SV (DISTANCE)';
+                                            } else {
+                                                $lblMap = ['all_distance'=>'ALL-DISTANCE','dynamic'=>'DYNAMIC','far_near'=>'FAR & NEAR','near'=>'NEAR-OPTIMIZED'];
+                                                echo 'PRESBYOPIA → ' . ($lblMap[$lr__init['presbyType']] ?? strtoupper($lr__init['presbyType']));
+                                            }
+                                            ?>
+                                        </span>
+                                        <span id="lr-header-count" style="font-size:8px;background:rgba(0,255,136,0.07);color:#00ff88;border:1px solid rgba(0,255,136,0.2);border-radius:20px;padding:3px 9px;letter-spacing:0.5px;">
+                                            <?php echo count($lr_SET_ORIG['candidates']); ?> lens matched
+                                        </span>
+                                        <span id="lr-chev" style="color:#ffaa00;font-size:11px;display:inline-block;transition:transform 0.3s;">▼</span>
+                                    </div>
+                                </div>
+
+                                <!-- ── COLLAPSIBLE BODY (container for both orig + mod) ── -->
+                                <div id="lr-body" style="display:none;margin-top:16px;">
+
+                                <!-- ── ORIGINAL RX BODY ──────────────────────────── -->
+                                <?php
+                                // Assign lr_ vars from ORIGINAL set
+                                $lr_candidates       = $lr_SET_ORIG['candidates'];
+                                $lr_specialNotes     = $lr_SET_ORIG['specialNotes'];
+                                $lr_byType           = $lr_SET_ORIG['byType'];
+                                $lr_hasDesign        = $lr_SET_ORIG['hasDesign'];
+                                $lr_firstType        = $lr_SET_ORIG['firstType'];
+                                $lr_isPresbyopia     = $lr_SET_ORIG['isPresbyopia'];
+                                $lr_farOnlySV        = $lr_SET_ORIG['farOnlySV'];
+                                $lr_presbyType       = $lr_SET_ORIG['presbyType'];
+                                $lr_isHighPow        = $lr_SET_ORIG['isHighPow'];
+                                $lr_isVeryHighPow    = $lr_SET_ORIG['isVeryHighPow'];
+                                $lr_maxSE            = $lr_SET_ORIG['maxSE'];
+                                $lr_r_sph            = $lr_SET_ORIG['r_sph'];
+                                $lr_r_cyl            = $lr_SET_ORIG['r_cyl'];
+                                $lr_r_add            = $lr_SET_ORIG['r_add'];
+                                $lr_l_sph            = $lr_SET_ORIG['l_sph'];
+                                $lr_l_cyl            = $lr_SET_ORIG['l_cyl'];
+                                $lr_l_add            = $lr_SET_ORIG['l_add'];
+                                $lr_wantedDesignFeats= $lr_SET_ORIG['wantedDesignFeats'];
+                                // Show orig body: visible when mod=NO (or no mod data)
+                                $lr_origInitDisplay  = (!$lr_rMod) ? 'block' : 'none';
+                                ?>
+                                <div id="lr-body-orig" style="display:<?php echo $lr_origInitDisplay; ?>;">
+
+                                    <!-- Context chips -->
+                                    <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:14px;">
+                                        <?php
+                                        $lr_habitLbl  = ['','INDOOR','OUTDOOR','INDOOR & OUTDOOR'][$lr_habit] ?? 'INDOOR';
+                                        $lr_digitalLbl = ['','LOW SCREEN USE','MODERATE SCREEN (2-5 HRS)','HIGH SCREEN USE (>5 HRS)'][$lr_digital] ?? '';
+
+                                        // Vision need label
+                                        $lr_vnParts = [];
+                                        if ($lr_needDist)  $lr_vnParts[] = 'DISTANCE';
+                                        if ($lr_needInter) $lr_vnParts[] = 'INTERMEDIATE';
+                                        if ($lr_needNear)  $lr_vnParts[] = 'NEAR';
+                                        $lr_vnLabel = !empty($lr_vnParts) ? implode(' + ', $lr_vnParts) : '';
+
+                                        // Presbyopia design label
+                                        $lr_presbyLabelMap = [
+                                            'all_distance' => 'ALL-DISTANCE PROG',
+                                            'dynamic'      => 'DYNAMIC (FAR+INTER)',
+                                            'far_near'     => 'FAR & NEAR PROG',
+                                            'near'         => 'NEAR-OPTIMIZED',
+                                            'far_only'     => 'DISTANCE ONLY (SV)',
+                                        ];
+
+                                        $lr_ctx = [
+                                            ['🎂', 'AGE '.$lr_age.' YRS',  '#00cfff'],
+                                            ['👁️', $lr_habitLbl,           '#00ff88'],
+                                            ['💻', $lr_digitalLbl,          '#aa88ff'],
+                                        ];
+                                        if ($lr_vnLabel) $lr_ctx[] = ['📏', 'NEEDS: '.$lr_vnLabel, '#00ccff'];
+                                        if ($lr_isVeryHighPow) $lr_ctx[] = ['⚡', 'VERY HIGH POWER', '#ff4d4d'];
+                                        elseif ($lr_isHighPow) $lr_ctx[] = ['📈', 'HIGH POWER',      '#ff8a4d'];
+                                        if ($lr_isPresbyopia) {
+                                            $presbyLbl = $lr_farOnlySV
+                                                ? 'SINGLE VISION (DISTANCE)'
+                                                : ('PRESBYOPIA → ' . ($lr_presbyLabelMap[$lr_presbyType] ?? strtoupper($lr_presbyType)));
+                                            $lr_ctx[] = ['📖', $presbyLbl, '#ffcc00'];
+                                        }
+                                        if ($lr_hasGlare)      $lr_ctx[] = ['☀️', 'LIGHT SENSITIVE',      '#ffaa00'];
+                                        if ($lr_hasEyeStrain || $lr_hasHeadache) $lr_ctx[] = ['😣','EYE STRAIN / HEADACHE','#ff6699'];
+                                        if ($lr_hasDM)         $lr_ctx[] = ['🩸', 'DIABETES',             '#ff6655'];
+                                        if ($lr_hasHT)         $lr_ctx[] = ['❤️', 'HYPERTENSION',         '#ff6655'];
+                                        if ($lr_hasDryEye)     $lr_ctx[] = ['💧', 'DRY EYE',              '#66ccff'];
+                                        foreach ($lr_ctx as $c):
+                                        ?>
+                                        <span style="display:inline-flex;align-items:center;gap:3px;font-size:8px;color:<?php echo $c[2]; ?>;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.07);border-radius:20px;padding:3px 8px;letter-spacing:0.4px;">
+                                            <?php echo $c[0]; ?> <?php echo $c[1]; ?>
+                                        </span>
+                                        <?php endforeach; ?>
+                                    </div>
+
+                                    <!-- Power summary bar -->
+                                    <div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.05);border-radius:12px;padding:10px 14px;margin-bottom:14px;">
+                                        <div style="font-size:7.5px;color:#444;letter-spacing:1px;margin-bottom:8px;">ACTIVE RX (ORIGINAL)</div>
+                                        <div style="display:flex;flex-wrap:wrap;gap:14px;justify-content:space-around;">
+                                        <?php
+                                        $lr_pw = [
+                                            ['R SPH', $lr_r_sph], ['R CYL', $lr_r_cyl], ['R ADD', $lr_r_add],
+                                            ['L SPH', $lr_l_sph], ['L CYL', $lr_l_cyl], ['L ADD', $lr_l_add],
+                                            ['MAX SE', $lr_maxSE],
+                                        ];
+                                        foreach ($lr_pw as $pw):
+                                            $val = number_format($pw[1], 2, '.', '');
+                                            $zero = abs($pw[1]) < 0.01;
+                                        ?>
+                                        <div style="text-align:center;">
+                                            <div style="font-size:7px;color:#444;letter-spacing:0.5px;margin-bottom:2px;"><?php echo $pw[0]; ?></div>
+                                            <div style="font-size:10px;font-weight:700;color:<?php echo $zero ? '#2e2e2e' : '#ccc'; ?>;font-family:monospace;"><?php echo $val; ?></div>
+                                        </div>
+                                        <?php endforeach; ?>
+                                        </div>
+                                    </div>
+
+                                    <!-- Special warning notes -->
+                                    <?php foreach ($lr_specialNotes as $sn): ?>
+                                    <div style="display:flex;align-items:flex-start;gap:8px;font-size:9.5px;color:#ffcc00;background:rgba(255,204,0,0.05);border:1px solid rgba(255,204,0,0.15);border-radius:10px;padding:8px 11px;margin-bottom:8px;">
+                                        <span><?php echo $sn[0]; ?></span>
+                                        <span><?php echo htmlspecialchars($sn[1]); ?></span>
+                                    </div>
+                                    <?php endforeach; ?>
+
+                                    <!-- ── 2-LEVEL TAB SYSTEM ────────────────────────── -->
+                                    <?php
+                                    $lr_featureIcons = [
+                                        'UV PROTECTION'                  => '🌞',
+                                        'HIGH-INDEX UV400 PROTECTION'    => '🛡️',
+                                        'ANTI-REFLECTIVE (AR) COATING'   => '💡',
+                                        'SCRATCH-RESISTANT COATING'      => '🪨',
+                                        'SMUDGE-RESISTANT'               => '🧼',
+                                        'HYDROPHOBIC'                    => '💧',
+                                        'SUPER HYDROPHOBIC'              => '💦',
+                                        'ANTI-STATIC'                    => '⚡',
+                                        'BLUE LIGHT BLOCKING'            => '💙',
+                                        'PHOTOCHROMIC'                   => '🌅',
+                                        'NIGHT DRIVE COATING'            => '🚗',
+                                        'HIGH INDEX 1.67'                => '💎',
+                                        'HIGHT INDEX 1.67'               => '💎',
+                                        'HIGH POWER RX'                  => '🔬',
+                                        'IMPACT-RESISTANT'               => '🛡️',
+                                        'FAR & NEAR OPTIMIZED LENS'      => '📐',
+                                        'ALL-DISTANCE PROGRESSIVE'       => '🔭',
+                                        'DYNAMIC DISTANCE LENS'          => '🚀',
+                                        'NEAR-OPTIMIZED LENS'            => '📚',
+                                        'ENHANCED NEAR VISION'           => '🔎',
+                                    ];
+                                    $lr_rankStyle = [
+                                        0 => ['★ #1', '#ffaa00', 'rgba(255,170,0,0.12)', 'rgba(255,170,0,0.40)'],
+                                        1 => ['★ #2', '#c0c0c0', 'rgba(180,180,180,0.08)', 'rgba(180,180,180,0.28)'],
+                                        2 => ['★ #3', '#cd7f32', 'rgba(180,120,60,0.08)',  'rgba(180,120,60,0.28)'],
+                                    ];
+                                    ?>
+
+                                    <?php if (empty($lr_candidates)): ?>
+                                    <div style="font-size:11px;color:#555;text-align:center;padding:20px;">
+                                        No matching lenses found in the catalog.
+                                    </div>
+                                    <?php else: ?>
+
+                                    <!-- ── LEVEL 1: Lens-type tabs ──────────────────── -->
+                                    <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px;">
+                                    <?php foreach ($lr_typeConfig as $typeKey => $typeCfg):
+                                        $typeList = isset($lr_byType[$typeKey]) ? $lr_byType[$typeKey] : [];
+                                        if (empty($typeList)) continue;
+                                        $isFirstType  = ($typeKey === $lr_firstType);
+                                        $tColor       = $typeCfg['color'];
+                                        $typeHasDot   = !empty($lr_wantedDesignFeats) && !empty($lr_hasDesign[$typeKey]['_type']);
+                                    ?>
+                                    <button type="button"
+                                            id="lr-type-btn-<?php echo $typeKey; ?>"
+                                            onclick="lrTypeSwitch('<?php echo $typeKey; ?>')"
+                                            style="flex:1;min-width:0;padding:8px 5px;border-radius:12px;
+                                                   border:1px solid <?php echo $isFirstType ? $tColor : 'rgba(255,255,255,0.08)'; ?>;
+                                                   background:<?php echo $isFirstType ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.02)'; ?>;
+                                                   color:<?php echo $tColor; ?>;font-size:9px;font-weight:700;
+                                                   letter-spacing:0.5px;cursor:pointer;font-family:inherit;
+                                                   transition:all 0.2s;line-height:1.4;text-align:center;position:relative;">
+                                        <?php if ($typeHasDot): ?>
+                                        <span style="position:absolute;top:4px;right:5px;width:7px;height:7px;border-radius:50%;background:#00ff88;box-shadow:0 0 5px #00ff88;display:inline-block;" title="Has lens matching vision need"></span>
+                                        <?php endif; ?>
+                                        <?php echo $typeCfg['icon'].' '.$typeCfg['label']; ?><br>
+                                        <span style="font-size:8px;opacity:0.65;"><?php echo count($typeList); ?> lens</span>
+                                    </button>
+                                    <?php endforeach; ?>
+                                    </div>
+
+                                    <!-- ── LEVEL 2: Per-type price panes ────────────── -->
+                                    <?php foreach ($lr_typeConfig as $typeKey => $typeCfg):
+                                        $typeList = isset($lr_byType[$typeKey]) ? $lr_byType[$typeKey] : [];
+                                        if (empty($typeList)) continue;
+                                        $isFirstType  = ($typeKey === $lr_firstType);
+                                        $tColor       = $typeCfg['color'];
+                                        $priceBuckets = lr_priceBuckets($typeList);
+                                        // Default active price tab for this type
+                                        $defPriceTab  = 'recommended';
+                                    ?>
+                                    <div id="lr-type-pane-<?php echo $typeKey; ?>"
+                                         style="display:<?php echo $isFirstType ? 'block' : 'none'; ?>;">
+
+                                        <!-- Price tab bar -->
+                                        <div style="display:flex;gap:4px;flex-wrap:nowrap;margin-bottom:10px;padding:6px;background:rgba(255,255,255,0.02);border-radius:12px;border:1px solid rgba(255,255,255,0.05);overflow:hidden;">
+                                        <?php foreach ($priceBuckets as $priceKey => $priceBucket):
+                                            $isActivePrice = ($priceKey === $defPriceTab);
+                                            $pColor = $priceBucket['color'];
+                                            $pCount = count($priceBucket['data']);
+                                            $pHint  = ['budget'=>'≤600K','midrange'=>'600K–1M','premium'=>'>1M'][$priceKey] ?? '';
+                                            $priceDot = !empty($lr_wantedDesignFeats)
+                                                && isset($lr_hasDesign[$typeKey][$priceKey])
+                                                && $lr_hasDesign[$typeKey][$priceKey];
+                                        ?>
+                                        <button type="button"
+                                                id="lr-price-btn-<?php echo $typeKey; ?>-<?php echo $priceKey; ?>"
+                                                onclick="lrPriceSwitch('<?php echo $typeKey; ?>','<?php echo $priceKey; ?>')"
+                                                style="flex:1;min-width:0;padding:6px 2px;border-radius:10px;
+                                                       border:1px solid <?php echo $isActivePrice ? $pColor : 'rgba(255,255,255,0.07)'; ?>;
+                                                       background:<?php echo $isActivePrice ? 'rgba(255,255,255,0.06)' : 'transparent'; ?>;
+                                                       color:<?php echo $pColor; ?>;font-size:7.5px;font-weight:700;
+                                                       letter-spacing:0;cursor:pointer;font-family:inherit;
+                                                       transition:all 0.2s;line-height:1.3;text-align:center;position:relative;
+                                                       overflow:hidden;word-break:break-word;white-space:normal;">
+                                            <?php if ($priceDot): ?>
+                                            <span style="position:absolute;top:3px;right:4px;width:6px;height:6px;border-radius:50%;background:#00ff88;box-shadow:0 0 4px #00ff88;display:inline-block;" title="Has lens matching vision need"></span>
+                                            <?php endif; ?>
+                                            <?php echo $priceBucket['label']; ?><br>
+                                            <span style="font-size:7px;opacity:0.65;"><?php echo $pCount; ?> lens<?php echo $pHint ? ' · '.$pHint : ''; ?></span>
+                                        </button>
+                                        <?php endforeach; ?>
+                                        </div>
+
+                                        <!-- Price tab panes -->
+                                        <?php foreach ($priceBuckets as $priceKey => $priceBucket):
+                                            $isActivePrice = ($priceKey === $defPriceTab);
+                                            $list     = $priceBucket['data'];
+                                            $limit    = $priceBucket['limit'];
+                                            $total    = count($list);
+                                            $showExp  = ($total > $limit);
+                                            $pColor   = $priceBucket['color'];
+                                            $paneId   = 'lr-ppane-'.$typeKey.'-'.$priceKey;
+                                        ?>
+                                        <div id="<?php echo $paneId; ?>"
+                                             style="display:<?php echo $isActivePrice ? 'block' : 'none'; ?>;">
+
+                                            <?php if (empty($list)): ?>
+                                            <div style="font-size:11px;color:#444;text-align:center;padding:16px 10px;background:rgba(255,255,255,0.02);border-radius:10px;border:1px dashed rgba(255,255,255,0.05);">
+                                                <?php
+                                                $emptyMsg = [
+                                                    'budget' => 'No lenses in this price range (≤ Rp 600,000)',
+                                                    'midrange' => 'No lenses in this price range (Rp 600,000 – Rp 1,000,000)',
+                                                    'premium' => 'No lenses in this price range (> Rp 1,000,000)',
+                                                ];
+                                                echo isset($emptyMsg[$priceKey]) ? $emptyMsg[$priceKey] : 'No lenses available.';
+                                                ?>
+                                            </div>
+                                            <?php else: ?>
+
+                                            <div style="display:flex;flex-direction:column;gap:7px;">
+                                            <?php foreach ($list as $i => $cand):
+                                                if ($priceKey === 'recommended') {
+                                                    $rs = isset($lr_rankStyle[$i]) ? $lr_rankStyle[$i] : ['#'.($i+1), '#00ff88', 'rgba(0,255,136,0.05)', 'rgba(0,255,136,0.15)'];
+                                                    list($rankLbl, $rankColor, $bg, $bd) = $rs;
+                                                } else {
+                                                    $rankLbl   = '#'.($i+1);
+                                                    $rankColor = $pColor;
+                                                    $bg        = 'rgba(255,255,255,0.02)';
+                                                    $bd        = 'rgba(255,255,255,0.07)';
+                                                }
+                                                $srcColor  = ($cand['source'] === 'stock') ? '#00ff88' : '#ff8a4d';
+                                                $srcBg     = ($cand['source'] === 'stock') ? 'rgba(0,255,136,0.10)' : 'rgba(255,138,77,0.10)';
+                                                $srcBd     = ($cand['source'] === 'stock') ? 'rgba(0,255,136,0.25)' : 'rgba(255,138,77,0.25)';
+                                                $srcLabel  = ($cand['source'] === 'stock') ? 'STOCK' : 'LAB';
+                                                $uid       = $typeKey.'-'.$priceKey.'-'.$i;
+                                                $hidden    = ($i >= $limit) ? 'display:none;' : '';
+                                            ?>
+                                            <div id="lr-card-<?php echo $uid; ?>"
+                                                 style="<?php echo $hidden; ?>border:1px solid <?php echo $bd; ?>;border-radius:12px;overflow:hidden;background:<?php echo $bg; ?>;">
+
+                                                <!-- Collapsed row (click to expand detail) -->
+                                                <div onclick="lrCardToggle('<?php echo $uid; ?>')"
+                                                     style="display:flex;align-items:center;gap:10px;padding:11px 13px;cursor:pointer;">
+                                                    <span style="display:inline-flex;align-items:center;justify-content:center;min-width:30px;height:24px;background:<?php echo $bd; ?>;border-radius:20px;font-size:9px;font-weight:800;color:<?php echo $rankColor; ?>;letter-spacing:0.5px;flex-shrink:0;"><?php echo $rankLbl; ?></span>
+                                                    <div style="flex:1;min-width:0;">
+                                                        <div style="font-size:11px;font-weight:700;color:<?php echo $rankColor; ?>;white-space:normal;word-break:break-word;">
+                                                            <?php echo htmlspecialchars($cand['category']); ?> — <?php echo htmlspecialchars($cand['type']); ?>
+                                                            <?php
+                                                            $_cat = strtoupper(trim($cand['category']));
+                                                            $_isProg = in_array($_cat, array('PROGRESSIVE','KRYPTOK','FLATTOP'));
+                                                            $_match = false;
+                                                            if ($_isProg && $lr_isPresbyopia) {
+                                                                if ($_cat === 'KRYPTOK' || $_cat === 'FLATTOP') {
+                                                                    $_match = in_array($lr_presbyType, array('far_near','far_only','all_distance','dynamic'));
+                                                                } else {
+                                                                    foreach ($lr_wantedDesignFeats as $_wf) {
+                                                                        if (in_array($_wf, $cand['features'])) { $_match = true; break; }
+                                                                    }
+                                                                }
+                                                            }
+                                                            if ($_match):
+                                                            ?>
+                                                            <span style="display:inline-block;font-size:7.5px;font-weight:800;background:rgba(0,255,136,0.15);color:#00ff88;border:1px solid rgba(0,255,136,0.4);border-radius:20px;padding:1px 6px;margin-left:5px;letter-spacing:0.5px;vertical-align:middle;">✓ MATCHES NEED</span>
+                                                            <?php endif; ?>
+                                                        </div>
+                                                        <div style="display:flex;align-items:center;gap:5px;margin-top:3px;">
+                                                            <span style="font-size:7.5px;font-weight:700;color:<?php echo $srcColor; ?>;background:<?php echo $srcBg; ?>;border:1px solid <?php echo $srcBd; ?>;border-radius:20px;padding:1px 7px;letter-spacing:0.5px;"><?php echo $srcLabel; ?></span>
+                                                            <span style="font-size:8px;color:#555;">⏱ <?php echo htmlspecialchars($cand['readiness']); ?></span>
+                                                        </div>
+                                                    </div>
+                                                    <div style="font-size:11px;font-weight:700;color:<?php echo $rankColor; ?>;font-family:monospace;text-align:right;flex-shrink:0;"
+                                                         data-lens-price="<?php echo (int)$cand['selling']; ?>">
+                                                        <?php echo lr_fmt_price($cand['selling']); ?>
+                                                        <span class="lr-frame-total" style="display:none;font-size:8.5px;font-weight:600;color:#ffaa00;font-family:monospace;white-space:nowrap;"></span>
+                                                    </div>
+                                                    <span id="lr-chev-<?php echo $uid; ?>" style="color:#555;font-size:11px;flex-shrink:0;transition:transform 0.25s;display:inline-block;">▼</span>
+                                                </div>
+
+                                                <!-- Detail panel -->
+                                                <div id="lr-detail-<?php echo $uid; ?>" style="display:none;padding:0 13px 13px 13px;border-top:1px solid <?php echo $bd; ?>;">
+                                                    <div style="font-size:7.5px;color:#444;letter-spacing:1px;margin:10px 0 7px;">LENS FEATURES</div>
+                                                    <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px;">
+                                                        <?php foreach ($cand['features'] as $feat):
+                                                            $ficon = isset($lr_featureIcons[strtoupper(trim($feat))]) ? $lr_featureIcons[strtoupper(trim($feat))] : '•';
+                                                        ?>
+                                                        <span style="display:inline-flex;align-items:center;gap:4px;font-size:9px;color:#ddd;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.10);border-radius:20px;padding:4px 10px;letter-spacing:0.3px;">
+                                                            <?php echo $ficon; ?> <?php echo htmlspecialchars($feat); ?>
+                                                        </span>
+                                                        <?php endforeach; ?>
+                                                    </div>
+                                                    <div style="display:flex;align-items:center;gap:8px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:10px;padding:8px 12px;">
+                                                        <span style="font-size:1rem;"><?php echo ($cand['source'] === 'stock') ? '🏪' : '🔧'; ?></span>
+                                                        <div>
+                                                            <div style="font-size:10px;font-weight:700;color:<?php echo $srcColor; ?>;">
+                                                                <?php echo ($cand['source'] === 'stock') ? 'In Stock' : 'Lab Order (Custom)'; ?>
+                                                            </div>
+                                                            <div style="font-size:9px;color:#555;margin-top:1px;"><?php echo htmlspecialchars($cand['readiness']); ?></div>
+                                                        </div>
+                                                    </div>
+                                                    <?php if (!empty($cand['note'])): ?>
+                                                    <div style="margin-top:8px;font-size:9px;color:#666;font-style:italic;padding-left:4px;">
+                                                        📋 <?php echo htmlspecialchars($cand['note']); ?>
+                                                    </div>
+                                                    <?php endif; ?>
+
+                                                    <!-- SELECT LENS BUTTON -->
+                                                    <div style="margin-top:12px;text-align:center;">
+                                                        <button type="button"
+                                                                id="lr-sel-btn-<?php echo $uid; ?>"
+                                                                class="lr-sel-btn"
+                                                                data-uid="<?php echo htmlspecialchars($uid, ENT_QUOTES); ?>"
+                                                                data-name="<?php echo htmlspecialchars($cand['category'].' — '.$cand['type'], ENT_QUOTES); ?>"
+                                                                data-price="<?php echo (int)$cand['selling']; ?>"
+                                                                data-source="<?php echo htmlspecialchars($cand['source'], ENT_QUOTES); ?>"
+                                                                style="width:100%;padding:9px 16px;border-radius:20px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.04);color:#888;font-size:9.5px;font-weight:700;letter-spacing:1px;cursor:pointer;font-family:inherit;transition:all 0.25s;">
+                                                            ○ SELECT THIS LENS
+                                                        </button>
+                                                    </div>
+                                                </div>
+
+                                            </div><!-- /card -->
+                                            <?php endforeach; ?>
+                                            </div><!-- /card-list -->
+
+                                            <?php if ($showExp): ?>
+                                            <div style="text-align:center;margin-top:10px;">
+                                                <button type="button"
+                                                        id="lr-expand-<?php echo $typeKey.'-'.$priceKey; ?>"
+                                                        onclick="lrExpandAll('<?php echo $typeKey; ?>','<?php echo $priceKey; ?>',<?php echo $limit; ?>,<?php echo $total; ?>)"
+                                                        style="background:rgba(255,170,0,0.07);border:1px solid rgba(255,170,0,0.25);color:#ffaa00;font-size:10px;font-weight:700;letter-spacing:1px;padding:8px 22px;border-radius:20px;cursor:pointer;font-family:inherit;transition:all 0.2s;">
+                                                    ▼ SHOW ALL <?php echo $total; ?> LENSES
+                                                </button>
+                                            </div>
+                                            <?php endif; ?>
+
+                                            <?php endif; // empty list ?>
+                                        </div><!-- /price-pane -->
+                                        <?php endforeach; // price buckets ?>
+
+                                    </div><!-- /type-pane -->
+                                    <?php endforeach; // type tabs ?>
+
+                                    <?php endif; // empty candidates ?>
+
+                                    <!-- Disclaimer -->
+                                    <div style="margin-top:12px;font-size:8px;color:#2e2e2e;font-style:italic;border-top:1px solid rgba(255,255,255,0.04);padding-top:10px;">
+                                        * Order based on prescription fit, lifestyle habits, and symptoms. Final choice subject to customer preference and budget.
+                                    </div>
+
+                                </div><!-- /lr-body-orig -->
+
+                                <?php if ($lr_hasModData): ?>
+                                <!-- ── MODIFIED RX BODY ───────────────────────────── -->
+                                <?php
+                                // Assign lr_ vars from MODIFIED set
+                                $lr_candidates       = $lr_SET_MOD['candidates'];
+                                $lr_specialNotes     = $lr_SET_MOD['specialNotes'];
+                                $lr_byType           = $lr_SET_MOD['byType'];
+                                $lr_hasDesign        = $lr_SET_MOD['hasDesign'];
+                                $lr_firstType        = $lr_SET_MOD['firstType'];
+                                $lr_isPresbyopia     = $lr_SET_MOD['isPresbyopia'];
+                                $lr_farOnlySV        = $lr_SET_MOD['farOnlySV'];
+                                $lr_presbyType       = $lr_SET_MOD['presbyType'];
+                                $lr_isHighPow        = $lr_SET_MOD['isHighPow'];
+                                $lr_isVeryHighPow    = $lr_SET_MOD['isVeryHighPow'];
+                                $lr_maxSE            = $lr_SET_MOD['maxSE'];
+                                $lr_r_sph            = $lr_SET_MOD['r_sph'];
+                                $lr_r_cyl            = $lr_SET_MOD['r_cyl'];
+                                $lr_r_add            = $lr_SET_MOD['r_add'];
+                                $lr_l_sph            = $lr_SET_MOD['l_sph'];
+                                $lr_l_cyl            = $lr_SET_MOD['l_cyl'];
+                                $lr_l_add            = $lr_SET_MOD['l_add'];
+                                $lr_wantedDesignFeats= $lr_SET_MOD['wantedDesignFeats'];
+                                // Show mod body: visible when mod=YES
+                                $lr_modInitDisplay   = $lr_rMod ? 'block' : 'none';
+                                ?>
+                                <div id="lr-body-mod" style="display:<?php echo $lr_modInitDisplay; ?>;">
+
+                                    <!-- Context chips (mod) -->
+                                    <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:14px;">
+                                        <?php
+                                        $lr_habitLbl   = ['','INDOOR','OUTDOOR','INDOOR & OUTDOOR'][$lr_habit] ?? 'INDOOR';
+                                        $lr_digitalLbl = ['','LOW SCREEN USE','MODERATE SCREEN (2-5 HRS)','HIGH SCREEN USE (>5 HRS)'][$lr_digital] ?? '';
+                                        $lr_vnParts = [];
+                                        if ($lr_needDist)  $lr_vnParts[] = 'DISTANCE';
+                                        if ($lr_needInter) $lr_vnParts[] = 'INTERMEDIATE';
+                                        if ($lr_needNear)  $lr_vnParts[] = 'NEAR';
+                                        $lr_vnLabel = !empty($lr_vnParts) ? implode(' + ', $lr_vnParts) : '';
+                                        $lr_presbyLabelMap = [
+                                            'all_distance' => 'ALL-DISTANCE PROG',
+                                            'dynamic'      => 'DYNAMIC (FAR+INTER)',
+                                            'far_near'     => 'FAR & NEAR PROG',
+                                            'near'         => 'NEAR-OPTIMIZED',
+                                            'far_only'     => 'DISTANCE ONLY (SV)',
+                                        ];
+                                        $lr_ctx = [
+                                            ['🎂', 'AGE '.$lr_age.' YRS',  '#00cfff'],
+                                            ['👁️', $lr_habitLbl,           '#00ff88'],
+                                            ['💻', $lr_digitalLbl,          '#aa88ff'],
+                                        ];
+                                        if ($lr_vnLabel) $lr_ctx[] = ['📏', 'NEEDS: '.$lr_vnLabel, '#00ccff'];
+                                        if ($lr_isVeryHighPow) $lr_ctx[] = ['⚡', 'VERY HIGH POWER', '#ff4d4d'];
+                                        elseif ($lr_isHighPow) $lr_ctx[] = ['📈', 'HIGH POWER',      '#ff8a4d'];
+                                        if ($lr_isPresbyopia) {
+                                            $presbyLbl = $lr_farOnlySV
+                                                ? 'SINGLE VISION (DISTANCE)'
+                                                : ('PRESBYOPIA → ' . ($lr_presbyLabelMap[$lr_presbyType] ?? strtoupper($lr_presbyType)));
+                                            $lr_ctx[] = ['📖', $presbyLbl, '#ffcc00'];
+                                        }
+                                        if ($lr_hasGlare)      $lr_ctx[] = ['☀️', 'LIGHT SENSITIVE',      '#ffaa00'];
+                                        if ($lr_hasEyeStrain || $lr_hasHeadache) $lr_ctx[] = ['😣','EYE STRAIN / HEADACHE','#ff6699'];
+                                        if ($lr_hasDM)         $lr_ctx[] = ['🩸', 'DIABETES',             '#ff6655'];
+                                        if ($lr_hasHT)         $lr_ctx[] = ['❤️', 'HYPERTENSION',         '#ff6655'];
+                                        if ($lr_hasDryEye)     $lr_ctx[] = ['💧', 'DRY EYE',              '#66ccff'];
+                                        foreach ($lr_ctx as $c):
+                                        ?>
+                                        <span style="display:inline-flex;align-items:center;gap:3px;font-size:8px;color:<?php echo $c[2]; ?>;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.07);border-radius:20px;padding:3px 8px;letter-spacing:0.4px;">
+                                            <?php echo $c[0]; ?> <?php echo $c[1]; ?>
+                                        </span>
+                                        <?php endforeach; ?>
+                                    </div>
+
+                                    <!-- Power summary bar (mod) -->
+                                    <div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.05);border-radius:12px;padding:10px 14px;margin-bottom:14px;">
+                                        <div style="font-size:7.5px;color:#ffaa00;letter-spacing:1px;margin-bottom:8px;">ACTIVE RX (MODIFIED) ✏️</div>
+                                        <div style="display:flex;flex-wrap:wrap;gap:14px;justify-content:space-around;">
+                                        <?php
+                                        $lr_pw = [
+                                            ['R SPH', $lr_r_sph], ['R CYL', $lr_r_cyl], ['R ADD', $lr_r_add],
+                                            ['L SPH', $lr_l_sph], ['L CYL', $lr_l_cyl], ['L ADD', $lr_l_add],
+                                            ['MAX SE', $lr_maxSE],
+                                        ];
+                                        foreach ($lr_pw as $pw):
+                                            $val  = number_format($pw[1], 2, '.', '');
+                                            $zero = abs($pw[1]) < 0.01;
+                                        ?>
+                                        <div style="text-align:center;">
+                                            <div style="font-size:7px;color:#444;letter-spacing:0.5px;margin-bottom:2px;"><?php echo $pw[0]; ?></div>
+                                            <div style="font-size:10px;font-weight:700;color:<?php echo $zero ? '#2e2e2e' : '#ffaa00'; ?>;font-family:monospace;"><?php echo $val; ?></div>
+                                        </div>
+                                        <?php endforeach; ?>
+                                        </div>
+                                    </div>
+
+                                    <!-- Special warning notes (mod) -->
+                                    <?php foreach ($lr_specialNotes as $sn): ?>
+                                    <div style="display:flex;align-items:flex-start;gap:8px;font-size:9.5px;color:#ffcc00;background:rgba(255,204,0,0.05);border:1px solid rgba(255,204,0,0.15);border-radius:10px;padding:8px 11px;margin-bottom:8px;">
+                                        <span><?php echo $sn[0]; ?></span>
+                                        <span><?php echo htmlspecialchars($sn[1]); ?></span>
+                                    </div>
+                                    <?php endforeach; ?>
+
+                                    <!-- ── 2-LEVEL TAB SYSTEM (mod) ─────────────────── -->
+                                    <?php
+                                    $lr_featureIcons = [
+                                        'UV PROTECTION'                  => '🌞',
+                                        'HIGH-INDEX UV400 PROTECTION'    => '🛡️',
+                                        'ANTI-REFLECTIVE (AR) COATING'   => '💡',
+                                        'SCRATCH-RESISTANT COATING'      => '🪨',
+                                        'SMUDGE-RESISTANT'               => '🧼',
+                                        'HYDROPHOBIC'                    => '💧',
+                                        'SUPER HYDROPHOBIC'              => '💦',
+                                        'ANTI-STATIC'                    => '⚡',
+                                        'BLUE LIGHT BLOCKING'            => '💙',
+                                        'PHOTOCHROMIC'                   => '🌅',
+                                        'NIGHT DRIVE COATING'            => '🚗',
+                                        'HIGH INDEX 1.67'                => '💎',
+                                        'HIGHT INDEX 1.67'               => '💎',
+                                        'HIGH POWER RX'                  => '🔬',
+                                        'IMPACT-RESISTANT'               => '🛡️',
+                                        'FAR & NEAR OPTIMIZED LENS'      => '📐',
+                                        'ALL-DISTANCE PROGRESSIVE'       => '🔭',
+                                        'DYNAMIC DISTANCE LENS'          => '🚀',
+                                        'NEAR-OPTIMIZED LENS'            => '📚',
+                                        'ENHANCED NEAR VISION'           => '🔎',
+                                    ];
+                                    $lr_rankStyle = [
+                                        0 => ['★ #1', '#ffaa00', 'rgba(255,170,0,0.12)', 'rgba(255,170,0,0.40)'],
+                                        1 => ['★ #2', '#c0c0c0', 'rgba(180,180,180,0.08)', 'rgba(180,180,180,0.28)'],
+                                        2 => ['★ #3', '#cd7f32', 'rgba(180,120,60,0.08)',  'rgba(180,120,60,0.28)'],
+                                    ];
+                                    ?>
+
+                                    <?php if (empty($lr_candidates)): ?>
+                                    <div style="font-size:11px;color:#555;text-align:center;padding:20px;">
+                                        No matching lenses found in the catalog.
+                                    </div>
+                                    <?php else: ?>
+
+                                    <!-- ── LEVEL 1: Lens-type tabs (mod) ──────────── -->
+                                    <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px;">
+                                    <?php foreach ($lr_typeConfig as $typeKey => $typeCfg):
+                                        $typeList = isset($lr_byType[$typeKey]) ? $lr_byType[$typeKey] : [];
+                                        if (empty($typeList)) continue;
+                                        $isFirstType  = ($typeKey === $lr_firstType);
+                                        $tColor       = $typeCfg['color'];
+                                        $typeHasDot   = !empty($lr_wantedDesignFeats) && !empty($lr_hasDesign[$typeKey]['_type']);
+                                    ?>
+                                    <button type="button"
+                                            id="lrm-type-btn-<?php echo $typeKey; ?>"
+                                            onclick="lrmTypeSwitch('<?php echo $typeKey; ?>')"
+                                            style="flex:1;min-width:0;padding:8px 5px;border-radius:12px;
+                                                   border:1px solid <?php echo $isFirstType ? $tColor : 'rgba(255,255,255,0.08)'; ?>;
+                                                   background:<?php echo $isFirstType ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.02)'; ?>;
+                                                   color:<?php echo $tColor; ?>;font-size:9px;font-weight:700;
+                                                   letter-spacing:0.5px;cursor:pointer;font-family:inherit;
+                                                   transition:all 0.2s;line-height:1.4;text-align:center;position:relative;">
+                                        <?php if ($typeHasDot): ?>
+                                        <span style="position:absolute;top:4px;right:5px;width:7px;height:7px;border-radius:50%;background:#00ff88;box-shadow:0 0 5px #00ff88;display:inline-block;" title="Has lens matching vision need"></span>
+                                        <?php endif; ?>
+                                        <?php echo $typeCfg['icon'].' '.$typeCfg['label']; ?><br>
+                                        <span style="font-size:8px;opacity:0.65;"><?php echo count($typeList); ?> lens</span>
+                                    </button>
+                                    <?php endforeach; ?>
+                                    </div>
+
+                                    <!-- ── LEVEL 2: Per-type price panes (mod) ──────── -->
+                                    <?php foreach ($lr_typeConfig as $typeKey => $typeCfg):
+                                        $typeList = isset($lr_byType[$typeKey]) ? $lr_byType[$typeKey] : [];
+                                        if (empty($typeList)) continue;
+                                        $isFirstType  = ($typeKey === $lr_firstType);
+                                        $tColor       = $typeCfg['color'];
+                                        $priceBuckets = lr_priceBuckets($typeList);
+                                        $defPriceTab  = 'recommended';
+                                    ?>
+                                    <div id="lrm-type-pane-<?php echo $typeKey; ?>"
+                                         style="display:<?php echo $isFirstType ? 'block' : 'none'; ?>;">
+
+                                        <div style="display:flex;gap:4px;flex-wrap:nowrap;margin-bottom:10px;padding:6px;background:rgba(255,255,255,0.02);border-radius:12px;border:1px solid rgba(255,255,255,0.05);overflow:hidden;">
+                                        <?php foreach ($priceBuckets as $priceKey => $priceBucket):
+                                            $isActivePrice = ($priceKey === $defPriceTab);
+                                            $pColor = $priceBucket['color'];
+                                            $pCount = count($priceBucket['data']);
+                                            $pHint  = ['budget'=>'≤600K','midrange'=>'600K–1M','premium'=>'>1M'][$priceKey] ?? '';
+                                            $priceDot = !empty($lr_wantedDesignFeats)
+                                                && isset($lr_hasDesign[$typeKey][$priceKey])
+                                                && $lr_hasDesign[$typeKey][$priceKey];
+                                        ?>
+                                        <button type="button"
+                                                id="lrm-price-btn-<?php echo $typeKey; ?>-<?php echo $priceKey; ?>"
+                                                onclick="lrmPriceSwitch('<?php echo $typeKey; ?>','<?php echo $priceKey; ?>')"
+                                                style="flex:1;min-width:0;padding:6px 2px;border-radius:10px;
+                                                       border:1px solid <?php echo $isActivePrice ? $pColor : 'rgba(255,255,255,0.07)'; ?>;
+                                                       background:<?php echo $isActivePrice ? 'rgba(255,255,255,0.06)' : 'transparent'; ?>;
+                                                       color:<?php echo $pColor; ?>;font-size:7.5px;font-weight:700;
+                                                       letter-spacing:0;cursor:pointer;font-family:inherit;
+                                                       transition:all 0.2s;line-height:1.3;text-align:center;position:relative;
+                                                       white-space:normal;overflow:hidden;text-overflow:ellipsis;">
+                                            <?php if ($priceDot): ?>
+                                            <span style="position:absolute;top:3px;right:4px;width:6px;height:6px;border-radius:50%;background:#00ff88;box-shadow:0 0 4px #00ff88;display:inline-block;" title="Has lens matching vision need"></span>
+                                            <?php endif; ?>
+                                            <?php echo $priceBucket['label']; ?><br>
+                                            <span style="font-size:7px;opacity:0.65;"><?php echo $pCount; ?> lens<?php echo $pHint ? ' · '.$pHint : ''; ?></span>
+                                        </button>
+                                        <?php endforeach; ?>
+                                        </div>
+
+                                        <?php foreach ($priceBuckets as $priceKey => $priceBucket):
+                                            $isActivePrice = ($priceKey === $defPriceTab);
+                                            $list     = $priceBucket['data'];
+                                            $limit    = $priceBucket['limit'];
+                                            $total    = count($list);
+                                            $showExp  = ($total > $limit);
+                                            $pColor   = $priceBucket['color'];
+                                            $paneId   = 'lrm-ppane-'.$typeKey.'-'.$priceKey;
+                                        ?>
+                                        <div id="<?php echo $paneId; ?>"
+                                             style="display:<?php echo $isActivePrice ? 'block' : 'none'; ?>;">
+
+                                            <?php if (empty($list)): ?>
+                                            <div style="font-size:11px;color:#444;text-align:center;padding:16px 10px;background:rgba(255,255,255,0.02);border-radius:10px;border:1px dashed rgba(255,255,255,0.05);">
+                                                <?php
+                                                $emptyMsg = [
+                                                    'budget'   => 'No lenses in this price range (≤ Rp 600,000)',
+                                                    'midrange' => 'No lenses in this price range (Rp 600,000 – Rp 1,000,000)',
+                                                    'premium'  => 'No lenses in this price range (> Rp 1,000,000)',
+                                                ];
+                                                echo isset($emptyMsg[$priceKey]) ? $emptyMsg[$priceKey] : 'No lenses available.';
+                                                ?>
+                                            </div>
+                                            <?php else: ?>
+
+                                            <div style="display:flex;flex-direction:column;gap:7px;">
+                                            <?php foreach ($list as $i => $cand):
+                                                if ($priceKey === 'recommended') {
+                                                    $rs = isset($lr_rankStyle[$i]) ? $lr_rankStyle[$i] : ['#'.($i+1), '#00ff88', 'rgba(0,255,136,0.05)', 'rgba(0,255,136,0.15)'];
+                                                    list($rankLbl, $rankColor, $bg, $bd) = $rs;
+                                                } else {
+                                                    $rankLbl   = '#'.($i+1);
+                                                    $rankColor = $pColor;
+                                                    $bg        = 'rgba(255,255,255,0.02)';
+                                                    $bd        = 'rgba(255,255,255,0.07)';
+                                                }
+                                                $srcColor  = ($cand['source'] === 'stock') ? '#00ff88' : '#ff8a4d';
+                                                $srcBg     = ($cand['source'] === 'stock') ? 'rgba(0,255,136,0.10)' : 'rgba(255,138,77,0.10)';
+                                                $srcBd     = ($cand['source'] === 'stock') ? 'rgba(0,255,136,0.25)' : 'rgba(255,138,77,0.25)';
+                                                $srcLabel  = ($cand['source'] === 'stock') ? 'STOCK' : 'LAB';
+                                                $uid       = 'mod-'.$typeKey.'-'.$priceKey.'-'.$i;
+                                                $hidden    = ($i >= $limit) ? 'display:none;' : '';
+                                            ?>
+                                            <div id="lr-card-<?php echo $uid; ?>"
+                                                 style="<?php echo $hidden; ?>border:1px solid <?php echo $bd; ?>;border-radius:12px;overflow:hidden;background:<?php echo $bg; ?>;">
+
+                                                <div onclick="lrCardToggle('<?php echo $uid; ?>')"
+                                                     style="display:flex;align-items:center;gap:10px;padding:11px 13px;cursor:pointer;">
+                                                    <span style="display:inline-flex;align-items:center;justify-content:center;min-width:30px;height:24px;background:<?php echo $bd; ?>;border-radius:20px;font-size:9px;font-weight:800;color:<?php echo $rankColor; ?>;letter-spacing:0.5px;flex-shrink:0;"><?php echo $rankLbl; ?></span>
+                                                    <div style="flex:1;min-width:0;">
+                                                        <div style="font-size:11px;font-weight:700;color:<?php echo $rankColor; ?>;white-space:normal;word-break:break-word;">
+                                                            <?php echo htmlspecialchars($cand['category']); ?> — <?php echo htmlspecialchars($cand['type']); ?>
+                                                            <?php
+                                                            $_cat = strtoupper(trim($cand['category']));
+                                                            $_isProg = in_array($_cat, array('PROGRESSIVE','KRYPTOK','FLATTOP'));
+                                                            $_match = false;
+                                                            if ($_isProg && $lr_isPresbyopia) {
+                                                                if ($_cat === 'KRYPTOK' || $_cat === 'FLATTOP') {
+                                                                    $_match = in_array($lr_presbyType, array('far_near','far_only','all_distance','dynamic'));
+                                                                } else {
+                                                                    foreach ($lr_wantedDesignFeats as $_wf) {
+                                                                        if (in_array($_wf, $cand['features'])) { $_match = true; break; }
+                                                                    }
+                                                                }
+                                                            }
+                                                            if ($_match): ?>
+                                                            <span style="display:inline-block;font-size:7.5px;font-weight:800;background:rgba(0,255,136,0.15);color:#00ff88;border:1px solid rgba(0,255,136,0.4);border-radius:20px;padding:1px 6px;margin-left:5px;letter-spacing:0.5px;vertical-align:middle;">✓ MATCHES NEED</span>
+                                                            <?php endif; ?>
+                                                        </div>
+                                                        <div style="display:flex;align-items:center;gap:5px;margin-top:3px;">
+                                                            <span style="font-size:7.5px;font-weight:700;color:<?php echo $srcColor; ?>;background:<?php echo $srcBg; ?>;border:1px solid <?php echo $srcBd; ?>;border-radius:20px;padding:1px 7px;letter-spacing:0.5px;"><?php echo $srcLabel; ?></span>
+                                                            <span style="font-size:8px;color:#555;">⏱ <?php echo htmlspecialchars($cand['readiness']); ?></span>
+                                                        </div>
+                                                    </div>
+                                                    <div style="font-size:11px;font-weight:700;color:<?php echo $rankColor; ?>;font-family:monospace;text-align:right;flex-shrink:0;"
+                                                         data-lens-price="<?php echo (int)$cand['selling']; ?>">
+                                                        <?php echo lr_fmt_price($cand['selling']); ?>
+                                                        <span class="lr-frame-total" style="display:none;font-size:8.5px;font-weight:600;color:#ffaa00;font-family:monospace;white-space:nowrap;"></span>
+                                                    </div>
+                                                    <span id="lr-chev-<?php echo $uid; ?>" style="color:#555;font-size:11px;flex-shrink:0;transition:transform 0.25s;display:inline-block;">▼</span>
+                                                </div>
+
+                                                <div id="lr-detail-<?php echo $uid; ?>" style="display:none;padding:0 13px 13px 13px;border-top:1px solid <?php echo $bd; ?>;">
+                                                    <div style="font-size:7.5px;color:#444;letter-spacing:1px;margin:10px 0 7px;">LENS FEATURES</div>
+                                                    <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px;">
+                                                        <?php foreach ($cand['features'] as $feat):
+                                                            $ficon = isset($lr_featureIcons[strtoupper(trim($feat))]) ? $lr_featureIcons[strtoupper(trim($feat))] : '•';
+                                                        ?>
+                                                        <span style="display:inline-flex;align-items:center;gap:4px;font-size:9px;color:#ddd;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.10);border-radius:20px;padding:4px 10px;letter-spacing:0.3px;">
+                                                            <?php echo $ficon; ?> <?php echo htmlspecialchars($feat); ?>
+                                                        </span>
+                                                        <?php endforeach; ?>
+                                                    </div>
+                                                    <div style="display:flex;align-items:center;gap:8px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:10px;padding:8px 12px;">
+                                                        <span style="font-size:1rem;"><?php echo ($cand['source'] === 'stock') ? '🏪' : '🔧'; ?></span>
+                                                        <div>
+                                                            <div style="font-size:10px;font-weight:700;color:<?php echo $srcColor; ?>;">
+                                                                <?php echo ($cand['source'] === 'stock') ? 'In Stock' : 'Lab Order (Custom)'; ?>
+                                                            </div>
+                                                            <div style="font-size:9px;color:#555;margin-top:1px;"><?php echo htmlspecialchars($cand['readiness']); ?></div>
+                                                        </div>
+                                                    </div>
+                                                    <?php if (!empty($cand['note'])): ?>
+                                                    <div style="margin-top:8px;font-size:9px;color:#666;font-style:italic;padding-left:4px;">
+                                                        📋 <?php echo htmlspecialchars($cand['note']); ?>
+                                                    </div>
+                                                    <?php endif; ?>
+                                                    <div style="margin-top:12px;text-align:center;">
+                                                        <button type="button"
+                                                                id="lr-sel-btn-<?php echo $uid; ?>"
+                                                                class="lr-sel-btn"
+                                                                data-uid="<?php echo htmlspecialchars($uid, ENT_QUOTES); ?>"
+                                                                data-name="<?php echo htmlspecialchars($cand['category'].' — '.$cand['type'], ENT_QUOTES); ?>"
+                                                                data-price="<?php echo (int)$cand['selling']; ?>"
+                                                                data-source="<?php echo htmlspecialchars($cand['source'], ENT_QUOTES); ?>"
+                                                                style="width:100%;padding:9px 16px;border-radius:20px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.04);color:#888;font-size:9.5px;font-weight:700;letter-spacing:1px;cursor:pointer;font-family:inherit;transition:all 0.25s;">
+                                                            ○ SELECT THIS LENS
+                                                        </button>
+                                                    </div>
+                                                </div>
+
+                                            </div><!-- /card mod -->
+                                            <?php endforeach; ?>
+                                            </div><!-- /card-list mod -->
+
+                                            <?php if ($showExp): ?>
+                                            <div style="text-align:center;margin-top:10px;">
+                                                <button type="button"
+                                                        id="lrm-expand-<?php echo $typeKey.'-'.$priceKey; ?>"
+                                                        onclick="lrExpandAll('mod-<?php echo $typeKey; ?>','<?php echo $priceKey; ?>',<?php echo $limit; ?>,<?php echo $total; ?>)"
+                                                        style="background:rgba(255,170,0,0.07);border:1px solid rgba(255,170,0,0.25);color:#ffaa00;font-size:10px;font-weight:700;letter-spacing:1px;padding:8px 22px;border-radius:20px;cursor:pointer;font-family:inherit;transition:all 0.2s;">
+                                                    ▼ SHOW ALL <?php echo $total; ?> LENSES
+                                                </button>
+                                            </div>
+                                            <?php endif; ?>
+
+                                            <?php endif; // empty list mod ?>
+                                        </div><!-- /price-pane mod -->
+                                        <?php endforeach; // price buckets mod ?>
+
+                                    </div><!-- /type-pane mod -->
+                                    <?php endforeach; // type tabs mod ?>
+
+                                    <?php endif; // empty candidates mod ?>
+
+                                    <!-- Disclaimer (mod) -->
+                                    <div style="margin-top:12px;font-size:8px;color:#2e2e2e;font-style:italic;border-top:1px solid rgba(255,255,255,0.04);padding-top:10px;">
+                                        * Order based on prescription fit, lifestyle habits, and symptoms. Final choice subject to customer preference and budget.
+                                    </div>
+
+                                </div><!-- /lr-body-mod -->
+                                <?php endif; // $lr_hasModData ?>
+
+                                </div><!-- /lr-body -->
+                            </div>
+                        </div>
+                        <!-- END LENS RECOMMENDATION -->
+                        <?php endif; // $lr_hasPrescription ?>
+                        <?php if (!$lr_hasPrescription): ?>
+                        <div class="full">
+                            <div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.07);border-radius:14px;padding:14px 18px;text-align:center;">
+                                <span style="font-size:0.75rem;">🕶️</span>
+                                <div style="font-size:0.65rem;letter-spacing:1.5px;color:#555;font-weight:700;margin-top:6px;">FRAME ONLY — NO PRESCRIPTION</div>
+                                <div style="font-size:9px;color:#444;margin-top:4px;">Lens recommendation is not available because all prescription values are zero.</div>
+                            </div>
+                        </div>
+                        <?php endif; ?>
+
+                        </div><!-- /order-details-body -->
+                        </div><!-- /order-details-group -->
+                        <!-- END ORDER DETAILS GROUP -->
+
+                        <!-- ============================================================
+                             SELECTED FRAME & LENS DISPLAY BAR
+                             Muncul jika ada frame atau lensa yang dipilih.
+                             Klik header untuk buka/tutup (accordion dengan group atas).
+                             ============================================================ -->
+                        <div class="full" id="lr-selection-bar" style="display:none;margin-top:12px;">
+                            <div class="prescription-container" style="border:1px solid rgba(0,207,255,0.25);padding:0;overflow:hidden;">
+                                <!-- Header (clickable accordion) -->
+                                <div onclick="lrSelectionBarToggle()" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;padding:14px 16px;background:rgba(0,207,255,0.04);">
+                                    <div style="display:flex;align-items:center;gap:8px;">
+                                        <span style="font-size:0.95rem;">🛒</span>
+                                        <div>
+                                            <div style="font-size:0.65rem;letter-spacing:2px;color:#00cfff;font-weight:700;">CUSTOMER SELECTION</div>
+                                            <div style="font-size:8px;color:#555;margin-top:1px;">Tap to view selected items</div>
+                                        </div>
+                                    </div>
+                                    <span id="lr-selection-bar-chev" style="color:#00cfff;font-size:11px;display:inline-block;transition:transform 0.3s;">▼</span>
+                                </div>
+                                <!-- Body (collapsible) -->
+                                <div id="lr-selection-bar-body" style="display:none;padding:14px 16px;border-top:1px solid rgba(0,207,255,0.12);">
+                                    <div id="lr-selection-bar-inner" style="display:flex;flex-direction:column;gap:8px;">
+                                        <!-- filled by JS -->
+                                    </div>
+
+                                    <!-- ── CUSTOMER INFORMATION GROUP ── -->
+                                    <div id="lr-customer-info-group" style="margin-top:14px;border-top:1px solid rgba(0,207,255,0.12);padding-top:14px;">
+                                        <div style="font-size:7.5px;letter-spacing:2px;color:#00cfff;font-weight:700;margin-bottom:10px;">👤 CUSTOMER INFORMATION</div>
+
+                                        <div style="display:flex;flex-direction:column;gap:8px;">
+
+                                            <!-- Phone Number -->
+                                            <div>
+                                                <div style="font-size:7px;color:#555;letter-spacing:1px;margin-bottom:3px;">PHONE NUMBER</div>
+                                                <input type="tel" id="lr-customer-phone"
+                                                    inputmode="numeric"
+                                                    value="+62 8"
+                                                    style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.04);border:1px solid rgba(0,207,255,0.25);border-radius:6px;padding:5px 8px;color:#ccc;font-size:10px;font-family:monospace;outline:none;"
+                                                    onfocus="this.style.borderColor='rgba(0,207,255,0.6)'"
+                                                    onblur="this.style.borderColor='rgba(0,207,255,0.25)'"
+                                                    oninput="lrFormatPhone(this)">
+                                            </div>
+
+                                            <!-- Address -->
+                                            <div>
+                                                <div style="font-size:7px;color:#555;letter-spacing:1px;margin-bottom:3px;">ADDRESS</div>
+                                                <textarea id="lr-customer-address" placeholder="CUSTOMER DELIVERY ADDRESS..."
+                                                    rows="3"
+                                                    style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.04);border:1px solid rgba(0,207,255,0.25);border-radius:6px;padding:5px 8px;color:#ccc;font-size:10px;font-family:monospace;outline:none;resize:vertical;text-transform:uppercase;"
+                                                    onfocus="this.style.borderColor='rgba(0,207,255,0.6)'"
+                                                    onblur="this.style.borderColor='rgba(0,207,255,0.25)'"
+                                                    oninput="this.value=this.value.toUpperCase()"></textarea>
+                                            </div>
+
+                                        </div>
+                                    </div>
+                                    <!-- ── END CUSTOMER INFORMATION GROUP ── -->
+
+                                    <!-- ── PAYMENT & ORDER DETAILS GROUP ── -->
+                                    <div id="lr-payment-group" style="margin-top:14px;border-top:1px solid rgba(0,207,255,0.12);padding-top:14px;">
+                                        <div style="font-size:7.5px;letter-spacing:2px;color:#00cfff;font-weight:700;margin-bottom:10px;">💳 PAYMENT &amp; ORDER DETAILS</div>
+
+                                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+
+                                            <!-- Total Amount -->
+                                            <div>
+                                                <div style="font-size:7px;color:#555;letter-spacing:1px;margin-bottom:3px;">TOTAL AMOUNT</div>
+                                                <input type="text" id="lr-total-amount" placeholder="IDR 0"
+                                                    inputmode="numeric"
+                                                    onfocus="lrPaymentFocus(this,'total')"
+                                                    onblur="lrPaymentBlur(this,'total')"
+                                                    oninput="lrPaymentInput(this,'total')"
+                                                    style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.04);border:1px solid rgba(0,207,255,0.25);border-radius:6px;padding:5px 8px;color:#ffaa00;font-size:10px;font-family:monospace;font-weight:700;outline:none;">
+                                            </div>
+
+                                            <!-- Amount Paid -->
+                                            <div>
+                                                <div style="font-size:7px;color:#555;letter-spacing:1px;margin-bottom:3px;">AMOUNT PAID</div>
+                                                <input type="text" id="lr-amount-paid" placeholder="IDR 0"
+                                                    inputmode="numeric"
+                                                    onfocus="lrPaymentFocus(this,'paid')"
+                                                    onblur="lrPaymentBlur(this,'paid')"
+                                                    oninput="lrPaymentInput(this,'paid')"
+                                                    style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.04);border:1px solid rgba(0,207,255,0.25);border-radius:6px;padding:5px 8px;color:#00ff88;font-size:10px;font-family:monospace;font-weight:700;outline:none;">
+                                            </div>
+
+                                            <!-- Balance -->
+                                            <div style="grid-column:1/-1;">
+                                                <div style="background:rgba(255,170,0,0.07);border:1px solid rgba(255,170,0,0.22);border-radius:8px;padding:7px 12px;display:flex;align-items:center;justify-content:space-between;">
+                                                    <div style="font-size:7px;color:#888;letter-spacing:1px;">BALANCE</div>
+                                                    <div id="lr-balance-display" style="font-size:11px;font-weight:800;color:#ffaa00;font-family:monospace;">IDR 0</div>
+                                                </div>
+                                            </div>
+
+                                            <!-- Order Date -->
+                                            <div>
+                                                <div style="font-size:7px;color:#555;letter-spacing:1px;margin-bottom:3px;">ORDER DATE</div>
+                                                <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(0,207,255,0.20);border-radius:6px;padding:5px 8px;font-size:10px;color:#ccc;font-family:monospace;">
+                                                    <?php echo date('d/m/Y', strtotime($data['examination_date'])); ?>
+                                                </div>
+                                            </div>
+
+                                            <!-- Due Date -->
+                                            <div>
+                                                <div style="font-size:7px;color:#555;letter-spacing:1px;margin-bottom:3px;">DUE DATE <span style="color:#444;font-weight:normal;">(editable)</span></div>
+                                                <input type="text" id="lr-due-date-box"
+                                                    placeholder="— not set"
+                                                    value="<?php echo ($inv_purchase_type === 'frame') ? date('d/m/Y', strtotime($data['examination_date'] . ' +' . $lensStockLeadTimeDays . ' days')) : ''; ?>"
+                                                    style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.04);border:1px solid rgba(0,207,255,0.20);border-radius:6px;padding:5px 8px;font-size:10px;color:<?php echo ($inv_purchase_type === 'frame') ? '#00cfff' : '#ccc'; ?>;font-family:monospace;outline:none;"
+                                                    onfocus="this.style.borderColor='rgba(0,207,255,0.6)'"
+                                                    onblur="this.style.borderColor='rgba(0,207,255,0.20)'">
+                                            </div>
+
+                                        </div>
+                                    </div>
+                                    <!-- ── END PAYMENT & ORDER DETAILS GROUP ── -->
+                                </div>
+                            </div>
+                        </div>
+                        <!-- END SELECTION BAR -->
+
+                    </div>
+
+                    <div style="margin-top: 40px; text-align: center;">
+                        <button onclick="openPrintPage()" class="btn-action" id="print-invoice-btn">PRINT INVOICE</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="btn-group">
+                <button type="button" class="back-main" onclick="window.location.href='customer.php'">BACK TO PREVIOUS PAGE</button>
+            </div>
+        
+            <footer class="footer-container">
+                <p class="footer-text"><?php echo $COPYRIGHT_FOOTER; ?></p>
+            </footer>
+        </div>
+
+        <script>
+            const modYes = document.getElementById('mod-yes');
+            const modNo = document.getElementById('mod-no');
+            const fields = document.querySelectorAll('.mod-field');
+            const saveContainer = document.getElementById('save-btn-container');
+            // faceapi removed — using MediaPipe now
+
+            const formatZeroValue = (e) => {
+                let val = e.target.value.trim();
+                if (val === "0" || val === "00") {
+                    e.target.value = "0.00";
+                }
+            };
+
+            // ── Lens header data for both sets (for dynamic header update) ──
+            var lrHeaderData = {
+                orig: {
+                    count: <?php echo count($lr_SET_ORIG['candidates']); ?>,
+                    badge: <?php
+                        $s = $lr_SET_ORIG;
+                        if (!$s['isPresbyopia'])   echo '"SINGLE VISION"';
+                        elseif ($s['farOnlySV'])   echo '"PRESBYOPIA → SV (DISTANCE)"';
+                        else { $m=['all_distance'=>'ALL-DISTANCE','dynamic'=>'DYNAMIC','far_near'=>'FAR & NEAR','near'=>'NEAR-OPTIMIZED']; echo '"PRESBYOPIA → '.($m[$s['presbyType']]??strtoupper($s['presbyType'])).'"'; }
+                    ?>
+                },
+                mod: {
+                    count: <?php echo count($lr_SET_MOD['candidates']); ?>,
+                    badge: <?php
+                        $s = $lr_SET_MOD;
+                        if (!$s['isPresbyopia'])   echo '"SINGLE VISION"';
+                        elseif ($s['farOnlySV'])   echo '"PRESBYOPIA → SV (DISTANCE)"';
+                        else { $m=['all_distance'=>'ALL-DISTANCE','dynamic'=>'DYNAMIC','far_near'=>'FAR & NEAR','near'=>'NEAR-OPTIMIZED']; echo '"PRESBYOPIA → '.($m[$s['presbyType']]??strtoupper($s['presbyType'])).'"'; }
+                    ?>
+                }
+            };
+
+            function lrUpdateHeader(setKey) {
+                var d = lrHeaderData[setKey];
+                if (!d) return;
+                var badge = document.getElementById('lr-header-badge');
+                var count = document.getElementById('lr-header-count');
+                if (badge) badge.textContent = d.badge;
+                if (count) count.textContent = d.count + ' lens matched';
+            }
+
+            if (modYes) modYes.onclick = () => {
+                modYes.classList.add('active');
+                modNo.classList.remove('active');
+                saveContainer.style.display = 'block';
+                
+                fields.forEach(f => {
+                    // Retrieve value from data-modified attribute
+                    f.value = f.getAttribute('data-modified');
+                    f.readOnly = false;
+                    f.style.color = "#00ff88"; // Neon Green
+                    f.style.boxShadow = "inset 2px 2px 5px var(--shadow-dark), inset -2px -2px 5px var(--shadow-light)";
+                    f.addEventListener('focus', () => f.select());
+                    f.addEventListener('blur', formatZeroValue);
+                });
+
+                // ── Swap lens recommendation to MODIFIED set ──────────────
+                var origBody = document.getElementById('lr-body-orig');
+                var modBody  = document.getElementById('lr-body-mod');
+                if (origBody) origBody.style.display = 'none';
+                if (modBody)  modBody.style.display  = 'block';
+                lrUpdateHeader('mod');
+                lrPrescriptionIsModified = true;
+                lrUpdateSelectionDisplay(false);
+            };
+
+            if (modNo) modNo.onclick = () => {
+                modNo.classList.add('active');
+                modYes.classList.remove('active');
+                saveContainer.style.display = 'none';
+                
+                fields.forEach(f => {
+                    // Revert to original value from customer_examinations database
+                    f.value = f.getAttribute('data-original');
+                    f.readOnly = true;
+                    f.style.color = "var(--text-main)";
+                    f.style.boxShadow = "inset 5px 5px 10px var(--shadow-dark), inset -5px -5px 10px var(--shadow-light)";
+                    f.removeEventListener('blur', formatZeroValue);
+                });
+
+                // ── Swap lens recommendation to ORIGINAL set ──────────────
+                var origBody = document.getElementById('lr-body-orig');
+                var modBody  = document.getElementById('lr-body-mod');
+                if (origBody) origBody.style.display = 'block';
+                if (modBody)  modBody.style.display  = 'none';
+                lrUpdateHeader('orig');
+                lrPrescriptionIsModified = false;
+                lrUpdateSelectionDisplay(false);
+            };
+
+            // ============================================================
+            // LENS RECOMMENDATION — toggle functions
+            // ============================================================
+            function lrToggle() {
+                const body = document.getElementById('lr-body');
+                const chev = document.getElementById('lr-chev');
+                if (!body) return;
+                const open = body.style.display === 'none' || body.style.display === '';
+                body.style.display = open ? 'block' : 'none';
+                if (chev) chev.style.transform = open ? 'rotate(180deg)' : 'rotate(0deg)';
+            }
+
+            // Toggle detail panel inside a card
+            function lrCardToggle(uid) {
+                const detail = document.getElementById('lr-detail-' + uid);
+                const chev   = document.getElementById('lr-chev-'   + uid);
+                if (!detail) return;
+                const open = detail.style.display === 'none' || detail.style.display === '';
+                detail.style.display = open ? 'block' : 'none';
+                if (chev) chev.style.transform = open ? 'rotate(180deg)' : 'rotate(0deg)';
+            }
+
+            // Switch lens-type tab (level 1)
+            function lrTypeSwitch(typeKey) {
+                const types  = ['sv','kryptok','progressive','flattop'];
+                const colors = { sv:'#00ff88', kryptok:'#00cfff', progressive:'#aa88ff', flattop:'#ff8a4d' };
+                types.forEach(function(t) {
+                    var pane = document.getElementById('lr-type-pane-' + t);
+                    var btn  = document.getElementById('lr-type-btn-'  + t);
+                    if (!pane || !btn) return;
+                    var active = (t === typeKey);
+                    pane.style.display    = active ? 'block' : 'none';
+                    btn.style.borderColor = active ? colors[t] : 'rgba(255,255,255,0.08)';
+                    btn.style.background  = active ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.02)';
+                });
+            }
+
+            // Switch price tab within a type (level 2)
+            function lrPriceSwitch(typeKey, priceKey) {
+                var priceTabs = ['recommended','budget','midrange','premium'];
+                var colors    = { recommended:'#ffaa00', budget:'#00ff88', midrange:'#00cfff', premium:'#ff8a4d' };
+                priceTabs.forEach(function(p) {
+                    var pane = document.getElementById('lr-ppane-' + typeKey + '-' + p);
+                    var btn  = document.getElementById('lr-price-btn-' + typeKey + '-' + p);
+                    if (!pane || !btn) return;
+                    var active = (p === priceKey);
+                    pane.style.display    = active ? 'block' : 'none';
+                    btn.style.borderColor = active ? colors[p] : 'rgba(255,255,255,0.07)';
+                    btn.style.background  = active ? 'rgba(255,255,255,0.06)' : 'transparent';
+                });
+            }
+
+            // Expand hidden cards
+            function lrExpandAll(typeKey, priceKey, limit, total) {
+                var btnId = 'lr-expand-' + typeKey + '-' + priceKey;
+                var btn   = document.getElementById(btnId);
+                var expanded = btn && btn.dataset.expanded === '1';
+                for (var i = limit; i < total; i++) {
+                    var card = document.getElementById('lr-card-' + typeKey + '-' + priceKey + '-' + i);
+                    if (card) card.style.display = expanded ? 'none' : 'block';
+                }
+                if (btn) {
+                    btn.dataset.expanded = expanded ? '0' : '1';
+                    btn.innerHTML = expanded ? '▼ SHOW ALL ' + total + ' LENSES' : '▲ COLLAPSE';
+                }
+            }
+
+            window.lrToggle      = lrToggle;
+            window.lrCardToggle  = lrCardToggle;
+            window.lrTypeSwitch  = lrTypeSwitch;
+            window.lrPriceSwitch = lrPriceSwitch;
+            window.lrExpandAll   = lrExpandAll;
+
+            // ── Modified Rx tab switchers (use lrm-* IDs) ──────────────────
+            function lrmTypeSwitch(typeKey) {
+                var types  = ['sv','kryptok','progressive','flattop'];
+                var colors = { sv:'#00ff88', kryptok:'#00cfff', progressive:'#aa88ff', flattop:'#ff8a4d' };
+                types.forEach(function(t) {
+                    var pane = document.getElementById('lrm-type-pane-' + t);
+                    var btn  = document.getElementById('lrm-type-btn-'  + t);
+                    if (!pane || !btn) return;
+                    var active = (t === typeKey);
+                    pane.style.display    = active ? 'block' : 'none';
+                    btn.style.borderColor = active ? colors[t] : 'rgba(255,255,255,0.08)';
+                    btn.style.background  = active ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.02)';
+                });
+            }
+            function lrmPriceSwitch(typeKey, priceKey) {
+                var priceTabs = ['recommended','budget','midrange','premium'];
+                var colors    = { recommended:'#ffaa00', budget:'#00ff88', midrange:'#00cfff', premium:'#ff8a4d' };
+                priceTabs.forEach(function(p) {
+                    var pane = document.getElementById('lrm-ppane-' + typeKey + '-' + p);
+                    var btn  = document.getElementById('lrm-price-btn-' + typeKey + '-' + p);
+                    if (!pane || !btn) return;
+                    var active = (p === priceKey);
+                    pane.style.display    = active ? 'block' : 'none';
+                    btn.style.borderColor = active ? colors[p] : 'rgba(255,255,255,0.07)';
+                    btn.style.background  = active ? 'rgba(255,255,255,0.06)' : 'transparent';
+                });
+            }
+            window.lrmTypeSwitch  = lrmTypeSwitch;
+            window.lrmPriceSwitch = lrmPriceSwitch;
+
+            // ============================================================
+            // LENS SELECTION — click a lens card to select / deselect it
+            // ============================================================
+            var lrSelectedLens = null; // { uid, name, price, source }
+            // Tracks current prescription modification state (YES = modified, NO = original)
+            var lrPrescriptionIsModified = <?php echo $data['lens_modification'] == 1 ? 'true' : 'false'; ?>;
+
+            function lrSelectLens(uid, name, price, source) {
+                // Deselect if clicking the same card again
+                if (lrSelectedLens && lrSelectedLens.uid === uid) {
+                    lrSelectedLens = null;
+                    lrHighlightSelected(null);
+                    lrUpdateSelectionDisplay(false);
+                    // Revert to frame-only due date if frame still selected, else clear
+                    if (typeof lrUpdateDueDate === 'function') {
+                        lrUpdateDueDate(lrSelectedFrame ? 'frame' : null);
+                    }
+                    return;
+                }
+                lrSelectedLens = { uid: uid, name: name, price: price, source: source };
+                lrHighlightSelected(uid);
+                lrUpdateSelectionDisplay(false); // just show the bar, stay in place
+                if (typeof lrUpdateDueDate === 'function') lrUpdateDueDate(source);
+            }
+
+            function lrHighlightSelected(uid) {
+                // Update each card border and its select button
+                document.querySelectorAll('[id^="lr-card-"]').forEach(function(card) {
+                    var isSelected = (uid && card.id === 'lr-card-' + uid);
+                    card.style.outline    = isSelected ? '2px solid #ffaa00' : '';
+                    card.style.boxShadow  = isSelected ? '0 0 14px rgba(255,170,0,0.35)' : '';
+                });
+                // Update every SELECT button state
+                document.querySelectorAll('[id^="lr-sel-btn-"]').forEach(function(btn) {
+                    var btnUid = btn.id.replace('lr-sel-btn-', '');
+                    var isSelected = (uid && btnUid === uid);
+                    if (isSelected) {
+                        btn.textContent      = '✓ SELECTED';
+                        btn.style.color      = '#ffaa00';
+                        btn.style.borderColor= 'rgba(255,170,0,0.50)';
+                        btn.style.background = 'rgba(255,170,0,0.12)';
+                        btn.style.boxShadow  = '0 0 8px rgba(255,170,0,0.25)';
+                    } else {
+                        btn.textContent      = '○ SELECT THIS LENS';
+                        btn.style.color      = '#888';
+                        btn.style.borderColor= 'rgba(255,255,255,0.12)';
+                        btn.style.background = 'rgba(255,255,255,0.04)';
+                        btn.style.boxShadow  = '';
+                    }
+                });
+            }
+
+            window.lrSelectLens = lrSelectLens;
+
+            // Delegated listener for SELECT THIS LENS buttons
+            // Uses data-* attributes to avoid quote-escaping issues in PHP-generated onclick.
+            document.addEventListener('click', function(e) {
+                var btn = e.target.closest('.lr-sel-btn');
+                if (!btn) return;
+                var uid    = btn.getAttribute('data-uid');
+                var name   = btn.getAttribute('data-name');
+                var price  = parseInt(btn.getAttribute('data-price'), 10) || 0;
+                var source = btn.getAttribute('data-source');
+                lrSelectLens(uid, name, price, source);
+            });
+
+            // ============================================================
+            // SELECTION DISPLAY — shows selected frame + lens summary bar.
+            // Appears automatically when a frame is scanned OR a lens is
+            // selected. Scanning a frame does NOT auto-open or scroll to
+            // the bar — it just makes it visible.
+            // Opening the bar closes the main group sections, and vice versa.
+            // ============================================================
+
+            // Selected frame state (populated by frame barcode scanner)
+            var lrSelectedFrame = null; // { name, price, ufc }
+
+            // Called by the barcode scanner when a frame is successfully found
+            function lrSetSelectedFrame(name, price, ufc) {
+                lrSelectedFrame = (name && price > 0) ? { name: name, price: price, ufc: ufc || '' } : null;
+                // If the new frame is NOT a custom frame, reset any selected custom frame
+                var isCustom = name && String(name).indexOf('[CUSTOM]') !== -1;
+                if (!isCustom && typeof window.cfrResetPurchased === 'function') window.cfrResetPurchased();
+                lrUpdateSelectionDisplay(false); // do NOT auto-open bar
+                // If frame is set but no lens yet, due date = +2 days (frame pickup)
+                if (lrSelectedFrame && !lrSelectedLens) {
+                    if (typeof lrUpdateDueDate === 'function') lrUpdateDueDate('frame');
+                } else if (!lrSelectedFrame && !lrSelectedLens) {
+                    if (typeof lrUpdateDueDate === 'function') lrUpdateDueDate(null);
+                }
+            }
+
+            // Called when the barcode scanner result is cleared
+            function lrClearSelectedFrame() {
+                lrSelectedFrame = null;
+                lrUpdateSelectionDisplay(false);
+            }
+
+            // Rebuild and show/hide the selection bar.
+            // autoOpen = true: open the bar body and collapse the main group (used on lens select).
+            // autoOpen = false: only update content and visibility, no scroll/open side-effects.
+            function lrUpdateSelectionDisplay(autoOpen) {
+                var bar = document.getElementById('lr-selection-bar');
+                if (!bar) return;
+
+                var hasFrame = !!lrSelectedFrame;
+                var hasLens  = !!lrSelectedLens;
+
+                if (!hasFrame && !hasLens) {
+                    bar.style.display = 'none';
+                    return;
+                }
+
+                // Build inner HTML
+                var html = '';
+
+                if (hasFrame) {
+                    html += '<div style="display:flex;align-items:center;gap:8px;width:100%;">' +
+                        '<span style="font-size:1.2rem;flex-shrink:0;" title="Frame kacamata">🕶️</span>' +
+                        '<div style="min-width:0;flex:1;">' +
+                            '<div style="font-size:7.5px;color:#555;letter-spacing:1px;margin-bottom:1px;">FRAME</div>' +
+                            '<div style="font-size:10px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escHtml(lrSelectedFrame.name) + '</div>' +
+                            '<div style="font-size:10px;color:#ffaa00;font-family:monospace;font-weight:700;">Rp\u00a0' + lrSelectedFrame.price.toLocaleString('id-ID') + '</div>' +
+                        '</div>' +
+                    '</div>';
+                }
+
+                if (hasFrame && hasLens) {
+                    html += '<div style="height:1px;background:rgba(255,255,255,0.08);width:100%;flex-shrink:0;margin:2px 0;"></div>';
+                }
+
+                if (hasLens) {
+                    // Prescription badge: ORIGINAL or MODIFIED
+                    var rxLabel  = lrPrescriptionIsModified ? 'MODIFIED' : 'ORIGINAL';
+                    var rxColor  = lrPrescriptionIsModified ? '#ffaa00' : '#00cfff';
+                    var rxBg     = lrPrescriptionIsModified ? 'rgba(255,170,0,0.12)' : 'rgba(0,207,255,0.10)';
+                    var rxBd     = lrPrescriptionIsModified ? 'rgba(255,170,0,0.35)' : 'rgba(0,207,255,0.30)';
+                    var rxIcon   = lrPrescriptionIsModified ? '✏️' : '📋';
+                    // Source badge: STOCK or LAB
+                    var srcIsStock = (lrSelectedLens.source === 'stock');
+                    var srcLabel = srcIsStock ? 'STOCK' : 'LAB';
+                    var srcColor = srcIsStock ? '#00ff88' : '#ff8a4d';
+                    var srcBg    = srcIsStock ? 'rgba(0,255,136,0.10)' : 'rgba(255,138,77,0.10)';
+                    var srcBd    = srcIsStock ? 'rgba(0,255,136,0.28)' : 'rgba(255,138,77,0.28)';
+                    var srcIcon  = srcIsStock ? '🏪' : '🔧';
+
+                    html += '<div style="display:flex;align-items:center;gap:8px;width:100%;">' +
+                        '<span style="font-size:1rem;flex-shrink:0;">🔬</span>' +
+                        '<div style="min-width:0;flex:1;">' +
+                            '<div style="font-size:7.5px;color:#555;letter-spacing:1px;margin-bottom:1px;">LENS</div>' +
+                            '<div style="font-size:10px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escHtml(lrSelectedLens.name) + '</div>' +
+                            '<div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-top:4px;">' +
+                                '<span style="font-size:7.5px;font-weight:700;letter-spacing:0.8px;color:' + rxColor + ';background:' + rxBg + ';border:1px solid ' + rxBd + ';border-radius:20px;padding:2px 7px;">' + rxIcon + ' ' + rxLabel + '</span>' +
+                                '<span style="font-size:7.5px;font-weight:700;letter-spacing:0.8px;color:' + srcColor + ';background:' + srcBg + ';border:1px solid ' + srcBd + ';border-radius:20px;padding:2px 7px;">' + srcIcon + ' ' + srcLabel + '</span>' +
+                            '</div>' +
+                            '<div style="font-size:10px;color:#00ff88;font-family:monospace;font-weight:700;margin-top:3px;">' +
+                                (lrSelectedLens.price > 0
+                                    ? 'Rp\u00a0' + lrSelectedLens.price.toLocaleString('id-ID')
+                                    : '<span style="color:#555;font-style:italic;font-size:9px;">Contact Staff</span>') +
+                            '</div>' +
+                        '</div>' +
+                    '</div>';
+                }
+
+                // Total chip - shown whenever at least one item has a numeric price.
+                // Frame only => total = frame price. Lens only => total = lens price. Both => frame + lens.
+                var frameAmt = (hasFrame && lrSelectedFrame.price > 0) ? lrSelectedFrame.price : 0;
+                var lensAmt  = (hasLens  && lrSelectedLens.price  > 0) ? lrSelectedLens.price  : 0;
+                var total    = frameAmt + lensAmt;
+
+                if (total > 0) {
+                    var totalLabel = (hasFrame && hasLens && frameAmt > 0 && lensAmt > 0)
+                        ? 'TOTAL'
+                        : (frameAmt > 0 && lensAmt === 0 ? 'FRAME ONLY' : 'LENS ONLY');
+
+                    html += '<div style="background:rgba(255,170,0,0.10);border:1px solid rgba(255,170,0,0.30);border-radius:10px;padding:6px 12px;text-align:center;width:100%;">' +
+                        '<div style="font-size:7px;color:#888;letter-spacing:1px;margin-bottom:2px;">' + totalLabel + '</div>' +
+                        '<div style="font-size:11px;font-weight:800;color:#ffaa00;font-family:monospace;">Rp\u00a0' + total.toLocaleString('id-ID') + '</div>' +
+                    '</div>';
+
+                    // Auto-fill Total Amount input
+                    _lrRawTotal = total;
+                    var totalInput = document.getElementById('lr-total-amount');
+                    if (totalInput) {
+                        totalInput.value = lrFormatIDR(total);
+                    }
+                    lrUpdateBalance();
+                }
+
+                var inner = document.getElementById('lr-selection-bar-inner');
+                if (inner) inner.innerHTML = html;
+                bar.style.display = 'block';
+
+                // Auto-open: expand bar and collapse main group (only on lens select)
+                if (autoOpen) {
+                    var barBody = document.getElementById('lr-selection-bar-body');
+                    var barChev = document.getElementById('lr-selection-bar-chev');
+                    if (barBody && barBody.style.display === 'none') {
+                        barBody.style.display = 'block';
+                        if (barChev) barChev.style.transform = 'rotate(180deg)';
+                    }
+                    lrMainGroupClose();
+                }
+            }
+
+            // Collapse all three main group sections
+            function lrMainGroupClose() {
+                // Collapse order-details-body
+                var odBody = document.getElementById('order-details-body');
+                var odChev = document.getElementById('order-details-chev');
+                if (odBody && odBody.style.display !== 'none') {
+                    odBody.style.display = 'none';
+                    if (odChev) odChev.style.transform = 'rotate(0deg)';
+                }
+                var modPanel = document.getElementById('mod-collapsible');
+                var modChev  = document.getElementById('mod-toggle-chev');
+                if (modPanel && modPanel.style.display !== 'none') {
+                    modPanel.style.display = 'none';
+                    if (modChev) modChev.style.transform = 'rotate(0deg)';
+                }
+                var fpPanel     = document.getElementById('fp-collapsible');
+                var fpChev      = document.getElementById('fp-toggle-chev');
+                var faceSection = document.getElementById('mp-face-section');
+                var fbsCard     = document.getElementById('fbs-card');
+                if (fpPanel && fpPanel.style.display !== 'none') {
+                    fpPanel.style.display = 'none';
+                    if (fpChev) fpChev.style.transform = 'rotate(0deg)';
+                    if (faceSection) faceSection.style.display = 'none';
+                    if (fbsCard)     fbsCard.style.display     = 'none';
+                }
+                var lrBody = document.getElementById('lr-body');
+                var lrChev = document.getElementById('lr-chev');
+                if (lrBody && lrBody.style.display !== 'none') {
+                    lrBody.style.display = 'none';
+                    if (lrChev) lrChev.style.transform = 'rotate(0deg)';
+                }
+            }
+
+            // Toggle the selection bar open/close (accordion header click)
+            function lrSelectionBarToggle() {
+                var barBody = document.getElementById('lr-selection-bar-body');
+                var barChev = document.getElementById('lr-selection-bar-chev');
+                if (!barBody) return;
+                var isOpen = barBody.style.display !== 'none';
+                barBody.style.display = isOpen ? 'none' : 'block';
+                if (barChev) barChev.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(180deg)';
+                // Opening the bar → collapse the main group sections
+                if (!isOpen) lrMainGroupClose();
+            }
+
+            // ============================================================
+            // PAYMENT & ORDER DETAILS — update balance and due date
+            // ============================================================
+
+            // Order date from PHP (dd/mm/yyyy → JS Date)
+            (function() {
+                var parts = '<?php echo date('d/m/Y', strtotime($data['examination_date'])); ?>'.split('/');
+                window._lrOrderDate = new Date(+parts[2], +parts[1]-1, +parts[0]);
+            })();
+
+            // Internal raw values (multiplied by 1000)
+            var _lrRawTotal = 0;
+            var _lrRawPaid  = 0;
+
+            function lrFormatIDR(n) {
+                return 'IDR\u00a0' + n.toLocaleString('id-ID');
+            }
+
+            function lrFormatDate(d) {
+                var dd   = String(d.getDate()).padStart(2,'0');
+                var mm   = String(d.getMonth()+1).padStart(2,'0');
+                var yyyy = d.getFullYear();
+                return dd + '/' + mm + '/' + yyyy;
+            }
+
+            // While typing: only allow digits, store value, do NOT reformat yet
+            function lrPaymentInput(el, field) {
+                var digits = el.value.replace(/\D/g,'');
+                el.value   = digits; // keep only digits while typing
+                var num    = parseInt(digits, 10) || 0;
+                var val    = num * 1000;
+                if (field === 'total') _lrRawTotal = val;
+                else                  _lrRawPaid  = val;
+                lrUpdateBalance();
+            }
+
+            // On focus: show raw digits so user can edit easily
+            function lrPaymentFocus(el, field) {
+                var raw = (field === 'total') ? _lrRawTotal : _lrRawPaid;
+                el.value = raw > 0 ? String(raw / 1000) : '';
+                el.select();
+            }
+
+            // On blur: format to IDR display
+            function lrPaymentBlur(el, field) {
+                var raw = (field === 'total') ? _lrRawTotal : _lrRawPaid;
+                el.value = raw > 0 ? lrFormatIDR(raw) : '';
+                lrUpdateBalance();
+            }
+
+            function lrUpdateBalance() {
+                var balance = _lrRawTotal - _lrRawPaid;
+                var balEl   = document.getElementById('lr-balance-display');
+                if (balEl) {
+                    balEl.textContent = lrFormatIDR(balance);
+                    balEl.style.color = balance <= 0 ? '#00ff88' : '#ffaa00';
+                }
+            }
+
+            function lrUpdateDueDate(source) {
+                var box = document.getElementById('lr-due-date-box');
+                if (!box || !window._lrOrderDate) return;
+                if (!source) { box.value = ''; box.style.color = '#ccc'; return; }
+                // days: stock lens = setting, lab lens = setting, frame-only = stock lead time
+                var days  = (source === 'stock') ? <?php echo $lensStockLeadTimeDays; ?> : (source === 'frame') ? <?php echo $lensStockLeadTimeDays; ?> : <?php echo $lensLabLeadTimeDays; ?>;
+                var color = (source === 'stock') ? '#00ff88' : (source === 'frame') ? '#00cfff' : '#ff8a4d';
+                var due   = new Date(window._lrOrderDate.getTime());
+                due.setDate(due.getDate() + days);
+                box.value = lrFormatDate(due);
+                box.style.color = color;
+            }
+
+            // Expose so lrSelectLens can call it
+            window.lrUpdateDueDate  = lrUpdateDueDate;
+            window.lrPaymentFocus   = lrPaymentFocus;
+            window.lrPaymentBlur    = lrPaymentBlur;
+            window.lrPaymentInput   = lrPaymentInput;
+
+            // ── PHONE NUMBER FORMATTER ────────────────────────────────
+            function lrFormatPhone(el) {
+                var MIN_PREFIX = '+62 8';
+                var raw = el.value.replace(/\D/g, ''); // digits only
+                // Normalize: always starts with 628
+                if (raw.startsWith('0')) raw = '62' + raw.slice(1);
+                if (!raw.startsWith('62')) raw = '62' + raw;
+                if (!raw.startsWith('628')) raw = '628' + raw.slice(3);
+
+                var local = raw.slice(2); // '8XXXXXXXXX'
+                var formatted = '+62 ';
+                if (local.length > 0) formatted += local.slice(0, 3);        // 8XX
+                if (local.length > 3) formatted += ' ' + local.slice(3, 7);  // XXXX
+                if (local.length > 7) formatted += ' ' + local.slice(7, 11); // XXXX
+                if (local.length > 11) formatted += ' ' + local.slice(11, 12); // X
+
+                el.value = formatted;
+                var len = el.value.length;
+                el.setSelectionRange(len, len);
+            }
+            window.lrFormatPhone = lrFormatPhone;
+
+            // Init phone field prefix on load
+            (function() {
+                var ph = document.getElementById('lr-customer-phone');
+                if (!ph) return;
+                ph.value = '+62 8';
+                ph.addEventListener('keydown', function(e) {
+                    if ((e.key === 'Backspace' || e.key === 'Delete') && this.value.length <= 5) {
+                        e.preventDefault();
+                    }
+                });
+                ph.addEventListener('focus', function() {
+                    if (this.value.length < 5) this.value = '+62 8';
+                    var len = this.value.length;
+                    setTimeout(function(){ ph.setSelectionRange(len, len); }, 0);
+                });
+            })();
+            // ── END PHONE FORMATTER ──────────────────────────────────
+
+            // Safe HTML escape (separate from barcode scanner's esc() which lives in its own IIFE)
+            function escHtml(str) {
+                var d = document.createElement('div');
+                d.appendChild(document.createTextNode(String(str || '')));
+                return d.innerHTML;
+            }
+
+            window.lrSelectionBarToggle = lrSelectionBarToggle;
+            window.lrSetSelectedFrame   = lrSetSelectedFrame;
+            window.lrClearSelectedFrame = lrClearSelectedFrame;
+
+            // ============================================================
+            // FRAME PURCHASE TOGGLE
+            // ============================================================
+            function setFramePurchase(val) {
+                const btnYes      = document.getElementById('frame-purchase-yes');
+                const btnNo       = document.getElementById('frame-purchase-no');
+                const faceSection = document.getElementById('mp-face-section');
+                const fbsCard     = document.getElementById('fbs-card');
+                const cfrCard     = document.getElementById('cfr-card');
+                if (val === 1) {
+                    btnYes.classList.add('active');
+                    btnNo.classList.remove('active');
+                    faceSection.style.display = 'block';
+                    if (fbsCard) fbsCard.style.display = 'block';
+                    if (cfrCard) cfrCard.style.display = 'block';
+                } else {
+                    btnNo.classList.add('active');
+                    btnYes.classList.remove('active');
+                    faceSection.style.display = 'none';
+                    if (fbsCard) fbsCard.style.display = 'none';
+                    if (cfrCard) cfrCard.style.display = 'none';
+                    // Stop the barcode scanner if it was running
+                    if (typeof fbsStopCamera === 'function') fbsStopCamera();
+                }
+            }
+            window.setFramePurchase = setFramePurchase;
+
+            // ============================================================
+            // ORDER DETAILS GROUP — collapsible toggle
+            // ============================================================
+            function toggleOrderDetails() {
+                const body = document.getElementById('order-details-body');
+                const chev = document.getElementById('order-details-chev');
+                if (!body) return;
+                const open = body.style.display === 'none' || body.style.display === '';
+                body.style.display = open ? 'flex' : 'none';
+                if (chev) chev.style.transform = open ? 'rotate(180deg)' : 'rotate(0deg)';
+                // Opening Order Details → collapse Customer Selection bar
+                if (open) {
+                    var barBody = document.getElementById('lr-selection-bar-body');
+                    var barChev = document.getElementById('lr-selection-bar-chev');
+                    if (barBody && barBody.style.display !== 'none') {
+                        barBody.style.display = 'none';
+                        if (barChev) barChev.style.transform = 'rotate(0deg)';
+                    }
+                }
+            }
+            window.toggleOrderDetails = toggleOrderDetails;
+
+            // ============================================================
+            // PRESCRIPTION MODIFICATION — collapsible toggle
+            // ============================================================
+            function toggleModSection() {
+                const panel = document.getElementById('mod-collapsible');
+                const chev  = document.getElementById('mod-toggle-chev');
+                if (!panel) return;
+                const open = panel.style.display === 'none' || panel.style.display === '';
+                panel.style.display = open ? 'block' : 'none';
+                if (chev) chev.style.transform = open ? 'rotate(180deg)' : 'rotate(0deg)';
+            }
+            window.toggleModSection = toggleModSection;
+
+            // ============================================================
+            // CUSTOMER PURCHASE FRAME — collapsible toggle
+            // ============================================================
+            function toggleFpSection() {
+                const panel       = document.getElementById('fp-collapsible');
+                const chev        = document.getElementById('fp-toggle-chev');
+                const faceSection = document.getElementById('mp-face-section');
+                const fbsCard     = document.getElementById('fbs-card');
+                if (!panel) return;
+                const open = panel.style.display === 'none' || panel.style.display === '';
+                panel.style.display = open ? 'block' : 'none';
+                if (chev) chev.style.transform = open ? 'rotate(180deg)' : 'rotate(0deg)';
+                // When collapsing, also hide face section and barcode card (but preserve YES/NO state)
+                if (!open) {
+                    if (faceSection) faceSection.style.display = 'none';
+                    if (fbsCard)     fbsCard.style.display     = 'none';
+                    var cfrCardTFP = document.getElementById('cfr-card');
+                    if (cfrCardTFP) cfrCardTFP.style.display = 'none';
+                    if (typeof fbsStopCamera === 'function') fbsStopCamera();
+                } else {
+                    // Re-opening: restore face section & fbs-card visibility based on current YES/NO state
+                    const btnYes = document.getElementById('frame-purchase-yes');
+                    const isYes  = btnYes && btnYes.classList.contains('active');
+                    if (faceSection) faceSection.style.display = isYes ? 'block' : 'none';
+                    if (fbsCard)     fbsCard.style.display     = isYes ? 'block' : 'none';
+                    var cfrCardTFP2 = document.getElementById('cfr-card');
+                    if (cfrCardTFP2) cfrCardTFP2.style.display = isYes ? 'block' : 'none';
+                }
+            }
+            window.toggleFpSection = toggleFpSection;
+
+            // ============================================================
+            // FACE SHAPE ANALYSIS — collapsible toggle
+            // ============================================================
+            function toggleFsaSection() {
+                const body = document.getElementById('fsa-body');
+                const chev = document.getElementById('fsa-chev');
+                if (!body) return;
+                const open = body.style.display === 'none' || body.style.display === '';
+                body.style.display = open ? 'block' : 'none';
+                if (chev) chev.style.transform = open ? 'rotate(180deg)' : 'rotate(0deg)';
+                // Close when collapsing and camera is running
+                if (!open && typeof exitFullscreenCam === 'function') {
+                    const mp = document.getElementById('mp-start-btn');
+                    // only exit if camera is actually running (button says SWITCH CAM / CAPTURE are visible)
+                    const switchBtn = document.getElementById('mp-switch-btn');
+                    if (switchBtn && switchBtn.style.display !== 'none') {
+                        exitFullscreenCam();
+                    }
+                }
+            }
+            window.toggleFsaSection = toggleFsaSection;
+
+            // ============================================================
+            // FRAME BARCODE SCANNER — collapsible toggle
+            // ============================================================
+            function toggleFbsSection() {
+                const body = document.getElementById('fbs-body');
+                const chev = document.getElementById('fbs-chev');
+                if (!body) return;
+                const open = body.style.display === 'none' || body.style.display === '';
+                body.style.display = open ? 'block' : 'none';
+                if (chev) chev.style.transform = open ? 'rotate(180deg)' : 'rotate(0deg)';
+                if (!open && typeof fbsStopCamera === 'function') fbsStopCamera();
+            }
+            window.toggleFbsSection = toggleFbsSection;
+
+
+            window.onload = () => {
+                // Auto-show selection bar + set due date for frame-only direct sale (+2 days)
+                <?php if ($inv_purchase_type === 'frame'): ?>
+                (function() {
+                    var bar = document.getElementById('lr-selection-bar');
+                    if (bar) bar.style.display = 'block';
+                    var barBody = document.getElementById('lr-selection-bar-body');
+                    if (barBody) barBody.style.display = 'block';
+                    if (typeof lrUpdateDueDate === 'function') lrUpdateDueDate('frame');
+                    // Force phone prefix after bar is shown
+                    var ph = document.getElementById('lr-customer-phone');
+                    if (ph) ph.value = '+62 8';
+                })();
+                <?php endif; ?>
+
+                const isModified = <?php echo $data['lens_modification'] == 1 ? 'true' : 'false'; ?>;
+                if (isModified && modYes && modNo) {
+                    // Auto-open the collapsible panel
+                    const modPanel = document.getElementById('mod-collapsible');
+                    const modChev  = document.getElementById('mod-toggle-chev');
+                    if (modPanel) modPanel.style.display = 'block';
+                    if (modChev)  modChev.style.transform = 'rotate(180deg)';
+
+                    // Trigger UI as if 'Yes' was clicked
+                    modYes.classList.add('active');
+                    modNo.classList.remove('active');
+                    
+                    fields.forEach(f => {
+                        f.style.color = "#00ff88"; // Highlights modified data
+                        if(f.value === "0") f.value = "0.00";
+                        f.readOnly = false; 
+                        f.addEventListener('focus', () => f.select());
+                    });
+
+                    // Sync lens recommendation header to mod state
+                    lrUpdateHeader('mod');
+                }
+            };
+
+            
+            (function() {
+
+                // Patient gender from PHP (for gender-aware frame ranking — fix #5)
+                const patientGender = "<?php echo strtolower(trim($data['gender'] ?? '')); ?>";
+
+                // Frame-shape color mapping loaded from ./data_json/color_shape.json
+                // Keys are uppercase frame-shape names (e.g., "WAYFARER"), values are hex colors.
+                const frameShapeColors = <?php echo json_encode($frameShapeColors, JSON_UNESCAPED_UNICODE); ?>;
+
+                // ============================================================
+                // LANDMARK INDEX MAP (MediaPipe Face Mesh 468+10 iris points)
+                // ============================================================
+                const LM = {
+                    JAW_LEFT:      234,
+                    JAW_RIGHT:     454,
+                    JAW_L1:        172,
+                    JAW_R1:        397,
+                    JAW_L2:        136,
+                    JAW_R2:        365,
+                    CHIN:          152,
+                    CHIN_L:        176,
+                    CHIN_R:        400,
+                    TEMPLE_L:      162,
+                    TEMPLE_R:      389,
+                    FOREHEAD_TOP:  10,
+                    // Additional forehead landmarks for improved estimation
+                    FOREHEAD_L:    103,
+                    FOREHEAD_R:    332,
+                    FOREHEAD_MID:  9,
+                    CHEEK_L:       123,
+                    CHEEK_R:       352,
+                    CHEEK_L2:      116,
+                    CHEEK_R2:      345,
+                    BROW_L:        70,
+                    BROW_R:        300,
+                    BROW_L_INNER:  55,
+                    BROW_R_INNER:  285,
+                    BROW_L_TOP:    52,   // top of left eyebrow
+                    BROW_R_TOP:    282,  // top of right eyebrow
+                    EYE_L_OUTER:   33,
+                    EYE_R_OUTER:   263,
+                    EYE_L_INNER:   133,
+                    EYE_R_INNER:   362,
+                    EYE_L_TOP:     159,
+                    EYE_R_TOP:     386,
+                    EYE_L_BOT:     145,
+                    EYE_R_BOT:     374,
+                    NOSE_TIP:      4,
+                    NOSE_ROOT:     6,    // bridge of nose
+                    MOUTH_L:       61,
+                    MOUTH_R:       291,
+                    MOUTH_TOP:     13,
+                    MOUTH_BOT:     14,
+                    FACE_CENTER:   168,
+                };
+
+                // ============================================================
+                // DOM ELEMENTS
+                // ============================================================
+                const video         = document.getElementById('mp-video');
+                const canvas        = document.getElementById('mp-canvas');
+                const photoCanvas   = document.getElementById('mp-photo-canvas');
+                const guide         = document.getElementById('mp-guide');
+                const resultBox     = document.getElementById('mp-result');
+                const frameRecBox   = document.getElementById('mp-frame-rec');
+                const frameRecContent = document.getElementById('frame-rec-content');
+                const startBtn      = document.getElementById('mp-start-btn');
+                const switchBtn     = document.getElementById('mp-switch-btn');
+                const captureBtn    = document.getElementById('mp-capture-btn');
+                const resetBtn      = document.getElementById('mp-reset-btn');
+                const liveView      = document.getElementById('mp-live-view');
+                const capturedView  = document.getElementById('mp-captured-view');
+                const retakeOverlay = document.getElementById('mp-retake-overlay');
+                const poseIndicator = document.getElementById('mp-pose-indicator');
+                const poseWarn      = document.getElementById('pose-warn');
+                const qualityWrap   = document.getElementById('quality-bar-wrap');
+                const qualityFill   = document.getElementById('quality-bar-fill');
+                
+                const step1Ind      = document.getElementById('step1-ind');
+                const step2Ind      = document.getElementById('step2-ind');
+                const step3Ind      = document.getElementById('step3-ind');
+                const ctx           = canvas.getContext('2d');
+                const pCtx          = photoCanvas.getContext('2d');
+
+                // Wrapper elements used to toggle mirroring per camera
+                const mpWrappers    = document.querySelectorAll('.mp-wrapper');
+                function applyMirrorState() {
+                    const mirrored = facingMode === 'user';
+                    mpWrappers.forEach(w => w.classList.toggle('mirror', mirrored));
+                }
+
+                // ============================================================
+                // STATE
+                // ============================================================
+                let faceMesh         = null;
+                let facingMode       = 'user';
+                let isRunning        = false;
+                let isCaptured       = false;
+                let rafId            = null;
+                let lastPD           = null;
+                let capturedLM       = null;
+                let lastLM       = null;        // last landmark from the live feed
+                let pdBuffer         = [];
+                let shapeBuffer      = [];
+                let metricsBuffer    = [];
+                let qualityScore     = 0;
+                const PD_BUFFER_SIZE    = 30;
+                const SHAPE_BUFFER_SIZE = 15;
+
+                // Auto-capture state — user-configurable hold time (default 3s)
+                let autoCapStableSince = 0;
+                let autoCapTimerId     = null;
+                let AUTO_CAP_HOLD_MS   = 3000;   // default 3 seconds (user-adjustable via #autocap-sec-input)
+                function handleAutoCapture(allOk) {
+                    const hint = document.getElementById('autocap-hint');
+                    const sec  = document.getElementById('autocap-sec');
+                    if (!allOk) {
+                        autoCapStableSince = 0;
+                        hint.style.display = 'none';
+                        return;
+                    }
+                    if (isCaptured) return;
+                    const now = performance.now();
+                    if (autoCapStableSince === 0) autoCapStableSince = now;
+                    const held = now - autoCapStableSince;
+                    const remaining = Math.max(0, Math.ceil((AUTO_CAP_HOLD_MS - held) / 1000));
+                    hint.style.display = 'block';
+                    sec.textContent = remaining;
+                    if (held >= AUTO_CAP_HOLD_MS) {
+                        hint.style.display = 'none';
+                        autoCapStableSince = 0;
+                        capturePhoto();
+                    }
+                }
+
+                // Setter hooked to the duration input — clamped to 1..15 seconds
+                function setAutoCapSeconds(val) {
+                    const n = parseFloat(val);
+                    if (isNaN(n)) return;
+                    const clamped = Math.max(1, Math.min(15, n));
+                    AUTO_CAP_HOLD_MS = Math.round(clamped * 1000);
+                    autoCapStableSince = 0; // restart the countdown with the new duration
+                    const inp = document.getElementById('autocap-sec-input');
+                    if (inp && parseFloat(inp.value) !== clamped) inp.value = clamped;
+                    const initial = document.getElementById('autocap-sec');
+                    if (initial) initial.textContent = Math.ceil(clamped);
+                }
+                window.setAutoCapSeconds = setAutoCapSeconds;
+
+                // Face-width calibration — default 142mm, can be overridden
+                let faceRefMM    = 142;   // updated by calibration method
+                let calBoxEl     = null;  // assigned after DOM ready
+
+                // ============================================================
+                // STEP UI HELPER
+                // ============================================================
+                function setStep(n) {
+                    [step1Ind, step2Ind, step3Ind].forEach((el, i) => {
+                        el.classList.toggle('active', i < n);
+                        el.classList.toggle('done', i < n - 1);
+                    });
+                }
+
+                // ============================================================
+                // PD CALIBRATION — IOC RATIO
+                // PD = (pdPx / iocPx) × iocRefMM
+                // No external reference object required.
+                // Unaffected by camera distance, zoom, or face size.
+                // ============================================================
+
+                // State — iocRefMM can be changed via the UI
+                let iocRefMM = 95; // adult average, user-adjustable
+
+                // Preset quick-select
+                function setIOCPreset(val) {
+                    document.getElementById('cal-ioc-ref').value = val;
+                    document.querySelectorAll('.ioc-preset').forEach(b => {
+                        b.classList.toggle('active', parseFloat(b.textContent) === val ||
+                            b.onclick && b.getAttribute('onclick').includes(val));
+                    });
+                    applyAutoCal();
+                }
+                window.setIOCPreset = setIOCPreset;
+
+                // +/− stepper buttons
+                function adjustIOC(delta) {
+                    const inp = document.getElementById('cal-ioc-ref');
+                    const cur = parseFloat(inp.value) || 95;
+                    const next = Math.min(110, Math.max(85, +(cur + delta).toFixed(1)));
+                    inp.value = next;
+                }
+                window.adjustIOC = adjustIOC;
+
+                // Apply IOC reference value
+                function applyAutoCal() {
+                    const val = parseFloat(document.getElementById('cal-ioc-ref').value);
+                    const st  = document.getElementById('cal-auto-status');
+                    if (isNaN(val) || val < 85 || val > 110) {
+                        st.style.color   = '#ff4d4d';
+                        st.textContent   = '⚠ Enter a value between 85–110mm';
+                        return;
+                    }
+                    iocRefMM = val;
+                    st.style.color   = '#00ff88';
+                    st.textContent   = `✓ Active — IOC ref: ${val}mm`;
+                    const lbl = document.getElementById('cal-active-label');
+                    if (lbl) lbl.textContent = `IOC ${val}mm`;
+                    // Update active preset highlight
+                    document.querySelectorAll('.ioc-preset').forEach(b => {
+                        const match = b.getAttribute('onclick') || '';
+                        b.classList.toggle('active', match.includes('(' + val + ')'));
+                    });
+                }
+                window.applyAutoCal = applyAutoCal;
+
+                // ============================================================
+                // PD CALIBRATION TOGGLE (fix #1 — collapsible header)
+                // ============================================================
+                function toggleCalBody() {
+                    const b = document.getElementById('cal-body');
+                    const c = document.getElementById('cal-chevron');
+                    if (!b) return;
+                    const open = b.style.display === 'none';
+                    b.style.display = open ? 'block' : 'none';
+                    if (c) c.style.transform = open ? 'rotate(180deg)' : 'rotate(0deg)';
+                }
+                window.toggleCalBody = toggleCalBody;
+
+                // ============================================================
+                // FULLSCREEN CAMERA MODE (fix #6)
+                // ============================================================
+                function enterFullscreenCam() {
+                    document.body.classList.add('fullscreen-cam-active');
+                    // Reset the BACK button label each time we enter scan mode
+                    const bb = document.getElementById('mp-back-btn');
+                    if (bb) bb.innerHTML = '← BACK';
+                    // Ensure fsa-body is expanded in fullscreen (CSS also forces it, belt & braces)
+                    const fsaBody = document.getElementById('fsa-body');
+                    const fsaChev = document.getElementById('fsa-chev');
+                    if (fsaBody) fsaBody.style.display = 'block';
+                    if (fsaChev) fsaChev.style.transform = 'rotate(180deg)';
+                    // Scroll the scan card to the top of the fullscreen view
+                    const card = document.getElementById('mp-scan-card');
+                    if (card) card.scrollTop = 0;
+                }
+                function exitFullscreenCam() {
+                    // Remember whether we had a finished analysis before stopping the camera
+                    const hasResult = !!capturedLM;
+
+                    document.body.classList.remove('fullscreen-cam-active');
+
+                    // Stop the stream & processing loop
+                    if (video && video.srcObject) {
+                        video.srcObject.getTracks().forEach(t => t.stop());
+                        video.srcObject = null;
+                    }
+                    if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+                    isRunning = false;
+                    autoCapStableSince = 0;
+
+                    // Always hide scan-only chrome (steps, live view, pose indicators, calibration, countdown)
+                    const stepsEl = document.getElementById('mp-steps');   if (stepsEl) stepsEl.style.display = 'none';
+                    liveView.style.display       = 'none';
+                    capturedView.style.display   = 'none';
+                    qualityWrap.style.display    = 'none';
+                    poseIndicator.style.display  = 'none';
+                    const pc = document.getElementById('pose-checks');    if (pc) pc.style.display = 'none';
+                    const ah = document.getElementById('autocap-hint');   if (ah) ah.style.display = 'none';
+                    const ce = document.getElementById('cal-box');        if (ce) ce.style.display = 'none';
+
+                    // Scan-mode action buttons are no longer relevant outside fullscreen
+                    switchBtn.style.display  = 'none';
+                    captureBtn.style.display = 'none';
+                    resetBtn.style.display   = 'none';
+                    startBtn.disabled        = false;
+
+                    if (hasResult) {
+                        // Analysis is done — hide result, show toggle button
+                        resultBox.style.display   = 'none';
+                        frameRecBox.style.display = 'none';
+                        const toggleBtn2 = document.getElementById('mp-result-toggle-btn');
+                        if (toggleBtn2) toggleBtn2.style.display = 'inline-flex';
+                        const toggleLabel = document.getElementById('mp-result-toggle-label');
+                        if (toggleLabel) toggleLabel.textContent = '👁 VIEW RESULT';
+                        startBtn.style.display    = 'inline-block';
+                        startBtn.innerHTML        = '<div class="led"></div> RESCAN';
+                    } else {
+                        // User cancelled before any result — go back to the clean initial state
+                        resultBox.style.display   = 'none';
+                        frameRecBox.style.display = 'none';
+                        resultBox.innerHTML       = '<span style="color:var(--text-muted);font-size:0.75rem">Press START CAMERA to begin</span>';
+                        startBtn.style.display    = 'inline-block';
+                        startBtn.innerHTML        = '<div class="led"></div> START CAMERA';
+                        isCaptured = false;
+                        capturedLM = null;
+                        setStep(1);
+                    }
+                }
+                window.exitFullscreenCam = exitFullscreenCam;
+
+
+                function loadMediaPipe() {
+                    resultBox.innerHTML = `<div class="mp-loading"><div class="spinner"></div> LOADING MEDIAPIPE...</div>`;
+                    const scripts = [
+                        'https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js',
+                        'https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js',
+                        'https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js'
+                    ];
+                    function loadNext(index) {
+                        if (index >= scripts.length) { initFaceMesh(); return; }
+                        const s = document.createElement('script');
+                        s.src = scripts[index];
+                        s.onload = () => loadNext(index + 1);
+                        s.onerror = () => {
+                            resultBox.innerHTML = `<b style="color:#ff4d4d">FAILED TO LOAD LIBRARY (${index+1}/3). Check your connection.</b>`;
+                            startBtn.disabled  = false;
+                            startBtn.innerHTML = '<div class="led"></div> TRY AGAIN';
+                        };
+                        document.head.appendChild(s);
+                    }
+                    loadNext(0);
+                }
+
+                // ============================================================
+                // INIT FACE MESH
+                // ============================================================
+                function initFaceMesh() {
+                    resultBox.innerHTML = `<div class="mp-loading"><div class="spinner"></div> INITIALIZING 3D MODEL...</div>`;
+                    faceMesh = new FaceMesh({
+                        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+                    });
+                    faceMesh.setOptions({
+                        maxNumFaces: 1,
+                        refineLandmarks: true,
+                        minDetectionConfidence: 0.65,
+                        minTrackingConfidence: 0.65
+                    });
+                    faceMesh.onResults(onResults);
+                    startCamera();
+                }
+
+                // ============================================================
+                // START CAMERA — RAF loop (iOS-compatible)
+                // ============================================================
+                function startCamera() {
+                    if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+                    if (video.srcObject) {
+                        video.srcObject.getTracks().forEach(t => t.stop());
+                        video.srcObject = null;
+                    }
+                    const constraints = {
+                        video: {
+                            facingMode: { ideal: facingMode },
+                            width:  { ideal: 1280, max: 1920 },
+                            height: { ideal: 720,  max: 1080 },
+                            frameRate: { ideal: 30, max: 30 },
+                            advanced: [{ focusMode: 'continuous' }]
+                        },
+                        audio: false
+                    };
+                    navigator.mediaDevices.getUserMedia(constraints)
+                    .then(stream => {
+                        video.srcObject = stream;
+                        video.setAttribute('playsinline', true);
+                        video.setAttribute('muted', true);
+                        video.muted = true;
+                        const pp = video.play();
+                        if (pp !== undefined) pp.catch(() => video.play());
+                        video.onloadedmetadata = () => {
+                            canvas.width  = video.videoWidth  || 640;
+                            canvas.height = video.videoHeight || 480;
+                            applyMirrorState(); // mirror only when using front camera
+                            isRunning = true;
+                            isCaptured = false;
+                            // Hide the (now-useless) START CAMERA button once the camera is running
+                            startBtn.style.display   = 'none';
+                            startBtn.disabled        = false;
+                            switchBtn.style.display  = 'inline-block';
+                            captureBtn.style.display = 'inline-block';
+                            resetBtn.style.display   = 'none'; // always hide RESTART SCAN during live view
+                            // Reveal the scan UI elements that were hidden on initial load
+                            const stepsEl = document.getElementById('mp-steps');
+                            if (stepsEl) stepsEl.style.display = 'flex';
+                            liveView.style.display  = 'block';
+                            resultBox.style.display = 'flex';
+                            // Hide any previous analysis result from a prior scan
+                            frameRecBox.style.display = 'none';
+                            // Enter fullscreen scan view (fix #6)
+                            enterFullscreenCam();
+                            // Show calibration box (header only — body stays collapsed per fix #1)
+                            const calEl = document.getElementById('cal-box');
+                            if (calEl) calEl.style.display = 'block';
+                            qualityWrap.style.display   = 'block';
+                            poseIndicator.style.display = 'block';
+                            document.getElementById('pose-checks').style.display = 'flex';
+                            resultBox.innerHTML = `<span style="color:var(--text-muted);font-size:0.75rem">Position your face...</span>`;
+                            setStep(2);
+                            let processing = false;
+                            async function rafLoop() {
+                                if (!isCaptured && !processing && video.readyState >= 2) {
+                                    processing = true;
+                                    try { await faceMesh.send({ image: video }); } catch(e) {}
+                                    processing = false;
+                                }
+                                rafId = requestAnimationFrame(rafLoop);
+                            }
+                            rafLoop();
+                        };
+                    }).catch(err => {
+                        let msg = err.message;
+                        if (err.name === 'NotAllowedError')  msg = 'Camera permission denied. Open Settings → allow camera.';
+                        if (err.name === 'NotFoundError')    msg = 'Camera not found.';
+                        if (err.name === 'NotReadableError') msg = 'Camera is in use by another application.';
+                        resultBox.innerHTML = `<b style="color:#ff4d4d">ERROR: ${msg}</b>`;
+                        startBtn.disabled  = false;
+                        startBtn.innerHTML = '<div class="led"></div> TRY AGAIN';
+                    });
+                }
+
+                // ============================================================
+                // POSE QUALITY DETECTION (yaw / pitch / size) → returns 0–100
+                // ============================================================
+                function detectPoseQuality(lm) {
+                    const nose = lm[LM.NOSE_TIP], eyeL = lm[LM.EYE_L_OUTER], eyeR = lm[LM.EYE_R_OUTER];
+                    const distL = Math.abs(nose.x - eyeL.x), distR = Math.abs(nose.x - eyeR.x);
+                    const yawRatio = Math.min(distL, distR) / (Math.max(distL, distR) + 0.001);
+                    const brow = lm[LM.BROW_L], chin = lm[LM.CHIN];
+                    const noseRelY = (nose.y - brow.y) / ((chin.y - brow.y) + 0.001);
+                    const pitchScore = 1 - Math.min(1, Math.abs(noseRelY - 0.45) * 4);
+                    const W = canvas.width;
+                    const faceW = Math.abs(lm[LM.JAW_LEFT].x - lm[LM.JAW_RIGHT].x) * W;
+                    const sizeScore = (faceW > 80 && faceW < W * 0.85) ? 1 : 0.3;
+                    return Math.round(Math.min(100, (yawRatio * 0.5 + pitchScore * 0.3 + sizeScore * 0.2) * 100));
+                }
+
+                // ============================================================
+                // PER-AXIS POSE CHECKS — drives the visual sub-indicators
+                // Returns { center, distance, tilt, yaw } each as 'ok' | 'bad'.
+                // ============================================================
+                function detectPoseChecks(lm) {
+                    const W = canvas.width, H = canvas.height;
+                    const nose   = lm[LM.NOSE_TIP];
+                    const eyeL   = lm[LM.EYE_L_OUTER], eyeR = lm[LM.EYE_R_OUTER];
+                    const jawL   = lm[LM.JAW_LEFT],    jawR = lm[LM.JAW_RIGHT];
+
+                    // Centering — face center should sit within ~15% of frame center
+                    const cx = (jawL.x + jawR.x) / 2;
+                    const cy = (lm[LM.FOREHEAD_TOP].y + lm[LM.CHIN].y) / 2;
+                    const center = (Math.abs(cx - 0.5) < 0.15 && Math.abs(cy - 0.5) < 0.15) ? 'ok' : 'bad';
+
+                    // Distance — face width should be 35–75% of frame width
+                    const faceW = Math.abs(jawL.x - jawR.x);
+                    const distance = (faceW >= 0.35 && faceW <= 0.75) ? 'ok' : 'bad';
+
+                    // Tilt (roll) — eye-line should be near horizontal
+                    const rollDeg = Math.atan2((eyeR.y - eyeL.y) * H, (eyeR.x - eyeL.x) * W) * 180 / Math.PI;
+                    const tilt = Math.abs(rollDeg) < 8 ? 'ok' : 'bad';
+
+                    // Yaw — nose roughly centered between the two outer eyes
+                    const distEL = Math.abs(nose.x - eyeL.x);
+                    const distER = Math.abs(nose.x - eyeR.x);
+                    const yawRatio = Math.min(distEL, distER) / (Math.max(distEL, distER) + 0.001);
+                    const yaw = yawRatio > 0.75 ? 'ok' : 'bad';
+
+                    return { center, distance, tilt, yaw };
+                }
+
+                // Render pose-check pills in the UI
+                const checksWrap = document.getElementById('pose-checks');
+                const chkEls = {
+                    center:   document.getElementById('chk-center'),
+                    distance: document.getElementById('chk-distance'),
+                    tilt:     document.getElementById('chk-tilt'),
+                    yaw:      document.getElementById('chk-yaw'),
+                };
+                function renderPoseChecks(checks) {
+                    Object.entries(checks).forEach(([key, v]) => {
+                        const el = chkEls[key]; if (!el) return;
+                        el.classList.remove('ok', 'bad');
+                        el.classList.add(v);
+                    });
+                }
+
+                function getPoseWarning(lm) {
+                    const nose = lm[LM.NOSE_TIP], eyeL = lm[LM.EYE_L_OUTER], eyeR = lm[LM.EYE_R_OUTER];
+                    const distL = Math.abs(nose.x - eyeL.x), distR = Math.abs(nose.x - eyeR.x);
+                    const yaw = Math.min(distL, distR) / (Math.max(distL, distR) + 0.001);
+                    if (yaw < 0.65) {
+                        // Pick the arrow that matches what the user sees on screen.
+                        // Front camera is mirrored; back camera is not.
+                        const needRight = distL < distR;          // subject should turn toward their own right
+                        const mirrored  = facingMode === 'user';
+                        const showRightArrow = mirrored ? needRight : !needRight;
+                        return showRightArrow ? '← Turn slightly right' : 'Turn slightly left →';
+                    }
+                    const W = canvas.width;
+                    const faceW = Math.abs(lm[LM.JAW_LEFT].x - lm[LM.JAW_RIGHT].x) * W;
+                    if (faceW < 80)    return '↔ Move closer to camera';
+                    if (faceW > W * 0.85) return '↔ Move farther from camera';
+                    return null;
+                }
+
+                // ============================================================
+                // LIVE DETECTION CALLBACK
+                // ============================================================
+                function onResults(results) {
+                    if (canvas.width !== video.videoWidth) {
+                        canvas.width  = video.videoWidth;
+                        canvas.height = video.videoHeight;
+                    }
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    if (!results.multiFaceLandmarks || !results.multiFaceLandmarks.length) {
+                        shapeBuffer = []; pdBuffer = [];
+                        poseWarn.textContent = '⚠ Face not detected';
+                        qualityFill.style.width = '0%';
+                        resultBox.innerHTML = `<span style="color:var(--text-muted);font-size:0.75rem">Face not detected...</span>`;
+                        return;
+                    }
+                    const lm = results.multiFaceLandmarks[0];
+                    lastLM = lm; // stored for use by calibration functions
+                    drawMesh(lm, ctx, canvas.width, canvas.height, false);
+                    qualityScore = detectPoseQuality(lm);
+                    qualityFill.style.width = qualityScore + '%';
+                    const warn = getPoseWarning(lm);
+                    poseWarn.textContent = warn || '';
+                    poseWarn.style.display = warn ? 'block' : 'none';
+
+                    // Per-axis positioning checks + auto-capture countdown
+                    const checks = detectPoseChecks(lm);
+                    renderPoseChecks(checks);
+                    const allOk = Object.values(checks).every(v => v === 'ok') && qualityScore >= 80;
+                    handleAutoCapture(allOk);
+                    // PD multi-frame averaging
+                    const pdNow = measurePD(lm, canvas.width, canvas.height);
+                    if (pdNow) { pdBuffer.push(pdNow); if (pdBuffer.length > PD_BUFFER_SIZE) pdBuffer.shift(); lastPD = averagePD(pdBuffer); }
+                    // Shape preview
+                    const an = analyzeFaceShape(lm, canvas.width, canvas.height);
+                    shapeBuffer.push(an.shape);
+                    if (shapeBuffer.length > SHAPE_BUFFER_SIZE) shapeBuffer.shift();
+                    const liveShape = mostFrequent(shapeBuffer);
+                    const pdHtml = lastPD
+                        ? `<div class="pd-row"><span class="pd-chip total">PD ${lastPD.total}mm</span><span class="pd-chip">OD ${lastPD.od}mm</span><span class="pd-chip">OS ${lastPD.os}mm</span></div><div class="pd-note">*live preview — press 📸 CAPTURE for accuracy</div>`
+                        : `<div class="pd-note" style="margin-top:8px;color:#555;">Waiting for iris detection...</div>`;
+                    const qColor = qualityScore > 70 ? '#00ff88' : qualityScore > 40 ? '#ffaa00' : '#ff4d4d';
+                    resultBox.innerHTML = `
+                        <div style="font-size:0.6rem;color:var(--text-muted);letter-spacing:1px;margin-bottom:4px;">LIVE PREVIEW</div>
+                        <div class="shape-badge">${liveShape}</div>
+                        <div style="font-size:10px;color:${qColor};margin:4px 0;">Position quality: ${qualityScore}%</div>
+                        ${pdHtml}
+                        <div style="font-size:10px;color:#444;margin-top:6px;">${qualityScore >= 70 ? '✓ Good position — press 📸 CAPTURE' : '⚠ Fix your position first'}</div>
+                    `;
+                    guide.classList.toggle('locked', qualityScore >= 70);
+                }
+
+                // ============================================================
+                // SHARPNESS CHECK — Laplacian variance on a downscaled grayscale frame.
+                // Returns a positive number; higher = sharper. Typical blur < 60, sharp > 120.
+                // ============================================================
+                function measureSharpness(srcCanvas) {
+                    const w = 160, h = Math.round(160 * srcCanvas.height / srcCanvas.width);
+                    const tmp = document.createElement('canvas');
+                    tmp.width = w; tmp.height = h;
+                    const tctx = tmp.getContext('2d');
+                    tctx.drawImage(srcCanvas, 0, 0, w, h);
+                    const img = tctx.getImageData(0, 0, w, h).data;
+                    const gray = new Float32Array(w * h);
+                    for (let i = 0, j = 0; i < img.length; i += 4, j++) {
+                        gray[j] = 0.299 * img[i] + 0.587 * img[i+1] + 0.114 * img[i+2];
+                    }
+                    let sum = 0, sumSq = 0, n = 0;
+                    for (let y = 1; y < h - 1; y++) {
+                        for (let x = 1; x < w - 1; x++) {
+                            const k = y * w + x;
+                            const lap = -4 * gray[k] + gray[k-1] + gray[k+1] + gray[k-w] + gray[k+w];
+                            sum   += lap;
+                            sumSq += lap * lap;
+                            n++;
+                        }
+                    }
+                    const mean = sum / n;
+                    return (sumSq / n) - (mean * mean); // variance
+                }
+
+                // Retry budget for blurry frames during auto-capture
+                let sharpnessRetry = 0;
+                const SHARPNESS_MIN    = 70;  // reject below this
+                const SHARPNESS_RETRIES = 8;   // max retries before accepting anyway
+
+                // ============================================================
+                // CAPTURE PHOTO — step 2 (with blur rejection + auto-analyze)
+                // ============================================================
+                async function capturePhoto() {
+                    if (!isRunning || !video.srcObject) return;
+
+                    // Build a temp canvas from the raw video frame (no mirroring) for sharpness
+                    const tmpCanvas = document.createElement('canvas');
+                    tmpCanvas.width  = video.videoWidth  || 640;
+                    tmpCanvas.height = video.videoHeight || 480;
+                    tmpCanvas.getContext('2d').drawImage(video, 0, 0);
+
+                    // Blur check — if too blurry, wait ~150ms and try again
+                    const sharp = measureSharpness(tmpCanvas);
+                    if (sharp < SHARPNESS_MIN && sharpnessRetry < SHARPNESS_RETRIES) {
+                        sharpnessRetry++;
+                        const hint = document.getElementById('autocap-hint');
+                        if (hint) {
+                            hint.style.display = 'block';
+                            hint.innerHTML = `⏳ Image blurry, holding for sharp frame… (${sharpnessRetry}/${SHARPNESS_RETRIES})`;
+                        }
+                        setTimeout(() => { capturePhoto(); }, 150);
+                        return;
+                    }
+                    sharpnessRetry = 0;
+
+                    photoCanvas.width  = tmpCanvas.width;
+                    photoCanvas.height = tmpCanvas.height;
+                    pCtx.save();
+                    if (facingMode === 'user') {
+                        pCtx.translate(photoCanvas.width, 0);
+                        pCtx.scale(-1, 1);
+                    }
+                    pCtx.drawImage(tmpCanvas, 0, 0);
+                    pCtx.restore();
+                    isCaptured = true;
+                    if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+                    resultBox.innerHTML = `<div class="mp-loading"><div class="spinner"></div> ANALYZING…</div>`;
+
+                    faceMesh.onResults((results) => {
+                        capturedLM = (results.multiFaceLandmarks && results.multiFaceLandmarks.length)
+                            ? results.multiFaceLandmarks[0] : null;
+                        if (capturedLM) drawMesh(capturedLM, photoCanvas.getContext('2d'), photoCanvas.width, photoCanvas.height, facingMode === 'user');
+                        liveView.style.display      = 'none';
+                        capturedView.style.display  = 'block';
+                        captureBtn.style.display    = 'none';
+                        switchBtn.style.display     = 'none';
+                        resetBtn.style.display      = 'inline-block';
+                        qualityWrap.style.display   = 'none';
+                        poseIndicator.style.display = 'none';
+                        document.getElementById('pose-checks').style.display = 'none';
+                        document.getElementById('autocap-hint').style.display = 'none';
+                        setStep(3);
+                        if (capturedLM) {
+                            // Auto-run analysis — no button press needed
+                            runAnalysis();
+                        } else {
+                            resultBox.innerHTML = `<span style="color:#ff4d4d;font-size:0.75rem">Face not detected. Tap RESTART SCAN.</span>`;
+                        }
+                        faceMesh.onResults(onResults);
+                    });
+                    await faceMesh.send({ image: tmpCanvas });
+                }
+
+                // ============================================================
+                // RUN ANALYSIS — step 3 (auto-runs after capture)
+                // ============================================================
+                function runAnalysis() {
+                    if (!capturedLM) { resultBox.innerHTML = `<span style="color:#ff4d4d">No landmarks found. Retry the scan.</span>`; return; }
+                    setTimeout(() => {
+                        const analysis = analyzeFaceShape(capturedLM, photoCanvas.width, photoCanvas.height);
+                        const finalPD  = measurePD(capturedLM, photoCanvas.width, photoCanvas.height);
+                        const avgPD    = (finalPD && pdBuffer.length > 5) ? blendPD(finalPD, averagePD(pdBuffer)) : (finalPD || lastPD);
+                        displayFinalResult(analysis, avgPD);
+                        showFrameRecommendation(analysis.shape);
+                        // Analysis complete — make the BACK button indicate the summary is ready
+                        const bb = document.getElementById('mp-back-btn');
+                        if (bb) bb.innerHTML = '✓ DONE — VIEW SUMMARY';
+                    }, 200);
+                }
+
+                // ============================================================
+                // DRAW MESH — reusable for live canvas & photo canvas
+                // ============================================================
+                function drawMesh(lm, targetCtx, W, H, mirrored) {
+                    targetCtx.save();
+                    if (!mirrored) { targetCtx.translate(W, 0); targetCtx.scale(-1, 1); }
+                    const keyPoints = [LM.JAW_LEFT,LM.JAW_RIGHT,LM.JAW_L1,LM.JAW_R1,LM.JAW_L2,LM.JAW_R2,
+                        LM.CHIN,LM.CHIN_L,LM.CHIN_R,LM.TEMPLE_L,LM.TEMPLE_R,LM.CHEEK_L,LM.CHEEK_R,
+                        LM.BROW_L,LM.BROW_R,LM.FOREHEAD_L,LM.FOREHEAD_R,LM.FOREHEAD_MID];
+                    keyPoints.forEach(idx => {
+                        const p = lm[idx]; if (!p) return;
+                        targetCtx.beginPath(); targetCtx.arc(p.x*W, p.y*H, 3, 0, 2*Math.PI);
+                        targetCtx.fillStyle = 'rgba(0,255,136,0.7)'; targetCtx.fill();
+                    });
+                    const jawC = [162,21,54,103,67,109,10,338,297,332,284,251,389,454,323,361,288,397,365,379,378,400,377,152,148,176,149,150,136,172,58,132,93,234,127,162];
+                    targetCtx.beginPath();
+                    jawC.forEach((idx,i) => { const p=lm[idx]; if(!p) return; i===0?targetCtx.moveTo(p.x*W,p.y*H):targetCtx.lineTo(p.x*W,p.y*H); });
+                    targetCtx.strokeStyle='rgba(0,255,136,0.4)'; targetCtx.lineWidth=1.5; targetCtx.stroke();
+                    // Improved forehead estimated line
+                    const fhEst = estimateForehead(lm, W, H);
+                    if (fhEst) {
+                        targetCtx.beginPath();
+                        targetCtx.moveTo(lm[LM.TEMPLE_L].x*W, fhEst*H);
+                        targetCtx.lineTo(lm[LM.TEMPLE_R].x*W, fhEst*H);
+                        targetCtx.strokeStyle='rgba(255,170,0,0.5)'; targetCtx.lineWidth=1.5;
+                        targetCtx.setLineDash([5,4]); targetCtx.stroke(); targetCtx.setLineDash([]);
+                        targetCtx.font='9px monospace'; targetCtx.fillStyle='rgba(255,170,0,0.7)';
+                        targetCtx.fillText('FOREHEAD EST.', lm[LM.TEMPLE_L].x*W, fhEst*H-3);
+                    }
+                    // Iris & PD line
+                    const rp=lm[468], lp=lm[473];
+                    if (rp && lp) {
+                        [rp,lp].forEach(p => {
+                            targetCtx.beginPath(); targetCtx.arc(p.x*W,p.y*H,5,0,2*Math.PI);
+                            targetCtx.fillStyle='rgba(0,207,255,0.9)'; targetCtx.fill();
+                            targetCtx.strokeStyle='rgba(255,255,255,0.6)'; targetCtx.lineWidth=1.5; targetCtx.stroke();
+                        });
+                        targetCtx.beginPath(); targetCtx.moveTo(rp.x*W,rp.y*H); targetCtx.lineTo(lp.x*W,lp.y*H);
+                        targetCtx.strokeStyle='rgba(0,207,255,0.5)'; targetCtx.lineWidth=1;
+                        targetCtx.setLineDash([4,4]); targetCtx.stroke(); targetCtx.setLineDash([]);
+                    }
+                    targetCtx.restore();
+                }
+
+                // ============================================================
+                // IMPROVED FOREHEAD ESTIMATION
+                // Returns the estimated Y-coordinate (normalized 0-1) of forehead top
+                // Uses brow-to-eye gap + landmark 9 blend — better than fixed 15% offset
+                // ============================================================
+                function estimateForehead(lm, W, H) {
+                    const browL  = lm[LM.BROW_L_TOP] || lm[LM.BROW_L];
+                    const eyeL   = lm[LM.EYE_L_TOP]  || lm[LM.EYE_L_OUTER];
+                    const fhMid  = lm[LM.FOREHEAD_MID]; // lm[9] — mid forehead point
+                    if (!browL || !eyeL) return null;
+                    // Eye-to-brow vertical gap drives forehead height estimate
+                    const eyeBrowGap    = Math.abs(browL.y - eyeL.y);
+                    const foreheadOffset = eyeBrowGap * 1.65;
+                    const browY = Math.min(lm[LM.BROW_L].y, lm[LM.BROW_R] ? lm[LM.BROW_R].y : lm[LM.BROW_L].y);
+                    const estY  = browY - foreheadOffset;
+                    // Blend with lm[9] if available (lm[9] is a real mesh point on mid forehead)
+                    return fhMid ? estY * 0.6 + fhMid.y * 0.4 : estY;
+                }
+
+                // ============================================================
+                // MEASURE PD — multi-point iris centroid + face-width calibration
+                //
+                // MediaPipe with refineLandmarks=true produces 10 iris landmarks:
+                //   468–472 = right iris (from camera's view = patient's OS)
+                //   473–477 = left iris  (from camera's view = patient's OD)
+                // A 5-point centroid per iris is far more stable than a single point.
+                //
+                // Calibration: tragus-to-tragus face width (LM 234–454) ≈ 142mm
+                // is the best reference available without a physical object.
+                // Further accuracy improvements require a physical reference that
+                // MediaPipe can reliably detect (not eyeglasses).
+                // ============================================================
+                function irisCenter(lm, startIdx, W, H) {
+                    // Take 5 iris points (startIdx..startIdx+4), compute centroid
+                    let sumX = 0, sumY = 0, count = 0;
+                    for (let i = startIdx; i < startIdx + 5; i++) {
+                        const p = lm[i];
+                        if (!p) continue;
+                        sumX += p.x * W;
+                        sumY += p.y * H;
+                        count++;
+                    }
+                    if (count === 0) return null;
+                    return { x: sumX / count, y: sumY / count };
+                }
+
+                function measurePD(lm, W, H) {
+                    // Use the centroid of 5 iris points per eye — more stable than a single point
+                    const rIris = irisCenter(lm, 468, W, H); // OS (patient's left, camera's right)
+                    const lIris = irisCenter(lm, 473, W, H); // OD (patient's right, camera's left)
+                    if (!rIris || !lIris) return null;
+
+                    const dx   = lIris.x - rIris.x;
+                    const dy   = lIris.y - rIris.y;
+                    const pdPx = Math.sqrt(dx*dx + dy*dy);
+
+                    // IOC ratio: inter-outer-canthus distance in pixels as denominator
+                    // mmPerPx = iocRefMM / iocPx  →  PD = pdPx × mmPerPx
+                    // Advantage: no need to know camera distance or absolute face size.
+                    // Because pdPx and iocPx are measured in the same frame, the ratio
+                    // stays constant regardless of how close/far the customer is.
+                    const iocPx = Math.abs((lm[LM.EYE_R_OUTER].x - lm[LM.EYE_L_OUTER].x) * W);
+                    if (iocPx < 5) return null;
+                    const mmPerPx = iocRefMM / iocPx;
+
+                    const pdTotal = +(pdPx * mmPerPx).toFixed(1);
+                    const nose    = lm[LM.FACE_CENTER];
+                    const noseX   = nose.x * W;
+                    const pdOD    = +(Math.abs(lIris.x - noseX) * mmPerPx).toFixed(1);
+                    const pdOS    = +(Math.abs(rIris.x - noseX) * mmPerPx).toFixed(1);
+
+                    return { total: pdTotal, od: pdOD, os: pdOS };
+                }
+
+                function averagePD(buf) {
+                    if (!buf.length) return null;
+                    // Outlier rejection: drop values > 1 SD from the mean before averaging
+                    function filteredAvg(arr) {
+                        const mean = arr.reduce((s,v) => s+v, 0) / arr.length;
+                        const sd   = Math.sqrt(arr.reduce((s,v) => s+(v-mean)**2, 0) / arr.length);
+                        const clean = arr.filter(v => Math.abs(v - mean) <= sd * 1.5);
+                        const src   = clean.length >= 3 ? clean : arr; // fallback if too many were dropped
+                        return +(src.reduce((s,v) => s+v, 0) / src.length).toFixed(1);
+                    }
+                    return {
+                        total: filteredAvg(buf.map(v => v.total)),
+                        od:    filteredAvg(buf.map(v => v.od)),
+                        os:    filteredAvg(buf.map(v => v.os)),
+                    };
+                }
+
+                function blendPD(a, b) {
+                    // Captured frame is weighted higher (70%) vs live buffer (30%)
+                    return {
+                        total: +((a.total*0.7 + b.total*0.3)).toFixed(1),
+                        od:    +((a.od   *0.7 + b.od   *0.3)).toFixed(1),
+                        os:    +((a.os   *0.7 + b.os   *0.3)).toFixed(1),
+                    };
+                }
+
+                // ============================================================
+                // FACE SHAPE ANALYSIS — improved with forehead estimation + secondary metrics
+                // ============================================================
+                function analyzeFaceShape(lm, W, H) {
+                    function dist3D(a, b) {
+                        const dx=(a.x-b.x)*W, dy=(a.y-b.y)*H, dz=(a.z-b.z)*W;
+                        return Math.sqrt(dx*dx+dy*dy+dz*dz);
+                    }
+                    const p = lm;
+                    const faceWidth = dist3D(p[LM.JAW_LEFT], p[LM.JAW_RIGHT]);
+                    // Improved face height using forehead estimation
+                    const fhY = estimateForehead(lm, W, H);
+                    const faceHeight = fhY !== null
+                        ? Math.abs(p[LM.CHIN].y - fhY) * H
+                        : Math.abs(p[LM.CHIN].y - (Math.min(p[LM.BROW_L].y, p[LM.BROW_R].y) - (p[LM.CHIN].y - Math.min(p[LM.BROW_L].y, p[LM.BROW_R].y)) * 0.18)) * H;
+                    const foreheadWidth = dist3D(p[LM.TEMPLE_L], p[LM.TEMPLE_R]);
+                    const cheekWidth    = dist3D(p[LM.CHEEK_L],  p[LM.CHEEK_R]);
+                    const jawWidth      = dist3D(p[LM.JAW_L2],   p[LM.JAW_R2]);
+                    const chinWidth     = dist3D(p[LM.CHIN_L],   p[LM.CHIN_R]);
+                    function angle3D(center, a, b) {
+                        const v1={x:(a.x-center.x)*W,y:(a.y-center.y)*H,z:(a.z-center.z)*W};
+                        const v2={x:(b.x-center.x)*W,y:(b.y-center.y)*H,z:(b.z-center.z)*W};
+                        const dot=v1.x*v2.x+v1.y*v2.y+v1.z*v2.z;
+                        const m1=Math.sqrt(v1.x**2+v1.y**2+v1.z**2), m2=Math.sqrt(v2.x**2+v2.y**2+v2.z**2);
+                        if(m1===0||m2===0) return 90;
+                        return Math.acos(Math.max(-1,Math.min(1,dot/(m1*m2))))*180/Math.PI;
+                    }
+                    const chinAngle     = angle3D(p[LM.CHIN], p[LM.CHIN_L], p[LM.CHIN_R]);
+                    const upperFaceRatio = foreheadWidth / (cheekWidth + 0.001);
+                    const lowerTaper     = chinWidth / (cheekWidth + 0.001);
+                    const faceRatio      = faceHeight / (faceWidth + 0.001);
+                    const foreheadRatio  = foreheadWidth / (faceWidth + 0.001);
+                    const cheekRatio     = cheekWidth / (faceWidth + 0.001);
+                    const jawRatio       = jawWidth / (faceWidth + 0.001);
+                    const chinRatio      = chinWidth / (jawWidth + 0.001);
+                    const jawForeRatio   = jawWidth / (foreheadWidth + 0.001);
+                    const scores = {
+                        "OVAL":     calcOval(faceRatio, foreheadRatio, cheekRatio, jawRatio, chinAngle, upperFaceRatio, lowerTaper),
+                        "ROUND":    calcRound(faceRatio, cheekRatio, jawRatio, chinAngle, lowerTaper),
+                        "SQUARE":   calcSquare(faceRatio, jawRatio, chinAngle, chinRatio),
+                        "OBLONG":   calcOblong(faceRatio, foreheadRatio, jawRatio, chinRatio),
+                        "HEART":    calcHeart(foreheadRatio, jawRatio, chinAngle, jawForeRatio, lowerTaper),
+                        "DIAMOND":  calcDiamond(foreheadRatio, cheekRatio, jawRatio, chinAngle, upperFaceRatio),
+                        "TRIANGLE": calcTriangle(foreheadRatio, jawRatio, jawForeRatio, lowerTaper)
+                    };
+                    const totalScore = Object.values(scores).reduce((a,b)=>a+b,0);
+                    const percentages = {};
+                    for (const [k,v] of Object.entries(scores)) percentages[k] = totalScore>0 ? Math.round((v/totalScore)*100) : 0;
+                    const shape      = Object.entries(scores).reduce((a,b)=>b[1]>a[1]?b:a)[0];
+                    const confidence = percentages[shape];
+                    return { shape, confidence, scores, percentages,
+                        metrics: { faceRatio:+faceRatio.toFixed(3), foreheadRatio:+foreheadRatio.toFixed(3), cheekRatio:+cheekRatio.toFixed(3), jawRatio:+jawRatio.toFixed(3), chinRatio:+chinRatio.toFixed(3), chinAngle:+chinAngle.toFixed(1), upperFaceRatio:+upperFaceRatio.toFixed(3), lowerTaper:+lowerTaper.toFixed(3) }
+                    };
+                }
+
+                // ============================================================
+                // SCORING FUNCTIONS — improved with secondary parameters
+                // ============================================================
+                function calcOval(fr,fore,cheek,jaw,chinA,ufr,lt) {
+                    let s=0;
+                    if(fr>=1.25&&fr<=1.65) s+=3.0;
+                    if(cheek>jaw&&cheek>fore) s+=2.5;
+                    if(fore>jaw) s+=1.0;
+                    if(jaw>=0.58&&jaw<=0.80) s+=1.5;
+                    if(chinA>=65&&chinA<=115) s+=1.0;
+                    if(lt>=0.45&&lt<=0.70) s+=1.0;
+                    if(ufr>=0.88&&ufr<=1.05) s+=0.5;
+                    return s;
+                }
+                function calcRound(fr,cheek,jaw,chinA,lt) {
+                    let s=0;
+                    if(fr<1.2) s+=4.0;
+                    if(cheek>=0.85) s+=2.0;
+                    if(jaw>=0.72) s+=1.5;
+                    if(chinA>=125) s+=2.5;
+                    if(lt>=0.60) s+=1.5;
+                    return s;
+                }
+                function calcSquare(fr,jaw,chinA,chinR) {
+                    let s=0;
+                    if(fr>=0.90&&fr<=1.25) s+=2.5;
+                    if(jaw>=0.82) s+=4.5;
+                    if(chinA>=110) s+=2.5;
+                    if(chinR>=0.75) s+=1.5;
+                    return s;
+                }
+                function calcOblong(fr,fore,jaw,chinR) {
+                    let s=0;
+                    if(fr>=1.60) s+=5.0;
+                    if(fore<0.82) s+=1.5;
+                    if(jaw<0.72) s+=2.0;
+                    if(chinR<0.55) s+=1.5;
+                    return s;
+                }
+                function calcHeart(fore,jaw,chinA,jawFore,lt) {
+                    let s=0;
+                    if(fore>=0.92) s+=3.0;
+                    if(jaw<0.68) s+=3.0;
+                    if(chinA<80) s+=3.0;
+                    if(jawFore<0.75) s+=1.0;
+                    if(lt<0.40) s+=1.5;
+                    return s;
+                }
+                function calcDiamond(fore,cheek,jaw,chinA,ufr) {
+                    let s=0;
+                    if(cheek>fore&&cheek>jaw) s+=5.0;
+                    if(fore<0.82) s+=1.5;
+                    if(jaw<0.68) s+=1.5;
+                    if(chinA<95) s+=2.0;
+                    if(ufr<0.88) s+=1.0;
+                    return s;
+                }
+                function calcTriangle(fore,jaw,jawFore,lt) {
+                    let s=0;
+                    if(jawFore>=1.12) s+=5.0;
+                    if(jaw>=0.85) s+=3.0;
+                    if(fore<0.80) s+=2.0;
+                    if(lt>=0.65) s+=1.0;
+                    return s;
+                }
+
+                // ============================================================
+                // DISPLAY FINAL RESULT
+                // ============================================================
+                function displayFinalResult(analysis, pd) {
+                    const {shape, confidence: conf, percentages, metrics: m} = analysis;
+                    const shapeDesc = {
+                        OVAL:'Symmetrical face, slightly longer than wide, with soft lines.',
+                        ROUND:'Rounded face, width and height nearly equal, blunt chin.',
+                        SQUARE:'Strong wide jaw, square chin, balanced proportions.',
+                        OBLONG:'Long and narrow face, forehead and jaw parallel.',
+                        HEART:'Wide forehead tapering to a pointed chin.',
+                        DIAMOND:'Prominent cheekbones, narrower forehead and jaw.',
+                        TRIANGLE:'Jaw wider than forehead, face widens toward the bottom.'
+                    };
+                    const top3 = Object.entries(percentages).sort((a,b)=>b[1]-a[1]).slice(0,3);
+                    const pdSrc = `*IOC ratio method — reference ${iocRefMM}mm`;
+                    const pdHtml = pd
+                        ? `<div style="margin-top:12px;padding:10px 15px;background:rgba(0,207,255,0.07);border:1px solid rgba(0,207,255,0.2);border-radius:12px;width:100%;max-width:100%;box-sizing:border-box;">
+                            <div style="font-size:0.6rem;color:var(--text-muted);letter-spacing:1px;margin-bottom:6px;">PUPILLARY DISTANCE</div>
+                            <div class="pd-row" style="margin-top:0;"><span class="pd-chip total">PD Total ${pd.total} mm</span></div>
+                            <div class="pd-row" style="margin-top:6px;"><span class="pd-chip">OD (Right) ${pd.od} mm</span><span class="pd-chip">OS (Left) ${pd.os} mm</span></div>
+                            <div class="pd-note" style="margin-top:5px;">${pdSrc}</div>
+                           </div>`
+                        : `<div style="font-size:10px;color:#555;margin-top:8px;">Iris data not available</div>`;
+
+                    // Collapsible analysis-details block — hidden by default, toggled via header tap
+                    const detailsHtml = `
+                        <div id="analysis-details-wrap" style="width:100%;margin-top:10px;">
+                            <div onclick="toggleAnalysisDetails()" style="cursor:pointer;user-select:none;display:flex;align-items:center;justify-content:space-between;padding:7px 12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:10px;">
+                                <span style="font-size:0.6rem;color:#888;letter-spacing:1px;">ANALYSIS DETAILS</span>
+                                <span id="analysis-details-chev" style="color:#888;font-size:11px;transition:transform 0.25s;display:inline-block;">▼</span>
+                            </div>
+                            <div id="analysis-details-body" style="display:none;padding:10px 4px 0 4px;">
+                                <div style="font-size:11px;color:var(--text-muted);margin-top:2px;max-width:260px;text-align:center;margin-left:auto;margin-right:auto;">${shapeDesc[shape]||''}</div>
+                                <div class="conf-bar-wrap" style="width:80%;margin:8px auto 6px auto;"><div class="conf-bar-fill" style="width:${conf}%;"></div></div>
+                                <div style="font-size:10px;color:#666;margin-bottom:8px;text-align:center;">${top3.map(([s,p])=>`${s} ${p}%`).join(' · ')}</div>
+                                <div class="metrics-row">
+                                    <span class="metric-chip">H/W ${m.faceRatio}</span>
+                                    <span class="metric-chip">Forehead ${m.foreheadRatio}</span>
+                                    <span class="metric-chip">Cheek ${m.cheekRatio}</span>
+                                    <span class="metric-chip">Jaw ${m.jawRatio}</span>
+                                    <span class="metric-chip">Chin ${m.chinAngle}°</span>
+                                    <span class="metric-chip">Taper ${m.lowerTaper}</span>
+                                </div>
+                            </div>
+                        </div>`;
+
+                    resultBox.innerHTML = `
+                        <div style="font-size:0.65rem;color:var(--text-muted);letter-spacing:1px;margin-bottom:6px;">ANALYSIS RESULT</div>
+                        <div class="shape-badge" style="font-size:1.6rem;">${shape}</div>
+                        ${pdHtml}
+                        ${detailsHtml}
+                    `;
+                }
+
+                // Collapsible toggle for the ANALYSIS DETAILS block
+                function toggleAnalysisDetails() {
+                    const b = document.getElementById('analysis-details-body');
+                    const c = document.getElementById('analysis-details-chev');
+                    if (!b) return;
+                    const open = b.style.display === 'none';
+                    b.style.display = open ? 'block' : 'none';
+                    if (c) c.style.transform = open ? 'rotate(180deg)' : 'rotate(0deg)';
+                }
+                window.toggleAnalysisDetails = toggleAnalysisDetails;
+
+                // ============================================================
+                // FRAME RECOMMENDATIONS
+                // ============================================================
+                const frameRec = {
+                    OVAL:{emoji:'◉',tagline:'Lucky you — almost any frame suits you.',best:[{s:'Rectangular / Wayfarer',r:'Adds definition to a proportional face',i:'▬'},{s:'Round / Circular',r:'Emphasizes the curve of an oval face',i:'●'},{s:'Cat-Eye / Upswept',r:'Adds expression and character',i:'◣'},{s:'Aviator',r:'Classic, timeless, well-proportioned',i:'▽'}],avoid:[],avoidNote:'No restrictions — every frame works!'},
+                    ROUND:{emoji:'●',tagline:'Choose frames that add definition and length.',best:[{s:'Rectangular / Square',r:'Sharpens lines and elongates the look',i:'▬'},{s:'Browline / Club Master',r:'Horizontal line highlights facial structure',i:'⊓'},{s:'Wayfarer',r:'Trapezoid shape balances round faces',i:'⬡'},{s:'Angular / Geometric',r:'Contrasts the round curves, modern look',i:'◻'}],avoid:[{s:'Round / Circular',r:'Reinforces roundness'},{s:'Small Oval',r:'No visual contrast'}],avoidNote:'Avoid round frames and small ovals.'},
+                    SQUARE:{emoji:'■',tagline:'Choose frames that soften a strong jawline.',best:[{s:'Round / Circular',r:'Softens a square jaw',i:'●'},{s:'Oval / Soft Rectangle',r:'Balances with gentle curves',i:'◉'},{s:'Semi-Rimless',r:'Visually light, does not thicken facial lines',i:'⌒'},{s:'Aviator / Teardrop',r:'Lower curve softens the jaw',i:'▽'}],avoid:[{s:'Strong Square / Rectangular',r:'Reinforces squareness'},{s:'Geometric angular',r:'Too many sharp angles'}],avoidNote:'Avoid strongly squared frames.'},
+                    OBLONG:{emoji:'▬',tagline:'Choose frames that add width.',best:[{s:'Oversized / Wide Frame',r:'Fills the face width, balanced look',i:'▬'},{s:'Decorative Top Bar',r:'Horizontal line emphasizes width',i:'⊤'},{s:'Round',r:'Curves break up the elongated look',i:'●'},{s:'Low Bridge / Deep Lens',r:'Reduces the long proportion',i:'◎'}],avoid:[{s:'Small / Narrow frame',r:'Makes the face look even longer'},{s:'Small Rimless',r:'Provides no balancing effect'}],avoidNote:'Avoid narrow and small frames.'},
+                    HEART:{emoji:'♥',tagline:'Choose frames that balance a wide forehead.',best:[{s:'Bottom-Heavy / Pear Shape',r:'Bottom-wide frames balance the forehead',i:'▽'},{s:'Rimless',r:'Minimal visual weight on top',i:'◌'},{s:'Oval / Round',r:'Softens a wide forehead contour',i:'◉'},{s:'Low Set Bridge',r:'Appears wider toward the bottom',i:'⊥'}],avoid:[{s:'Cat-Eye / Top-Heavy',r:'Enlarges an already wide forehead'},{s:'Embellished top rim',r:'Adds visual weight to the forehead'}],avoidNote:'Avoid cat-eye and top detailing.'},
+                    DIAMOND:{emoji:'◆',tagline:'Choose frames that highlight the eyes.',best:[{s:'Cat-Eye / Upswept',r:'Balances prominent cheekbones',i:'◣'},{s:'Oval',r:'Softens cheek angles',i:'◉'},{s:'Rimless',r:'Does not add weight to dominant cheeks',i:'◌'},{s:'Browline',r:'Adds definition to the upper face',i:'⊓'}],avoid:[{s:'Narrow/Angular frame',r:'Reinforces cheek width'}],avoidNote:'Avoid frames that are too narrow at the cheeks.'},
+                    TRIANGLE:{emoji:'▼',tagline:'Choose frames that widen the upper area.',best:[{s:'Cat-Eye / Top-Heavy',r:'Lifts the visual line, balances the jaw',i:'◣'},{s:'Browline / Club Master',r:'Strengthens a narrow forehead line',i:'⊓'},{s:'Embellished/Decorative top',r:'Draws attention away from the jaw',i:'✦'},{s:'Wide Top Frame',r:'Expands the upper visual area',i:'▬'}],avoid:[{s:'Bottom-heavy frame',r:'Reinforces jaw width'},{s:'Small narrow frame',r:'Does not help balance'}],avoidNote:'Avoid bottom-heavy frames.'},
+                };
+
+                // ============================================================
+                // GENDER NORMALIZATION + AFFINITY (fix #5)
+                // Returns 'female' | 'male' | '' (unknown). Accepts Indonesian + English.
+                // ============================================================
+                function normalizeGender(g) {
+                    if (!g) return '';
+                    const v = String(g).toLowerCase().trim();
+                    if (['f','female','wanita','perempuan','woman','w','p'].includes(v)) return 'female';
+                    if (['m','male','pria','laki-laki','laki laki','man','l'].includes(v)) return 'male';
+                    return '';
+                }
+
+                // Keyword-based affinity. Higher = better fit for that gender.
+                // Applied on top of the base shape-fit order to re-rank recommendations.
+                function genderAffinity(frameName, gender) {
+                    if (!gender) return 0;
+                    const n = frameName.toLowerCase();
+                    const femaleBoost = [
+                        { kw:'cat-eye',        w:3 },
+                        { kw:'cat eye',        w:3 },
+                        { kw:'upswept',        w:2 },
+                        { kw:'oval',           w:2 },
+                        { kw:'round',          w:2 },
+                        { kw:'rimless',        w:2 },
+                        { kw:'soft',           w:1 },
+                        { kw:'decorative',     w:2 },
+                        { kw:'embellished',    w:2 }
+                    ];
+                    const maleBoost = [
+                        { kw:'wayfarer',       w:3 },
+                        { kw:'browline',       w:3 },
+                        { kw:'club master',    w:3 },
+                        { kw:'clubmaster',     w:3 },
+                        { kw:'aviator',        w:3 },
+                        { kw:'rectangular',    w:3 },
+                        { kw:'square',         w:2 },
+                        { kw:'angular',        w:2 },
+                        { kw:'geometric',      w:2 },
+                        { kw:'oversized',      w:1 },
+                        { kw:'wide',           w:1 },
+                        { kw:'top bar',        w:1 }
+                    ];
+                    const list = gender === 'female' ? femaleBoost : maleBoost;
+                    let score = 0;
+                    for (const { kw, w } of list) if (n.includes(kw)) score += w;
+                    return score;
+                }
+
+                // ============================================================
+                // FRAME SHAPE → COLOR LOOKUP
+                // Matches descriptive frame names (e.g. "Rectangular / Wayfarer")
+                // against keys in frameShapeColors ("WAYFARER", "ROUND", ...).
+                // A single frame can map to multiple shape-colors — all matches
+                // are returned, ordered by where they appear in the name.
+                // ============================================================
+                function getFrameColors(frameName) {
+                    if (!frameShapeColors || !frameName) return [];
+                    const nUpper = String(frameName).toUpperCase();
+                    // Helper: returns ALL word-boundary match positions of `needle` in nUpper
+                    function findWordAll(needle) {
+                        const esc = needle.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+                        const re = new RegExp('(^|[^A-Z])' + esc + '(?=[^A-Z]|$)', 'g');
+                        const out = [];
+                        let m;
+                        while ((m = re.exec(nUpper)) !== null) {
+                            out.push(m.index + m[1].length);
+                        }
+                        return out;
+                    }
+                    // Synonym map: each surface form (left) can map to one OR MORE JSON keys (right).
+                    // The matcher will add a swatch for every listed target that exists in the JSON.
+                    // This lets a name like "Rectangular / Square" show BOTH a Rectangle
+                    // swatch (if that key is in the JSON) AND a Square swatch.
+                    const synonyms = {
+                        'CIRCULAR':      ['ROUND'],
+                        'CLUB MASTER':   ['BROWLINE'],
+                        'CLUBMASTER':    ['BROWLINE'],
+                        'UPSWEPT':       ['CAT-EYE'],
+                        'RECTANGULAR':   ['RECTANGLE', 'SQUARE'],
+                        'RECTANGLE':     ['RECTANGLE', 'SQUARE'],
+                        'TEARDROP':      ['AVIATOR'],
+                        'ANGULAR':       ['GEOMETRIC'],
+                        'PEAR SHAPE':    ['BUTTERFLY'],
+                        'PEAR':          ['BUTTERFLY'],
+                        'BOTTOM-HEAVY':  ['BUTTERFLY'],
+                        'TOP-HEAVY':     ['CAT-EYE']
+                    };
+                    // Collect (position, key) hits. De-dup by (pos, key) so the same word
+                    // isn't counted twice when it's both a direct match and a synonym.
+                    const hits = [];
+                    const seen = new Set();
+                    function add(key, pos) {
+                        if (!(key in frameShapeColors)) return;
+                        const sig = pos + ':' + key;
+                        if (seen.has(sig)) return;
+                        seen.add(sig);
+                        hits.push({ key, pos });
+                    }
+                    // Direct key hits
+                    for (const k of Object.keys(frameShapeColors)) {
+                        for (const pos of findWordAll(k)) add(k, pos);
+                    }
+                    // Synonym hits (each synonym can fan out to several target keys)
+                    for (const [syn, targets] of Object.entries(synonyms)) {
+                        const positions = findWordAll(syn);
+                        if (!positions.length) continue;
+                        for (const pos of positions) {
+                            for (const key of targets) add(key, pos);
+                        }
+                    }
+                    hits.sort((a, b) => a.pos - b.pos);
+                    // Final de-dup by key (keep first occurrence) so we never show the
+                    // same swatch twice just because the frame name contained the word
+                    // more than once.
+                    const out = [];
+                    const seenKey = new Set();
+                    for (const h of hits) {
+                        if (seenKey.has(h.key)) continue;
+                        seenKey.add(h.key);
+                        out.push({ name: h.key, color: frameShapeColors[h.key] });
+                    }
+                    return out;
+                }
+
+                // Render helper: colored swatch pills for a given frame name.
+                // size: 'sm' (default — for legend & avoid list) or 'lg' (recommended list)
+                function renderColorSwatches(frameName, size) {
+                    const colors = getFrameColors(frameName);
+                    if (!colors.length) return '';
+                    const large = size === 'lg';
+                    const dot   = large ? 18 : 11;            // circle diameter
+                    const font  = large ? 11 : 9;             // label font-size
+                    const padY  = large ? 4 : 2;
+                    const padX  = large ? 10 : 7;
+                    const gap   = large ? 7 : 4;
+                    const marginTop = large ? 8 : 5;
+                    return `<div style="display:flex;flex-wrap:wrap;gap:${gap}px;margin-top:${marginTop}px;">`
+                        + colors.map(c => `
+                            <span style="display:inline-flex;align-items:center;gap:${large?6:4}px;padding:${padY}px ${padX}px ${padY}px ${Math.max(padY,3)}px;border-radius:20px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);font-size:${font}px;letter-spacing:0.5px;color:#ddd;font-weight:${large?700:500};">
+                                <span style="display:inline-block;width:${dot}px;height:${dot}px;border-radius:50%;background:${c.color};box-shadow:0 0 ${large?8:4}px ${c.color}99,inset 0 0 0 1px rgba(255,255,255,0.2);flex-shrink:0;"></span>
+                                ${c.name}
+                            </span>`).join('')
+                        + `</div>`;
+                }
+
+                function showFrameRecommendation(shape, forceShow) {
+                    const rec = frameRec[shape]; if (!rec) return;
+                    const gender = normalizeGender(patientGender);
+
+                    // Re-rank recommendations: base rank (higher = better) + gender affinity
+                    const len = rec.best.length;
+                    const ranked = rec.best.map((f, idx) => ({
+                        ...f,
+                        _base:    len - idx,          // preserve original priority
+                        _gender:  genderAffinity(f.s, gender),
+                        _score:   (len - idx) + genderAffinity(f.s, gender) * 1.5
+                    }))
+                    .sort((a, b) => b._score - a._score);
+
+                    const genderLabel = gender === 'female' ? '♀ Female' : gender === 'male' ? '♂ Male' : '';
+                    const genderNote  = gender
+                        ? `<div style="font-size:9px;color:#888;letter-spacing:0.5px;margin-bottom:8px;">Priority tailored for: <span style="color:#00cfff;font-weight:700;">${genderLabel}</span></div>`
+                        : '';
+
+                    // Build a compact legend of all frame-shape colors available (collapsible)
+                    const legendEntries = Object.entries(frameShapeColors || {});
+                    const legendHtml = legendEntries.length
+                        ? `<div style="margin-bottom:10px;background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.06);border-radius:10px;overflow:hidden;">
+                             <div onclick="toggleCollapsible('frame-legend')" style="cursor:pointer;user-select:none;display:flex;align-items:center;justify-content:space-between;padding:8px 12px;">
+                                 <span style="font-size:0.55rem;color:#888;letter-spacing:1px;">FRAME SHAPE COLOR GUIDE</span>
+                                 <span id="frame-legend-chev" style="color:#888;font-size:11px;transition:transform 0.25s;display:inline-block;">▼</span>
+                             </div>
+                             <div id="frame-legend-body" style="display:none;padding:0 10px 10px 10px;">
+                                 <div style="display:flex;flex-wrap:wrap;gap:5px;">
+                                   ${legendEntries.map(([name, color]) => `
+                                     <span style="display:inline-flex;align-items:center;gap:4px;padding:2px 7px 2px 3px;border-radius:20px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);font-size:9px;color:#bbb;letter-spacing:0.5px;">
+                                       <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${color};box-shadow:0 0 4px ${color}66,inset 0 0 0 1px rgba(255,255,255,0.15);"></span>
+                                       ${name}
+                                     </span>`).join('')}
+                                 </div>
+                             </div>
+                           </div>`
+                        : '';
+
+                    // Build collapsible "Frames to Avoid" section
+                    const avoidHtml = rec.avoid.length
+                        ? `<div style="margin-top:6px;background:rgba(255,77,77,0.03);border:1px solid rgba(255,77,77,0.10);border-radius:10px;overflow:hidden;">
+                             <div onclick="toggleCollapsible('frame-avoid')" style="cursor:pointer;user-select:none;display:flex;align-items:center;justify-content:space-between;padding:8px 12px;">
+                                 <span style="font-size:0.6rem;color:#ff4d4d;letter-spacing:1px;">✕ FRAMES TO AVOID (${rec.avoid.length})</span>
+                                 <span id="frame-avoid-chev" style="color:#ff4d4d;font-size:11px;transition:transform 0.25s;display:inline-block;">▼</span>
+                             </div>
+                             <div id="frame-avoid-body" style="display:none;padding:0 10px 10px 10px;">
+                                 <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px;">
+                                     ${rec.avoid.map(f => `<div style="display:flex;align-items:flex-start;gap:8px;padding:7px 10px;background:rgba(255,77,77,0.05);border:1px solid rgba(255,77,77,0.12);border-radius:10px;">
+                                         <span style="font-size:12px;color:#ff4d4d;">✕</span>
+                                         <div style="flex:1;min-width:0;"><div style="font-size:11px;color:#ff4d4d;font-weight:700;">${f.s}</div><div style="font-size:10px;color:#777;margin-top:2px;">${f.r}</div>${renderColorSwatches(f.s)}</div>
+                                     </div>`).join('')}
+                                 </div>
+                                 <div style="font-size:10px;color:#555;font-style:italic;">${rec.avoidNote}</div>
+                             </div>
+                           </div>`
+                        : `<div style="font-size:10px;color:#00ff88;font-style:italic;margin-top:6px;">${rec.avoidNote}</div>`;
+
+                    frameRecContent.innerHTML = `
+                        <div style="font-size:12px;color:#ffaa00;font-weight:700;margin-bottom:8px;">${rec.emoji} ${shape} — ${rec.tagline}</div>
+                        ${genderNote}
+                        ${legendHtml}
+                        <div style="font-size:0.6rem;color:var(--text-muted);letter-spacing:1px;margin-bottom:6px;">✓ RECOMMENDED FRAMES (BY PRIORITY)</div>
+                        <div style="display:flex;flex-direction:column;gap:7px;margin-bottom:12px;">
+                            ${ranked.map((f, i) => {
+                                const isTop = i === 0;
+                                const bg    = isTop ? 'rgba(255,170,0,0.10)' : 'rgba(0,255,136,0.05)';
+                                const bd    = isTop ? 'rgba(255,170,0,0.45)' : 'rgba(0,255,136,0.12)';
+                                const color = isTop ? '#ffaa00' : '#00ff88';
+                                const rank  = `<span style="display:inline-flex;min-width:18px;height:18px;align-items:center;justify-content:center;border-radius:50%;background:${isTop?'rgba(255,170,0,0.25)':'rgba(0,255,136,0.15)'};color:${color};font-size:9px;font-weight:800;margin-right:4px;">${i+1}</span>`;
+                                const badge = isTop
+                                    ? `<span style="display:inline-block;background:#ffaa00;color:#111;font-size:8px;font-weight:800;letter-spacing:0.8px;padding:2px 7px;border-radius:10px;margin-left:6px;vertical-align:middle;">★ TOP PICK</span>`
+                                    : '';
+                                return `<div style="display:flex;align-items:flex-start;gap:8px;padding:9px 11px;background:${bg};border:1px solid ${bd};border-radius:10px;">
+                                    <span style="font-size:14px;min-width:20px;text-align:center;">${f.i}</span>
+                                    <div style="flex:1;min-width:0;">
+                                        <div style="font-size:11px;color:${color};font-weight:700;">${rank}${f.s}${badge}</div>
+                                        <div style="font-size:10px;color:#888;margin-top:2px;">${f.r}</div>
+                                        ${renderColorSwatches(f.s, 'lg')}
+                                    </div>
+                                </div>`;
+                            }).join('')}
+                        </div>
+                        ${avoidHtml}
+                    `;
+                    frameRecBox.style.display = forceShow ? 'block' : 'none'; // forceShow=true skips toggle
+                }
+
+                // Generic collapsible toggle used by the legend + avoid sections.
+                // Expects an element with id "{prefix}-body" and chevron "{prefix}-chev".
+                function toggleCollapsible(prefix) {
+                    const body = document.getElementById(prefix + '-body');
+                    const chev = document.getElementById(prefix + '-chev');
+                    if (!body) return;
+                    const open = body.style.display === 'none';
+                    body.style.display = open ? 'block' : 'none';
+                    if (chev) chev.style.transform = open ? 'rotate(180deg)' : 'rotate(0deg)';
+                }
+                window.toggleCollapsible = toggleCollapsible;
+
+                // ============================================================
+                // TOGGLE FACE RESULT
+                // ============================================================
+                function toggleFaceResult() {
+                    const isHidden = resultBox.style.display === 'none' || resultBox.style.display === '';
+                    const toggleLabel = document.getElementById('mp-result-toggle-label');
+                    if (isHidden) {
+                        resultBox.style.display   = 'flex';
+                        frameRecBox.style.display = 'block';
+                        if (toggleLabel) toggleLabel.textContent = '👁 HIDE RESULT';
+                    } else {
+                        resultBox.style.display   = 'none';
+                        frameRecBox.style.display = 'none';
+                        if (toggleLabel) toggleLabel.textContent = '👁 VIEW RESULT';
+                    }
+                }
+                window.toggleFaceResult = toggleFaceResult;
+                window.resetScan = resetScan;
+                window.showFrameRecommendation = showFrameRecommendation;
+
+                // ============================================================
+                // RESET
+                // ============================================================
+                function resetScan() {
+                    isCaptured = false; capturedLM = null; pdBuffer = []; shapeBuffer = []; lastPD = null;
+                    guide.classList.remove('locked');
+                    // Hide result UI
+                    resultBox.style.display   = 'none';
+                    frameRecBox.style.display = 'none';
+                    const toggleBtn2 = document.getElementById('mp-result-toggle-btn');
+                    if (toggleBtn2) toggleBtn2.style.display = 'none';
+                    liveView.style.display      = 'block';
+                    capturedView.style.display  = 'none';
+                    captureBtn.style.display    = 'inline-block';
+                    resetBtn.style.display      = 'none';
+                    switchBtn.style.display     = 'inline-block';
+                    qualityWrap.style.display   = 'block';
+                    poseIndicator.style.display = 'block';
+                    const calEl = document.getElementById('cal-box');
+                    if (calEl) calEl.style.display = 'none';
+                    // Reset calibration to default
+                    iocRefMM = 95;
+                    const calLbl = document.getElementById('cal-active-label');
+                    if (calLbl) calLbl.textContent = 'IOC 95mm';
+                    resultBox.innerHTML = `<span style="color:var(--text-muted);font-size:0.75rem">Position your face...</span>`;
+                    document.getElementById('autocap-hint').style.display = 'none';
+                    autoCapStableSince = 0;
+                    setStep(2);
+                    startCamera();
+                }
+
+                // ============================================================
+                // UTILITY
+                // ============================================================
+                function mostFrequent(arr) {
+                    if (!arr.length) return 'OVAL';
+                    const freq = {};
+                    arr.forEach(v => freq[v] = (freq[v]||0)+1);
+                    return Object.entries(freq).reduce((a,b) => b[1]>a[1]?b:a)[0];
+                }
+
+                // ============================================================
+                // EVENT HANDLERS
+                // ============================================================
+                startBtn.onclick   = () => {
+                    if (isRunning) return;
+                    if (faceMesh) {
+                        // MediaPipe already loaded (user pressed RESCAN) — skip the script reload
+                        startCamera();
+                    } else {
+                        loadMediaPipe();
+                        startBtn.innerHTML = '<div class="led"></div> LOADING...';
+                        startBtn.disabled = true;
+                    }
+                };
+                switchBtn.onclick  = () => { facingMode = facingMode==='user'?'environment':'user'; startCamera(); };
+                captureBtn.onclick = () => capturePhoto();
+                retakeOverlay.onclick = () => resetScan();
+                resetBtn.onclick   = () => resetScan();
+
+            })(); // end IIFE
+
+        </script>
+
+        <!-- ============================================================
+             LENS TOTAL WITH FRAME — Global helper
+             When a frame is scanned via the barcode scanner, lrSetFramePrice()
+             is called with the frame's sell price. All lens recommendation cards
+             then show a "(+ frame = total)" line below the lens price.
+             Call lrSetFramePrice(0) to clear / hide the totals.
+             ============================================================ -->
+        <script>
+        (function () {
+            'use strict';
+
+            // Currently scanned frame price (0 = none scanned)
+            window._lrScannedFramePrice = 0;
+
+            /**
+             * Set the active frame price and refresh all lens total labels.
+             * @param {number} framePrice  Sell price in IDR (0 = no frame scanned)
+             */
+            window.lrSetFramePrice = function (framePrice) {
+                window._lrScannedFramePrice = framePrice || 0;
+                lrRefreshTotals();
+            };
+
+            function fmtRp(v) {
+                return 'Rp\u00a0' + parseInt(v).toLocaleString('id-ID');
+            }
+
+            function lrRefreshTotals() {
+                var fp = window._lrScannedFramePrice;
+                var divs = document.querySelectorAll('[data-lens-price]');
+                divs.forEach(function (div) {
+                    var lp  = parseInt(div.getAttribute('data-lens-price')) || 0;
+                    var span = div.querySelector('.lr-frame-total');
+                    if (!span) return;
+                    if (fp > 0 && lp > 0) {
+                        var total = lp + fp;
+                        span.textContent = '(' + fmtRp(total) + ')';
+                        span.style.display = 'block';
+                    } else if (fp > 0 && lp === 0) {
+                        // lens price is "contact staff" — can't compute total
+                        span.style.display = 'none';
+                    } else {
+                        span.style.display = 'none';
+                    }
+                });
+            }
+
+            // Expose refresh for external callers
+            window.lrRefreshTotals = lrRefreshTotals;
+        }());
+        </script>
+
+        <!-- ============================================================
+             FRAME BARCODE SCANNER — JS
+             Library: jsQR 1.4.0 (MIT) — decodes QR codes from camera frames.
+             Endpoint: frame_lookup.php (POST, returns JSON).
+             Throttled to one decode attempt every 300 ms to avoid CPU overload.
+             Camera viewfinder is revealed only after START SCANNER is pressed.
+             ============================================================ -->
+        <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+        <script>
+        (function () {
+            'use strict';
+
+            /* ── DOM refs ──────────────────────────────────────────────── */
+            const fbsCard      = document.getElementById('fbs-card');
+            const fbsViewfinder = document.getElementById('fbs-viewfinder');
+            const fbsVideo     = document.getElementById('fbs-video');
+            const fbsCanvas    = document.getElementById('fbs-canvas');
+            const fbsResult    = document.getElementById('fbs-result');
+            const fbsStartBtn  = document.getElementById('fbs-start-btn');
+            const fbsStopBtn   = document.getElementById('fbs-stop-btn');
+            const fbsClearBtn  = document.getElementById('fbs-clear-btn');
+            const fbsCamStatus = document.getElementById('fbs-cam-status');
+            const fbsManual    = document.getElementById('fbs-manual-input');
+
+            let fbsStream     = null;
+            let fbsRafId      = null;
+            let fbsLocked     = false;   // true once a code is successfully decoded
+            let fbsCtx        = null;
+            let fbsLastScan   = 0;       // timestamp of last decode attempt (throttle)
+            const FBS_THROTTLE = 300;    // ms between decode attempts
+
+            /* ── Start camera ───────────────────────────────────────────── */
+            window.fbsStartCamera = function () {
+                if (fbsStream) return;
+
+                // Reveal viewfinder now that the user asked for it
+                fbsViewfinder.style.display = 'block';
+
+                const constraints = {
+                    video: {
+                        facingMode: { ideal: 'environment' },
+                        width:  { ideal: 1280 },
+                        height: { ideal: 720  }
+                    }
+                };
+
+                navigator.mediaDevices.getUserMedia(constraints)
+                    .then(function (stream) {
+                        fbsStream = stream;
+                        fbsVideo.srcObject = stream;
+                        fbsVideo.play();
+                        fbsVideo.onloadedmetadata = function () {
+                            fbsCanvas.width  = fbsVideo.videoWidth  || 640;
+                            fbsCanvas.height = fbsVideo.videoHeight || 480;
+                            fbsCtx   = fbsCanvas.getContext('2d');
+                            fbsLocked = false;
+                            fbsLastScan = 0;
+                            fbsStartBtn.style.display = 'none';
+                            fbsStopBtn.style.display  = 'inline-flex';
+                            fbsCamStatus.textContent  = '\u25cf SCANNING\u2026';
+                            fbsCamStatus.style.color  = '#00ff88';
+                            fbsRafId = requestAnimationFrame(fbsScanLoop);
+                        };
+                    })
+                    .catch(function (err) {
+                        fbsViewfinder.style.display = 'none';
+                        fbsShowError('Camera access denied. Use manual input below.');
+                        console.error('FBS camera error:', err);
+                    });
+            };
+
+            /* ── Stop camera ────────────────────────────────────────────── */
+            window.fbsStopCamera = function () {
+                if (fbsRafId)  { cancelAnimationFrame(fbsRafId); fbsRafId = null; }
+                if (fbsStream) { fbsStream.getTracks().forEach(function (t) { t.stop(); }); fbsStream = null; }
+                fbsVideo.srcObject = null;
+                fbsViewfinder.style.display = 'none';
+                fbsStartBtn.style.display   = 'inline-flex';
+                fbsStopBtn.style.display    = 'none';
+            };
+
+            /* ── Scan loop — throttled to FBS_THROTTLE ms ───────────────── */
+            // Each tick tries up to 3 decode passes on the same frame:
+            //   Pass 1 — full frame, normal orientation   (fast, catches most codes)
+            //   Pass 2 — centre-crop 60 %, upscaled 2×    (helps small / distant QR)
+            //   Pass 3 — full frame, attempt both orientations (catches light-on-dark QR)
+            function fbsScanLoop(timestamp) {
+                if (!fbsStream || fbsLocked) return;
+
+                if (timestamp - fbsLastScan >= FBS_THROTTLE) {
+                    fbsLastScan = timestamp;
+
+                    if (fbsVideo.readyState >= fbsVideo.HAVE_ENOUGH_DATA) {
+                        var W = fbsCanvas.width;
+                        var H = fbsCanvas.height;
+
+                        // Draw full frame
+                        fbsCtx.drawImage(fbsVideo, 0, 0, W, H);
+
+                        // ── Pass 1: full frame, fast ─────────────────────────
+                        var img1 = fbsCtx.getImageData(0, 0, W, H);
+                        var decoded = jsQR(img1.data, W, H, { inversionAttempts: 'dontInvert' });
+                        if (decoded && decoded.data && decoded.data.trim() !== '') {
+                            return fbsHandleDecoded(decoded.data.trim());
+                        }
+
+                        // ── Pass 2: centre-crop 60 %, drawn onto a 640×640 canvas ──
+                        // This effectively zooms in — great for small QR codes.
+                        var cropW  = Math.floor(W * 0.6);
+                        var cropH  = Math.floor(H * 0.6);
+                        var cropX  = Math.floor((W - cropW) / 2);
+                        var cropY  = Math.floor((H - cropH) / 2);
+                        var zoomSz = 640;
+                        var zoomCv = document.createElement('canvas');
+                        zoomCv.width  = zoomSz;
+                        zoomCv.height = zoomSz;
+                        var zCtx = zoomCv.getContext('2d');
+                        zCtx.drawImage(fbsCanvas, cropX, cropY, cropW, cropH, 0, 0, zoomSz, zoomSz);
+                        var img2 = zCtx.getImageData(0, 0, zoomSz, zoomSz);
+                        decoded = jsQR(img2.data, zoomSz, zoomSz, { inversionAttempts: 'dontInvert' });
+                        if (decoded && decoded.data && decoded.data.trim() !== '') {
+                            return fbsHandleDecoded(decoded.data.trim());
+                        }
+
+                        // ── Pass 3: full frame, handle inverted QR (light on dark) ──
+                        decoded = jsQR(img1.data, W, H, { inversionAttempts: 'attemptBoth' });
+                        if (decoded && decoded.data && decoded.data.trim() !== '') {
+                            return fbsHandleDecoded(decoded.data.trim());
+                        }
+                    }
+                }
+
+                fbsRafId = requestAnimationFrame(fbsScanLoop);
+            }
+
+            function fbsHandleDecoded(value) {
+                fbsLocked = true;
+                fbsCamStatus.textContent = '\u2713 CODE DETECTED';
+                fbsCamStatus.style.color = '#00cfff';
+                // Stop camera immediately after detection
+                if (fbsRafId) { cancelAnimationFrame(fbsRafId); fbsRafId = null; }
+                if (fbsStream) { fbsStream.getTracks().forEach(function(t) { t.stop(); }); fbsStream = null; }
+                fbsVideo.srcObject = null;
+                fbsViewfinder.style.display = 'none';
+                fbsStartBtn.style.display   = 'inline-flex';
+                fbsStopBtn.style.display    = 'none';
+                fbsLookup(value);
+            }
+
+            /* ── Manual input lookup ────────────────────────────────────── */
+            window.fbsLookupManual = function () {
+                var val = (fbsManual.value || '').trim();
+                if (!val) { fbsShowError('Please enter a UFC code.'); return; }
+                fbsLookup(val);
+            };
+            fbsManual.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter') window.fbsLookupManual();
+            });
+
+            /* ── AJAX lookup ────────────────────────────────────────────── */
+            function fbsLookup(ufc) {
+                fbsShowLoading(ufc);
+                var fd = new FormData();
+                fd.append('ufc', ufc);
+                fetch('frame_lookup.php', { method: 'POST', body: fd })
+                    .then(function (r) { return r.json(); })
+                    .then(function (data) {
+                        if (data.found) {
+                            fbsShowFound(data);
+                            // Stop camera after successful find — no need to keep scanning
+                            if (fbsRafId) { cancelAnimationFrame(fbsRafId); fbsRafId = null; }
+                        } else {
+                            fbsShowNotFound(ufc, data.message || 'Frame not found in any database.');
+                        }
+                        fbsClearBtn.style.display = 'inline-flex';
+                    })
+                    .catch(function () {
+                        fbsShowError('Connection error. Check server.');
+                        // On network error, allow re-scan
+                        fbsLocked = false;
+                        if (fbsStream) fbsRafId = requestAnimationFrame(fbsScanLoop);
+                    });
+            }
+
+            /* ── Renderers ──────────────────────────────────────────────── */
+            function fbsShowLoading(ufc) {
+                fbsResult.innerHTML =
+                    '<div style="display:flex;align-items:center;gap:10px;">' +
+                    '<div style="width:14px;height:14px;border:2px solid #00ff88;border-top-color:transparent;border-radius:50%;animation:fbs-spin 0.7s linear infinite;flex-shrink:0;"></div>' +
+                    '<span style="font-size:10px;color:#00ff88;letter-spacing:1px;">Looking up <b style="color:#fff;">' + esc(ufc) + '</b>\u2026</span>' +
+                    '</div>';
+            }
+
+            function fbsShowFound(d) {
+                var srcBadge = (d.source === 'main')
+                    ? '<span style="background:rgba(0,255,136,0.15);color:#00ff88;border:1px solid rgba(0,255,136,0.35);font-size:8px;padding:2px 8px;border-radius:20px;letter-spacing:1px;">\u2713 MAIN DATABASE</span>'
+                    : '<span style="background:rgba(0,207,255,0.12);color:#00cfff;border:1px solid rgba(0,207,255,0.3);font-size:8px;padding:2px 8px;border-radius:20px;letter-spacing:1px;">\u25ce STAGING</span>';
+
+                var stock      = parseInt(d.stock) || 0;
+                var stockColor = stock > 5 ? '#00ff88' : (stock > 0 ? '#ffaa00' : '#ff4d4d');
+                var stockLabel = stock > 0 ? stock + ' pcs' : 'OUT OF STOCK';
+                var frameSellPrice = parseFloat(d.sell_price) > 0 ? parseInt(d.sell_price) : 0;
+                var priceStr   = frameSellPrice > 0
+                    ? 'Rp\u00a0' + frameSellPrice.toLocaleString('id-ID')
+                    : '<span style="color:#555;font-style:italic;">Contact Staff</span>';
+
+                // Stock age badge
+                var ageColor = { 'new':'#00ff88', 'old':'#ffaa00', 'very old':'#ff4d4d' };
+                var stockAgeBadge = d.stock_age
+                    ? '<span style="font-size:8px;padding:1px 7px;border-radius:20px;border:1px solid rgba(255,255,255,0.12);color:' +
+                      (ageColor[d.stock_age] || '#888') + ';">' + esc(d.stock_age.toUpperCase()) + '</span>'
+                    : '';
+
+                // Detail chips (frame_code, frame_size, color_code, material, lens_shape, structure, gender)
+                var chips = [];
+                if (d.frame_code)      chips.push(['CODE',   d.frame_code,      '#00cfff']);
+                if (d.frame_size)      chips.push(['SIZE',   d.frame_size,      '#aa88ff']);
+                if (d.color_code)      chips.push(['COLOR',  d.color_code,      '#ffaa00']);
+                if (d.material)        chips.push(['MAT',    d.material,        '#00ff88']);
+                if (d.lens_shape)      chips.push(['SHAPE',  d.lens_shape,      '#ff8a4d']);
+                if (d.structure)       chips.push(['STRUCT', d.structure,       '#ccc']);
+                if (d.size_range)      chips.push(['FIT',    d.size_range,      '#888']);
+                if (d.gender_category) chips.push(['GENDER', d.gender_category, '#ff88cc']);
+
+                var chipsHtml = chips.length
+                    ? '<div style="display:flex;flex-wrap:wrap;gap:5px;margin:10px 0 6px;">' +
+                      chips.map(function(c) {
+                          return '<span style="display:inline-flex;flex-direction:column;align-items:center;gap:1px;padding:4px 8px;background:rgba(255,255,255,0.025);border:1px solid rgba(255,255,255,0.07);border-radius:8px;">' +
+                              '<span style="font-size:7px;color:#555;letter-spacing:0.8px;">' + c[0] + '</span>' +
+                              '<span style="font-size:9.5px;font-weight:700;color:' + c[2] + ';">' + esc(c[1]) + '</span>' +
+                          '</span>';
+                      }).join('') +
+                      '</div>'
+                    : '';
+
+                // Update lens recommendation totals
+                if (typeof window.lrSetFramePrice === 'function') {
+                    window.lrSetFramePrice(frameSellPrice);
+                }
+                // Update selection display bar
+                if (typeof window.lrSetSelectedFrame === 'function') {
+                    var frameName = d.brand + (d.frame_code ? ' — ' + d.frame_code : '') + (d.frame_size ? ' (' + d.frame_size + ')' : '');
+                    window.lrSetSelectedFrame(frameName, frameSellPrice, d.ufc || '');
+                }
+
+                fbsResult.innerHTML =
+                    '<div style="width:100%;text-align:left;">' +
+                      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px;">' +
+                        '<span style="font-size:0.6rem;color:#ccc;letter-spacing:1.5px;font-weight:700;">\u2746 FRAME FOUND</span>' +
+                        srcBadge +
+                      '</div>' +
+                      '<div style="font-size:9px;color:#555;letter-spacing:0.5px;margin-bottom:3px;word-break:break-all;">UFC: ' + esc(d.ufc) + '</div>' +
+                      '<div style="font-size:1rem;font-weight:800;color:#fff;letter-spacing:1px;">' + esc(d.brand) + '</div>' +
+                      chipsHtml +
+                      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;">' +
+                        '<div style="flex:1;min-width:100px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:10px;padding:9px 12px;text-align:center;">' +
+                          '<div style="font-size:7.5px;color:#555;letter-spacing:1px;margin-bottom:4px;">SELLING PRICE</div>' +
+                          '<div style="font-size:12px;font-weight:700;color:#ffaa00;">' + priceStr + '</div>' +
+                        '</div>' +
+                        '<div style="flex:1;min-width:80px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:10px;padding:9px 12px;text-align:center;">' +
+                          '<div style="display:flex;align-items:center;justify-content:center;gap:5px;font-size:7.5px;color:#555;letter-spacing:1px;margin-bottom:4px;">STOCK ' + stockAgeBadge + '</div>' +
+                          '<div style="font-size:12px;font-weight:700;color:' + stockColor + ';">' + stockLabel + '</div>' +
+                        '</div>' +
+                      '</div>' +
+                    '</div>';
+            }
+
+            function fbsShowNotFound(ufc, msg) {
+                fbsResult.innerHTML =
+                    '<div style="text-align:center;">' +
+                      '<div style="font-size:1.1rem;margin-bottom:6px;">&#9888;&#65039;</div>' +
+                      '<div style="font-size:10px;color:#ff4d4d;font-weight:700;margin-bottom:4px;">FRAME NOT FOUND</div>' +
+                      '<div style="font-size:9px;color:#888;word-break:break-all;margin-bottom:4px;">' + esc(ufc) + '</div>' +
+                      '<div style="font-size:9px;color:#666;">' + esc(msg) + '</div>' +
+                    '</div>';
+                // Resume scanning after not-found
+                fbsLocked = false;
+                if (fbsStream) {
+                    fbsCamStatus.textContent = '\u25cf SCANNING\u2026';
+                    fbsCamStatus.style.color = '#00ff88';
+                    fbsLastScan = 0;
+                    fbsRafId = requestAnimationFrame(fbsScanLoop);
+                }
+            }
+
+            function fbsShowError(msg) {
+                fbsResult.innerHTML =
+                    '<span style="font-size:10px;color:#ff4d4d;">\u2715 ' + esc(msg) + '</span>';
+            }
+
+            /* ── Clear result and resume scan ───────────────────────────── */
+            window.fbsClearResult = function () {
+                fbsResult.innerHTML =
+                    '<span style="font-size:10px;color:#444;letter-spacing:0.5px;">Press START SCANNER or type a UFC to begin</span>';
+                fbsClearBtn.style.display = 'none';
+                fbsManual.value = '';
+                // Remove frame price from lens totals
+                if (typeof window.lrSetFramePrice === 'function') {
+                    window.lrSetFramePrice(0);
+                }
+                // Clear selected frame from display bar
+                if (typeof window.lrClearSelectedFrame === 'function') {
+                    window.lrClearSelectedFrame();
+                }
+                fbsLocked  = false;
+                fbsLastScan = 0;
+                if (fbsStream) {
+                    fbsCamStatus.textContent = '\u25cf SCANNING\u2026';
+                    fbsCamStatus.style.color = '#00ff88';
+                    fbsRafId = requestAnimationFrame(fbsScanLoop);
+                }
+            };
+
+            /* ── Utility ────────────────────────────────────────────────── */
+            function esc(str) {
+                var d = document.createElement('div');
+                d.appendChild(document.createTextNode(String(str)));
+                return d.innerHTML;
+            }
+
+            /* ── TAB SWITCHER ───────────────────────────────────────────── */
+            var fbsCurrentTab = 'ufc';
+            window.fbsSwitchTab = function (tab) {
+                fbsCurrentTab = tab;
+                var panelUfc  = document.getElementById('fbs-panel-ufc');
+                var panelAttr = document.getElementById('fbs-panel-attr');
+                var tabUfc    = document.getElementById('fbs-tab-ufc');
+                var tabAttr   = document.getElementById('fbs-tab-attr');
+                if (tab === 'ufc') {
+                    if (panelUfc)  panelUfc.style.display  = 'block';
+                    if (panelAttr) panelAttr.style.display = 'none';
+                    if (tabUfc)  { tabUfc.style.borderColor  = 'rgba(0,255,136,0.45)'; tabUfc.style.background  = 'rgba(0,255,136,0.08)';  tabUfc.style.color  = '#00ff88'; }
+                    if (tabAttr) { tabAttr.style.borderColor = 'rgba(255,255,255,0.08)'; tabAttr.style.background = 'rgba(255,255,255,0.02)'; tabAttr.style.color = '#888'; }
+                } else {
+                    if (panelUfc)  panelUfc.style.display  = 'none';
+                    if (panelAttr) panelAttr.style.display = 'block';
+                    if (tabAttr) { tabAttr.style.borderColor = 'rgba(0,255,136,0.45)'; tabAttr.style.background  = 'rgba(0,255,136,0.08)';  tabAttr.style.color  = '#00ff88'; }
+                    if (tabUfc)  { tabUfc.style.borderColor  = 'rgba(255,255,255,0.08)'; tabUfc.style.background   = 'rgba(255,255,255,0.02)'; tabUfc.style.color   = '#888'; }
+                    // Stop camera if still running
+                    if (typeof window.fbsStopCamera === 'function') window.fbsStopCamera();
+                }
+            };
+
+            /* ── ATTRIBUTE SEARCH — debounced auto-trigger ──────────────── */
+            var fbsAttrDebounce = null;
+            var fbsAttrSelectedUfc = null; // UFC of currently selected row
+
+            window.fbsAttrAutoSearch = function () {
+                clearTimeout(fbsAttrDebounce);
+                var brand = (document.getElementById('fbs-attr-brand').value || '').trim();
+                var code  = (document.getElementById('fbs-attr-code').value  || '').trim();
+                var size  = (document.getElementById('fbs-attr-size').value  || '').trim();
+                // Auto-search only when at least 2 chars in any field
+                if (brand.length < 2 && code.length < 2 && size.length < 2) return;
+                fbsAttrDebounce = setTimeout(function () { window.fbsAttrSearch(); }, 500);
+            };
+
+            window.fbsAttrSearch = function () {
+                var brand = (document.getElementById('fbs-attr-brand').value || '').trim();
+                var code  = (document.getElementById('fbs-attr-code').value  || '').trim();
+                var size  = (document.getElementById('fbs-attr-size').value  || '').trim();
+                if (!brand && !code && !size) {
+                    fbsAttrSetStatus('none', 'Please enter at least one search field.');
+                    return;
+                }
+
+                // Show loading
+                var loadEl   = document.getElementById('fbs-attr-loading');
+                var resEl    = document.getElementById('fbs-attr-results');
+                var noneEl   = document.getElementById('fbs-attr-none');
+                var clearBtn = document.getElementById('fbs-attr-clear-btn');
+                if (loadEl)   loadEl.style.display   = 'block';
+                if (resEl)    resEl.style.display     = 'none';
+                if (noneEl)   noneEl.style.display    = 'none';
+                if (clearBtn) clearBtn.style.display  = 'none';
+
+                var fd = new FormData();
+                fd.append('action', 'search_attr');
+                fd.append('brand',  brand);
+                fd.append('code',   code);
+                fd.append('size',   size);
+
+                fetch('frame_lookup.php', { method: 'POST', body: fd })
+                    .then(function (r) { return r.json(); })
+                    .then(function (data) {
+                        if (loadEl) loadEl.style.display = 'none';
+                        if (clearBtn) clearBtn.style.display = 'block';
+
+                        var rows = data.rows || [];
+                        if (rows.length === 0) {
+                            if (noneEl) noneEl.style.display = 'block';
+                            return;
+                        }
+
+                        // Render result list
+                        var countEl = document.getElementById('fbs-attr-count');
+                        var listEl  = document.getElementById('fbs-attr-list');
+                        if (countEl) countEl.textContent = rows.length + ' RESULT' + (rows.length > 1 ? 'S' : '') + ' FOUND';
+                        // Store row data in a map keyed by UFC — no JSON in onclick attributes
+                        window._fbsAttrRowMap = window._fbsAttrRowMap || {};
+                        rows.forEach(function(r) { if (r.ufc) window._fbsAttrRowMap[r.ufc] = r; });
+
+                        if (listEl)  listEl.innerHTML = rows.map(function (row) {
+                            var stock      = parseInt(row.stock) || 0;
+                            var isOOS      = (stock === 0);
+                            var stockColor = stock > 5 ? '#00ff88' : (stock > 0 ? '#ffaa00' : '#ff4d4d');
+                            var stockLabel = stock > 0 ? stock + ' pcs' : 'OUT OF STOCK';
+                            var priceInt   = parseInt(row.sell_price) || 0;
+                            var priceStr   = priceInt > 0 ? 'Rp\u00a0' + priceInt.toLocaleString('id-ID') : 'Contact Staff';
+                            var srcColor   = (row.source === 'main') ? '#00ff88' : '#00cfff';
+                            var srcLabel   = (row.source === 'main') ? 'MAIN DB' : 'STAGING';
+                            var ufcSafe    = esc(row.ufc || '');
+
+                            // Age badge
+                            var ageColor = { 'new':'#00ff88', 'old':'#ffaa00', 'very old':'#ff4d4d' };
+                            var ageBadge = row.stock_age
+                                ? '<span style="font-size:7.5px;padding:1px 6px;border-radius:20px;border:1px solid rgba(255,255,255,0.1);color:' + (ageColor[row.stock_age] || '#888') + ';margin-left:4px;">' + esc(row.stock_age.toUpperCase()) + '</span>'
+                                : '';
+
+                            // Detail mini-chips
+                            var detailParts = [];
+                            if (row.frame_code)      detailParts.push('<span style="color:#00cfff;">' + esc(row.frame_code) + '</span>');
+                            if (row.frame_size)      detailParts.push('<span style="color:#aa88ff;">' + esc(row.frame_size) + '</span>');
+                            if (row.color_code)      detailParts.push('<span style="color:#ffaa00;">' + esc(row.color_code) + '</span>');
+                            if (row.material)        detailParts.push('<span style="color:#00ff88;">' + esc(row.material) + '</span>');
+                            if (row.lens_shape)      detailParts.push('<span style="color:#ff8a4d;">' + esc(row.lens_shape) + '</span>');
+                            if (row.gender_category) detailParts.push('<span style="color:#ff88cc;">' + esc(row.gender_category) + '</span>');
+                            var detailHtml = detailParts.length
+                                ? '<div style="font-size:9px;color:#555;margin:4px 0 2px;display:flex;flex-wrap:wrap;gap:4px;">' + detailParts.join('<span style="color:#333;">·</span>') + '</div>'
+                                : '';
+
+                            // Out-of-stock rows: dimmed, no cursor, no click
+                            var oosOverlay = isOOS
+                                ? '<div style="position:absolute;inset:0;border-radius:12px;background:rgba(0,0,0,0.45);display:flex;align-items:center;justify-content:center;pointer-events:none;">'
+                                  + '<span style="font-size:9px;font-weight:800;color:#ff4d4d;letter-spacing:2px;text-shadow:0 0 8px rgba(255,77,77,0.6);">🚫 OUT OF STOCK</span>'
+                                  + '</div>'
+                                : '';
+
+                            var oosClass  = isOOS ? ' oos' : '';
+                            var clickAttr = isOOS ? '' : ' onclick="fbsAttrSelectRow(window._fbsAttrRowMap[this.dataset.ufc])"';
+
+                            return '<button type="button" class="fbs-frame-row' + oosClass + '" id="fbs-row-' + ufcSafe + '" data-ufc="' + ufcSafe + '"' + clickAttr + ' style="position:relative;">' +
+                                oosOverlay +
+                                '<div style="flex:1;min-width:0;">' +
+                                    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px;flex-wrap:wrap;gap:4px;">' +
+                                        '<span style="font-size:11px;font-weight:800;color:#fff;letter-spacing:0.5px;">' + esc(row.brand || '') + '</span>' +
+                                        '<span style="font-size:8px;color:' + srcColor + ';border:1px solid ' + srcColor + '33;border-radius:20px;padding:1px 7px;letter-spacing:0.5px;">' + srcLabel + '</span>' +
+                                    '</div>' +
+                                    detailHtml +
+                                    '<div style="font-size:8px;color:#444;margin-bottom:5px;word-break:break-all;">UFC: ' + ufcSafe + '</div>' +
+                                    '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">' +
+                                        '<span style="font-size:10px;font-weight:700;color:#ffaa00;">' + priceStr + '</span>' +
+                                        '<span style="font-size:10px;font-weight:700;color:' + stockColor + ';">' + stockLabel + ageBadge + '</span>' +
+                                    '</div>' +
+                                '</div>' +
+                                (isOOS ? '<div style="font-size:18px;color:#333;flex-shrink:0;line-height:1;align-self:center;">✕</div>' : '<div style="font-size:18px;color:#555;flex-shrink:0;line-height:1;align-self:center;">›</div>') +
+                            '</button>';
+                        }).join('');
+
+                        if (resEl) resEl.style.display = 'block';
+                    })
+                    .catch(function (err) {
+                        if (loadEl) loadEl.style.display = 'none';
+                        if (noneEl) {
+                            noneEl.style.display = 'block';
+                            noneEl.innerHTML = '⚠ Connection error. Check server.';
+                        }
+                        console.error('FBS attr search error:', err);
+                    });
+            };
+
+            /* ── SELECT a row from attr list ────────────────────────────── */
+            window.fbsAttrSelectRow = function (row) {
+                if (!row) return;
+                // Block selection if out of stock
+                if ((parseInt(row.stock) || 0) === 0) return;
+                var ufc = row.ufc || '';
+
+                // Highlight selected row
+                document.querySelectorAll('.fbs-frame-row').forEach(function (el) {
+                    el.classList.remove('selected');
+                });
+                var rowEl = document.getElementById('fbs-row-' + esc(ufc));
+                if (rowEl) rowEl.classList.add('selected');
+                fbsAttrSelectedUfc = ufc;
+
+                // Build display name
+                var nameParts = [row.brand || ''];
+                if (row.frame_code) nameParts.push('— ' + row.frame_code);
+                if (row.frame_size) nameParts.push('(' + row.frame_size + ')');
+                var frameName = nameParts.join(' ');
+                var priceInt  = parseInt(row.sell_price) || 0;
+
+                // Update lens price totals
+                if (typeof window.lrSetFramePrice === 'function') window.lrSetFramePrice(priceInt);
+
+                // === Update Customer Selection bar via helper so lens selection is preserved ===
+                if (typeof window.lrSetSelectedFrame === 'function') {
+                    window.lrSetSelectedFrame(frameName, priceInt, ufc);
+                } else {
+                    // Fallback: keep lrSelectedFrame in sync for total calculation
+                    window.lrSelectedFrame = priceInt > 0 ? { name: frameName, price: priceInt, ufc: ufc } : null;
+                }
+
+                // Make bar visible but keep body collapsed (user must click to expand)
+                var bar  = document.getElementById('lr-selection-bar');
+                if (bar)  bar.style.display  = 'block';
+
+                document.getElementById('fbs-clear-btn').style.display = 'inline-flex';
+                setTimeout(function () {
+                    if (bar) bar.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }, 80);
+            };
+
+            /* ── Clear attr search ──────────────────────────────────────── */
+            window.fbsAttrClear = function () {
+                document.getElementById('fbs-attr-brand').value = '';
+                document.getElementById('fbs-attr-code').value  = '';
+                document.getElementById('fbs-attr-size').value  = '';
+                var resEl    = document.getElementById('fbs-attr-results');
+                var noneEl   = document.getElementById('fbs-attr-none');
+                var clearBtn = document.getElementById('fbs-attr-clear-btn');
+                var listEl   = document.getElementById('fbs-attr-list');
+                if (resEl)    resEl.style.display    = 'none';
+                if (noneEl)   noneEl.style.display   = 'none';
+                if (clearBtn) clearBtn.style.display = 'none';
+                if (listEl)   listEl.innerHTML        = '';
+                fbsAttrSelectedUfc = null;
+                // Also remove selected frame
+                if (typeof window.lrSetFramePrice === 'function')    window.lrSetFramePrice(0);
+                if (typeof window.lrClearSelectedFrame === 'function') window.lrClearSelectedFrame();
+            };
+
+            function fbsAttrSetStatus(type, msg) {
+                var noneEl = document.getElementById('fbs-attr-none');
+                if (noneEl) { noneEl.style.display = 'block'; noneEl.innerHTML = msg; }
+            }
+
+        }());
+        </script>
+
+        <!-- ══════════════════════════════════════════════════════════════
+            MANUAL FACE SHAPE PICKER MODAL
+            ══════════════════════════════════════════════════════════════ -->
+        <div id="mfs-overlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.82); z-index:9999; overflow-y:auto; padding:20px 12px 40px;">
+            <div style="max-width:520px; margin:0 auto; background:#1a1c1d; border:1px solid rgba(170,136,255,0.3); border-radius:22px; padding:22px 18px; position:relative;">
+                <!-- Header -->
+                <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:18px;">
+                    <div>
+                        <div style="font-size:0.7rem; letter-spacing:2px; color:#aa88ff; font-weight:700;">✋ SELECT FACE SHAPE</div>
+                        <div style="font-size:9px; color:#555; margin-top:3px;">Tap the shape that best matches the customer's face</div>
+                    </div>
+                    <button type="button" onclick="closeManualFaceShape()" style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1); border-radius:50%; width:32px; height:32px; color:#aaa; font-size:16px; cursor:pointer; line-height:1; display:flex; align-items:center; justify-content:center;">✕</button>
+                </div>
+
+                <!-- Shape grid -->
+                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap:10px;" id="mfs-grid">
+
+                    <!-- OVAL -->
+                    <button type="button" class="mfs-card" onclick="selectManualShape('OVAL')">
+                        <svg viewBox="0 0 80 90" xmlns="http://www.w3.org/2000/svg" class="mfs-svg">
+                            <ellipse cx="40" cy="45" rx="27" ry="38" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+                            <line x1="20" y1="22" x2="60" y2="22" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
+                            <line x1="13" y1="45" x2="67" y2="45" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.3"/>
+                            <line x1="22" y1="68" x2="58" y2="68" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
+                        </svg>
+                        <span class="mfs-label">OVAL</span>
+                        <span class="mfs-sub">Balanced &amp; symmetrical</span>
+                    </button>
+
+                    <!-- ROUND -->
+                    <button type="button" class="mfs-card" onclick="selectManualShape('ROUND')">
+                        <svg viewBox="0 0 80 90" xmlns="http://www.w3.org/2000/svg" class="mfs-svg">
+                            <ellipse cx="40" cy="45" rx="32" ry="33" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+                            <line x1="14" y1="27" x2="66" y2="27" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
+                            <line x1="8" y1="45" x2="72" y2="45" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.3"/>
+                            <line x1="14" y1="63" x2="66" y2="63" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
+                        </svg>
+                        <span class="mfs-label">ROUND</span>
+                        <span class="mfs-sub">Equal width &amp; height</span>
+                    </button>
+
+                    <!-- SQUARE -->
+                    <button type="button" class="mfs-card" onclick="selectManualShape('SQUARE')">
+                        <svg viewBox="0 0 80 90" xmlns="http://www.w3.org/2000/svg" class="mfs-svg">
+                            <path d="M15 20 Q40 14 65 20 L68 45 Q64 74 40 78 Q16 74 12 45 Z" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/>
+                            <line x1="15" y1="20" x2="65" y2="20" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
+                            <line x1="12" y1="45" x2="68" y2="45" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.3"/>
+                            <line x1="18" y1="68" x2="62" y2="68" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
+                        </svg>
+                        <span class="mfs-label">SQUARE</span>
+                        <span class="mfs-sub">Strong wide jaw</span>
+                    </button>
+
+                    <!-- OBLONG -->
+                    <button type="button" class="mfs-card" onclick="selectManualShape('OBLONG')">
+                        <svg viewBox="0 0 80 100" xmlns="http://www.w3.org/2000/svg" class="mfs-svg">
+                            <ellipse cx="40" cy="50" rx="22" ry="44" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+                            <line x1="22" y1="18" x2="58" y2="18" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
+                            <line x1="18" y1="50" x2="62" y2="50" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.3"/>
+                            <line x1="22" y1="82" x2="58" y2="82" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
+                        </svg>
+                        <span class="mfs-label">OBLONG</span>
+                        <span class="mfs-sub">Long &amp; narrow face</span>
+                    </button>
+
+                    <!-- HEART -->
+                    <button type="button" class="mfs-card" onclick="selectManualShape('HEART')">
+                        <svg viewBox="0 0 80 90" xmlns="http://www.w3.org/2000/svg" class="mfs-svg">
+                            <path d="M12 18 Q40 12 68 18 Q72 36 66 52 Q56 70 40 80 Q24 70 14 52 Q8 36 12 18 Z" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/>
+                            <line x1="12" y1="18" x2="68" y2="18" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
+                            <line x1="11" y1="42" x2="69" y2="42" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.3"/>
+                            <line x1="24" y1="66" x2="56" y2="66" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
+                        </svg>
+                        <span class="mfs-label">HEART</span>
+                        <span class="mfs-sub">Wide forehead, pointed chin</span>
+                    </button>
+
+                    <!-- DIAMOND -->
+                    <button type="button" class="mfs-card" onclick="selectManualShape('DIAMOND')">
+                        <svg viewBox="0 0 80 100" xmlns="http://www.w3.org/2000/svg" class="mfs-svg">
+                            <path d="M40 8 Q56 18 68 38 Q72 50 62 65 Q52 78 40 88 Q28 78 18 65 Q8 50 12 38 Q24 18 40 8 Z" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/>
+                            <line x1="24" y1="22" x2="56" y2="22" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
+                            <line x1="10" y1="50" x2="70" y2="50" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.3"/>
+                            <line x1="22" y1="72" x2="58" y2="72" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
+                        </svg>
+                        <span class="mfs-label">DIAMOND</span>
+                        <span class="mfs-sub">Prominent cheekbones</span>
+                    </button>
+
+                    <!-- TRIANGLE -->
+                    <button type="button" class="mfs-card" onclick="selectManualShape('TRIANGLE')">
+                        <svg viewBox="0 0 80 90" xmlns="http://www.w3.org/2000/svg" class="mfs-svg">
+                            <path d="M28 12 Q40 10 52 12 Q64 22 70 44 Q72 60 62 72 Q50 82 40 84 Q30 82 18 72 Q8 60 10 44 Q16 22 28 12 Z" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/>
+                            <line x1="28" y1="12" x2="52" y2="12" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
+                            <line x1="14" y1="48" x2="66" y2="48" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.3"/>
+                            <line x1="18" y1="70" x2="62" y2="70" stroke="currentColor" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.4"/>
+                        </svg>
+                        <span class="mfs-label">TRIANGLE</span>
+                        <span class="mfs-sub">Jaw wider than forehead</span>
+                    </button>
+
+                </div><!-- /mfs-grid -->
+
+                <!-- Cancel note -->
+                <div style="text-align:center; margin-top:18px; font-size:9px; color:#444; letter-spacing:0.5px;">
+                    Tap a shape to apply · This will show eyeglass frame recommendations
+                </div>
+            </div>
+        </div>
+
+        <style>
+            .mfs-card {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 6px;
+                padding: 14px 10px 12px;
+                background: rgba(255,255,255,0.025);
+                border: 1.5px solid rgba(170,136,255,0.18);
+                border-radius: 16px;
+                cursor: pointer;
+                transition: background 0.18s, border-color 0.18s, transform 0.12s;
+                font-family: inherit;
+                text-align: center;
+                color: #aa88ff;
+            }
+            .mfs-card:hover {
+                background: rgba(170,136,255,0.10);
+                border-color: rgba(170,136,255,0.55);
+                transform: translateY(-2px);
+            }
+            .mfs-card:active {
+                transform: scale(0.96);
+            }
+            .mfs-svg {
+                width: 64px;
+                height: 72px;
+                color: #aa88ff;
+                filter: drop-shadow(0 0 6px rgba(170,136,255,0.35));
+            }
+            .mfs-label {
+                font-size: 11px;
+                font-weight: 800;
+                letter-spacing: 1.5px;
+                color: #aa88ff;
+            }
+            .mfs-sub {
+                font-size: 8.5px;
+                color: #666;
+                letter-spacing: 0.3px;
+                line-height: 1.3;
+            }
+        </style>
+
+        <script>
+        function openManualFaceShape() {
+            document.getElementById('mfs-overlay').style.display = 'block';
+        }
+        function closeManualFaceShape() {
+            document.getElementById('mfs-overlay').style.display = 'none';
+        }
+
+        function selectManualShape(shape) {
+            closeManualFaceShape();
+
+            // Populate result box content (but keep it hidden — shown via toggle button)
+            var resultBox = document.getElementById('mp-result');
+            if (resultBox) {
+                var shapeEmojis = {OVAL:'◉',ROUND:'●',SQUARE:'■',OBLONG:'▬',HEART:'♥',DIAMOND:'◆',TRIANGLE:'▼'};
+                var shapeDesc = {
+                    OVAL:'Symmetrical face, slightly longer than wide, with soft lines.',
+                    ROUND:'Rounded face, width and height nearly equal, blunt chin.',
+                    SQUARE:'Strong wide jaw, square chin, balanced proportions.',
+                    OBLONG:'Long and narrow face, forehead and jaw parallel.',
+                    HEART:'Wide forehead tapering to a pointed chin.',
+                    DIAMOND:'Prominent cheekbones, narrower forehead and jaw.',
+                    TRIANGLE:'Jaw wider than forehead, face widens toward the bottom.'
+                };
+                resultBox.innerHTML =
+                    '<div style="font-size:0.65rem;color:var(--text-muted);letter-spacing:1px;margin-bottom:6px;">MANUAL SELECTION</div>' +
+                    '<div class="shape-badge" style="font-size:1.6rem;">' + shape + '</div>' +
+                    '<div style="margin-top:8px;font-size:10px;color:#888;text-align:center;">' + (shapeDesc[shape]||'') + '</div>' +
+                    '<div style="margin-top:8px;font-size:9px;color:#aa88ff;letter-spacing:0.5px;">✋ Manually selected (no camera scan)</div>';
+                resultBox.style.display = 'none'; // hidden until VIEW RESULT is pressed
+            }
+
+            // Pre-build frame recommendation data (hidden until VIEW RESULT is pressed)
+            if (typeof window.showFrameRecommendation === 'function') {
+                window.showFrameRecommendation(shape, false);
+            }
+
+            // Show VIEW RESULT toggle button (same behaviour as camera flow)
+            var toggleBtn = document.getElementById('mp-result-toggle-btn');
+            if (toggleBtn) {
+                toggleBtn.style.display = 'inline-flex';
+                var lbl = document.getElementById('mp-result-toggle-label');
+                if (lbl) lbl.textContent = '👁 VIEW RESULT';
+            }
+
+            // Scroll to toggle button so user sees it
+            setTimeout(function() {
+                if (toggleBtn) toggleBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }, 100);
+        }
+
+        // ============================================================
+        // CONFIRM ORDER — modal logic
+        // Replaces the old openPrintPage() direct-open behaviour.
+        // ============================================================
+        
+        // Direct sale pending flag (set server-side)
+        var _isDirectPending = <?php echo $is_direct_pending ? 'true' : 'false'; ?>;
+
+        // If a pending direct sale's customer_examinations row gets committed
+        // early (e.g. because the user saved a custom frame before confirming
+        // the order), the resulting invoice number / exam code are cached here
+        // so confirmOrderYes() can reuse them instead of calling
+        // save_direct_sale again (which would fail — the session is cleared
+        // after the first successful commit).
+        var _dsCommittedInv      = null;
+        var _dsCommittedExamCode = null;
+
+        // Toggle for the direct-sale pending card
+        function dsPendingToggle() {
+            var body    = document.getElementById('ds-pending-body');
+            var chevron = document.getElementById('ds-pending-chevron');
+            if (!body) return;
+            if (body.style.display === 'none') {
+                body.style.display = 'block';
+                if (chevron) chevron.style.transform = '';
+            } else {
+                body.style.display = 'none';
+                if (chevron) chevron.style.transform = 'rotate(-90deg)';
+            }
+        }
+
+        // ── Direct sale pending card: collapsible sub-sections ─────────
+        // Click anywhere on a section header/summary toggles expand/collapse.
+        // Clicks inside the section body are stopped from bubbling (see inline
+        // onclick="event.stopPropagation()" on .dsp-section-body).
+        function dspToggle(section, evt) {
+            if (evt.target.closest('.dsp-section-body')) return;
+            section.classList.toggle('collapsed');
+        }
+
+        // Collapse a section by id (used e.g. after a <select> change)
+        function dspToggleClose(sectionId) {
+            var section = document.getElementById(sectionId);
+            if (section) section.classList.add('collapsed');
+        }
+
+        // Keep the "Customer & Sale Info" section summary in sync with the name field
+        function dspUpdateInfoSummary() {
+            var nameEl    = document.getElementById('ci_customer_name');
+            var summaryEl = document.getElementById('dsp_summary_info');
+            if (!nameEl || !summaryEl) return;
+            var val = nameEl.value.trim();
+            summaryEl.textContent = val || '— (not set)';
+        }
+
+        // Next invoice sheet — computed server-side from the latest order in DB.
+        // Falls back to starting_invoice_number from settings when no orders exist yet.
+        var _coDefaultSheet = '<?php echo htmlspecialchars($nextInvoiceSheet, ENT_QUOTES); ?>';
+        
+        // ── Open the confirmation modal ───────────────────────────────
+        function openPrintPage() {
+
+            // ── Guard: block printing while customer name is still the placeholder "JOHN DOE" ──
+            // Works for both direct sale (new flow: already in DB) and prescription paths.
+            var nameField = document.getElementById('ci_customer_name');
+            if (nameField) {
+                var nameVal = nameField.value.trim().toUpperCase();
+                if (nameVal === 'JOHN DOE' || nameVal === '') {
+                    // Scroll to and focus the customer name field so user can fix it
+                    nameField.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    nameField.focus();
+                    nameField.select();
+                    alert('Please update the customer name before printing the invoice.\n\n"JOHN DOE" is a placeholder — replace it with the actual customer name, then press SAVE INFO.');
+                    return;
+                }
+            }
+
+            // Collect current selection data
+            var frameName  = '';
+            var frameUfc   = '';
+            var framePrice = 0;
+            if (typeof lrSelectedFrame !== 'undefined' && lrSelectedFrame) {
+                frameName  = lrSelectedFrame.name  || '';
+                frameUfc   = lrSelectedFrame.ufc   || '';
+                framePrice = lrSelectedFrame.price || 0;
+            }
+            // Custom (non-stock) frames use their brandKey as a placeholder
+            // "ufc" for display/totals, but it does not exist in
+            // frames_main/frame_staging — don't send it as frame_ufc to
+            // save_order (its purchase status is tracked separately via
+            // custom_frame_save.php's is_purchased flag).
+            if (frameUfc && window._cfrSelectedBrandKey && frameUfc === window._cfrSelectedBrandKey) {
+                frameUfc = '';
+            }
+        
+            var lensName  = '';
+            var lensPrice = 0;
+            if (typeof lrSelectedLens !== 'undefined' && lrSelectedLens) {
+                lensName  = lrSelectedLens.name  || '';
+                lensPrice = lrSelectedLens.price || 0;
+            }
+        
+            var rxMode   = (typeof lrPrescriptionIsModified !== 'undefined' && lrPrescriptionIsModified)
+                        ? 'modified' : 'original';
+            var totalRaw = (typeof _lrRawTotal !== 'undefined') ? _lrRawTotal : 0;
+            var paidRaw  = (typeof _lrRawPaid  !== 'undefined') ? _lrRawPaid  : 0;
+        
+            var phone   = '';
+            var phoneEl = document.getElementById('lr-customer-phone');
+            if (phoneEl) phone = phoneEl.value || '';
+        
+            var address   = '';
+            var addrEl    = document.getElementById('lr-customer-address');
+            if (addrEl) address = addrEl.value || '';
+        
+            var dueDate = '';
+            var dueEl   = document.getElementById('lr-due-date-box');
+            if (dueEl) {
+                var dt = (dueEl.value !== undefined ? dueEl.value : dueEl.textContent).trim();
+                if (dt && dt !== '— select a lens' && dt !== '— not set') dueDate = dt;
+            }
+        
+            var orderDate = '<?php echo date('d/m/Y', strtotime($data['examination_date'])); ?>';
+        
+            // Stash data on the modal for use by confirmOrderYes()
+            var overlay = document.getElementById('confirm-order-overlay');
+            overlay.dataset.inv        = <?php echo json_encode($invoice_num); ?>;
+            overlay.dataset.examCode   = <?php echo json_encode($data['examination_code'] ?? ''); ?>;
+            overlay.dataset.frameUfc   = frameUfc;
+            overlay.dataset.frameName  = frameName;
+            overlay.dataset.framePrice = framePrice;
+            overlay.dataset.lensName   = lensName;
+            overlay.dataset.lensPrice  = lensPrice;
+            overlay.dataset.rxMode     = rxMode;
+            overlay.dataset.isModified = (rxMode === 'modified') ? '1' : '0';
+            overlay.dataset.total      = totalRaw;
+            overlay.dataset.paid       = paidRaw;
+            overlay.dataset.phone      = phone;
+            overlay.dataset.address    = address;
+            overlay.dataset.dueDate    = dueDate;
+            overlay.dataset.orderDate  = orderDate;
+        
+            // Pre-fill invoice sheet input
+            document.getElementById('co-invoice-sheet').value = _coDefaultSheet;
+            document.getElementById('co-error').style.display = 'none';
+        
+            // Build summary
+            var fmtRp = function (v) {
+                return 'Rp\u00a0' + parseInt(v).toLocaleString('id-ID');
+            };
+            var row = function (label, value, color) {
+                return '<div style="display:flex;justify-content:space-between;align-items:center;' +
+                    'padding:7px 10px;background:rgba(255,255,255,0.025);border-radius:8px;">' +
+                    '<span style="font-size:9px;color:#555;letter-spacing:0.5px;">' + label + '</span>' +
+                    '<span style="font-size:10px;font-weight:700;color:' + (color || '#ddd') + ';' +
+                    'text-align:right;max-width:65%;word-break:break-word;">' + value + '</span></div>';
+            };
+        
+            var summary = '';
+            summary += row('INVOICE',  <?php echo json_encode($invoice_num); ?>, '#00cfff');
+            if (frameName) summary += row('FRAME', frameName, '#ffaa00');
+            else           summary += row('FRAME', 'No frame (lens only)', '#555');
+            if (lensName)  summary += row('LENS',  lensName,  '#00ff88');
+            else           summary += row('LENS',  'No lens selected', '#ff4d4d');
+            summary += row('PRESCRIPTION', rxMode === 'modified' ? '✏️ Modified' : '📋 Original',
+                        rxMode === 'modified' ? '#ffaa00' : '#00cfff');
+            summary += row('TOTAL AMOUNT', totalRaw > 0 ? fmtRp(totalRaw) : '—', '#ffaa00');
+            summary += row('AMOUNT PAID',  paidRaw  > 0 ? fmtRp(paidRaw)  : '—', '#00ff88');
+            summary += row('BALANCE',
+                        (totalRaw - paidRaw) >= 0 ? fmtRp(totalRaw - paidRaw) : '—', '#ff8a4d');
+            summary += row('PHONE',   phone   || '—', '#ccc');
+            summary += row('DUE DATE', dueDate || '—', '#ccc');
+        
+            document.getElementById('co-summary').innerHTML = summary;
+        
+            overlay.style.display = 'block';
+        }
+        
+        function closeConfirmOrder() {
+            document.getElementById('confirm-order-overlay').style.display = 'none';
+        }
+
+        // ── Read current values of the editable customer/examination fields ──
+        // Used when committing a pending direct sale (save_direct_sale), so
+        // any unsaved edits (e.g. a corrected customer name) are included
+        // even if the SAVE INFO button was not pressed separately.
+        function dsCollectPendingInfo(fd) {
+            var ids = [
+                'ci_date', 'ci_customer_name', 'ci_age', 'ci_gender', 'ci_symptoms', 'ci_exam_notes',
+                'ci_pd',
+                'ci_r_sph', 'ci_r_cyl', 'ci_r_ax', 'ci_r_add',
+                'ci_l_sph', 'ci_l_cyl', 'ci_l_ax', 'ci_l_add',
+                'ci_visual_habit', 'ci_digital_usage',
+                'ci_need_distance', 'ci_need_intermediate', 'ci_need_near'
+            ];
+            ids.forEach(function (id) {
+                var el = document.getElementById(id);
+                if (el) fd.append(id, el.value);
+            });
+            return fd;
+        }
+
+        // ── YES SHOPPING — save to DB then open print page ───────────
+        function confirmOrderYes() {
+        
+            var btn = document.getElementById('co-yes-btn');
+            btn.disabled    = true;
+            btn.textContent = '⏳ SAVING…';
+        
+            var overlay    = document.getElementById('confirm-order-overlay');
+            var errBox     = document.getElementById('co-error');
+            errBox.style.display = 'none';
+        
+            var invoiceSheet = document.getElementById('co-invoice-sheet').value.trim();
+        
+            // Basic validation: must match  digits.digits  pattern
+            if (!/^\d+\.\d{1,2}$/.test(invoiceSheet)) {
+                errBox.textContent    = 'Invoice sheet format is invalid. Use format: 16.31';
+                errBox.style.display  = 'block';
+                btn.disabled          = false;
+                btn.textContent       = '✅ YES SHOPPING — SAVE & PRINT';
+                return;
+            }
+        
+            // ── Helper: do the actual save_order + open print page ────────
+            function doSaveOrder(invNum, examCode) {
+                var fd2 = new FormData();
+                fd2.append('save_order',    '1');
+                fd2.append('inv',           invNum);
+                fd2.append('exam_code',     examCode);
+                fd2.append('invoice_sheet', invoiceSheet);
+                fd2.append('is_modified',   overlay.dataset.isModified);
+                fd2.append('frame_ufc',     overlay.dataset.frameUfc);
+                fd2.append('frame_name',    overlay.dataset.frameName);
+                fd2.append('frame_price',   overlay.dataset.framePrice);
+                fd2.append('lens_name',     overlay.dataset.lensName);
+                fd2.append('lens_price',    overlay.dataset.lensPrice);
+                fd2.append('phone',         overlay.dataset.phone);
+                fd2.append('address',       overlay.dataset.address);
+                fd2.append('total_amount',  overlay.dataset.total);
+                fd2.append('amount_paid',   overlay.dataset.paid);
+                fd2.append('order_date',    overlay.dataset.orderDate);
+                fd2.append('due_date',      overlay.dataset.dueDate);
+
+                fetch('invoice.php', { method: 'POST', body: fd2 })
+                    .then(function (r) { return r.json(); })
+                    .then(function (data) {
+                        if (data.success) {
+                            closeConfirmOrder();
+                            var params = new URLSearchParams({
+                                inv:             invNum,
+                                frame:           overlay.dataset.frameName,
+                                frame_price:     overlay.dataset.framePrice,
+                                lens:            overlay.dataset.lensName,
+                                lens_price:      overlay.dataset.lensPrice,
+                                rx_mode:         overlay.dataset.rxMode,
+                                total:           overlay.dataset.total,
+                                paid:            overlay.dataset.paid,
+                                balance:         overlay.dataset.total - overlay.dataset.paid,
+                                phone:           overlay.dataset.phone,
+                                due_date:        overlay.dataset.dueDate,
+                                customer_number: data.customer_number,
+                                auto:            '1'
+                            });
+                            window.open('print_invoice_snippet.php?' + params.toString(), '_self');
+                        } else {
+                            errBox.textContent   = 'Failed to save order: ' + (data.error || 'Unknown error');
+                            errBox.style.display = 'block';
+                            btn.disabled         = false;
+                            btn.textContent      = '✅ YES SHOPPING — SAVE & PRINT';
+                        }
+                    })
+                    .catch(function () {
+                        errBox.textContent   = 'Network error. Please try again.';
+                        errBox.style.display = 'block';
+                        btn.disabled         = false;
+                        btn.textContent      = '✅ YES SHOPPING — SAVE & PRINT';
+                    });
+            }
+
+            // ── If direct pending: save customer_examinations first ────────
+            // (unless it was already committed earlier, e.g. via a custom
+            // frame save — in that case reuse the cached invoice number,
+            // but first push any field edits made since then, such as a
+            // corrected customer name)
+            if (_isDirectPending && _dsCommittedInv) {
+                btn.textContent = '⏳ UPDATING CUSTOMER DATA…';
+                var fdUpd = new FormData();
+                fdUpd.append('update_ds_committed_info', '1');
+                fdUpd.append('invoice_number', _dsCommittedInv);
+                dsCollectPendingInfo(fdUpd);
+                fetch('invoice.php', { method: 'POST', body: fdUpd })
+                    .then(function (r) { return r.json(); })
+                    .then(function (upd) {
+                        if (!upd.success) {
+                            errBox.textContent   = 'Failed to update customer data: ' + (upd.error || 'Unknown error');
+                            errBox.style.display = 'block';
+                            btn.disabled         = false;
+                            btn.textContent      = '✅ YES SHOPPING — SAVE & PRINT';
+                            return;
+                        }
+                        btn.textContent = '⏳ SAVING ORDER…';
+                        doSaveOrder(_dsCommittedInv, _dsCommittedExamCode);
+                    })
+                    .catch(function () {
+                        errBox.textContent   = 'Network error updating customer data. Please try again.';
+                        errBox.style.display = 'block';
+                        btn.disabled         = false;
+                        btn.textContent      = '✅ YES SHOPPING — SAVE & PRINT';
+                    });
+            } else if (_isDirectPending) {
+                btn.textContent = '⏳ SAVING CUSTOMER DATA…';
+                var fd1 = new FormData();
+                fd1.append('save_direct_sale', '1');
+                dsCollectPendingInfo(fd1);
+                fetch('invoice.php', { method: 'POST', body: fd1 })
+                    .then(function (r) { return r.json(); })
+                    .then(function (ds) {
+                        if (ds.success) {
+                            btn.textContent = '⏳ SAVING ORDER…';
+                            doSaveOrder(ds.inv_str, ds.exam_code);
+                        } else {
+                            errBox.textContent   = 'Failed to save customer data: ' + (ds.error || 'Unknown error');
+                            errBox.style.display = 'block';
+                            btn.disabled         = false;
+                            btn.textContent      = '✅ YES SHOPPING — SAVE & PRINT';
+                        }
+                    })
+                    .catch(function () {
+                        errBox.textContent   = 'Network error saving customer data. Please try again.';
+                        errBox.style.display = 'block';
+                        btn.disabled         = false;
+                        btn.textContent      = '✅ YES SHOPPING — SAVE & PRINT';
+                    });
+            } else {
+                // Normal flow: inv number already in overlay.dataset.inv
+                doSaveOrder(overlay.dataset.inv, overlay.dataset.examCode);
+            }
+        }
+
+        // Make showFrameRecommendation accessible from outside its IIFE
+        // It is defined inside the IIFE — expose it via a global wrapper set after IIFE runs
+        // We use a deferred approach: the IIFE assigns window.showFrameRecommendation internally.
+        </script>
+
+        <!-- ============================================================
+        CONFIRM ORDER MODAL
+        Shown when operator clicks PRINT INVOICE.
+        Operator reviews / edits invoice_sheet, then clicks
+        YES SHOPPING to save + open print page.
+        ============================================================ -->
+        <div id="confirm-order-overlay"
+            style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.88);
+                    z-index:10000;overflow-y:auto;padding:20px 12px 40px;">
+            <div style="max-width:480px;margin:0 auto;background:#1a1c1d;
+                        border:1px solid rgba(0,255,136,0.3);border-radius:22px;
+                        padding:24px 20px;position:relative;">
+        
+                <!-- Header -->
+                <div style="margin-bottom:18px;">
+                    <div style="font-size:0.65rem;letter-spacing:2px;color:#00ff88;font-weight:700;">
+                        ✅ CONFIRM ORDER
+                    </div>
+                    <div style="font-size:9px;color:#555;margin-top:3px;">
+                        Review the details below before saving
+                    </div>
+                </div>
+        
+                <!-- Summary rows -->
+                <div id="co-summary"
+                    style="display:flex;flex-direction:column;gap:8px;margin-bottom:18px;">
+                </div>
+        
+                <!-- Invoice sheet (editable) -->
+                <div style="margin-bottom:16px;">
+                    <div style="font-size:7px;color:#888;letter-spacing:1px;margin-bottom:4px;">
+                        INVOICE SHEET NUMBER <span style="color:#ffaa00;">(editable)</span>
+                    </div>
+                    <input type="text" id="co-invoice-sheet"
+                        maxlength="10"
+                        style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.05);
+                                border:1px solid rgba(255,170,0,0.45);border-radius:8px;
+                                padding:8px 12px;color:#ffaa00;font-size:14px;font-weight:800;
+                                font-family:monospace;letter-spacing:1px;outline:none;">
+                    <div style="font-size:8px;color:#555;margin-top:4px;">
+                        Format: 00.00 — integer part = invoice no, decimal = sheet no (max 50)
+                    </div>
+                </div>
+        
+                <!-- Error message -->
+                <div id="co-error"
+                    style="display:none;background:rgba(255,77,77,0.10);border:1px solid rgba(255,77,77,0.3);
+                            border-radius:8px;padding:8px 12px;font-size:10px;color:#ff4d4d;margin-bottom:12px;">
+                </div>
+        
+                <!-- Action buttons -->
+                <div style="display:flex;gap:10px;margin-top:4px;">
+                    <button type="button" onclick="closeConfirmOrder()"
+                            style="flex:1;padding:11px;border-radius:12px;border:1px solid rgba(255,255,255,0.12);
+                                background:rgba(255,255,255,0.04);color:#888;font-size:11px;font-weight:700;
+                                letter-spacing:1px;cursor:pointer;font-family:inherit;">
+                        CANCEL
+                    </button>
+                    <button type="button" id="co-yes-btn" onclick="confirmOrderYes()"
+                            style="flex:2;padding:11px;border-radius:12px;border:1px solid rgba(0,255,136,0.5);
+                                background:rgba(0,255,136,0.12);color:#00ff88;font-size:11px;font-weight:800;
+                                letter-spacing:1px;cursor:pointer;font-family:inherit;">
+                        ✅ YES SHOPPING — SAVE &amp; PRINT
+                    </button>
+                </div>
+        
+            </div>
+        </div>
+        <!-- ============================================================
+             INPUT FRAME BARU (CARD 4) — JS
+             Menyimpan frame yang tidak ada di databases ke custom_frames,
+             lalu langsung set sebagai pilihan frame customer.
+             ============================================================ -->
+        <script>
+        (function () {
+            'use strict';
+
+            // ── State ─────────────────────────────────────────────────────
+            // List of saved custom frames for this invoice: [{ brandKey, brand, price, size, id }]
+            var _cfrFrames = [];
+            // brandKey of the currently selected custom frame (null = none selected)
+            var _cfrSelected = null;
+
+            // ── Current date dd/mm for brand_key ────────────────────────
+            function cfrTodayStr() {
+                var now = new Date();
+                var dd  = String(now.getDate()).padStart(2, '0');
+                var mm  = String(now.getMonth() + 1).padStart(2, '0');
+                return dd + '/' + mm;
+            }
+
+            // ── Build brand_key: size+dd/mm+brand ───────────────────────
+            // Pattern: 52-18-140+05/05+lenza
+            function cfrBuildKey(brand, size) {
+                var parts = [];
+                if (size && size.trim().length > 0) parts.push(size.trim());
+                parts.push(cfrTodayStr());
+                parts.push(brand.trim().toLowerCase());
+                return parts.join('+');
+            }
+
+            // ── Preview brand_key while typing ──────────────────────────
+            window.cfrUpdatePreview = function () {
+                var brand   = (document.getElementById('cfr-brand').value || '').trim();
+                var size    = (document.getElementById('cfr-size').value  || '').trim();
+                var preview = document.getElementById('cfr-key-preview');
+                var keyVal  = document.getElementById('cfr-key-value');
+                if (brand.length > 0) {
+                    keyVal.textContent  = cfrBuildKey(brand, size);
+                    preview.style.display = 'block';
+                } else {
+                    preview.style.display = 'none';
+                }
+            };
+
+            // ── Price formatting ─────────────────────────────────────────
+            var _cfrRawPrice = 0;
+            window.cfrPriceInput = function (el) {
+                // Strip semua non-digit, simpan nilai mentah
+                var digits = el.value.replace(/\D/g, '');
+                var num    = parseInt(digits, 10) || 0;
+                _cfrRawPrice = num;
+                // Tampilkan dengan pemisah ribuan secara live saat mengetik
+                el.value = num > 0 ? num.toLocaleString('en-US') : '';
+                // Pertahankan kursor di akhir setelah reformat
+                setTimeout(function () {
+                    el.selectionStart = el.selectionEnd = el.value.length;
+                }, 0);
+            };
+            window.cfrPriceFocus = function (el) {
+                // Saat fokus: tampilkan dengan format koma supaya mudah dibaca/diedit
+                el.value = _cfrRawPrice > 0 ? _cfrRawPrice.toLocaleString('en-US') : '';
+                el.select();
+            };
+            window.cfrPriceBlur = function (el) {
+                var raw = _cfrRawPrice;
+                // Auto ×1000: angka <= 999 dianggap dalam ribuan (15 → 15.000)
+                if (raw > 0 && raw <= 999) {
+                    raw          = raw * 1000;
+                    _cfrRawPrice = raw;
+                }
+                el.value = raw > 0
+                    ? 'Rp\u00a0' + raw.toLocaleString('en-US')
+                    : '';
+            };
+
+            // ── Collapsible toggle ───────────────────────────────────────
+            window.toggleCfrSection = function () {
+                var body = document.getElementById('cfr-body');
+                var chev = document.getElementById('cfr-chev');
+                if (!body) return;
+                var open = body.style.display === 'none' || body.style.display === '';
+                body.style.display = open ? 'block' : 'none';
+                if (chev) chev.style.transform = open ? 'rotate(180deg)' : 'rotate(0deg)';
+            };
+
+            // ── Render the saved frames list ─────────────────────────────
+            function cfrRenderList() {
+                var listWrap = document.getElementById('cfr-list');
+                var listInner = document.getElementById('cfr-list-inner');
+                if (!listWrap || !listInner) return;
+
+                if (_cfrFrames.length === 0) {
+                    listWrap.style.display = 'none';
+                    return;
+                }
+                listWrap.style.display = 'block';
+
+                listInner.innerHTML = _cfrFrames.map(function (f) {
+                    var isSelected = (f.brandKey === _cfrSelected);
+                    var borderColor = isSelected ? 'rgba(0,255,136,0.6)' : 'rgba(255,138,77,0.25)';
+                    var bg          = isSelected ? 'rgba(0,255,136,0.08)' : 'rgba(255,255,255,0.02)';
+                    var badge       = isSelected
+                        ? '<span style="font-size:8px;background:rgba(0,255,136,0.15);color:#00ff88;border:1px solid rgba(0,255,136,0.4);border-radius:20px;padding:2px 8px;letter-spacing:0.5px;">&#10003; SELECTED</span>'
+                        : '<span style="font-size:8px;background:rgba(255,138,77,0.1);color:#ff8a4d;border:1px solid rgba(255,138,77,0.3);border-radius:20px;padding:2px 8px;letter-spacing:0.5px;">TAP TO SELECT</span>';
+                    // Use data-attribute + addEventListener to avoid quote conflicts in onclick
+                    var safeKey = escHtml(f.brandKey);
+                    return '<div data-cfr-key="' + safeKey + '" '
+                        + 'style="cursor:pointer;padding:10px 12px;border-radius:10px;border:1px solid ' + borderColor + ';background:' + bg + ';transition:all 0.2s;">'
+                        + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">'
+                        +   '<div style="min-width:0;flex:1;">'
+                        +     '<div style="font-size:10px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escHtml(f.brand.toUpperCase()) + (f.size ? ' <span style="color:#888;font-size:9px;">(' + escHtml(f.size) + ')</span>' : '') + '</div>'
+                        +     '<div style="font-size:10px;color:#ffaa00;font-family:monospace;font-weight:700;margin-top:2px;">Rp\u00a0' + f.price.toLocaleString('id-ID') + '</div>'
+                        +     '<div style="font-size:8px;color:#444;font-family:monospace;margin-top:2px;">' + safeKey + '</div>'
+                        +   '</div>'
+                        +   '<div style="flex-shrink:0;">' + badge + '</div>'
+                        + '</div>'
+                        + '</div>';
+                }).join('');
+
+                // Attach click listeners via data attribute (avoids inline onclick quote issues)
+                listInner.querySelectorAll('[data-cfr-key]').forEach(function (el) {
+                    el.addEventListener('click', function () {
+                        window.cfrToggleSelect(el.getAttribute('data-cfr-key'));
+                    });
+                });
+            }
+
+            // ── Toggle select / deselect a custom frame ──────────────────
+            window.cfrToggleSelect = function (brandKey) {
+                var inv = _dsCommittedInv || <?php echo json_encode($invoice_num); ?>;
+
+                if (_cfrSelected === brandKey) {
+                    // Deselect: set is_purchased = 0 for this frame
+                    _cfrSelected = null;
+                    window._cfrSelectedBrandKey = null;
+                    cfrSetPurchased(inv, brandKey, 0, function () {
+                        cfrRenderList();
+                        // Clear the global frame selection
+                        if (typeof window.lrSetFramePrice    === 'function') window.lrSetFramePrice(0);
+                        if (typeof window.lrSetSelectedFrame === 'function') window.lrSetSelectedFrame(null, 0, '');
+                        if (typeof window.lrRefreshTotals    === 'function') window.lrRefreshTotals();
+                    });
+                } else {
+                    // If another custom frame was selected, deselect it first
+                    if (_cfrSelected) {
+                        cfrSetPurchased(inv, _cfrSelected, 0, function () {});
+                    }
+                    _cfrSelected = brandKey;
+                    window._cfrSelectedBrandKey = brandKey;
+                    // Set is_purchased = 1 for newly selected frame
+                    cfrSetPurchased(inv, brandKey, 1, function () {
+                        cfrRenderList();
+                        // Find the frame data and pass to global selection
+                        var f = _cfrFrames.filter(function (x) { return x.brandKey === brandKey; })[0];
+                        if (f) {
+                            var displayName = f.brand.toUpperCase() + (f.size ? ' (' + f.size + ')' : '') + ' [CUSTOM]';
+                            if (typeof window.lrSetFramePrice    === 'function') window.lrSetFramePrice(f.price);
+                            if (typeof window.lrSetSelectedFrame === 'function') window.lrSetSelectedFrame(displayName, f.price, f.brandKey);
+                            if (typeof window.lrRefreshTotals    === 'function') window.lrRefreshTotals();
+                        }
+                    });
+                }
+            };
+
+            // ── AJAX: update is_purchased for a custom frame ─────────────
+            function cfrSetPurchased(inv, brandKey, isPurchased, cb) {
+                var fd = new FormData();
+                fd.append('action',         'set_purchased');
+                fd.append('invoice_number', inv);
+                fd.append('brand_key',      brandKey);
+                fd.append('is_purchased',   String(isPurchased));
+                fetch('custom_frame_save.php', { method: 'POST', body: fd })
+                    .then(function (r) { return r.json(); })
+                    .then(function () { if (cb) cb(); })
+                    .catch(function () { if (cb) cb(); });
+            }
+
+            // ── Called by lrSetSelectedFrame when a non-custom frame is picked ──
+            // Resets is_purchased = 0 in DB for the currently selected custom frame
+            window.cfrResetPurchased = function () {
+                if (!_cfrSelected) return;
+                var inv = _dsCommittedInv || <?php echo json_encode($invoice_num); ?>;
+                cfrSetPurchased(inv, _cfrSelected, 0, function () {});
+                _cfrSelected = null;
+                window._cfrSelectedBrandKey = null;
+                cfrRenderList();
+            };
+
+            // ── Save to database (is_purchased = 0 initially) ────────────
+            window.cfrSave = function () {
+                var brand = (document.getElementById('cfr-brand').value || '').trim();
+                var size  = (document.getElementById('cfr-size').value  || '').trim();
+                var errEl = document.getElementById('cfr-error');
+                errEl.style.display = 'none';
+
+                if (!brand) {
+                    errEl.textContent   = '⚠ Brand Name is required.';
+                    errEl.style.display = 'block';
+                    document.getElementById('cfr-brand').focus();
+                    return;
+                }
+                if (_cfrRawPrice <= 0) {
+                    errEl.textContent   = '⚠ Sell Price is required and must be greater than 0.';
+                    errEl.style.display = 'block';
+                    document.getElementById('cfr-price').focus();
+                    return;
+                }
+
+                var brandKey = cfrBuildKey(brand, size);
+                var inv      = _dsCommittedInv || <?php echo json_encode($invoice_num); ?>;
+
+                var btn = document.getElementById('cfr-save-btn');
+
+                // Custom frames need an invoice number to be saved against.
+                // For a PENDING direct sale, no invoice number exists yet —
+                // it's normally only assigned when the order is confirmed.
+                // In that case, commit the customer_examinations row now
+                // (same as Confirm Order would do) so we get a real invoice
+                // number, then proceed with the custom frame save.
+                if (!inv && _isDirectPending) {
+                    btn.disabled    = true;
+                    btn.textContent = '⏳ PREPARING…';
+
+                    var fdDs = new FormData();
+                    fdDs.append('save_direct_sale', '1');
+                    dsCollectPendingInfo(fdDs);
+                    fetch('invoice.php', { method: 'POST', body: fdDs })
+                        .then(function (r) { return r.json(); })
+                        .then(function (ds) {
+                            if (ds.success) {
+                                _dsCommittedInv      = ds.inv_str;
+                                _dsCommittedExamCode = ds.exam_code;
+                                // Update the modal's stash too, so Confirm Order
+                                // (if it still calls save_direct_sale on its own
+                                // path) stays consistent.
+                                var ov = document.getElementById('confirm-order-overlay');
+                                if (ov) {
+                                    ov.dataset.inv      = ds.inv_str;
+                                    ov.dataset.examCode = ds.exam_code;
+                                }
+                                cfrDoSave(ds.inv_str, brandKey, brand, size, btn, errEl);
+                            } else {
+                                btn.disabled    = false;
+                                btn.textContent = '💾 SAVE TO DATABASE';
+                                errEl.textContent   = '✕ Failed to prepare invoice: ' + (ds.error || 'Unknown error');
+                                errEl.style.display = 'block';
+                            }
+                        })
+                        .catch(function () {
+                            btn.disabled    = false;
+                            btn.textContent = '💾 SAVE TO DATABASE';
+                            errEl.textContent   = '✕ Connection error while preparing invoice. Please try again.';
+                            errEl.style.display = 'block';
+                        });
+                    return;
+                }
+
+                if (!inv) {
+                    errEl.textContent   = '⚠ Invoice number is missing. Please reload the page and try again.';
+                    errEl.style.display = 'block';
+                    return;
+                }
+
+                cfrDoSave(inv, brandKey, brand, size, btn, errEl);
+            };
+
+            // ── Actual custom-frame save request (shared by cfrSave) ──────
+            function cfrDoSave(inv, brandKey, brand, size, btn, errEl) {
+
+                btn.disabled    = true;
+                btn.textContent = '⏳ SAVING…';
+
+                var fd = new FormData();
+                fd.append('action',         'save_custom_frame');
+                fd.append('invoice_number', inv);
+                fd.append('brand_key',      brandKey);
+                fd.append('sell_price',     _cfrRawPrice);
+                fd.append('is_purchased',   '0');   // Not purchased yet — user must tap to select
+
+                fetch('custom_frame_save.php', { method: 'POST', body: fd })
+                    .then(function (r) { return r.json(); })
+                    .then(function (data) {
+                        btn.disabled    = false;
+                        btn.textContent = '💾 SAVE TO DATABASE';
+
+                        if (!data.success) {
+                            // Translate known backend (Indonesian) error messages to English
+                            var rawErr = data.error || 'Unknown error';
+                            var translations = {
+                                'invoice_number, brand_key, dan sell_price wajib diisi.': 'invoice_number, brand_key, and sell_price are required.',
+                                'invoice_number dan brand_key wajib diisi.': 'invoice_number and brand_key are required.'
+                            };
+                            errEl.textContent   = '✕ Failed to save: ' + (translations[rawErr] || rawErr);
+                            errEl.style.display = 'block';
+                            return;
+                        }
+
+                        // ── Add to local list and render ──────────────────
+                        _cfrFrames.push({
+                            brandKey: brandKey,
+                            brand:    brand,
+                            price:    _cfrRawPrice,
+                            size:     size
+                        });
+                        cfrRenderList();
+
+                        // ── Reset input form for next entry ───────────────
+                        document.getElementById('cfr-brand').value = '';
+                        document.getElementById('cfr-price').value = '';
+                        document.getElementById('cfr-size').value  = '';
+                        document.getElementById('cfr-key-preview').style.display = 'none';
+                        _cfrRawPrice = 0;
+                    })
+                    .catch(function () {
+                        btn.disabled    = false;
+                        btn.textContent = '💾 SAVE TO DATABASE';
+                        errEl.textContent   = '✕ Connection error. Please try again.';
+                        errEl.style.display = 'block';
+                    });
+            }
+
+            // ============================================================
+            // EDITABLE CUSTOMER / EXAMINATION INFO CARD
+            // Detect changes → show SAVE INFO button.
+            // Lock Order Details + Print Invoice until saved.
+            // ============================================================
+            (function initCustomerInfoEditor() {
+                var allFieldIds = [
+                    'ci_date', 'ci_customer_name', 'ci_age', 'ci_gender', 'ci_symptoms', 'ci_exam_notes',
+                    'ci_pd',
+                    'ci_r_sph', 'ci_r_cyl', 'ci_r_ax', 'ci_r_add',
+                    'ci_l_sph', 'ci_l_cyl', 'ci_l_ax', 'ci_l_add',
+                    'ci_visual_habit', 'ci_digital_usage',
+                    'ci_need_distance', 'ci_need_intermediate', 'ci_need_near'
+                ];
+                var fields = allFieldIds
+                    .map(function(id) { return document.getElementById(id); })
+                    .filter(function(el) { return el !== null; });
+
+                if (fields.length === 0) return; // nothing editable on this view
+
+                var saveRow      = document.getElementById('ci-save-row');
+                var saveForm     = document.getElementById('ci-save-form');
+                var odGroup      = document.getElementById('order-details-group');
+                var printBtn     = document.getElementById('print-invoice-btn');
+
+                var originalValues = {};
+                fields.forEach(function(f) {
+                    originalValues[f.id] = f.value;
+                });
+
+                function isDirty() {
+                    return fields.some(function(f) {
+                        return f.value !== originalValues[f.id];
+                    });
+                }
+
+                function setLocked(locked) {
+                    if (odGroup) {
+                        odGroup.style.opacity = locked ? '0.4' : '1';
+                        odGroup.style.pointerEvents = locked ? 'none' : 'auto';
+                        odGroup.style.filter = locked ? 'blur(1.5px)' : 'none';
+                    }
+                    if (printBtn) {
+                        printBtn.disabled = locked;
+                        printBtn.style.opacity = locked ? '0.4' : '1';
+                        printBtn.style.cursor = locked ? 'not-allowed' : 'pointer';
+                        printBtn.title = locked ? 'Save the customer information above before printing.' : '';
+                    }
+                }
+
+                function refreshState() {
+                    var dirty = isDirty();
+                    if (saveRow) saveRow.style.display = dirty ? 'flex' : 'none';
+                    setLocked(dirty);
+                }
+
+                fields.forEach(function(f) {
+                    f.addEventListener('input', refreshState);
+                    f.addEventListener('change', refreshState);
+                });
+
+                // Lock from the start until any changes are saved is NOT desired —
+                // only lock once the user starts editing (dirty state).
+                refreshState();
+
+                // ── Toggle buttons (visual habit / digital usage) ──────────
+                // Each button sets a hidden input's value and marks itself active
+                // within its own selection-wrapper, then triggers dirty-check.
+                // After choosing, the section auto-collapses (but does not open the next one).
+                document.querySelectorAll('.ds-pending-toggle').forEach(function(btn) {
+                    btn.addEventListener('click', function() {
+                        var targetId = btn.getAttribute('data-target');
+                        var value    = btn.getAttribute('data-value');
+                        var hidden   = document.getElementById(targetId);
+                        if (!hidden) return;
+                        btn.closest('.selection-wrapper').querySelectorAll('.neu-btn').forEach(function(b) {
+                            b.classList.remove('active');
+                        });
+                        btn.classList.add('active');
+                        hidden.value = value;
+                        hidden.dispatchEvent(new Event('input', { bubbles: true }));
+
+                        // Update summary text and collapse this section
+                        var summaryId = btn.getAttribute('data-summary');
+                        var label     = btn.getAttribute('data-label');
+                        if (summaryId && label) {
+                            var summaryEl = document.getElementById(summaryId);
+                            if (summaryEl) summaryEl.textContent = label;
+                        }
+                        var sectionId = btn.getAttribute('data-section');
+                        if (sectionId) {
+                            var sectionEl = document.getElementById(sectionId);
+                            if (sectionEl) sectionEl.classList.add('collapsed');
+                        }
+                    });
+                });
+
+                // ── Vision need toggle buttons (multi-select, 0/1) ─────────
+                document.querySelectorAll('.ds-pending-vision-toggle').forEach(function(btn) {
+                    btn.addEventListener('click', function() {
+                        var targetId = btn.getAttribute('data-target');
+                        var hidden   = document.getElementById(targetId);
+                        if (!hidden) return;
+                        var nowActive = !btn.classList.contains('active');
+                        btn.classList.toggle('active');
+                        hidden.value = nowActive ? '1' : '0';
+                        hidden.dispatchEvent(new Event('input', { bubbles: true }));
+
+                        // Update vision need summary text (multi-select — no auto-collapse)
+                        var summaryId = btn.getAttribute('data-summary');
+                        if (summaryId) {
+                            var summaryEl = document.getElementById(summaryId);
+                            if (summaryEl) {
+                                var labels = [];
+                                if (document.getElementById('ci_need_distance').value === '1') labels.push('DISTANCE');
+                                if (document.getElementById('ci_need_intermediate').value === '1') labels.push('INTERMEDIATE');
+                                if (document.getElementById('ci_need_near').value === '1') labels.push('NEAR');
+                                summaryEl.textContent = labels.length ? labels.join(', ') : 'None selected';
+                            }
+                        }
+                    });
+                });
+
+                if (saveForm) {
+                    saveForm.addEventListener('submit', function(e) {
+                        e.preventDefault(); // prevent full page reload
+
+                        // Copy field values into hidden inputs (existing pattern)
+                        fields.forEach(function(f) {
+                            var hidden = document.getElementById(f.id + '_hidden');
+                            if (hidden) hidden.value = f.value;
+                        });
+
+                        var submitBtn = saveForm.querySelector('button[name="save_customer_info"]');
+                        var origText  = submitBtn ? submitBtn.textContent : '';
+                        if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = '⏳ SAVING…'; }
+
+                        var fd = new FormData(saveForm);
+                        fd.append('save_customer_info', '1'); // submit button not included on preventDefault
+                        fd.append('ajax', '1'); // request JSON response instead of redirect
+
+                        fetch('invoice.php', { method: 'POST', body: fd })
+                            .then(function(r) { return r.json(); })
+                            .then(function(data) {
+                                if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = origText; }
+                                if (data.success) {
+                                    fields.forEach(function(f) { originalValues[f.id] = f.value; });
+                                    refreshState();
+                                } else {
+                                    alert('Failed to save: ' + (data.error || 'Unknown error'));
+                                }
+                            })
+                            .catch(function() {
+                                if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = origText; }
+                                alert('Network error. Please try again.');
+                            });
+                    });
+                }
+            })();
+
+
+
+            function escHtml(str) {
+                return String(str)
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;');
+            }
+
+        }());
+        </script>
+
+    </body>
+</html>
