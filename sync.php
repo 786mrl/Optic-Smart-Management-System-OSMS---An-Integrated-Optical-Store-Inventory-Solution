@@ -229,6 +229,223 @@ function sync_zip_code_only($sourceDir, $zipFile) {
     return ['ok' => true, 'message' => "Code-only zip created with $fileCount files.", 'file_count' => $fileCount];
 }
 
+/**
+/**
+ * Builds a nested tree of every file/folder under $dir, EXCLUDING device-
+ * specific data folders (qrcodes, main_qrcodes, pdf_file, data_json,
+ * database) and .git/.svn/backups. db_config.php is excluded at the root
+ * only (it's device-specific, same reasoning as the data folders).
+ * Used by "Custom Update Source Code" so ANY file anywhere in the app can
+ * be selected — new files included — while still keeping user-data folders
+ * out of reach. Folders are returned as nodes with their own children, so
+ * the UI can render them as collapsible tree branches instead of one huge
+ * flat list.
+ */
+function sync_build_code_tree($dir, $relativePrefix = '', $excludeDirNames = ['.git', '.svn', 'backups', 'qrcodes', 'main_qrcodes', 'pdf_file', 'data_json', 'database'], $excludeFilesAtRoot = ['db_config.php']) {
+    $tree = [];
+    if (!is_dir($dir)) return $tree;
+    $items = scandir($dir);
+    if ($items === false) return $tree;
+    natcasesort($items);
+    foreach ($items as $item) {
+        if ($item === '.' || $item === '..') continue;
+        $fullPath = $dir . '/' . $item;
+        $relPath = ($relativePrefix === '') ? $item : $relativePrefix . '/' . $item;
+        if (is_dir($fullPath)) {
+            if (in_array($item, $excludeDirNames, true)) continue;
+            $children = sync_build_code_tree($fullPath, $relPath, $excludeDirNames, []);
+            $tree[] = ['type' => 'folder', 'name' => $item, 'children' => $children];
+        } else {
+            if ($relativePrefix === '' && in_array($item, $excludeFilesAtRoot, true)) continue;
+            $tree[] = ['type' => 'file', 'path' => $relPath, 'size' => sync_format_bytes(filesize($fullPath))];
+        }
+    }
+    return $tree;
+}
+
+/**
+ * Flattens a sync_build_code_tree() result into a plain list of file paths
+ * — used to validate a caller's selection against what's actually allowed.
+ */
+function sync_flatten_code_tree($tree) {
+    $paths = [];
+    foreach ($tree as $node) {
+        if ($node['type'] === 'file') {
+            $paths[] = $node['path'];
+        } else {
+            $paths = array_merge($paths, sync_flatten_code_tree($node['children']));
+        }
+    }
+    return $paths;
+}
+
+/**
+ * Lists every file that WOULD be included in a code-only sync (same scope
+ * as sync_zip_code_only), without actually zipping anything. Used by
+ * "Custom Update Source Code" to show a checklist.
+ */
+function sync_list_code_only_files($sourceDir) {
+    $files = [];
+    $excludedRootFiles = ['db_config.php'];
+    foreach (glob($sourceDir . '/*.{php,css,js}', GLOB_BRACE) as $filePath) {
+        if (!is_file($filePath)) continue;
+        if (in_array(basename($filePath), $excludedRootFiles, true)) continue;
+        $files[] = ['path' => basename($filePath), 'size' => sync_format_bytes(filesize($filePath))];
+    }
+    $codeFolders = ['image', 'manual', 'phpqrcode'];
+    foreach ($codeFolders as $folderName) {
+        $folderPath = $sourceDir . '/' . $folderName;
+        if (!is_dir($folderPath)) continue;
+        $iterator = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($folderPath, FilesystemIterator::SKIP_DOTS),
+            RecursiveIteratorIterator::SELF_FIRST
+        );
+        foreach ($iterator as $item) {
+            if ($item->isDir()) continue;
+            $relativePath = $folderName . '/' . str_replace('\\', '/', substr($item->getPathname(), strlen($folderPath) + 1));
+            $files[] = ['path' => $relativePath, 'size' => sync_format_bytes($item->getSize())];
+        }
+    }
+    return $files;
+}
+
+/**
+ * Builds a zip containing only the caller-selected subset of files, from
+ * the same allowed code-only scope (root php/css/js + image/manual/phpqrcode).
+ * Re-validates every requested path against the actual allowed list — never
+ * trusts the caller's selection blindly, to prevent path traversal.
+ */
+function sync_zip_code_custom($sourceDir, $selectedPaths, $zipFile) {
+    if (!class_exists('ZipArchive')) {
+        return ['ok' => false, 'message' => 'PHP ZipArchive extension is not enabled on this server.'];
+    }
+    $allowed = sync_flatten_code_tree(sync_build_code_tree($sourceDir));
+    $selected = array_values(array_intersect($selectedPaths, $allowed)); // only ever what's actually allowed
+    if (empty($selected)) {
+        return ['ok' => false, 'message' => 'No valid files selected.'];
+    }
+
+    $zip = new ZipArchive();
+    if (file_exists($zipFile)) @unlink($zipFile);
+    if ($zip->open($zipFile, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
+        return ['ok' => false, 'message' => "Could not create zip file: $zipFile"];
+    }
+    $topFolderName = basename($sourceDir);
+    $fileCount = 0;
+    foreach ($selected as $relPath) {
+        $fullPath = $sourceDir . '/' . $relPath;
+        if (!is_file($fullPath)) continue;
+        $zip->addFile($fullPath, $topFolderName . '/' . $relPath);
+        $fileCount++;
+    }
+    $zip->close();
+    return ['ok' => true, 'message' => "Custom zip created with $fileCount files.", 'file_count' => $fileCount];
+}
+
+/**
+ * Downloads a code zip from $sourceUrl and applies it to THIS device:
+ * extracts everything normally, EXCEPT sync.php (the currently-executing
+ * script), which is written via write-to-temp + atomic rename() to avoid
+ * ever leaving a half-written file on disk for another request to trip
+ * over. Then verifies every extracted file's checksum against the zip.
+ * Shared by both "Update Source Code" and "Custom Update Source Code".
+ */
+function sync_fetch_and_apply_code_zip($sourceUrl, $appDir, $htdocsDir) {
+    $tmpZip = sys_get_temp_dir() . '/' . SYNC_APP_FOLDER_NAME . '_code_incoming_' . uniqid() . '.zip';
+    $ctx = stream_context_create(['http' => ['timeout' => 60, 'ignore_errors' => true]]);
+    $data = @file_get_contents($sourceUrl, false, $ctx);
+    if ($data === false) {
+        return ['ok' => false, 'message' => 'Could not reach the PC. Check that its server is running and the IP/port in IP Settings is correct.'];
+    }
+    if (substr(ltrim($data), 0, 1) === '{') {
+        $errorPayload = json_decode($data, true);
+        $msg = (is_array($errorPayload) && isset($errorPayload['message'])) ? $errorPayload['message'] : 'The PC rejected the request.';
+        return ['ok' => false, 'message' => $msg];
+    }
+    file_put_contents($tmpZip, $data);
+
+    $zip = new ZipArchive();
+    if ($zip->open($tmpZip) !== true) {
+        @unlink($tmpZip);
+        return ['ok' => false, 'message' => 'Could not open the incoming code zip.'];
+    }
+
+    $updatedFiles = [];
+    $syncPhpEntryName = null;
+    for ($i = 0; $i < $zip->numFiles; $i++) {
+        $stat = $zip->statIndex($i);
+        if ($stat === false || substr($stat['name'], -1) === '/') continue;
+        $updatedFiles[] = ['path' => $stat['name'], 'size' => sync_format_bytes($stat['size']), 'crc32' => sprintf('%08x', $stat['crc'])];
+        if (basename($stat['name']) === 'sync.php') {
+            $syncPhpEntryName = $stat['name'];
+        }
+    }
+
+    $entriesToExtractNormally = array_values(array_filter(
+        array_map(function ($f) { return $f['path']; }, $updatedFiles),
+        function ($path) use ($syncPhpEntryName) { return $path !== $syncPhpEntryName; }
+    ));
+    $allEntryNames = [];
+    for ($i = 0; $i < $zip->numFiles; $i++) {
+        $allEntryNames[] = $zip->getNameIndex($i);
+    }
+    $dirEntries = array_filter($allEntryNames, function ($n) { return substr($n, -1) === '/'; });
+    $entriesForNormalExtract = array_merge($dirEntries, $entriesToExtractNormally);
+    // extractTo() with an EMPTY entry list returns false ("nothing extracted"),
+    // which would wrongly read as failure even when the only selected file was
+    // sync.php (handled separately below via atomic rename).
+    $extracted = empty($entriesForNormalExtract) ? true : $zip->extractTo($htdocsDir, $entriesForNormalExtract);
+
+    $syncPhpVerifyNote = null;
+    if ($syncPhpEntryName !== null) {
+        $syncPhpContent = $zip->getFromName($syncPhpEntryName);
+        if ($syncPhpContent !== false) {
+            $realSyncPhpPath = $appDir . '/sync.php';
+            $tempSyncPath = $appDir . '/sync.php.new_' . uniqid();
+            file_put_contents($tempSyncPath, $syncPhpContent);
+            if (!rename($tempSyncPath, $realSyncPhpPath)) {
+                file_put_contents($realSyncPhpPath, $syncPhpContent);
+                @unlink($tempSyncPath);
+                $syncPhpVerifyNote = 'sync.php updated via direct write (atomic rename failed, used fallback).';
+            }
+        }
+    }
+
+    $numFiles = $zip->numFiles;
+    $zip->close();
+    @unlink($tmpZip);
+
+    $filesMismatched = [];
+    if ($extracted) {
+        foreach ($updatedFiles as $f) {
+            $localPath = $htdocsDir . '/' . $f['path'];
+            if (!file_exists($localPath)) {
+                $filesMismatched[] = $f['path'] . ' (missing)';
+                continue;
+            }
+            $localCrc = sprintf('%08x', crc32(file_get_contents($localPath)));
+            if ($localCrc !== $f['crc32']) {
+                $filesMismatched[] = $f['path'] . ' (checksum mismatch)';
+            }
+        }
+    }
+
+    return [
+        'ok' => $extracted,
+        'message' => ($extracted ? "Source code updated — $numFiles file(s) overlaid from PC." : 'Extraction failed.') . ($syncPhpVerifyNote ? ' ' . $syncPhpVerifyNote : ''),
+        'updated_files' => $updatedFiles,
+        'verification' => [
+            'available' => true,
+            'files_ok' => empty($filesMismatched),
+            'files_checked' => count($updatedFiles),
+            'files_mismatched' => $filesMismatched,
+            'tables_ok' => true,
+            'tables_checked' => 0,
+            'tables_mismatched' => [],
+        ],
+    ];
+}
+
 function sync_zip_folder($sourceDir, $zipFile, $excludeNames = [], $excludeDirNames = ['.git', '.svn', 'backups']) {
     if (!class_exists('ZipArchive')) {
         return ['ok' => false, 'message' => 'PHP ZipArchive extension is not enabled on this server. On XAMPP: open php.ini, uncomment (remove the leading ";" from) "extension=zip", then restart Apache. On Termux: run "pkg install php-zip" (or reinstall php), then restart the server.'];
@@ -815,7 +1032,7 @@ function sync_is_within_update_window($settingValue) {
  * Per-file CRC32 map (relative path => crc32 hex), excluding .git/.svn/backups.
  * Used to pinpoint exactly which files differ between devices.
  */
-function sync_build_file_crc_manifest($appDir, $excludeDirNames = ['.git', '.svn', 'backups']) {
+function sync_build_file_crc_manifest($appDir, $excludeDirNames = ['.git', '.svn', 'backups', 'qrcodes', 'main_qrcodes', 'pdf_file', 'data_json', 'database']) {
     $files = [];
     if (!is_dir($appDir)) return $files;
     // db_config.php is EXPECTED to differ between devices (Android needs a
@@ -1060,6 +1277,77 @@ if (isset($_GET['action']) && $_GET['action'] === 'serve_code') {
     if (ob_get_level() > 0) ob_clean();
     header('Content-Type: application/zip');
     header('Content-Disposition: attachment; filename="' . SYNC_APP_FOLDER_NAME . '_code_only.zip"');
+    header('Content-Length: ' . filesize($zipPath));
+    readfile($zipPath);
+    @unlink($zipPath);
+    exit();
+}
+
+// ============================================================
+// ENDPOINT: lists every file available for a code-only sync (no zipping).
+// Used by "Custom Update Source Code" to build the checklist.
+// Called as: sync.php?action=list_code_files&token=...
+// ============================================================
+if (isset($_GET['action']) && $_GET['action'] === 'list_code_files') {
+    $token = $_GET['token'] ?? '';
+    if (!hash_equals(SYNC_TOKEN, $token)) {
+        http_response_code(403);
+        if (ob_get_level() > 0) ob_clean();
+        header('Content-Type: application/json');
+        if (ob_get_level() > 0) { ob_clean(); }
+        echo json_encode(['ok' => false, 'message' => 'Invalid or missing token.']);
+        exit();
+    }
+    $tree = sync_build_code_tree($appDir);
+    if (ob_get_level() > 0) ob_clean();
+    header('Content-Type: application/json');
+    if (ob_get_level() > 0) { ob_clean(); }
+    echo json_encode(['ok' => true, 'tree' => $tree]);
+    exit();
+}
+
+// ============================================================
+// ENDPOINT: serve a zip containing only the caller-selected subset of
+// code-only files. Called as:
+// sync.php?action=serve_code_custom&token=...&files=<JSON array of paths>
+// ============================================================
+if (isset($_GET['action']) && $_GET['action'] === 'serve_code_custom') {
+    $token = $_GET['token'] ?? '';
+    if (!hash_equals(SYNC_TOKEN, $token)) {
+        http_response_code(403);
+        if (ob_get_level() > 0) ob_clean();
+        header('Content-Type: application/json');
+        if (ob_get_level() > 0) { ob_clean(); }
+        echo json_encode(['ok' => false, 'message' => 'Invalid or missing token.']);
+        exit();
+    }
+    ignore_user_abort(true);
+
+    $requestedPaths = json_decode($_GET['files'] ?? '[]', true);
+    if (!is_array($requestedPaths) || empty($requestedPaths)) {
+        http_response_code(400);
+        if (ob_get_level() > 0) ob_clean();
+        header('Content-Type: application/json');
+        if (ob_get_level() > 0) { ob_clean(); }
+        echo json_encode(['ok' => false, 'message' => 'No files specified.']);
+        exit();
+    }
+
+    $zipPath = sys_get_temp_dir() . '/' . SYNC_APP_FOLDER_NAME . '_code_custom_' . uniqid() . '.zip';
+    $zipResult = sync_zip_code_custom($appDir, $requestedPaths, $zipPath);
+    if (!$zipResult['ok']) {
+        @unlink($zipPath);
+        http_response_code(500);
+        if (ob_get_level() > 0) ob_clean();
+        header('Content-Type: application/json');
+        if (ob_get_level() > 0) { ob_clean(); }
+        echo json_encode(['ok' => false, 'message' => $zipResult['message']]);
+        exit();
+    }
+
+    if (ob_get_level() > 0) ob_clean();
+    header('Content-Type: application/zip');
+    header('Content-Disposition: attachment; filename="' . SYNC_APP_FOLDER_NAME . '_code_custom.zip"');
     header('Content-Length: ' . filesize($zipPath));
     readfile($zipPath);
     @unlink($zipPath);
@@ -1665,119 +1953,50 @@ if (isset($_POST['action'])) {
             exit();
         }
         $sourceUrl = "http://" . $syncConfig['pc_ip'] . ":" . $syncConfig['pc_port'] . "/" . SYNC_APP_FOLDER_NAME . "/sync.php?action=serve_code&token=" . urlencode(SYNC_TOKEN);
-        $tmpZip = sys_get_temp_dir() . '/' . SYNC_APP_FOLDER_NAME . '_code_only_incoming_' . uniqid() . '.zip';
-        $ctx = stream_context_create(['http' => ['timeout' => 60, 'ignore_errors' => true]]);
-        $data = @file_get_contents($sourceUrl, false, $ctx);
-        if ($data === false) {
-            if (ob_get_level() > 0) { ob_clean(); }
-            echo json_encode(['ok' => false, 'message' => 'Could not reach the PC. Check that its server is running and the IP/port in IP Settings is correct.']);
-            exit();
-        }
-        if (substr(ltrim($data), 0, 1) === '{') {
-            $errorPayload = json_decode($data, true);
-            $msg = (is_array($errorPayload) && isset($errorPayload['message'])) ? $errorPayload['message'] : 'The PC rejected the request.';
-            if (ob_get_level() > 0) { ob_clean(); }
-            echo json_encode(['ok' => false, 'message' => $msg]);
-            exit();
-        }
-        file_put_contents($tmpZip, $data);
-
-        // Overlay only — never delete anything (this is a code-only subset, not a full mirror)
-        $zip = new ZipArchive();
-        if ($zip->open($tmpZip) !== true) {
-            @unlink($tmpZip);
-            if (ob_get_level() > 0) { ob_clean(); }
-            echo json_encode(['ok' => false, 'message' => 'Could not open the incoming code zip.']);
-            exit();
-        }
-        // List every file BEFORE extracting, so the UI can show exactly what changed
-        $updatedFiles = [];
-        $syncPhpEntryName = null;
-        for ($i = 0; $i < $zip->numFiles; $i++) {
-            $stat = $zip->statIndex($i);
-            if ($stat === false || substr($stat['name'], -1) === '/') continue; // skip directory entries
-            $updatedFiles[] = ['path' => $stat['name'], 'size' => sync_format_bytes($stat['size']), 'crc32' => sprintf('%08x', $stat['crc'])];
-            if (basename($stat['name']) === 'sync.php') {
-                $syncPhpEntryName = $stat['name'];
-            }
-        }
-
-        // sync.php is the file currently executing THIS request. Overwriting it
-        // via a normal in-place write leaves a brief window where it's only
-        // partially written — if another request hits Apache at that exact
-        // moment, it can read a truncated/corrupt file and error out (matching
-        // the intermittent "<!DOCTYPE" failures reported). Extract everything
-        // ELSE normally, then write sync.php separately via write-to-temp +
-        // atomic rename(), which never leaves a half-written file on disk.
-        $entriesToExtractNormally = array_values(array_filter(
-            array_map(function ($f) { return $f['path']; }, $updatedFiles),
-            function ($path) use ($syncPhpEntryName) { return $path !== $syncPhpEntryName; }
-        ));
-        // Also include directory entries so folder structure is created
-        $allEntryNames = [];
-        for ($i = 0; $i < $zip->numFiles; $i++) {
-            $allEntryNames[] = $zip->getNameIndex($i);
-        }
-        $dirEntries = array_filter($allEntryNames, function ($n) { return substr($n, -1) === '/'; });
-        $extracted = $zip->extractTo($htdocsDir, array_merge($dirEntries, $entriesToExtractNormally));
-
-        $syncPhpVerifyNote = null;
-        if ($syncPhpEntryName !== null) {
-            $syncPhpContent = $zip->getFromName($syncPhpEntryName);
-            if ($syncPhpContent !== false) {
-                // $syncPhpEntryName is like "optic_pos/sync.php" — the real file
-                // lives at $appDir/sync.php (i.e. $htdocsDir/optic_pos/sync.php),
-                // NOT directly under $htdocsDir. Write the temp file in the SAME
-                // folder as the real target so rename() stays atomic.
-                $realSyncPhpPath = $appDir . '/sync.php';
-                $tempSyncPath = $appDir . '/sync.php.new_' . uniqid();
-                file_put_contents($tempSyncPath, $syncPhpContent);
-                if (!rename($tempSyncPath, $realSyncPhpPath)) {
-                    // Rename can fail on some setups (permissions, filesystem
-                    // quirks) — fall back to a direct overwrite rather than
-                    // silently leaving sync.php un-updated.
-                    file_put_contents($realSyncPhpPath, $syncPhpContent);
-                    @unlink($tempSyncPath);
-                    $syncPhpVerifyNote = 'sync.php updated via direct write (atomic rename failed, used fallback).';
-                }
-            }
-        }
-
-        $numFiles = $zip->numFiles;
-        $zip->close();
-        @unlink($tmpZip);
-
-        // Verify each extracted file's checksum matches what was in the zip
-        $filesMismatched = [];
-        if ($extracted) {
-            foreach ($updatedFiles as $f) {
-                $localPath = $htdocsDir . '/' . $f['path'];
-                if (!file_exists($localPath)) {
-                    $filesMismatched[] = $f['path'] . ' (missing)';
-                    continue;
-                }
-                $localCrc = sprintf('%08x', crc32(file_get_contents($localPath)));
-                if ($localCrc !== $f['crc32']) {
-                    $filesMismatched[] = $f['path'] . ' (checksum mismatch)';
-                }
-            }
-        }
-
+        $result = sync_fetch_and_apply_code_zip($sourceUrl, $appDir, $htdocsDir);
         if (ob_get_level() > 0) { ob_clean(); }
-        echo json_encode([
-            'ok' => $extracted,
-            'message' => ($extracted ? "Source code updated — $numFiles files overlaid from PC." : 'Extraction failed.') . ($syncPhpVerifyNote ? ' ' . $syncPhpVerifyNote : ''),
-            'updated_files' => $updatedFiles,
-            'verification' => [
-                'available' => true,
-                'files_ok' => empty($filesMismatched),
-                'files_checked' => count($updatedFiles),
-                'files_mismatched' => $filesMismatched,
-                'tables_ok' => true,
-                'tables_checked' => 0,
-                'tables_mismatched' => [],
-            ],
-        ]);
+        echo json_encode($result);
+        exit();
+    }
+
+    // ---- Custom Update Source Code: proxy PC's file list to the browser ----
+    if ($action === 'get_pc_code_file_list') {
+        if ($syncOwnRole !== 'android') {
+            if (ob_get_level() > 0) { ob_clean(); }
+            echo json_encode(['ok' => false, 'message' => 'This action is only available on the Android device.']);
+            exit();
+        }
+        $listUrl = "http://" . $syncConfig['pc_ip'] . ":" . $syncConfig['pc_port'] . "/" . SYNC_APP_FOLDER_NAME . "/sync.php?action=list_code_files&token=" . urlencode(SYNC_TOKEN);
+        $ctx = stream_context_create(['http' => ['timeout' => 30, 'ignore_errors' => true]]);
+        $response = @file_get_contents($listUrl, false, $ctx);
+        if ($response === false) {
+            if (ob_get_level() > 0) { ob_clean(); }
+            echo json_encode(['ok' => false, 'message' => 'Could not reach the PC to list files.']);
+            exit();
+        }
+        $payload = json_decode($response, true);
+        if (ob_get_level() > 0) { ob_clean(); }
+        echo json_encode(is_array($payload) ? $payload : ['ok' => false, 'message' => 'Unexpected response from PC.']);
+        exit();
+    }
+
+    // ---- Custom Update Source Code: pull only the caller-selected files ----
+    if ($action === 'pull_code_custom') {
+        if ($syncOwnRole !== 'android') {
+            if (ob_get_level() > 0) { ob_clean(); }
+            echo json_encode(['ok' => false, 'message' => 'This action is only available on the Android device.']);
+            exit();
+        }
+        $selectedFiles = json_decode($_POST['files'] ?? '[]', true);
+        if (!is_array($selectedFiles) || empty($selectedFiles)) {
+            if (ob_get_level() > 0) { ob_clean(); }
+            echo json_encode(['ok' => false, 'message' => 'No files selected.']);
+            exit();
+        }
+        $sourceUrl = "http://" . $syncConfig['pc_ip'] . ":" . $syncConfig['pc_port'] . "/" . SYNC_APP_FOLDER_NAME . "/sync.php?action=serve_code_custom&token=" . urlencode(SYNC_TOKEN) . "&files=" . urlencode(json_encode($selectedFiles));
+        $result = sync_fetch_and_apply_code_zip($sourceUrl, $appDir, $htdocsDir);
+        if (ob_get_level() > 0) { ob_clean(); }
+        echo json_encode($result);
         exit();
     }
 
@@ -2788,6 +3007,10 @@ if (isset($_POST['action'])) {
                                         <p class="desc">Pulls PHP/CSS/JS code plus <code>image/</code>, <code>manual/</code>, <code>phpqrcode/</code> from the PC. No database changes.</p>
                                         <button class="sync-btn" id="btnUpdateCode" onclick="runAction('pull_code_only', {}, this, 'statusUpdateCode')">🧩 Update Source Code</button>
                                         <div class="sync-status" id="statusUpdateCode"></div>
+                                        <hr style="border: none; border-top: 1px solid rgba(255,255,255,0.06); margin: 16px 0;">
+                                        <p class="desc">Browse every file/folder on the PC (except <code>qrcodes</code>, <code>main_qrcodes</code>, <code>pdf_file</code>, <code>data_json</code>, <code>database</code>) and pick exactly which ones to pull — including new files not covered by the quick update above.</p>
+                                        <button class="sync-btn" id="btnCustomUpdateCode" onclick="openCustomUpdateModal()">🎯 Custom Update Source Code</button>
+                                        <div class="sync-status" id="statusCustomUpdateCode"></div>
                                     </div>
                                 </div>
                                 <?php endif; ?>
@@ -2939,6 +3162,20 @@ if (isset($_POST['action'])) {
             </div>
         </div>
 
+        <div class="iphelp-backdrop" id="customUpdateBackdrop">
+            <div class="iphelp-modal" style="max-width:520px;">
+                <h2>🎯 Custom Update Source Code</h2>
+                <p style="color:#9a9da1; font-size:12px; margin-bottom:10px;">Check the files you want to pull from the PC. Files flagged by the last Verify Full Sync are pre-checked.</p>
+                <div style="display:flex; gap:10px; margin-bottom:10px;">
+                    <button type="button" class="iphelp-link-btn" onclick="toggleAllCustomFiles(true)">Select all</button>
+                    <button type="button" class="iphelp-link-btn" onclick="toggleAllCustomFiles(false)">Select none</button>
+                </div>
+                <div id="customFileListBody" style="max-height:300px; overflow-y:auto; font-size:13px; color:#c9cbce;">Loading...</div>
+                <button type="button" class="sync-btn" style="margin-top:16px;" onclick="submitCustomUpdate()">🎯 Update Selected Files</button>
+                <button type="button" class="iphelp-close-btn" onclick="closeCustomUpdateModal()">Cancel</button>
+            </div>
+        </div>
+
         <div class="iphelp-backdrop" id="cardInfoBackdrop" onclick="if(event.target===this) closeCardInfo()">
             <div class="iphelp-modal">
                 <h2 id="cardInfoTitle">Info</h2>
@@ -2988,12 +3225,20 @@ if (isset($_POST['action'])) {
             // used by Update Source Code and Cross-Device Data Sync so the exact
             // files/tables changed are visible, not just a summary sentence.
             // Renders exactly which files/tables differ after a "Verify Full Sync" check.
+            var syncLastVerifyDiffPaths = []; // populated by renderVerifyDiffs, used to pre-check Custom Update
+
             function renderVerifyDiffs(statusEl, data) {
                 const existing = statusEl.parentElement.querySelector('.verify-diffs-box');
                 if (existing) existing.remove();
 
                 const fileDiffs = Array.isArray(data.file_diffs) ? data.file_diffs : [];
                 const tableDiffs = Array.isArray(data.table_diffs) ? data.table_diffs : [];
+
+                // Strip the " (...)" suffix and the "optic_pos/" prefix so these
+                // match the plain relative paths used by the code-file checklist.
+                syncLastVerifyDiffPaths = fileDiffs
+                    .map(d => d.replace(/\s*\(.*\)$/, '').replace(/^optic_pos\//, ''));
+
                 if (fileDiffs.length === 0 && tableDiffs.length === 0) return; // everything matched, nothing to show
 
                 const box = document.createElement('div');
@@ -3140,7 +3385,7 @@ if (isset($_POST['action'])) {
                         }
 
                         // Update Source Code / Cross-Device Data Sync: show exactly what changed
-                        if ((action === 'pull_code_only' || action === 'push_scoped_update') && data.ok) {
+                        if ((action === 'pull_code_only' || action === 'pull_code_custom' || action === 'push_scoped_update') && data.ok) {
                             renderUpdatedItemsList(statusEl, data);
                         }
 
@@ -3257,6 +3502,80 @@ if (isset($_POST['action'])) {
                 var label = target === 'pc' ? 'PC' : 'Android';
                 if (!confirm(`This will push this device's pending activity_log changes to ${label}, and clear them here on success. Continue?`)) return;
                 runAction('push_scoped_update', { target }, btn, statusId);
+            }
+
+            // ---- Custom Update Source Code (fly window checklist) ----
+            function renderCodeTreeNode(node, container, depth) {
+                if (node.type === 'file') {
+                    const row = document.createElement('label');
+                    row.style.cssText = `display:flex; align-items:center; gap:8px; padding:5px 0; padding-left:${depth * 18}px; border-bottom:1px solid rgba(255,255,255,0.05); cursor:pointer;`;
+                    const isFlagged = syncLastVerifyDiffPaths.includes(node.path);
+                    row.innerHTML = `
+                        <input type="checkbox" class="custom-file-checkbox" value="${node.path}" ${isFlagged ? 'checked' : ''} style="width:16px; height:16px; flex-shrink:0;">
+                        <span style="flex:1; font-family:monospace; font-size:12px; word-break:break-all;">${node.path.split('/').pop()}${isFlagged ? ' <span style="color:#ff8a65;">⚠️ differs</span>' : ''}</span>
+                        <span style="font-size:11px; color:#9a9da1; flex-shrink:0;">${node.size}</span>
+                    `;
+                    container.appendChild(row);
+                } else {
+                    // Folder: collapsible, auto-open if any descendant is flagged by Verify Full Sync
+                    const folderFilePaths = flattenTreeFilePaths(node.children);
+                    const hasFlagged = folderFilePaths.some(p => syncLastVerifyDiffPaths.includes(p));
+
+                    const details = document.createElement('details');
+                    details.style.cssText = `padding-left:${depth * 18}px;`;
+                    details.open = hasFlagged;
+                    const summary = document.createElement('summary');
+                    summary.style.cssText = 'cursor:pointer; padding:5px 0; font-weight:600; color:#7fe3f0; display:flex; align-items:center; gap:6px;';
+                    summary.innerHTML = `📁 ${node.name}${hasFlagged ? ' <span style="color:#ff8a65; font-weight:400; font-size:11px;">⚠️ contains differences</span>' : ''}`;
+                    details.appendChild(summary);
+                    const childContainer = document.createElement('div');
+                    node.children.forEach(child => renderCodeTreeNode(child, childContainer, depth + 1));
+                    details.appendChild(childContainer);
+                    container.appendChild(details);
+                }
+            }
+            function flattenTreeFilePaths(nodes) {
+                let paths = [];
+                nodes.forEach(n => {
+                    if (n.type === 'file') paths.push(n.path);
+                    else paths = paths.concat(flattenTreeFilePaths(n.children));
+                });
+                return paths;
+            }
+
+            function openCustomUpdateModal() {
+                const body = document.getElementById('customFileListBody');
+                body.textContent = 'Loading file list from PC...';
+                document.getElementById('customUpdateBackdrop').classList.add('active');
+
+                fetch('sync.php', { method: 'POST', body: new URLSearchParams({ action: 'get_pc_code_file_list' }) })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (!data.ok || !Array.isArray(data.tree) || data.tree.length === 0) {
+                            body.textContent = data.message || 'Could not load the file list from PC.';
+                            return;
+                        }
+                        body.innerHTML = '';
+                        data.tree.forEach(node => renderCodeTreeNode(node, body, 0));
+                    })
+                    .catch(() => { body.textContent = 'Request error while loading the file list.'; });
+            }
+            function closeCustomUpdateModal() {
+                document.getElementById('customUpdateBackdrop').classList.remove('active');
+            }
+            function toggleAllCustomFiles(checked) {
+                document.querySelectorAll('.custom-file-checkbox').forEach(cb => { cb.checked = checked; });
+            }
+            function submitCustomUpdate() {
+                const selected = Array.from(document.querySelectorAll('.custom-file-checkbox:checked')).map(cb => cb.value);
+                if (selected.length === 0) {
+                    alert('Select at least one file first.');
+                    return;
+                }
+                if (!confirm(`Pull ${selected.length} selected file(s) from the PC and overlay them here?`)) return;
+                closeCustomUpdateModal();
+                const btn = document.getElementById('btnCustomUpdateCode');
+                runAction('pull_code_custom', { files: JSON.stringify(selected) }, btn, 'statusCustomUpdateCode');
             }
 
             // ---- Restore from Auto Backups (fly window with a pickable list) ----
