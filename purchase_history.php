@@ -97,10 +97,11 @@
 //          frames_main, frame_staging, prescription_modifications
 // Access:  requires role = 'admin' AND a verified password (unlocked
 //          for a short window, stored in session) before any group save.
+//
+// NOTE: this file no longer runs any ALTER TABLE / migration SQL on its
+// own. Run the following once in phpMyAdmin before using this feature:
+//   ALTER TABLE customer_orders ADD COLUMN edit_log TEXT NULL DEFAULT NULL;
 // ══════════════════════════════════════════════════════════════════════
-
-// ── Make sure the audit-trail column exists on customer_orders ────────
-$conn->query("ALTER TABLE customer_orders ADD COLUMN IF NOT EXISTS edit_log TEXT NULL DEFAULT NULL");
 
 // ── Small helpers ───────────────────────────────────────────────────
 
@@ -143,23 +144,56 @@ function phBuildCustomFrameKey($brand, $size) {
     return implode('+', $parts);
 }
 
-// Look up lens cost from the same JSON price list used elsewhere on this page
-function phLensCostLookup($lensName) {
-    $lensName = trim($lensName);
-    if ($lensName === '') return 0;
+// Full lens lookup (cost, selling price, stock/lab source) by matching a
+// "Category — Type" (or "Category / Type") label against lense_prices.json.
+// Matching is separator/case tolerant; the returned 'label' is always the
+// canonical "Category — Type" format (identical to what invoice.php writes
+// into customer_orders.lens_name), so saves stay consistent with new orders.
+function phLensLookupFull($label) {
+    $label = trim($label);
+    if ($label === '') return null;
     $jsonPath = __DIR__ . '/data_json/lense_prices.json';
-    if (!file_exists($jsonPath)) return 0;
+    if (!file_exists($jsonPath)) return null;
     $data = json_decode(file_get_contents($jsonPath), true);
+    if (!$data) return null;
+
+    $normalize = function ($s) {
+        // Same normalization already used elsewhere on this page: any of
+        // em-dash / en-dash / slash (with surrounding spaces) → " / ", then uppercase.
+        $s = preg_replace('/\s*[\x{2014}\x{2013}\/]\s*/u', ' / ', trim($s));
+        return strtoupper($s);
+    };
+    $target = $normalize($label);
+
     foreach (['stock', 'lab'] as $lt) {
         if (empty($data[$lt])) continue;
         foreach ($data[$lt] as $cat => $types) {
             foreach ($types as $type => $info) {
-                $k = strtoupper(trim($cat) . ' / ' . trim($type));
-                if ($k === strtoupper($lensName)) return (int)($info['cost'] ?? 0);
+                if ($normalize(trim($cat) . ' / ' . trim($type)) === $target) {
+                    return [
+                        'cost'    => (int)($info['cost']    ?? 0),
+                        'selling' => (int)($info['selling'] ?? 0),
+                        'source'  => $lt, // 'stock' | 'lab'
+                        'label'   => trim($cat) . ' — ' . trim($type), // canonical stored format
+                    ];
+                }
             }
         }
     }
-    return 0;
+    return null;
+}
+
+// Read lens lead times (in days) from the settings table, same keys/defaults as invoice.php.
+function phLensLeadTimeDays($conn) {
+    $days = ['stock' => 2, 'lab' => 10];
+    $res = $conn->query("SELECT setting_key, setting_value FROM settings WHERE setting_key IN ('lens_stock_lead_time_days', 'lens_lab_lead_time_days')");
+    if ($res) {
+        while ($row = $res->fetch_assoc()) {
+            if ($row['setting_key'] === 'lens_stock_lead_time_days') $days['stock'] = (int)$row['setting_value'];
+            if ($row['setting_key'] === 'lens_lab_lead_time_days')   $days['lab']   = (int)$row['setting_value'];
+        }
+    }
+    return $days;
 }
 
 // Is a given frame_ufc value actually a custom_frames brand_key (not a catalog UFC)?
@@ -170,28 +204,32 @@ function phIsCustomFrameUfc($ufc) {
 }
 
 // Try to restore +1 stock to whichever catalog table (frames_main / frame_staging) owns this ufc.
-// Returns the table name it restored to, or null if not found in either.
+// Returns ['table' => ..., 'sell_price' => ...] on success, or null if not found in either.
+// frames_main.updated_at has no automatic ON UPDATE clause, so it's set explicitly here
+// (harmless no-op timing-wise for frame_staging, which already auto-updates).
 function phRestoreCatalogStock($conn, $ufc) {
     $ufc = $conn->real_escape_string($ufc);
     foreach (['frames_main', 'frame_staging'] as $tbl) {
-        $chk = $conn->query("SELECT ufc FROM `$tbl` WHERE ufc = '$ufc' LIMIT 1");
+        $chk = $conn->query("SELECT sell_price FROM `$tbl` WHERE ufc = '$ufc' LIMIT 1");
         if ($chk && $chk->num_rows > 0) {
-            $conn->query("UPDATE `$tbl` SET stock = stock + 1 WHERE ufc = '$ufc'");
-            return $tbl;
+            $row = $chk->fetch_assoc();
+            $conn->query("UPDATE `$tbl` SET stock = stock + 1, updated_at = NOW() WHERE ufc = '$ufc'");
+            return ['table' => $tbl, 'sell_price' => (float)$row['sell_price']];
         }
     }
     return null;
 }
 
 // Try to deduct 1 stock from whichever catalog table owns this ufc, only if stock > 0.
-// Returns the table name on success, or null on failure (not found / out of stock).
+// Returns ['table' => ..., 'sell_price' => ...] on success, or null on failure (not found / out of stock).
 function phDeductCatalogStock($conn, $ufc) {
     $ufc = $conn->real_escape_string($ufc);
     foreach (['frames_main', 'frame_staging'] as $tbl) {
-        $chk = $conn->query("SELECT stock FROM `$tbl` WHERE ufc = '$ufc' AND stock > 0 LIMIT 1");
+        $chk = $conn->query("SELECT sell_price FROM `$tbl` WHERE ufc = '$ufc' AND stock > 0 LIMIT 1");
         if ($chk && $chk->num_rows > 0) {
-            $conn->query("UPDATE `$tbl` SET stock = stock - 1 WHERE ufc = '$ufc'");
-            return $tbl;
+            $row = $chk->fetch_assoc();
+            $conn->query("UPDATE `$tbl` SET stock = stock - 1, updated_at = NOW() WHERE ufc = '$ufc'");
+            return ['table' => $tbl, 'sell_price' => (float)$row['sell_price']];
         }
     }
     return null;
@@ -237,9 +275,21 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_verify_access') {
     [$ok, $err] = phVerifyAdminPassword($conn, $_POST['password'] ?? '');
     if (!$ok) { echo json_encode(['success' => false, 'error' => $err]); exit(); }
 
-    $_SESSION['ph_edit_unlocked_until'] = time() + 900; // 15 minutes
+    // Unlock only for the duration of this editing session (the front-end
+    // explicitly invalidates this again as soon as the editor is closed,
+    // so opening the editor always asks for the password again).
+    $_SESSION['ph_edit_unlocked_until'] = time() + 900; // safety ceiling, 15 minutes
     $_SESSION['ph_edit_admin_user_id']  = $_SESSION['user_id'];
     echo json_encode(['success' => true, 'unlocked_for_seconds' => 900]);
+    exit();
+}
+
+// ── AJAX: invalidate the edit unlock (called when the editor is closed) ─
+if (isset($_POST['action']) && $_POST['action'] === 'edit_lock_access') {
+    header('Content-Type: application/json');
+    unset($_SESSION['ph_edit_unlocked_until']);
+    unset($_SESSION['ph_edit_admin_user_id']);
+    echo json_encode(['success' => true]);
     exit();
 }
 
@@ -293,11 +343,29 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_get_details') {
         }
     }
 
+    // The prescription currently "in effect" for this order — used to pre-fill
+    // the new-modification form. If a modification is active, that's the latest
+    // prescription_modifications row. Otherwise it's the freshly-measured Rx
+    // from this exam (new_r_*/new_l_* → OD/OS convention: R = OD, L = OS).
+    $activeRx = null;
+    if ($exam && (string)($exam['lens_modification'] ?? '0') === '1' && $lastMod) {
+        $activeRx = [
+            'od_sph' => $lastMod['od_sph'], 'od_cyl' => $lastMod['od_cyl'], 'od_axis' => $lastMod['od_axis'], 'od_add' => $lastMod['od_add'],
+            'os_sph' => $lastMod['os_sph'], 'os_cyl' => $lastMod['os_cyl'], 'os_axis' => $lastMod['os_axis'], 'os_add' => $lastMod['os_add'],
+        ];
+    } elseif ($exam) {
+        $activeRx = [
+            'od_sph' => $exam['new_r_sph'], 'od_cyl' => $exam['new_r_cyl'], 'od_axis' => $exam['new_r_ax'], 'od_add' => $exam['new_r_add'],
+            'os_sph' => $exam['new_l_sph'], 'os_cyl' => $exam['new_l_cyl'], 'os_axis' => $exam['new_l_ax'], 'os_add' => $exam['new_l_add'],
+        ];
+    }
+
     echo json_encode([
         'success'       => true,
         'order'         => $order,
         'exam'          => $exam ?: null,
         'last_mod'      => $lastMod ?: null,
+        'active_rx'     => $activeRx,
         'custom_frames' => $customFrames,
         'frame_is_custom' => $frameIsCustom,
         'catalog_frame' => $catalogFrame,
@@ -441,18 +509,48 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_prescription') {
         $os_axis = $conn->real_escape_string($_POST['os_axis'] ?? '');
         $os_add  = $conn->real_escape_string($_POST['os_add']  ?? '');
 
+        // Whether to INSERT a new history row or UPDATE the latest one
+        // in-place depends on the flag *at the moment of saving*:
+        //   - currently ORIGINAL (0) → this is a brand-new modification → INSERT.
+        //   - currently MODIFIED (1) → the customer is adjusting the modification
+        //     that's already active → UPDATE that same row, so history doesn't
+        //     pile up with near-duplicate rows.
+        // This is why pressing "Revert to Original" first (flag → 0) makes the
+        // next save an INSERT, while pressing "Re-apply Last Modification"
+        // first (flag → 1) makes the next save an UPDATE of that reapplied row.
+        $curFlagRes = $conn->query("SELECT lens_modification FROM customer_examinations WHERE invoice_number = '$inv' LIMIT 1");
+        $curFlagRow = $curFlagRes ? $curFlagRes->fetch_assoc() : null;
+        $isCurrentlyModified = $curFlagRow && (string)$curFlagRow['lens_modification'] === '1';
+
         $conn->begin_transaction();
         try {
-            $ins = $conn->query("INSERT INTO prescription_modifications
-                (invoice_number, od_sph, od_cyl, od_axis, od_add, os_sph, os_cyl, os_axis, os_add)
-                VALUES ('$inv', '$od_sph', '$od_cyl', '$od_axis', '$od_add', '$os_sph', '$os_cyl', '$os_axis', '$os_add')");
-            if (!$ins) throw new Exception($conn->error);
+            if ($isCurrentlyModified) {
+                $latestRes = $conn->query("SELECT modification_id FROM prescription_modifications WHERE invoice_number = '$inv' ORDER BY modified_at DESC LIMIT 1");
+                $latestRow = $latestRes ? $latestRes->fetch_assoc() : null;
+                if (!$latestRow) throw new Exception('No existing modification row found to update.');
 
-            $upd = $conn->query("UPDATE customer_examinations SET lens_modification = 1 WHERE invoice_number = '$inv'");
-            if (!$upd) throw new Exception($conn->error);
+                $modId = (int)$latestRow['modification_id'];
+                // prescription_modifications has no auto-update column, so modified_at is bumped explicitly.
+                $upd1 = $conn->query("UPDATE prescription_modifications SET
+                    od_sph = '$od_sph', od_cyl = '$od_cyl', od_axis = '$od_axis', od_add = '$od_add',
+                    os_sph = '$os_sph', os_cyl = '$os_cyl', os_axis = '$os_axis', os_add = '$os_add',
+                    modified_at = NOW()
+                    WHERE modification_id = $modId");
+                if (!$upd1) throw new Exception($conn->error);
+                $logMsg = "Updated the currently-active modification in place (OD $od_sph/$od_cyl/$od_axis/$od_add, OS $os_sph/$os_cyl/$os_axis/$os_add) — no new history row created.";
+            } else {
+                $ins = $conn->query("INSERT INTO prescription_modifications
+                    (invoice_number, od_sph, od_cyl, od_axis, od_add, os_sph, os_cyl, os_axis, os_add)
+                    VALUES ('$inv', '$od_sph', '$od_cyl', '$od_axis', '$od_add', '$os_sph', '$os_cyl', '$os_axis', '$os_add')");
+                if (!$ins) throw new Exception($conn->error);
+                $logMsg = "Inserted a new modification row (customer switched from original to modified): OD $od_sph/$od_cyl/$od_axis/$od_add, OS $os_sph/$os_cyl/$os_axis/$os_add.";
+            }
+
+            $upd2 = $conn->query("UPDATE customer_examinations SET lens_modification = 1 WHERE invoice_number = '$inv'");
+            if (!$upd2) throw new Exception($conn->error);
 
             $conn->commit();
-            phAppendEditLog($conn, $order_id, 'prescription', "New modification recorded (OD $od_sph/$od_cyl/$od_axis/$od_add, OS $os_sph/$os_cyl/$os_axis/$os_add).");
+            phAppendEditLog($conn, $order_id, 'prescription', $logMsg);
             echo json_encode(['success' => true, 'lens_modification' => 1]);
         } catch (Exception $e) {
             $conn->rollback();
@@ -467,32 +565,59 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_lens') {
     header('Content-Type: application/json');
     if (!phEditIsUnlocked()) { echo json_encode(['success' => false, 'error' => 'Session locked. Please verify admin access again.']); exit(); }
 
-    $order_id    = (int)($_POST['order_id'] ?? 0);
-    $newLensName = trim($_POST['lens_name'] ?? '');
-    if ($order_id <= 0 || $newLensName === '') { echo json_encode(['success' => false, 'error' => 'Invalid input']); exit(); }
+    $order_id      = (int)($_POST['order_id'] ?? 0);
+    $newLensLabel  = trim($_POST['lens_name'] ?? '');
+    if ($order_id <= 0 || $newLensLabel === '') { echo json_encode(['success' => false, 'error' => 'Invalid input']); exit(); }
 
-    $stmt = $conn->prepare("SELECT lens_name FROM customer_orders WHERE id = ? LIMIT 1");
+    $newLens = phLensLookupFull($newLensLabel);
+    if (!$newLens) { echo json_encode(['success' => false, 'error' => 'Selected lens was not found in the current price list.']); exit(); }
+
+    $stmt = $conn->prepare("SELECT lens_name, total_amount, order_date FROM customer_orders WHERE id = ? LIMIT 1");
     $stmt->bind_param("i", $order_id);
     $stmt->execute();
     $cur = $stmt->get_result()->fetch_assoc();
     $stmt->close();
     if (!$cur) { echo json_encode(['success' => false, 'error' => 'Order not found']); exit(); }
 
-    $oldLensName = $cur['lens_name'];
-    if ($newLensName === $oldLensName) { echo json_encode(['success' => true, 'changed' => false]); exit(); }
+    $oldLensLabel = $cur['lens_name'];
+    if ($newLens['label'] === $oldLensLabel) { echo json_encode(['success' => true, 'changed' => false]); exit(); }
 
-    $stmt = $conn->prepare("UPDATE customer_orders SET lens_name = ? WHERE id = ?");
-    $stmt->bind_param("si", $newLensName, $order_id);
+    // Adjust total_amount by the *difference* in selling price, rather than
+    // recomputing it from scratch, so any manual discount baked into the
+    // original total is preserved.
+    $oldLens        = phLensLookupFull($oldLensLabel); // may be null if old lens_name isn't in the JSON (renamed/removed)
+    $oldSelling     = $oldLens ? $oldLens['selling'] : 0;
+    $newSelling     = $newLens['selling'];
+    $delta          = $newSelling - $oldSelling;
+    $oldTotal       = (float)$cur['total_amount'];
+    $newTotal       = max(0, $oldTotal + $delta);
+
+    // Recompute due_date from order_date using the same lead-time settings invoice.php uses.
+    $leadDays  = phLensLeadTimeDays($conn);
+    $days      = ($newLens['source'] === 'stock') ? $leadDays['stock'] : $leadDays['lab'];
+    $newDueDate = null;
+    if (!empty($cur['order_date'])) {
+        $newDueDate = date('Y-m-d', strtotime($cur['order_date'] . " +{$days} days"));
+    }
+
+    $stmt = $conn->prepare("UPDATE customer_orders SET lens_name = ?, total_amount = ?, due_date = ? WHERE id = ?");
+    $stmt->bind_param("sdsi", $newLens['label'], $newTotal, $newDueDate, $order_id);
     if (!$stmt->execute()) { echo json_encode(['success' => false, 'error' => $conn->error]); exit(); }
     $stmt->close();
 
-    phAppendEditLog($conn, $order_id, 'lens', "lens_name: \"$oldLensName\" -> \"$newLensName\"");
+    phAppendEditLog($conn, $order_id, 'lens',
+        "lens_name: \"$oldLensLabel\" -> \"{$newLens['label']}\"; " .
+        "total_amount: Rp" . number_format($oldTotal, 0, ',', '.') . " -> Rp" . number_format($newTotal, 0, ',', '.') . " (selling price delta Rp" . number_format($delta, 0, ',', '.') . "); " .
+        "due_date: " . ($cur['order_date'] ?? '-') . " +{$days}d ({$newLens['source']}) -> " . ($newDueDate ?? '-')
+    );
 
     echo json_encode([
-        'success'   => true,
-        'changed'   => true,
-        'lens_name' => $newLensName,
-        'lens_cost' => phLensCostLookup($newLensName),
+        'success'      => true,
+        'changed'      => true,
+        'lens_name'    => $newLens['label'],
+        'lens_cost'    => $newLens['cost'],
+        'total_amount' => $newTotal,
+        'due_date'     => $newDueDate,
     ]);
     exit();
 }
@@ -509,7 +634,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_frame') {
         echo json_encode(['success' => false, 'error' => 'Invalid input']); exit();
     }
 
-    $stmt = $conn->prepare("SELECT frame_ufc FROM customer_orders WHERE id = ? LIMIT 1");
+    $stmt = $conn->prepare("SELECT frame_ufc, total_amount FROM customer_orders WHERE id = ? LIMIT 1");
     $stmt->bind_param("i", $order_id);
     $stmt->execute();
     $curOrder = $stmt->get_result()->fetch_assoc();
@@ -518,6 +643,9 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_frame') {
 
     $oldUfc      = trim($curOrder['frame_ufc'] ?? '');
     $oldIsCustom = phIsCustomFrameUfc($oldUfc);
+    $oldTotal    = (float)$curOrder['total_amount'];
+    $oldSellPrice = 0; // the customer-facing price of whatever frame is being replaced/removed
+    $newSellPrice = 0; // the customer-facing price of the new frame (0 if removed)
 
     $conn->begin_transaction();
     try {
@@ -527,15 +655,18 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_frame') {
         if ($oldUfc !== '') {
             if ($oldIsCustom) {
                 $safeOld = $conn->real_escape_string($oldUfc);
-                $oldRow  = $conn->query("SELECT id FROM custom_frames WHERE invoice_number = '$inv' AND brand_key = '$safeOld' LIMIT 1")->fetch_assoc();
+                $oldRow  = $conn->query("SELECT id, sell_price FROM custom_frames WHERE invoice_number = '$inv' AND brand_key = '$safeOld' LIMIT 1")->fetch_assoc();
                 if ($oldRow) {
+                    $oldSellPrice = (float)$oldRow['sell_price'];
+                    // Customer is no longer taking this custom frame at all — delete it outright.
                     phDeleteCustomFrameAndReclaimId($conn, $oldRow['id']);
-                    $logParts[] = "removed custom frame \"$oldUfc\" (customer no longer taking it)";
+                    $logParts[] = "removed custom frame \"$oldUfc\" (customer no longer taking it, was Rp" . number_format($oldSellPrice, 0, ',', '.') . ")";
                 }
             } else {
-                $restoredTo = phRestoreCatalogStock($conn, $oldUfc);
-                if ($restoredTo) {
-                    $logParts[] = "restored +1 stock to $restoredTo for old frame \"$oldUfc\"";
+                $restored = phRestoreCatalogStock($conn, $oldUfc);
+                if ($restored) {
+                    $oldSellPrice = $restored['sell_price'];
+                    $logParts[] = "restored +1 stock to {$restored['table']} for old frame \"$oldUfc\" (updated_at refreshed)";
                 }
             }
         }
@@ -546,21 +677,23 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_frame') {
         if ($mode === 'catalog') {
             $newUfc = trim($_POST['new_ufc'] ?? '');
             if ($newUfc === '') throw new Exception('New frame UFC is required.');
-            $deductedFrom = phDeductCatalogStock($conn, $newUfc);
-            if (!$deductedFrom) throw new Exception("Frame \"$newUfc\" not found or out of stock.");
-            $logParts[] = "deducted -1 stock from $deductedFrom for new frame \"$newUfc\"";
+            $deducted = phDeductCatalogStock($conn, $newUfc);
+            if (!$deducted) throw new Exception("Frame \"$newUfc\" not found or out of stock.");
+            $newSellPrice = $deducted['sell_price'];
+            $logParts[] = "deducted -1 stock from {$deducted['table']} for new frame \"$newUfc\" (Rp" . number_format($newSellPrice, 0, ',', '.') . ", updated_at refreshed)";
 
         } elseif ($mode === 'custom_select') {
             $brandKey = trim($_POST['brand_key'] ?? '');
             if ($brandKey === '') throw new Exception('brand_key is required.');
             $safeKey = $conn->real_escape_string($brandKey);
-            $exists  = $conn->query("SELECT id FROM custom_frames WHERE invoice_number = '$inv' AND brand_key = '$safeKey' LIMIT 1");
-            if (!$exists || $exists->num_rows === 0) throw new Exception('Saved custom frame not found for this invoice.');
+            $selRes  = $conn->query("SELECT sell_price FROM custom_frames WHERE invoice_number = '$inv' AND brand_key = '$safeKey' LIMIT 1");
+            if (!$selRes || $selRes->num_rows === 0) throw new Exception('Saved custom frame not found for this invoice.');
+            $newSellPrice = (float)$selRes->fetch_assoc()['sell_price'];
             // Only one custom frame should be flagged purchased per invoice at a time.
             $conn->query("UPDATE custom_frames SET is_purchased = 0 WHERE invoice_number = '$inv'");
             $conn->query("UPDATE custom_frames SET is_purchased = 1 WHERE invoice_number = '$inv' AND brand_key = '$safeKey'");
             $newUfc = $brandKey;
-            $logParts[] = "selected previously-saved custom frame \"$brandKey\"";
+            $logParts[] = "selected previously-saved custom frame \"$brandKey\" (Rp" . number_format($newSellPrice, 0, ',', '.') . ")";
 
         } elseif ($mode === 'custom_new') {
             $brand = trim($_POST['brand'] ?? '');
@@ -568,10 +701,10 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_frame') {
             $sellPrice = (int)($_POST['sell_price'] ?? 0);
             if ($brand === '' || $sellPrice <= 0) throw new Exception('Brand and sell price are required for a new custom frame.');
 
-            $brandKey = phBuildCustomFrameKey($brand, $size);
-            $buyPrice = getCustomFrameBuyPrice($sellPrice);
+            $brandKey  = phBuildCustomFrameKey($brand, $size);
+            $buyPrice  = getCustomFrameBuyPrice($sellPrice);
             $createdBy = $conn->real_escape_string($_SESSION['username'] ?? 'system');
-            $safeKey  = $conn->real_escape_string($brandKey);
+            $safeKey   = $conn->real_escape_string($brandKey);
 
             // Make sure no other row for this invoice is flagged purchased.
             $conn->query("UPDATE custom_frames SET is_purchased = 0 WHERE invoice_number = '$inv'");
@@ -582,26 +715,39 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_frame') {
             if (!$ins) throw new Exception($conn->error);
 
             $newUfc = $brandKey;
-            $logParts[] = "added new custom frame \"$brandKey\" (sell Rp$sellPrice)";
+            $newSellPrice = (float)$sellPrice;
+            $logParts[] = "added new custom frame \"$brandKey\" (sell Rp" . number_format($newSellPrice, 0, ',', '.') . ")";
 
         } elseif ($mode === 'remove') {
-            // Frame removed entirely, no replacement (frame_ufc becomes NULL).
+            // Frame removed entirely, no replacement (frame_ufc becomes NULL, price contribution becomes 0).
             $newUfc = null;
+            $newSellPrice = 0;
             $logParts[] = 'frame removed, no replacement selected';
         }
 
-        // ── Step 3: persist frame_ufc on the order ──────────────────
+        // ── Step 3: persist frame_ufc + adjusted total_amount ────────
+        // total_amount is adjusted by the *difference* in frame selling
+        // price (old → new), not recomputed from scratch, so any manual
+        // discount baked into the original total is preserved.
+        $delta    = $newSellPrice - $oldSellPrice;
+        $newTotal = max(0, $oldTotal + $delta);
+
         if ($newUfc === null) {
-            $conn->query("UPDATE customer_orders SET frame_ufc = NULL WHERE id = $order_id");
+            $stmt = $conn->prepare("UPDATE customer_orders SET frame_ufc = NULL, total_amount = ? WHERE id = ?");
+            $stmt->bind_param("di", $newTotal, $order_id);
         } else {
-            $safeNew = $conn->real_escape_string($newUfc);
-            $conn->query("UPDATE customer_orders SET frame_ufc = '$safeNew' WHERE id = $order_id");
+            $stmt = $conn->prepare("UPDATE customer_orders SET frame_ufc = ?, total_amount = ? WHERE id = ?");
+            $stmt->bind_param("sdi", $newUfc, $newTotal, $order_id);
         }
+        $stmt->execute();
+        $stmt->close();
 
         $conn->commit();
 
         $summary = ($oldUfc !== '' ? "old frame \"$oldUfc\"" : 'no previous frame') . ' -> '
-                 . ($newUfc !== null ? "new frame \"$newUfc\"" : 'removed') . ' | ' . implode('; ', $logParts);
+                 . ($newUfc !== null ? "new frame \"$newUfc\"" : 'removed') . ' | ' . implode('; ', $logParts)
+                 . ' | total_amount: Rp' . number_format($oldTotal, 0, ',', '.') . ' -> Rp' . number_format($newTotal, 0, ',', '.')
+                 . ' (frame price delta Rp' . number_format($delta, 0, ',', '.') . ')';
         phAppendEditLog($conn, $order_id, 'frame', $summary);
 
         // Compute fresh cost/source for the front-end to redraw the card.
@@ -627,6 +773,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_frame') {
             'frame_ufc'    => $newUfc,
             'frame_cost'   => $frameCost,
             'frame_source' => $frameSource,
+            'total_amount' => $newTotal,
         ]);
     } catch (Exception $e) {
         $conn->rollback();
@@ -841,6 +988,29 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
     $customMapEarly = [];
     $r3 = $conn->query("SELECT invoice_number, buy_price FROM custom_frames");
     if ($r3) { while ($r = $r3->fetch_assoc()) { $customMapEarly[$r['invoice_number']] = (int)$r['buy_price']; } $r3->free(); }
+
+    // ── Lens options for the Edit Order modal's lens dropdown ──────────
+    // Built from the same lense_prices.json parsed above — kept in a
+    // separate variable so nothing about the existing $lensCostMapEarly
+    // loop (used elsewhere on this page) is touched.
+    // Label format ("Category — Type", em dash, original casing) matches
+    // exactly what invoice.php writes into customer_orders.lens_name.
+    $phEoLensOptions = ['stock' => [], 'lab' => []];
+    if (!empty($ljEarly)) {
+        foreach (['stock', 'lab'] as $lt) {
+            if (!empty($ljEarly[$lt])) {
+                foreach ($ljEarly[$lt] as $cat => $types) {
+                    foreach ($types as $type => $info) {
+                        $phEoLensOptions[$lt][] = [
+                            'label'   => trim($cat) . ' — ' . trim($type),
+                            'cost'    => (int)($info['cost']    ?? 0),
+                            'selling' => (int)($info['selling'] ?? 0),
+                        ];
+                    }
+                }
+            }
+        }
+    }
 
     $totalNetProfit = 0;
     $totalCost      = 0;
@@ -1177,25 +1347,25 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
 
         /* ── Edit-order button (opens the full multi-group editor) ── */
         .ph-edit-order-btn {
-            position: absolute;
-            top: 16px;
-            right: 62px; /* sits left of the PDF button so they never overlap */
-            font-size: 0.95rem;
-            line-height: 1;
-            padding: 0;
-            background: none;
-            border: none;
-            color: #ffaa00;
-            cursor: pointer;
             display: inline-flex;
             align-items: center;
             gap: 3px;
+            margin-left: 8px;
+            vertical-align: middle;
+            font-size: 0.72rem;
+            line-height: 1;
+            padding: 3px 8px;
+            background: rgba(255,170,0,0.08);
+            border: 1px solid rgba(255,170,0,0.3);
+            border-radius: 8px;
+            color: #ffaa00;
+            cursor: pointer;
             font-family: inherit;
-            transition: transform 0.2s ease, filter 0.2s ease;
+            transition: transform 0.2s ease, filter 0.2s ease, background 0.2s ease;
         }
-        .ph-edit-order-btn b { font-weight: 900; font-size: 0.65rem; letter-spacing: 0.5px; }
-        .ph-edit-order-btn:hover { transform: scale(1.1) translateY(-1px); filter: drop-shadow(0 2px 6px rgba(255,170,0,0.5)); }
-        .ph-edit-order-btn:active { transform: scale(1.02); }
+        .ph-edit-order-btn b { font-weight: 900; font-size: 0.62rem; letter-spacing: 0.5px; }
+        .ph-edit-order-btn:hover { transform: scale(1.05); background: rgba(255,170,0,0.16); filter: drop-shadow(0 2px 6px rgba(255,170,0,0.35)); }
+        .ph-edit-order-btn:active { transform: scale(0.98); }
 
         /* ── Finished badge ──────────────────────────────────── */
         .cs-status-badge {
@@ -1691,9 +1861,27 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
             display: grid; grid-template-columns: 55px repeat(4, 1fr);
             gap: 6px; align-items: center;
         }
+        .ph-eo-rx-grid.ph-eo-rx-grid-4 { grid-template-columns: 50px repeat(4, 1fr); }
+        .ph-eo-rx-grid.ph-eo-rx-grid-6 { grid-template-columns: 40px repeat(6, 1fr); }
         .ph-eo-rx-head { font-size: 0.58rem; color: var(--text-muted); text-align: center; letter-spacing: 0.5px; }
         .ph-eo-rx-label { font-size: 0.62rem; font-weight: 800; color: #aa88ff; }
-        .ph-eo-rx-grid input.ph-modal-input { padding: 8px 6px; text-align: center; font-size: 0.75rem; }
+        .ph-eo-rx-grid input.ph-modal-input { padding: 8px 4px; text-align: center; font-size: 0.72rem; }
+
+        /* Old vs New prescription shown as two clearly separate cards */
+        .ph-eo-rx-card {
+            border-radius: 16px; padding: 14px; margin-bottom: 16px;
+            border: 1px solid rgba(255,255,255,0.08);
+            background: var(--bg-color);
+            box-shadow: inset 2px 2px 5px var(--shadow-dark), inset -2px -2px 5px var(--shadow-light);
+        }
+        .ph-eo-rx-card.old { border-color: rgba(255,255,255,0.1); }
+        .ph-eo-rx-card.new { border-color: rgba(0,255,136,0.28); background: rgba(0,255,136,0.03); }
+        .ph-eo-rx-card-title {
+            font-size: 0.66rem; font-weight: 800; letter-spacing: 0.6px; color: var(--text-main);
+            margin-bottom: 10px;
+        }
+        .ph-eo-rx-card.new .ph-eo-rx-card-title { color: #00ff88; }
+        .ph-eo-rx-card-title span { font-weight: 500; color: var(--text-muted); text-transform: none; letter-spacing: 0; margin-left: 4px; }
 
         .ph-eo-check {
             display: inline-flex; align-items: center; gap: 5px;
@@ -1702,6 +1890,39 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
             border-radius: 10px; padding: 6px 10px;
         }
         .ph-eo-check input { accent-color: #00ff88; }
+
+        /* Visual habit / digital usage — single-select toggle group */
+        .ph-eo-toggle-group { display: flex; gap: 6px; flex-wrap: wrap; }
+        .ph-eo-toggle-btn {
+            flex: 1; min-width: 80px; font-family: inherit;
+            padding: 9px 8px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.09);
+            background: var(--bg-color); color: var(--text-muted);
+            font-size: 0.62rem; font-weight: 700; letter-spacing: 0.4px; cursor: pointer;
+            box-shadow: 3px 3px 6px var(--shadow-dark), -3px -3px 6px var(--shadow-light);
+            transition: all 0.2s;
+        }
+        .ph-eo-toggle-btn.active { color: #00ff88; border-color: rgba(0,255,136,0.4); background: rgba(0,255,136,0.1); }
+
+        /* Vision need — multi-select icon buttons */
+        .ph-eo-vision-wrapper { display: flex; gap: 8px; flex-wrap: wrap; }
+        .ph-eo-vision-btn {
+            flex: 1; min-width: 88px; font-family: inherit;
+            display: flex; flex-direction: column; align-items: center; gap: 3px;
+            padding: 12px 8px; border-radius: 14px; border: 1px solid rgba(255,255,255,0.09);
+            background: var(--bg-color); color: var(--text-muted); cursor: pointer;
+            box-shadow: 3px 3px 6px var(--shadow-dark), -3px -3px 6px var(--shadow-light);
+            transition: all 0.2s; position: relative;
+        }
+        .ph-eo-vision-btn .vn-icon { font-size: 1.2rem; }
+        .ph-eo-vision-btn span { font-size: 0.6rem; font-weight: 800; letter-spacing: 0.5px; }
+        .ph-eo-vision-btn small { font-size: 0.52rem; color: var(--text-muted); font-weight: 500; }
+        .ph-eo-vision-btn .vn-led {
+            width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,0.15);
+            position: absolute; top: 8px; right: 8px;
+        }
+        .ph-eo-vision-btn.active { border-color: rgba(0,255,136,0.4); background: rgba(0,255,136,0.08); color: #00ff88; }
+        .ph-eo-vision-btn.active small { color: #00ff88; opacity: 0.8; }
+        .ph-eo-vision-btn.active .vn-led { background: #00ff88; box-shadow: 0 0 6px #00ff88; }
 
         .ph-eo-note {
             font-size: 0.68rem; color: var(--text-muted); line-height: 1.5;
@@ -1726,6 +1947,32 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
             background: var(--bg-color); cursor: pointer; font-size: 0.72rem;
         }
         .ph-eo-custom-item.selected { border-color: rgba(0,255,136,0.4); background: rgba(0,255,136,0.06); }
+
+        /* Info tooltip icon — hover on desktop, tap/long-press on mobile (toggled via JS) */
+        .ph-eo-info-wrap { display: inline-flex; align-items: center; gap: 4px; position: relative; }
+        .ph-eo-info {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 16px; height: 16px; border-radius: 50%;
+            font-size: 0.65rem; color: var(--text-muted);
+            border: 1px solid rgba(255,255,255,0.15); cursor: help; flex-shrink: 0;
+            position: relative;
+        }
+        .ph-eo-info::after {
+            content: attr(data-tooltip);
+            position: absolute; bottom: 130%; left: 50%; transform: translateX(-50%);
+            width: 220px; max-width: 60vw; padding: 8px 10px; border-radius: 10px;
+            background: #14161a; border: 1px solid rgba(255,255,255,0.12);
+            color: var(--text-main); font-size: 0.62rem; line-height: 1.5; font-weight: 400;
+            text-align: left; letter-spacing: 0; text-transform: none;
+            box-shadow: 0 6px 18px rgba(0,0,0,0.4);
+            opacity: 0; pointer-events: none; transition: opacity 0.15s ease;
+            z-index: 20;
+        }
+        .ph-eo-info:hover::after,
+        .ph-eo-info.show::after { opacity: 1; }
+
+        /* Frame camera scanner (mirrors invoice.php's scan viewfinder) */
+        @keyframes eo-fbs-slide { 0% { top: 10%; } 100% { top: 90%; } }
     </style>
     <!-- button logout, back animation for logo -->
     <style>
@@ -2199,6 +2446,10 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
                 <div class="cs-patient-info">
                     <div class="cs-patient-name">
                         <?php echo htmlspecialchars($name); ?> <?php echo $genderIcon; ?>
+                        <button type="button" class="ph-edit-order-btn" title="Edit this order (customer, exam, prescription, lens, frame)"
+                                onclick="event.stopPropagation(); phOpenEditOrderModal(<?php echo (int)$o['id']; ?>, '<?php echo htmlspecialchars($o['invoice_number'] ?? '', ENT_QUOTES); ?>');">
+                                ✏️<b>EDIT</b>
+                        </button>
                     </div>
                     <div class="cs-meta-row">
                         <span class="cs-chip inv">INV: <?php echo htmlspecialchars($o['invoice_number'] ?? '—'); ?></span>
@@ -2213,10 +2464,6 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
                 <button type="button" class="cs-pdf-btn" title="View symptom analysis PDF"
                         onclick="event.stopPropagation(); window.open('pdf_file/<?php echo rawurlencode($pdfFileName); ?>', '_blank');">📕<b>PDF</b></button>
                 <?php endif; ?>
-                <button type="button" class="ph-edit-order-btn" title="Edit this order (customer, exam, prescription, lens, frame)"
-                        onclick="event.stopPropagation(); phOpenEditOrderModal(<?php echo (int)$o['id']; ?>, '<?php echo htmlspecialchars($o['invoice_number'] ?? '', ENT_QUOTES); ?>');">
-                        ✏️<b>EDIT</b>
-                </button>
                 <div style="display:flex;align-items:center;gap:10px;flex-shrink:0;">
                     <div style="text-align:right;">
                         <div class="ph-header-total" style="font-size:0.72rem;font-weight:800;color:#ffaa00;font-family:monospace;">
@@ -2430,6 +2677,9 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
         </div>
     </div>
 
+    <!-- Lens options for the Edit Order modal's Lens tab dropdown, built server-side from data_json/lense_prices.json -->
+    <script>var PH_EO_LENS_OPTIONS = <?php echo json_encode($phEoLensOptions, JSON_UNESCAPED_UNICODE); ?>;</script>
+
     <!-- ══════════════════════════════════════════════════════════════
          EDIT ORDER MODAL — password gate + tabbed group editor
          ══════════════════════════════════════════════════════════════ -->
@@ -2508,38 +2758,77 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
 
                     <!-- ── Group: Exam Results ──────────────────────── -->
                     <div class="ph-eo-group" data-group="exam">
-                        <div class="ph-eo-rx-grid">
-                            <div></div><div class="ph-eo-rx-head">SPH</div><div class="ph-eo-rx-head">CYL</div><div class="ph-eo-rx-head">AX</div><div class="ph-eo-rx-head">ADD</div>
 
-                            <div class="ph-eo-rx-label">OLD R</div>
-                            <input class="ph-modal-input" id="eo-e-old_r_sph"><input class="ph-modal-input" id="eo-e-old_r_cyl"><input class="ph-modal-input" id="eo-e-old_r_ax"><input class="ph-modal-input" id="eo-e-old_r_add">
-                            <div class="ph-eo-rx-label">OLD L</div>
-                            <input class="ph-modal-input" id="eo-e-old_l_sph"><input class="ph-modal-input" id="eo-e-old_l_cyl"><input class="ph-modal-input" id="eo-e-old_l_ax"><input class="ph-modal-input" id="eo-e-old_l_add">
-
-                            <div class="ph-eo-rx-label">NEW R</div>
-                            <input class="ph-modal-input" id="eo-e-new_r_sph"><input class="ph-modal-input" id="eo-e-new_r_cyl"><input class="ph-modal-input" id="eo-e-new_r_ax"><input class="ph-modal-input" id="eo-e-new_r_add">
-                            <div class="ph-eo-rx-label">NEW L</div>
-                            <input class="ph-modal-input" id="eo-e-new_l_sph"><input class="ph-modal-input" id="eo-e-new_l_cyl"><input class="ph-modal-input" id="eo-e-new_l_ax"><input class="ph-modal-input" id="eo-e-new_l_add">
-                        </div>
-                        <div class="ph-modal-field" style="display:flex;gap:10px;margin-top:12px;">
-                            <div style="flex:1;"><label>Visus R (new)</label><input class="ph-modal-input" id="eo-e-new_r_visus"></div>
-                            <div style="flex:1;"><label>Visus L (new)</label><input class="ph-modal-input" id="eo-e-new_l_visus"></div>
-                        </div>
-                        <div class="ph-modal-field" style="display:flex;gap:10px;">
-                            <div style="flex:1;"><label>UCVA R</label><input class="ph-modal-input" id="eo-e-ucva_r"></div>
-                            <div style="flex:1;"><label>UCVA L</label><input class="ph-modal-input" id="eo-e-ucva_l"></div>
-                            <div style="flex:1;"><label>PD Distance</label><input class="ph-modal-input" id="eo-e-pd_dist"></div>
-                        </div>
-                        <div class="ph-modal-field">
-                            <label>Habits &amp; Needs</label>
-                            <div style="display:flex;gap:8px;flex-wrap:wrap;">
-                                <label class="ph-eo-check"><input type="checkbox" id="eo-e-visual_habit"> Visual Habit</label>
-                                <label class="ph-eo-check"><input type="checkbox" id="eo-e-digital_usage"> Digital Usage</label>
-                                <label class="ph-eo-check"><input type="checkbox" id="eo-e-need_distance"> Need Distance</label>
-                                <label class="ph-eo-check"><input type="checkbox" id="eo-e-need_intermediate"> Need Intermediate</label>
-                                <label class="ph-eo-check"><input type="checkbox" id="eo-e-need_near"> Need Near</label>
+                        <!-- ── OLD PRESCRIPTION (previous glasses) ─────── -->
+                        <div class="ph-eo-rx-card old">
+                            <div class="ph-eo-rx-card-title">🕶 OLD PRESCRIPTION <span>(previous glasses)</span></div>
+                            <div class="ph-eo-rx-grid ph-eo-rx-grid-4">
+                                <div></div><div class="ph-eo-rx-head">SPH</div><div class="ph-eo-rx-head">CYL</div><div class="ph-eo-rx-head">AXIS</div><div class="ph-eo-rx-head">ADD</div>
+                                <div class="ph-eo-rx-label">R</div>
+                                <input class="ph-modal-input" id="eo-e-old_r_sph"><input class="ph-modal-input" id="eo-e-old_r_cyl"><input class="ph-modal-input" id="eo-e-old_r_ax"><input class="ph-modal-input" id="eo-e-old_r_add">
+                                <div class="ph-eo-rx-label">L</div>
+                                <input class="ph-modal-input" id="eo-e-old_l_sph"><input class="ph-modal-input" id="eo-e-old_l_cyl"><input class="ph-modal-input" id="eo-e-old_l_ax"><input class="ph-modal-input" id="eo-e-old_l_add">
                             </div>
                         </div>
+
+                        <!-- ── NEW PRESCRIPTION (current exam result) ──── -->
+                        <!-- VISUS and UCVA are merged into this table (per request) instead of standing alone. -->
+                        <div class="ph-eo-rx-card new">
+                            <div class="ph-eo-rx-card-title">✨ NEW PRESCRIPTION <span>(current exam result)</span></div>
+                            <div class="ph-eo-rx-grid ph-eo-rx-grid-6">
+                                <div></div><div class="ph-eo-rx-head">SPH</div><div class="ph-eo-rx-head">CYL</div><div class="ph-eo-rx-head">AXIS</div><div class="ph-eo-rx-head">ADD</div><div class="ph-eo-rx-head">VISUS</div><div class="ph-eo-rx-head">UCVA</div>
+                                <div class="ph-eo-rx-label">R</div>
+                                <input class="ph-modal-input" id="eo-e-new_r_sph"><input class="ph-modal-input" id="eo-e-new_r_cyl"><input class="ph-modal-input" id="eo-e-new_r_ax"><input class="ph-modal-input" id="eo-e-new_r_add"><input class="ph-modal-input" id="eo-e-new_r_visus"><input class="ph-modal-input" id="eo-e-ucva_r">
+                                <div class="ph-eo-rx-label">L</div>
+                                <input class="ph-modal-input" id="eo-e-new_l_sph"><input class="ph-modal-input" id="eo-e-new_l_cyl"><input class="ph-modal-input" id="eo-e-new_l_ax"><input class="ph-modal-input" id="eo-e-new_l_add"><input class="ph-modal-input" id="eo-e-new_l_visus"><input class="ph-modal-input" id="eo-e-ucva_l">
+                            </div>
+                            <div class="ph-modal-field" style="max-width:180px;margin:12px auto 0;">
+                                <label style="text-align:center;">PD Distance</label>
+                                <input class="ph-modal-input" id="eo-e-pd_dist" style="text-align:center;">
+                            </div>
+                        </div>
+
+                        <!-- ── Visual Habit ─────────────────────────────── -->
+                        <div class="ph-modal-field">
+                            <label>Visual Habit</label>
+                            <input type="hidden" id="eo-e-visual_habit" value="1">
+                            <div class="ph-eo-toggle-group" data-target="eo-e-visual_habit">
+                                <button type="button" class="ph-eo-toggle-btn active" data-value="1">INDOOR</button>
+                                <button type="button" class="ph-eo-toggle-btn" data-value="2">OUTDOOR</button>
+                                <button type="button" class="ph-eo-toggle-btn" data-value="3">BOTH</button>
+                            </div>
+                        </div>
+
+                        <!-- ── Digital Usage ─────────────────────────────── -->
+                        <div class="ph-modal-field">
+                            <label>Digital Device Usage</label>
+                            <input type="hidden" id="eo-e-digital_usage" value="1">
+                            <div class="ph-eo-toggle-group" data-target="eo-e-digital_usage">
+                                <button type="button" class="ph-eo-toggle-btn active" data-value="1">LOW (&lt; 2H)</button>
+                                <button type="button" class="ph-eo-toggle-btn" data-value="2">MODERATE (2-5H)</button>
+                                <button type="button" class="ph-eo-toggle-btn" data-value="3">HIGH (&gt; 5H)</button>
+                            </div>
+                        </div>
+
+                        <!-- ── Vision Need (multi-select) ───────────────── -->
+                        <div class="ph-modal-field">
+                            <label>⚑ Vision Need <span style="text-transform:none;font-weight:400;">(multiple selection allowed)</span></label>
+                            <input type="checkbox" id="eo-e-need_distance"     style="display:none;">
+                            <input type="checkbox" id="eo-e-need_intermediate" style="display:none;">
+                            <input type="checkbox" id="eo-e-need_near"         style="display:none;">
+                            <div class="ph-eo-vision-wrapper">
+                                <button type="button" class="ph-eo-vision-btn" data-target="eo-e-need_distance">
+                                    <div class="vn-icon">🔭</div><span>DISTANCE</span><small>Far Vision</small><div class="vn-led"></div>
+                                </button>
+                                <button type="button" class="ph-eo-vision-btn" data-target="eo-e-need_intermediate">
+                                    <div class="vn-icon">🖥️</div><span>INTERMEDIATE</span><small>Mid Range</small><div class="vn-led"></div>
+                                </button>
+                                <button type="button" class="ph-eo-vision-btn" data-target="eo-e-need_near">
+                                    <div class="vn-icon">📖</div><span>NEAR</span><small>Reading/Close-up</small><div class="vn-led"></div>
+                                </button>
+                            </div>
+                        </div>
+
                         <div class="ph-modal-actions">
                             <button class="ph-modal-btn confirm" onclick="phEoSaveExam()">Save Exam Results</button>
                         </div>
@@ -2551,12 +2840,23 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
                         <div id="eo-p-lastmod" class="ph-eo-note" style="display:none;"></div>
 
                         <div class="ph-modal-actions" style="margin-top:6px;">
-                            <button class="ph-modal-btn cancel" onclick="phEoPrescriptionSimple('revert')">↩ Revert to Original Rx</button>
-                            <button class="ph-modal-btn confirm" onclick="phEoPrescriptionSimple('reapply')">↪ Re-apply Last Modification</button>
+                            <span class="ph-eo-info-wrap">
+                                <button class="ph-modal-btn cancel" id="eo-p-revert-btn" onclick="phEoPrescriptionSimple('revert')">↩ Revert to Original Rx</button>
+                                <span class="ph-eo-info" data-tooltip="Switches the customer back to the ORIGINAL (unmodified) prescription. The modification already on record is kept as history, not deleted.">ⓘ</span>
+                            </span>
+                            <span class="ph-eo-info-wrap">
+                                <button class="ph-modal-btn confirm" id="eo-p-reapply-btn" onclick="phEoPrescriptionSimple('reapply')">↪ Re-apply Last Modification</button>
+                                <span class="ph-eo-info" data-tooltip="Turns the last recorded modification back ON without retyping it. Only shown while the original Rx is currently active and a previous modification exists.">ⓘ</span>
+                            </span>
+                        </div>
+                        <div class="ph-eo-note" style="margin-top:10px;">
+                            <b>Revert</b> switches the customer back to their original Rx — the modification already on record is kept as history, not deleted.
+                            <b>Re-apply</b> only appears after a revert, to quickly restore that same last-recorded modification without retyping it.
                         </div>
 
                         <div style="margin:18px 0 8px;font-size:0.65rem;color:var(--text-muted);letter-spacing:0.6px;text-transform:uppercase;">Or record a brand-new modification</div>
-                        <div class="ph-eo-rx-grid" style="grid-template-columns:60px repeat(4,1fr);">
+                        <div class="ph-eo-note" id="eo-p-prefill-note">Fields below are pre-filled with the prescription the customer is currently using — edit whichever values changed.</div>
+                        <div class="ph-eo-rx-grid ph-eo-rx-grid-4">
                             <div></div><div class="ph-eo-rx-head">SPH</div><div class="ph-eo-rx-head">CYL</div><div class="ph-eo-rx-head">AXIS</div><div class="ph-eo-rx-head">ADD</div>
                             <div class="ph-eo-rx-label">OD</div>
                             <input class="ph-modal-input" id="eo-p-od_sph"><input class="ph-modal-input" id="eo-p-od_cyl"><input class="ph-modal-input" id="eo-p-od_axis"><input class="ph-modal-input" id="eo-p-od_add">
@@ -2571,8 +2871,9 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
                     <!-- ── Group: Lens ──────────────────────────────── -->
                     <div class="ph-eo-group" data-group="lens">
                         <div class="ph-modal-field">
-                            <label>Lens Name (format: CATEGORY / TYPE)</label>
-                            <input type="text" class="ph-modal-input" id="eo-l-name" placeholder="e.g. STOCK / SINGLE VISION">
+                            <label>Lens</label>
+                            <select class="ph-modal-input" id="eo-l-name"></select>
+                            <div class="ph-modal-preview" id="eo-l-preview"></div>
                         </div>
                         <div class="ph-modal-actions">
                             <button class="ph-modal-btn confirm" onclick="phEoSaveLens()">Save Lens</button>
@@ -2590,17 +2891,38 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
                             <button type="button" class="ph-eo-subtab" data-fmode="remove">Remove Frame</button>
                         </div>
 
-                        <!-- Catalog / scan -->
+                        <!-- Catalog / camera + manual scan (same jsQR approach as invoice.php) -->
                         <div class="ph-eo-fpanel active" data-fmode="catalog">
-                            <div class="ph-modal-field">
-                                <label>Frame UFC (scan barcode or type manually)</label>
-                                <input type="text" class="ph-modal-input" id="eo-f-ufc" placeholder="Scan or type UFC code" autocomplete="off">
-                                <div class="ph-modal-preview" id="eo-f-ufc-preview"></div>
+
+                            <div id="eo-fbs-viewfinder" style="display:none;margin-top:6px;">
+                                <div style="position:relative;width:100%;max-width:280px;height:200px;margin:0 auto;border-radius:16px;overflow:hidden;background:#000;box-sizing:border-box;">
+                                    <video id="eo-fbs-video" autoplay muted playsinline style="width:100%;height:100%;object-fit:cover;"></video>
+                                    <div id="eo-fbs-scanline" style="position:absolute;left:10%;width:80%;height:2px;background:rgba(0,255,136,0.7);box-shadow:0 0 8px rgba(0,255,136,0.6);top:50%;animation:eo-fbs-slide 2s linear infinite;pointer-events:none;"></div>
+                                    <div id="eo-fbs-cam-status" style="position:absolute;bottom:10px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.65);color:#00ff88;font-size:9px;padding:3px 10px;border-radius:20px;letter-spacing:1px;white-space:nowrap;">&#9679; SCANNING…</div>
+                                    <canvas id="eo-fbs-canvas" style="display:none;"></canvas>
+                                </div>
                             </div>
+
+                            <div class="ph-modal-field" style="margin-top:10px;">
+                                <label>Frame UFC (scan with camera or type manually)</label>
+                                <input type="text" class="ph-modal-input" id="eo-f-ufc" placeholder="Scan or type UFC code" autocomplete="off" oninput="this.value=this.value.toUpperCase()">
+                            </div>
+
+                            <div class="ph-modal-actions" style="margin-top:0;">
+                                <button type="button" class="ph-modal-btn cancel" id="eo-fbs-start-btn" onclick="eoFbsStartCamera()">📷 Start Scanner</button>
+                                <button type="button" class="ph-modal-btn cancel" id="eo-fbs-stop-btn" style="display:none;" onclick="eoFbsStopCamera()">⏹ Stop Scanner</button>
+                                <button type="button" class="ph-modal-btn confirm" onclick="eoFbsLookupManual()">🔍 Look Up</button>
+                            </div>
+
+                            <div class="ph-modal-preview" id="eo-f-ufc-preview"></div>
                         </div>
 
                         <!-- Existing saved custom frames for this invoice -->
                         <div class="ph-eo-fpanel" data-fmode="custom_select">
+                            <div class="ph-eo-note">
+                                These are custom frames already saved against this invoice (e.g. from earlier options the customer tried).
+                                Picking one just marks it as the active choice — it does not create a duplicate row.
+                            </div>
                             <div id="eo-f-custom-list" style="display:flex;flex-direction:column;gap:8px;"></div>
                         </div>
 
@@ -2613,7 +2935,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
 
                         <!-- Remove -->
                         <div class="ph-eo-fpanel" data-fmode="remove">
-                            <div class="ph-eo-note">This will remove the frame from the order. Any custom frame will be deleted; catalog stock will be restored. No replacement frame will be assigned.</div>
+                            <div class="ph-eo-note">This will remove the frame from the order. Any custom frame will be deleted (and its ID reclaimed if it was the highest ID); catalog stock will be restored. No replacement frame will be assigned.</div>
                         </div>
 
                         <div class="ph-modal-actions">
@@ -3403,7 +3725,10 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
     </script>
     <!-- ══════════════════════════════════════════════════════════════
          EDIT ORDER MODAL — client logic
+         Frame tab camera scan reuses the same jsQR library + frame_lookup.php
+         endpoint that invoice.php's frame scanner already uses.
          ══════════════════════════════════════════════════════════════ -->
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
     <script>
         // ── State ─────────────────────────────────────────────────────────
         var _phEo = {
@@ -3411,7 +3736,8 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
             invoice: null,
             card: null,        // reference to the .cs-card DOM node being edited
             details: null,     // last fetched edit_get_details payload
-            frameMode: 'catalog'
+            frameMode: 'catalog',
+            hasChanges: false  // true once any group has been saved successfully
         };
 
         function phEoShowMsg(text, isError) {
@@ -3425,24 +3751,55 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
             _phEo.orderId = orderId;
             _phEo.invoice = invoiceNumber;
             _phEo.card    = document.querySelector('.cs-card[data-id="' + orderId + '"]');
+            _phEo.hasChanges = false;
 
             document.getElementById('ph-eo-overlay').classList.add('open');
             document.getElementById('ph-eo-gate-error').textContent = '';
             document.getElementById('ph-eo-gate-password').value = '';
             phEoShowMsg('');
 
-            // Try loading details straight away — if the session is still
-            // unlocked from a previous edit, this skips the password gate.
-            document.getElementById('ph-eo-gate').style.display = 'none';
-            document.getElementById('ph-eo-editor').style.display = 'block';
-            document.getElementById('ph-eo-loading').style.display = 'block';
-            document.getElementById('ph-eo-body').style.display = 'none';
-            phEoLoadDetails(true);
+            // Every single open of the editor requires the admin password
+            // again — there is no silent bypass, even right after a previous
+            // successful edit in the same browser session.
+            document.getElementById('ph-eo-gate').style.display = 'block';
+            document.getElementById('ph-eo-editor').style.display = 'none';
         }
 
         function phCloseEditOrderModal() {
             document.getElementById('ph-eo-overlay').classList.remove('open');
+            if (_phEo.frameStreamStop) _phEo.frameStreamStop(); // stop the camera if it was left running
+
+            // Invalidate the server-side unlock immediately, so the next time
+            // the editor is opened (even for the same order) it must verify
+            // the admin password again.
+            var fd = new FormData();
+            fd.append('action', 'edit_lock_access');
+            fetch('purchase_history.php', { method: 'POST', body: fd })
+                .catch(function() {})
+                .then(function() {
+                    // If anything was actually saved, refresh the page so every
+                    // card reflects the new data instead of relying on partial
+                    // DOM patching.
+                    if (_phEo.hasChanges) location.reload();
+                });
         }
+
+        document.getElementById('ph-eo-overlay').addEventListener('click', function(e) {
+            if (e.target === this) phCloseEditOrderModal();
+        });
+
+        // Every text/number/textarea field in the editor: select all existing
+        // text on focus, so typing immediately replaces the old value instead
+        // of the user having to manually clear it first.
+        document.getElementById('ph-eo-editor').addEventListener('focusin', function(e) {
+            var t = e.target;
+            if (!t) return;
+            var tag = t.tagName;
+            var type = (t.getAttribute('type') || '').toLowerCase();
+            if (tag === 'TEXTAREA' || (tag === 'INPUT' && ['text', 'number', 'password'].indexOf(type) !== -1)) {
+                t.select();
+            }
+        });
 
         // ── Step 1: password gate ───────────────────────────────────────
         function phEoVerifyAccess() {
@@ -3541,14 +3898,35 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
                 var el = document.getElementById('eo-e-' + f);
                 if (el) el.value = exam[f] || '';
             });
-            ['visual_habit','digital_usage','need_distance','need_intermediate','need_near'].forEach(function(f) {
-                var el = document.getElementById('eo-e-' + f);
-                if (el) el.checked = String(exam[f]) === '1';
+
+            // Visual habit / digital usage — single-select toggle groups (values 1/2/3)
+            ['eo-e-visual_habit', 'eo-e-digital_usage'].forEach(function(hiddenId) {
+                var field = hiddenId.replace('eo-e-', '');
+                var val = String(exam[field] || '1');
+                var hidden = document.getElementById(hiddenId);
+                if (hidden) hidden.value = val;
+                var group = document.querySelector('.ph-eo-toggle-group[data-target="' + hiddenId + '"]');
+                if (group) {
+                    group.querySelectorAll('.ph-eo-toggle-btn').forEach(function(btn) {
+                        btn.classList.toggle('active', btn.getAttribute('data-value') === val);
+                    });
+                }
+            });
+
+            // Vision need — multi-select icon buttons (0/1 each)
+            ['eo-e-need_distance', 'eo-e-need_intermediate', 'eo-e-need_near'].forEach(function(chkId) {
+                var field = chkId.replace('eo-e-', '');
+                var isOn = String(exam[field]) === '1';
+                var chk = document.getElementById(chkId);
+                if (chk) chk.checked = isOn;
+                var btn = document.querySelector('.ph-eo-vision-btn[data-target="' + chkId + '"]');
+                if (btn) btn.classList.toggle('active', isOn);
             });
 
             // Prescription group
             var statusEl = document.getElementById('eo-p-status');
-            statusEl.textContent = 'Current status: ' + (String(exam.lens_modification) === '1' ? 'MODIFIED prescription is active' : 'ORIGINAL prescription is active');
+            var isModified = String(exam.lens_modification) === '1';
+            statusEl.textContent = 'Current status: ' + (isModified ? 'MODIFIED prescription is active' : 'ORIGINAL prescription is active');
             var lastModEl = document.getElementById('eo-p-lastmod');
             if (data.last_mod) {
                 var m = data.last_mod;
@@ -3559,13 +3937,37 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
             } else {
                 lastModEl.style.display = 'none';
             }
+            // Revert only makes sense if a modification is currently active;
+            // Re-apply only makes sense if it's currently reverted but a
+            // previous modification exists to bring back.
+            var revertBtn  = document.getElementById('eo-p-revert-btn');
+            var reapplyBtn = document.getElementById('eo-p-reapply-btn');
+            if (revertBtn)  revertBtn.style.display  = isModified ? 'inline-flex' : 'none';
+            if (reapplyBtn) reapplyBtn.style.display  = (!isModified && data.last_mod) ? 'inline-flex' : 'none';
+
+            // Pre-fill the "new modification" mini-form with whichever Rx the
+            // customer is currently actually using (see active_rx from the server).
+            var activeRx = data.active_rx || {};
             ['od_sph','od_cyl','od_axis','od_add','os_sph','os_cyl','os_axis','os_add'].forEach(function(f) {
                 var el = document.getElementById('eo-p-' + f);
-                if (el) el.value = '';
+                if (el) el.value = activeRx[f] || '';
             });
 
             // Lens group
-            document.getElementById('eo-l-name').value = order.lens_name || '';
+            phEoBuildLensOptions();
+            var lensSelect = document.getElementById('eo-l-name');
+            lensSelect.value = order.lens_name || '';
+            // If the saved lens_name isn't one of the current JSON options
+            // (e.g. it was renamed/removed in lense_prices.json), add it as
+            // a one-off option so the actual saved value is still visible.
+            if (order.lens_name && lensSelect.value !== order.lens_name) {
+                var opt = document.createElement('option');
+                opt.value = order.lens_name;
+                opt.textContent = order.lens_name + ' (not in current price list)';
+                lensSelect.appendChild(opt);
+                lensSelect.value = order.lens_name;
+            }
+            phEoUpdateLensPreview();
 
             // Frame group
             var curUfc = order.frame_ufc || '';
@@ -3633,12 +4035,58 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
             var mode = btn.getAttribute('data-fmode');
             _phEo.frameMode = mode;
             document.querySelectorAll('.ph-eo-fpanel').forEach(function(p) { p.classList.toggle('active', p.getAttribute('data-fmode') === mode); });
+            if (mode !== 'catalog' && _phEo.frameStreamStop) _phEo.frameStreamStop(); // leaving the scan panel stops the camera
         });
 
-        // Pressing Enter in the UFC field behaves like a barcode-scanner "scan"
-        // (most USB/Bluetooth barcode scanners type the code then send Enter).
+        // ── Info tooltip icons — tap to toggle (mobile), long-press also works ─
+        // Hover is handled purely by CSS; this covers touch devices where
+        // there's no hover state.
+        (function () {
+            var pressTimer = null;
+            document.getElementById('ph-eo-editor').addEventListener('click', function (e) {
+                var icon = e.target.closest('.ph-eo-info');
+                document.querySelectorAll('.ph-eo-info.show').forEach(function (el) {
+                    if (el !== icon) el.classList.remove('show');
+                });
+                if (icon) icon.classList.toggle('show');
+            });
+            document.getElementById('ph-eo-editor').addEventListener('touchstart', function (e) {
+                var icon = e.target.closest('.ph-eo-info');
+                if (!icon) return;
+                pressTimer = setTimeout(function () { icon.classList.add('show'); }, 450);
+            }, { passive: true });
+            document.getElementById('ph-eo-editor').addEventListener('touchend', function () {
+                clearTimeout(pressTimer);
+            });
+        }());
+
+        // ── Visual habit / digital usage — single-select toggle group ─────
+        document.querySelectorAll('.ph-eo-toggle-group').forEach(function(group) {
+            group.addEventListener('click', function(e) {
+                var btn = e.target.closest('.ph-eo-toggle-btn');
+                if (!btn) return;
+                group.querySelectorAll('.ph-eo-toggle-btn').forEach(function(b) { b.classList.remove('active'); });
+                btn.classList.add('active');
+                var hidden = document.getElementById(group.getAttribute('data-target'));
+                if (hidden) hidden.value = btn.getAttribute('data-value');
+            });
+        });
+
+        // ── Vision need — multi-select icon buttons ────────────────────────
+        document.querySelectorAll('.ph-eo-vision-btn').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                var chk = document.getElementById(btn.getAttribute('data-target'));
+                if (!chk) return;
+                chk.checked = !chk.checked;
+                btn.classList.toggle('active', chk.checked);
+            });
+        });
+
+        // Pressing Enter in the UFC field looks the frame up (same as the
+        // "Look Up" button) rather than saving immediately, so the details
+        // can be reviewed first.
         document.getElementById('eo-f-ufc').addEventListener('keydown', function(e) {
-            if (e.key === 'Enter') { e.preventDefault(); phEoSaveFrame(); }
+            if (e.key === 'Enter') { e.preventDefault(); eoFbsLookupManual(); }
         });
 
         // ── Generic small helper to POST a group action ────────────────────
@@ -3654,6 +4102,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
                 .then(function(r) { return r.json(); })
                 .then(function(data) {
                     if (data.success) {
+                        if (data.changed !== false) _phEo.hasChanges = true; // some endpoints don't send `changed`; treat as changed
                         phEoShowMsg('✅ Saved.');
                         phShowToast('✅ Order updated');
                         if (onSuccess) onSuccess(data);
@@ -3705,8 +4154,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
         // ── Group: Prescription (revert / reapply / new) ───────────────
         function phEoPrescriptionSimple(mode) {
             phEoPost('edit_group_prescription', { mode: mode }, function(data) {
-                var statusEl = document.getElementById('eo-p-status');
-                statusEl.textContent = 'Current status: ' + (String(data.lens_modification) === '1' ? 'MODIFIED prescription is active' : 'ORIGINAL prescription is active');
+                phEoLoadDetails(false); // refresh status text, revert/reapply buttons, and the prefill form
             });
         }
 
@@ -3717,30 +4165,192 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
                 if (el) fields[f] = el.value;
             });
             phEoPost('edit_group_prescription', fields, function(data) {
-                var statusEl = document.getElementById('eo-p-status');
-                statusEl.textContent = 'Current status: ' + (String(data.lens_modification) === '1' ? 'MODIFIED prescription is active' : 'ORIGINAL prescription is active');
+                phEoLoadDetails(false); // refresh status text, revert/reapply buttons, and the prefill form
             });
         }
 
         // ── Group: Lens ──────────────────────────────────────────────────
+
+        // Build the <optgroup>-grouped lens dropdown once from PH_EO_LENS_OPTIONS
+        // (parsed server-side from data_json/lense_prices.json).
+        var _phEoLensBuilt = false;
+        function phEoBuildLensOptions() {
+            if (_phEoLensBuilt) return;
+            var select = document.getElementById('eo-l-name');
+            select.innerHTML = '<option value="">— Select a lens —</option>';
+
+            var groupLabels = { stock: 'STOCK LENS', lab: 'LAB / ORDER LENS' };
+            ['stock', 'lab'].forEach(function(lt) {
+                var items = (PH_EO_LENS_OPTIONS && PH_EO_LENS_OPTIONS[lt]) || [];
+                if (!items.length) return;
+                var optgroup = document.createElement('optgroup');
+                optgroup.label = groupLabels[lt];
+                items.forEach(function(item) {
+                    var opt = document.createElement('option');
+                    opt.value = item.label;
+                    opt.textContent = item.label;
+                    opt.setAttribute('data-cost', item.cost);
+                    opt.setAttribute('data-selling', item.selling);
+                    optgroup.appendChild(opt);
+                });
+                select.appendChild(optgroup);
+            });
+            _phEoLensBuilt = true;
+        }
+
+        function phEoUpdateLensPreview() {
+            var select  = document.getElementById('eo-l-name');
+            var preview = document.getElementById('eo-l-preview');
+            var opt = select.options[select.selectedIndex];
+            if (!opt || !opt.value) { preview.textContent = ''; return; }
+            var selling = opt.getAttribute('data-selling');
+            preview.textContent = (selling !== null && selling !== '')
+                ? 'Selling price: Rp ' + Number(selling).toLocaleString('id-ID') + ' (this will adjust the order total by the price difference)'
+                : '';
+        }
+        document.getElementById('eo-l-name').addEventListener('change', phEoUpdateLensPreview);
+
         function phEoSaveLens() {
             var newName = document.getElementById('eo-l-name').value;
+            if (!newName) { phEoShowMsg('Please select a lens.', true); return; }
             phEoPost('edit_group_lens', { lens_name: newName }, function(data) {
                 if (!_phEo.card || !data.changed) return;
                 _phEo.card.setAttribute('data-lens', (data.lens_name || '').toLowerCase());
                 _phEo.card.setAttribute('data-lens-cost', data.lens_cost || 0);
-                var lensDisplay = _phEo.card.querySelector('.cs-detail-value'); // fallback, refined below
                 var items = _phEo.card.querySelectorAll('.cs-detail-item');
                 items.forEach(function(item) {
                     var label = item.querySelector('.cs-detail-label');
-                    if (label && label.textContent.indexOf('Lens') === 0) {
+                    if (!label) return;
+                    if (label.textContent.indexOf('Lens') === 0) {
                         var val = item.querySelector('.cs-detail-value');
                         if (val) val.textContent = data.lens_name;
                     }
+                    if (label.textContent.indexOf('Due') === 0) {
+                        var val2 = item.querySelector('.cs-detail-value');
+                        if (val2) val2.textContent = data.due_date || '—';
+                    }
                 });
+                if (data.total_amount !== undefined) {
+                    _phEo.card.setAttribute('data-total', data.total_amount);
+                    var headerTotal = _phEo.card.querySelector('.ph-header-total');
+                    if (headerTotal) headerTotal.textContent = 'Rp ' + Number(data.total_amount).toLocaleString('id-ID');
+                }
                 if (typeof phUpdateNetProfit === 'function') phUpdateNetProfit(_phEo.card);
             });
         }
+
+        // ── Group: Frame — camera scanner ─────────────────────────────────
+        // Same approach as invoice.php's frame scanner: jsQR decodes the
+        // camera feed, frame_lookup.php resolves the UFC against
+        // frames_main / frame_staging.
+        (function () {
+            var eoFbsStream   = null;
+            var eoFbsRafId    = null;
+            var eoFbsLocked   = false;
+            var eoFbsCtx      = null;
+            var eoFbsLastScan = 0;
+            var EO_FBS_THROTTLE = 300;
+
+            var video    = document.getElementById('eo-fbs-video');
+            var canvas   = document.getElementById('eo-fbs-canvas');
+            var viewfinder = document.getElementById('eo-fbs-viewfinder');
+            var camStatus  = document.getElementById('eo-fbs-cam-status');
+            var startBtn   = document.getElementById('eo-fbs-start-btn');
+            var stopBtn    = document.getElementById('eo-fbs-stop-btn');
+            var preview    = document.getElementById('eo-f-ufc-preview');
+            var ufcInput   = document.getElementById('eo-f-ufc');
+
+            window.eoFbsStartCamera = function () {
+                if (eoFbsStream) return;
+                viewfinder.style.display = 'block';
+                eoFbsLocked = false;
+
+                navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } } })
+                    .then(function (stream) {
+                        eoFbsStream = stream;
+                        video.srcObject = stream;
+                        video.play();
+                        video.onloadedmetadata = function () {
+                            canvas.width  = video.videoWidth  || 640;
+                            canvas.height = video.videoHeight || 480;
+                            eoFbsCtx = canvas.getContext('2d');
+                            eoFbsLastScan = 0;
+                            startBtn.style.display = 'none';
+                            stopBtn.style.display  = 'inline-flex';
+                            camStatus.textContent = '● SCANNING…';
+                            eoFbsRafId = requestAnimationFrame(eoFbsScanLoop);
+                        };
+                    })
+                    .catch(function (err) {
+                        viewfinder.style.display = 'none';
+                        preview.classList.add('error');
+                        preview.textContent = 'Camera access denied. Use the text field to type the UFC manually.';
+                        console.error('Edit-order frame scanner camera error:', err);
+                    });
+            };
+
+            window.eoFbsStopCamera = function () {
+                if (eoFbsRafId)  { cancelAnimationFrame(eoFbsRafId); eoFbsRafId = null; }
+                if (eoFbsStream) { eoFbsStream.getTracks().forEach(function (t) { t.stop(); }); eoFbsStream = null; }
+                video.srcObject = null;
+                viewfinder.style.display = 'none';
+                startBtn.style.display = 'inline-flex';
+                stopBtn.style.display  = 'none';
+            };
+            _phEo.frameStreamStop = window.eoFbsStopCamera; // so closing the modal / switching tabs can stop the camera
+
+            function eoFbsScanLoop(timestamp) {
+                if (!eoFbsStream || eoFbsLocked) return;
+                if (timestamp - eoFbsLastScan >= EO_FBS_THROTTLE) {
+                    eoFbsLastScan = timestamp;
+                    if (video.readyState >= video.HAVE_ENOUGH_DATA) {
+                        var W = canvas.width, H = canvas.height;
+                        eoFbsCtx.drawImage(video, 0, 0, W, H);
+                        var img = eoFbsCtx.getImageData(0, 0, W, H);
+                        var decoded = (typeof jsQR === 'function') ? jsQR(img.data, W, H, { inversionAttempts: 'attemptBoth' }) : null;
+                        if (decoded && decoded.data && decoded.data.trim() !== '') {
+                            eoFbsLocked = true;
+                            camStatus.textContent = '✓ CODE DETECTED';
+                            window.eoFbsStopCamera();
+                            ufcInput.value = decoded.data.trim().toUpperCase();
+                            eoFbsLookup(ufcInput.value);
+                            return;
+                        }
+                    }
+                }
+                eoFbsRafId = requestAnimationFrame(eoFbsScanLoop);
+            }
+
+            window.eoFbsLookupManual = function () {
+                var val = (ufcInput.value || '').trim();
+                if (!val) { preview.classList.add('error'); preview.textContent = 'Please enter or scan a UFC code.'; return; }
+                eoFbsLookup(val);
+            };
+
+            function eoFbsLookup(ufc) {
+                preview.classList.remove('error');
+                preview.textContent = 'Looking up ' + ufc + '…';
+                var fd = new FormData();
+                fd.append('ufc', ufc);
+                fetch('frame_lookup.php', { method: 'POST', body: fd })
+                    .then(function (r) { return r.json(); })
+                    .then(function (data) {
+                        if (data.found) {
+                            var stock = parseInt(data.stock) || 0;
+                            var price = parseFloat(data.sell_price) > 0 ? 'Rp ' + parseInt(data.sell_price).toLocaleString('id-ID') : 'contact staff';
+                            preview.textContent = '✓ ' + (data.brand || ufc) + ' — stock: ' + stock + ' pcs — ' + price + ' (' + (data.source === 'main' ? 'main DB' : 'staging') + ')';
+                            ufcInput.value = data.ufc || ufc;
+                        } else {
+                            preview.classList.add('error');
+                            preview.textContent = '✗ ' + (data.message || 'Frame not found in any database.');
+                        }
+                    })
+                    .catch(function () {
+                        preview.classList.add('error');
+                        preview.textContent = 'Connection error while looking up the frame.';
+                    });
+            }
+        }());
 
         // ── Group: Frame ─────────────────────────────────────────────────
         function phEoSaveFrame() {
@@ -3783,6 +4393,12 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
                     frameCostDisplay.innerHTML = data.frame_cost > 0
                         ? 'Rp ' + Number(data.frame_cost).toLocaleString('id-ID')
                         : '<span style="color:#555;font-size:0.72rem;">Not found</span>';
+                }
+
+                if (data.total_amount !== undefined) {
+                    _phEo.card.setAttribute('data-total', data.total_amount);
+                    var headerTotal = _phEo.card.querySelector('.ph-header-total');
+                    if (headerTotal) headerTotal.textContent = 'Rp ' + Number(data.total_amount).toLocaleString('id-ID');
                 }
 
                 if (typeof phUpdateNetProfit === 'function') phUpdateNetProfit(_phEo.card);

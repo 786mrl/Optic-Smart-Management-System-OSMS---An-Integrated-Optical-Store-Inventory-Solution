@@ -260,6 +260,11 @@ function sync_build_code_tree($dir, $relativePrefix = '', $excludeDirNames = ['.
             $tree[] = ['type' => 'file', 'path' => $relPath, 'size' => sync_format_bytes(filesize($fullPath))];
         }
     }
+    // Folders first, then files — easier to scan visually than mixed order.
+    usort($tree, function ($a, $b) {
+        if ($a['type'] === $b['type']) return 0;
+        return ($a['type'] === 'folder') ? -1 : 1;
+    });
     return $tree;
 }
 
@@ -315,12 +320,34 @@ function sync_list_code_only_files($sourceDir) {
  * Re-validates every requested path against the actual allowed list — never
  * trusts the caller's selection blindly, to prevent path traversal.
  */
-function sync_zip_code_custom($sourceDir, $selectedPaths, $zipFile) {
+/**
+ * Builds a nested tree of ONLY the device-specific data folders (qrcodes,
+ * main_qrcodes, pdf_file, data_json, database) — the mirror-image scope of
+ * sync_build_code_tree(), for "Custom Update Data".
+ */
+function sync_build_data_tree($appDir) {
+    $dataFolders = ['qrcodes', 'main_qrcodes', 'pdf_file', 'data_json', 'database'];
+    $tree = [];
+    foreach ($dataFolders as $folderName) {
+        $folderPath = $appDir . '/' . $folderName;
+        if (!is_dir($folderPath)) continue;
+        $children = sync_build_code_tree($folderPath, $folderName, ['.git', '.svn'], []);
+        $tree[] = ['type' => 'folder', 'name' => $folderName, 'children' => $children];
+    }
+    return $tree;
+}
+
+/**
+ * Zips a caller-selected subset of files from $sourceDir, validated against
+ * $allowedPaths (a flat list of paths the caller is actually permitted to
+ * request — never trusts the selection blindly, to prevent path traversal).
+ * Generic: used by both Custom Update Source Code and Custom Update Data.
+ */
+function sync_zip_selected_files($sourceDir, $selectedPaths, $allowedPaths, $zipFile) {
     if (!class_exists('ZipArchive')) {
         return ['ok' => false, 'message' => 'PHP ZipArchive extension is not enabled on this server.'];
     }
-    $allowed = sync_flatten_code_tree(sync_build_code_tree($sourceDir));
-    $selected = array_values(array_intersect($selectedPaths, $allowed)); // only ever what's actually allowed
+    $selected = array_values(array_intersect($selectedPaths, $allowedPaths));
     if (empty($selected)) {
         return ['ok' => false, 'message' => 'No valid files selected.'];
     }
@@ -1334,7 +1361,8 @@ if (isset($_GET['action']) && $_GET['action'] === 'serve_code_custom') {
     }
 
     $zipPath = sys_get_temp_dir() . '/' . SYNC_APP_FOLDER_NAME . '_code_custom_' . uniqid() . '.zip';
-    $zipResult = sync_zip_code_custom($appDir, $requestedPaths, $zipPath);
+    $allowedPaths = sync_flatten_code_tree(sync_build_code_tree($appDir));
+    $zipResult = sync_zip_selected_files($appDir, $requestedPaths, $allowedPaths, $zipPath);
     if (!$zipResult['ok']) {
         @unlink($zipPath);
         http_response_code(500);
@@ -1348,6 +1376,78 @@ if (isset($_GET['action']) && $_GET['action'] === 'serve_code_custom') {
     if (ob_get_level() > 0) ob_clean();
     header('Content-Type: application/zip');
     header('Content-Disposition: attachment; filename="' . SYNC_APP_FOLDER_NAME . '_code_custom.zip"');
+    header('Content-Length: ' . filesize($zipPath));
+    readfile($zipPath);
+    @unlink($zipPath);
+    exit();
+}
+
+// ============================================================
+// ENDPOINT: lists the device-specific data folders (qrcodes, main_qrcodes,
+// pdf_file, data_json, database) as a tree, for "Custom Update Data".
+// Called as: sync.php?action=list_data_files&token=...
+// ============================================================
+if (isset($_GET['action']) && $_GET['action'] === 'list_data_files') {
+    $token = $_GET['token'] ?? '';
+    if (!hash_equals(SYNC_TOKEN, $token)) {
+        http_response_code(403);
+        if (ob_get_level() > 0) ob_clean();
+        header('Content-Type: application/json');
+        if (ob_get_level() > 0) { ob_clean(); }
+        echo json_encode(['ok' => false, 'message' => 'Invalid or missing token.']);
+        exit();
+    }
+    $tree = sync_build_data_tree($appDir);
+    if (ob_get_level() > 0) ob_clean();
+    header('Content-Type: application/json');
+    if (ob_get_level() > 0) { ob_clean(); }
+    echo json_encode(['ok' => true, 'tree' => $tree]);
+    exit();
+}
+
+// ============================================================
+// ENDPOINT: serve a zip containing only the caller-selected subset of
+// data-folder files. Called as:
+// sync.php?action=serve_data_custom&token=...&files=<JSON array of paths>
+// ============================================================
+if (isset($_GET['action']) && $_GET['action'] === 'serve_data_custom') {
+    $token = $_GET['token'] ?? '';
+    if (!hash_equals(SYNC_TOKEN, $token)) {
+        http_response_code(403);
+        if (ob_get_level() > 0) ob_clean();
+        header('Content-Type: application/json');
+        if (ob_get_level() > 0) { ob_clean(); }
+        echo json_encode(['ok' => false, 'message' => 'Invalid or missing token.']);
+        exit();
+    }
+    ignore_user_abort(true);
+
+    $requestedPaths = json_decode($_GET['files'] ?? '[]', true);
+    if (!is_array($requestedPaths) || empty($requestedPaths)) {
+        http_response_code(400);
+        if (ob_get_level() > 0) ob_clean();
+        header('Content-Type: application/json');
+        if (ob_get_level() > 0) { ob_clean(); }
+        echo json_encode(['ok' => false, 'message' => 'No files specified.']);
+        exit();
+    }
+
+    $zipPath = sys_get_temp_dir() . '/' . SYNC_APP_FOLDER_NAME . '_data_custom_' . uniqid() . '.zip';
+    $allowedPaths = sync_flatten_code_tree(sync_build_data_tree($appDir));
+    $zipResult = sync_zip_selected_files($appDir, $requestedPaths, $allowedPaths, $zipPath);
+    if (!$zipResult['ok']) {
+        @unlink($zipPath);
+        http_response_code(500);
+        if (ob_get_level() > 0) ob_clean();
+        header('Content-Type: application/json');
+        if (ob_get_level() > 0) { ob_clean(); }
+        echo json_encode(['ok' => false, 'message' => $zipResult['message']]);
+        exit();
+    }
+
+    if (ob_get_level() > 0) ob_clean();
+    header('Content-Type: application/zip');
+    header('Content-Disposition: attachment; filename="' . SYNC_APP_FOLDER_NAME . '_data_custom.zip"');
     header('Content-Length: ' . filesize($zipPath));
     readfile($zipPath);
     @unlink($zipPath);
@@ -1994,6 +2094,47 @@ if (isset($_POST['action'])) {
             exit();
         }
         $sourceUrl = "http://" . $syncConfig['pc_ip'] . ":" . $syncConfig['pc_port'] . "/" . SYNC_APP_FOLDER_NAME . "/sync.php?action=serve_code_custom&token=" . urlencode(SYNC_TOKEN) . "&files=" . urlencode(json_encode($selectedFiles));
+        $result = sync_fetch_and_apply_code_zip($sourceUrl, $appDir, $htdocsDir);
+        if (ob_get_level() > 0) { ob_clean(); }
+        echo json_encode($result);
+        exit();
+    }
+
+    // ---- Custom Update Data: proxy PC's data-folder file list to the browser ----
+    if ($action === 'get_pc_data_file_list') {
+        if ($syncOwnRole !== 'android') {
+            if (ob_get_level() > 0) { ob_clean(); }
+            echo json_encode(['ok' => false, 'message' => 'This action is only available on the Android device.']);
+            exit();
+        }
+        $listUrl = "http://" . $syncConfig['pc_ip'] . ":" . $syncConfig['pc_port'] . "/" . SYNC_APP_FOLDER_NAME . "/sync.php?action=list_data_files&token=" . urlencode(SYNC_TOKEN);
+        $ctx = stream_context_create(['http' => ['timeout' => 30, 'ignore_errors' => true]]);
+        $response = @file_get_contents($listUrl, false, $ctx);
+        if ($response === false) {
+            if (ob_get_level() > 0) { ob_clean(); }
+            echo json_encode(['ok' => false, 'message' => 'Could not reach the PC to list files.']);
+            exit();
+        }
+        $payload = json_decode($response, true);
+        if (ob_get_level() > 0) { ob_clean(); }
+        echo json_encode(is_array($payload) ? $payload : ['ok' => false, 'message' => 'Unexpected response from PC.']);
+        exit();
+    }
+
+    // ---- Custom Update Data: pull only the caller-selected data-folder files ----
+    if ($action === 'pull_data_custom') {
+        if ($syncOwnRole !== 'android') {
+            if (ob_get_level() > 0) { ob_clean(); }
+            echo json_encode(['ok' => false, 'message' => 'This action is only available on the Android device.']);
+            exit();
+        }
+        $selectedFiles = json_decode($_POST['files'] ?? '[]', true);
+        if (!is_array($selectedFiles) || empty($selectedFiles)) {
+            if (ob_get_level() > 0) { ob_clean(); }
+            echo json_encode(['ok' => false, 'message' => 'No files selected.']);
+            exit();
+        }
+        $sourceUrl = "http://" . $syncConfig['pc_ip'] . ":" . $syncConfig['pc_port'] . "/" . SYNC_APP_FOLDER_NAME . "/sync.php?action=serve_data_custom&token=" . urlencode(SYNC_TOKEN) . "&files=" . urlencode(json_encode($selectedFiles));
         $result = sync_fetch_and_apply_code_zip($sourceUrl, $appDir, $htdocsDir);
         if (ob_get_level() > 0) { ob_clean(); }
         echo json_encode($result);
@@ -3000,17 +3141,25 @@ if (isset($_POST['action'])) {
                                 <?php if ($syncOwnRole === 'android'): ?>
                                 <div class="sync-card collapsible-section" id="updateCodeCard">
                                     <div class="section-header" role="button" tabindex="0" aria-expanded="false">
-                                        <span><span class="card-icon-trigger" onclick="event.stopPropagation(); showCardInfo('Update Source Code (from PC)', <?php echo htmlspecialchars(json_encode('Fetches only the code/style files (root .php/.css/.js) plus the image/, manual/, and phpqrcode/ folders from the PC, and overlays them here. Does NOT touch the database, qrcodes, main_qrcodes, or data_json.'), ENT_QUOTES); ?>);">🧩</span> Update Source Code (from PC)</span>
+                                        <span><span class="card-icon-trigger" onclick="event.stopPropagation(); showCardInfo('Custom Update Source Code', <?php echo htmlspecialchars(json_encode('Browse every file/folder on the PC (except qrcodes, main_qrcodes, pdf_file, data_json, database) and pick exactly which ones to pull. Overlays only what you select — never deletes anything.'), ENT_QUOTES); ?>);">🧩</span> Custom Update Source Code</span>
                                         <span class="section-toggle-icon">▸</span>
                                     </div>
                                     <div class="config-body">
-                                        <p class="desc">Pulls PHP/CSS/JS code plus <code>image/</code>, <code>manual/</code>, <code>phpqrcode/</code> from the PC. No database changes.</p>
-                                        <button class="sync-btn" id="btnUpdateCode" onclick="runAction('pull_code_only', {}, this, 'statusUpdateCode')">🧩 Update Source Code</button>
-                                        <div class="sync-status" id="statusUpdateCode"></div>
-                                        <hr style="border: none; border-top: 1px solid rgba(255,255,255,0.06); margin: 16px 0;">
-                                        <p class="desc">Browse every file/folder on the PC (except <code>qrcodes</code>, <code>main_qrcodes</code>, <code>pdf_file</code>, <code>data_json</code>, <code>database</code>) and pick exactly which ones to pull — including new files not covered by the quick update above.</p>
+                                        <p class="desc">Browse every file/folder on the PC (except <code>qrcodes</code>, <code>main_qrcodes</code>, <code>pdf_file</code>, <code>data_json</code>, <code>database</code>) and pick exactly which ones to pull.</p>
                                         <button class="sync-btn" id="btnCustomUpdateCode" onclick="openCustomUpdateModal()">🎯 Custom Update Source Code</button>
                                         <div class="sync-status" id="statusCustomUpdateCode"></div>
+                                    </div>
+                                </div>
+
+                                <div class="sync-card collapsible-section" id="updateDataCard">
+                                    <div class="section-header" role="button" tabindex="0" aria-expanded="false">
+                                        <span><span class="card-icon-trigger" onclick="event.stopPropagation(); showCardInfo('Custom Update Data', <?php echo htmlspecialchars(json_encode('Browse the device-specific data folders on the PC — qrcodes, main_qrcodes, pdf_file, data_json, database — and pick exactly which files to pull. These folders are excluded from Custom Update Source Code and Verify Full Sync since their contents legitimately differ per device; use this when you specifically want to grab something from one of them.'), ENT_QUOTES); ?>);">🗂️</span> Custom Update Data</span>
+                                        <span class="section-toggle-icon">▸</span>
+                                    </div>
+                                    <div class="config-body">
+                                        <p class="desc">Browse <code>qrcodes</code>, <code>main_qrcodes</code>, <code>pdf_file</code>, <code>data_json</code>, and <code>database</code> on the PC, and pick exactly which files to pull.</p>
+                                        <button class="sync-btn" id="btnCustomUpdateData" onclick="openCustomUpdateDataModal()">🗂️ Custom Update Data</button>
+                                        <div class="sync-status" id="statusCustomUpdateData"></div>
                                     </div>
                                 </div>
                                 <?php endif; ?>
@@ -3173,6 +3322,20 @@ if (isset($_POST['action'])) {
                 <div id="customFileListBody" style="max-height:300px; overflow-y:auto; font-size:13px; color:#c9cbce;">Loading...</div>
                 <button type="button" class="sync-btn" style="margin-top:16px;" onclick="submitCustomUpdate()">🎯 Update Selected Files</button>
                 <button type="button" class="iphelp-close-btn" onclick="closeCustomUpdateModal()">Cancel</button>
+            </div>
+        </div>
+
+        <div class="iphelp-backdrop" id="customUpdateDataBackdrop">
+            <div class="iphelp-modal" style="max-width:520px;">
+                <h2>🗂️ Custom Update Data</h2>
+                <p style="color:#9a9da1; font-size:12px; margin-bottom:10px;">Check the files you want to pull from the PC's data folders (qrcodes, main_qrcodes, pdf_file, data_json, database).</p>
+                <div style="display:flex; gap:10px; margin-bottom:10px;">
+                    <button type="button" class="iphelp-link-btn" onclick="toggleAllCustomDataFiles(true)">Select all</button>
+                    <button type="button" class="iphelp-link-btn" onclick="toggleAllCustomDataFiles(false)">Select none</button>
+                </div>
+                <div id="customDataFileListBody" style="max-height:300px; overflow-y:auto; font-size:13px; color:#c9cbce;">Loading...</div>
+                <button type="button" class="sync-btn" style="margin-top:16px;" onclick="submitCustomUpdateData()">🗂️ Update Selected Files</button>
+                <button type="button" class="iphelp-close-btn" onclick="closeCustomUpdateDataModal()">Cancel</button>
             </div>
         </div>
 
@@ -3385,7 +3548,7 @@ if (isset($_POST['action'])) {
                         }
 
                         // Update Source Code / Cross-Device Data Sync: show exactly what changed
-                        if ((action === 'pull_code_only' || action === 'pull_code_custom' || action === 'push_scoped_update') && data.ok) {
+                        if ((action === 'pull_code_only' || action === 'pull_code_custom' || action === 'pull_data_custom' || action === 'push_scoped_update') && data.ok) {
                             renderUpdatedItemsList(statusEl, data);
                         }
 
@@ -3505,13 +3668,13 @@ if (isset($_POST['action'])) {
             }
 
             // ---- Custom Update Source Code (fly window checklist) ----
-            function renderCodeTreeNode(node, container, depth) {
+            function renderCodeTreeNode(node, container, depth, checkboxClass) {
                 if (node.type === 'file') {
                     const row = document.createElement('label');
                     row.style.cssText = `display:flex; align-items:center; gap:8px; padding:5px 0; padding-left:${depth * 18}px; border-bottom:1px solid rgba(255,255,255,0.05); cursor:pointer;`;
                     const isFlagged = syncLastVerifyDiffPaths.includes(node.path);
                     row.innerHTML = `
-                        <input type="checkbox" class="custom-file-checkbox" value="${node.path}" ${isFlagged ? 'checked' : ''} style="width:16px; height:16px; flex-shrink:0;">
+                        <input type="checkbox" class="${checkboxClass}" value="${node.path}" ${isFlagged ? 'checked' : ''} style="width:16px; height:16px; flex-shrink:0;">
                         <span style="flex:1; font-family:monospace; font-size:12px; word-break:break-all;">${node.path.split('/').pop()}${isFlagged ? ' <span style="color:#ff8a65;">⚠️ differs</span>' : ''}</span>
                         <span style="font-size:11px; color:#9a9da1; flex-shrink:0;">${node.size}</span>
                     `;
@@ -3529,7 +3692,7 @@ if (isset($_POST['action'])) {
                     summary.innerHTML = `📁 ${node.name}${hasFlagged ? ' <span style="color:#ff8a65; font-weight:400; font-size:11px;">⚠️ contains differences</span>' : ''}`;
                     details.appendChild(summary);
                     const childContainer = document.createElement('div');
-                    node.children.forEach(child => renderCodeTreeNode(child, childContainer, depth + 1));
+                    node.children.forEach(child => renderCodeTreeNode(child, childContainer, depth + 1, checkboxClass));
                     details.appendChild(childContainer);
                     container.appendChild(details);
                 }
@@ -3556,7 +3719,7 @@ if (isset($_POST['action'])) {
                             return;
                         }
                         body.innerHTML = '';
-                        data.tree.forEach(node => renderCodeTreeNode(node, body, 0));
+                        data.tree.forEach(node => renderCodeTreeNode(node, body, 0, 'custom-file-checkbox'));
                     })
                     .catch(() => { body.textContent = 'Request error while loading the file list.'; });
             }
@@ -3576,6 +3739,43 @@ if (isset($_POST['action'])) {
                 closeCustomUpdateModal();
                 const btn = document.getElementById('btnCustomUpdateCode');
                 runAction('pull_code_custom', { files: JSON.stringify(selected) }, btn, 'statusCustomUpdateCode');
+            }
+
+            // ---- Custom Update Data (mirrors Custom Update Source Code, scoped to
+            //      qrcodes / main_qrcodes / pdf_file / data_json / database) ----
+            function openCustomUpdateDataModal() {
+                const body = document.getElementById('customDataFileListBody');
+                body.textContent = 'Loading file list from PC...';
+                document.getElementById('customUpdateDataBackdrop').classList.add('active');
+
+                fetch('sync.php', { method: 'POST', body: new URLSearchParams({ action: 'get_pc_data_file_list' }) })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (!data.ok || !Array.isArray(data.tree) || data.tree.length === 0) {
+                            body.textContent = data.message || 'Could not load the file list from PC.';
+                            return;
+                        }
+                        body.innerHTML = '';
+                        data.tree.forEach(node => renderCodeTreeNode(node, body, 0, 'custom-data-file-checkbox'));
+                    })
+                    .catch(() => { body.textContent = 'Request error while loading the file list.'; });
+            }
+            function closeCustomUpdateDataModal() {
+                document.getElementById('customUpdateDataBackdrop').classList.remove('active');
+            }
+            function toggleAllCustomDataFiles(checked) {
+                document.querySelectorAll('.custom-data-file-checkbox').forEach(cb => { cb.checked = checked; });
+            }
+            function submitCustomUpdateData() {
+                const selected = Array.from(document.querySelectorAll('.custom-data-file-checkbox:checked')).map(cb => cb.value);
+                if (selected.length === 0) {
+                    alert('Select at least one file first.');
+                    return;
+                }
+                if (!confirm(`Pull ${selected.length} selected file(s) from the PC and overlay them here?`)) return;
+                closeCustomUpdateDataModal();
+                const btn = document.getElementById('btnCustomUpdateData');
+                runAction('pull_data_custom', { files: JSON.stringify(selected) }, btn, 'statusCustomUpdateData');
             }
 
             // ---- Restore from Auto Backups (fly window with a pickable list) ----
