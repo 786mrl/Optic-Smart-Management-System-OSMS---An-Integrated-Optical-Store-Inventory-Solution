@@ -325,15 +325,46 @@ function sync_list_code_only_files($sourceDir) {
  * main_qrcodes, pdf_file, data_json, database) — the mirror-image scope of
  * sync_build_code_tree(), for "Custom Update Data".
  */
-function sync_build_data_tree($appDir) {
-    $dataFolders = ['qrcodes', 'main_qrcodes', 'pdf_file', 'data_json', 'database'];
+function sync_data_literal_folders() {
+    // The real, on-disk folders shown in Custom Update Data — NOT including
+    // "database", which is represented as a virtual table-list folder instead
+    // (see sync_build_data_tree()).
+    return ['qrcodes', 'main_qrcodes', 'pdf_file', 'data_json'];
+}
+
+function sync_build_data_tree($appDir, $conn) {
     $tree = [];
-    foreach ($dataFolders as $folderName) {
+    foreach (sync_data_literal_folders() as $folderName) {
         $folderPath = $appDir . '/' . $folderName;
         if (!is_dir($folderPath)) continue;
         $children = sync_build_code_tree($folderPath, $folderName, ['.git', '.svn'], []);
         $tree[] = ['type' => 'folder', 'name' => $folderName, 'children' => $children];
     }
+
+    // Virtual "optic_pos_db" folder — DISPLAY ONLY. Its entries are actual
+    // database TABLES (matching exactly what Verify Full Sync compares
+    // per-table), not the raw contents of the database/ folder (backups,
+    // the manual .sql snapshot, etc). Selecting one here means "sync this
+    // whole table's current data", handled server-side as a table pull, not
+    // a file copy.
+    $tableChildren = [];
+    $tablesResult = $conn->query("SHOW TABLES");
+    if ($tablesResult) {
+        while ($row = $tablesResult->fetch_array()) {
+            $table = $row[0];
+            $countResult = $conn->query("SELECT COUNT(*) AS c FROM `$table`");
+            $count = $countResult ? (int) $countResult->fetch_assoc()['c'] : 0;
+            $tableChildren[] = [
+                'type' => 'file',
+                'path' => 'optic_pos_db/' . $table,
+                'size' => $count . ' row' . ($count === 1 ? '' : 's'),
+            ];
+        }
+    }
+    if (!empty($tableChildren)) {
+        $tree[] = ['type' => 'folder', 'name' => 'optic_pos_db', 'children' => $tableChildren];
+    }
+
     return $tree;
 }
 
@@ -370,6 +401,113 @@ function sync_zip_selected_files($sourceDir, $selectedPaths, $allowedPaths, $zip
 }
 
 /**
+ * Builds REPLACE INTO statements for an ENTIRE table's current data (no
+ * date filtering — this is an explicit, user-picked table sync, not the
+ * activity_log-driven partial one). REPLACE INTO keeps it idempotent as
+ * long as the table has a primary/unique key.
+ */
+function sync_export_full_table_replace($conn, $table) {
+    $dataResult = $conn->query("SELECT * FROM `$table`");
+    $sql = '';
+    if ($dataResult && $dataResult->num_rows > 0) {
+        $fields = $dataResult->fetch_fields();
+        $fieldNames = array_map(function ($f) { return "`{$f->name}`"; }, $fields);
+        $fieldList = implode(', ', $fieldNames);
+        $isUsersTable = (strtolower($table) === 'users');
+        $columnNamesLower = array_map(function ($f) { return strtolower($f->name); }, $fields);
+        while ($row = $dataResult->fetch_row()) {
+            $values = [];
+            foreach ($row as $idx => $val) {
+                if ($isUsersTable && in_array($columnNamesLower[$idx], ['session_token', 'session_expires'], true)) {
+                    $values[] = 'NULL';
+                    continue;
+                }
+                $values[] = ($val === null) ? 'NULL' : "'" . $conn->real_escape_string($val) . "'";
+            }
+            $sql .= "REPLACE INTO `$table` ($fieldList) VALUES (" . implode(', ', $values) . ");\n";
+        }
+    }
+    return $sql;
+}
+
+/**
+ * Builds the zip for "Custom Update Data": a mix of real data-folder files
+ * (qrcodes/main_qrcodes/pdf_file/data_json) AND/OR whole-table database
+ * syncs selected via the virtual "optic_pos_db/<table>" entries. Table
+ * selections never touch the filesystem — they're exported as REPLACE INTO
+ * SQL and embedded as _custom_data_update.sql at the zip root.
+ */
+function sync_build_data_custom_zip($appDir, $conn, $selectedPaths, $zipFile) {
+    if (!class_exists('ZipArchive')) {
+        return ['ok' => false, 'message' => 'PHP ZipArchive extension is not enabled on this server.'];
+    }
+    $tablePrefix = 'optic_pos_db/';
+    $fileSelections = [];
+    $tableSelections = [];
+    foreach ($selectedPaths as $p) {
+        if (strpos($p, $tablePrefix) === 0) {
+            $tableSelections[] = substr($p, strlen($tablePrefix));
+        } else {
+            $fileSelections[] = $p;
+        }
+    }
+
+    // Validate files against the real, on-disk data folders only
+    $allowedFiles = [];
+    foreach (sync_data_literal_folders() as $folderName) {
+        $folderPath = $appDir . '/' . $folderName;
+        if (!is_dir($folderPath)) continue;
+        $allowedFiles = array_merge($allowedFiles, sync_flatten_code_tree(sync_build_code_tree($folderPath, $folderName, ['.git', '.svn'], [])));
+    }
+    $fileSelections = array_values(array_intersect($fileSelections, $allowedFiles));
+
+    // Validate tables against what actually exists
+    $actualTables = [];
+    $tr = $conn->query("SHOW TABLES");
+    if ($tr) {
+        while ($row = $tr->fetch_array()) $actualTables[] = $row[0];
+    }
+    $tableSelections = array_values(array_intersect($tableSelections, $actualTables));
+
+    if (empty($fileSelections) && empty($tableSelections)) {
+        return ['ok' => false, 'message' => 'No valid files or tables selected.'];
+    }
+
+    $zip = new ZipArchive();
+    if (file_exists($zipFile)) @unlink($zipFile);
+    if ($zip->open($zipFile, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
+        return ['ok' => false, 'message' => "Could not create zip file: $zipFile"];
+    }
+    $topFolderName = basename($appDir);
+    $fileCount = 0;
+    foreach ($fileSelections as $relPath) {
+        $fullPath = $appDir . '/' . $relPath;
+        if (!is_file($fullPath)) continue;
+        $zip->addFile($fullPath, $topFolderName . '/' . $relPath);
+        $fileCount++;
+    }
+
+    $tableCount = 0;
+    if (!empty($tableSelections)) {
+        $sql = "SET FOREIGN_KEY_CHECKS=0;\nSTART TRANSACTION;\n";
+        foreach ($tableSelections as $table) {
+            $sql .= sync_export_full_table_replace($conn, $table);
+            $tableCount++;
+        }
+        $sql .= "COMMIT;\nSET FOREIGN_KEY_CHECKS=1;\n";
+        $zip->addFromString('_custom_data_update.sql', $sql);
+    }
+
+    $zip->close();
+    return [
+        'ok' => true,
+        'message' => "Custom data zip created with $fileCount file(s) and $tableCount table(s).",
+        'file_count' => $fileCount,
+        'table_count' => $tableCount,
+    ];
+}
+
+/**
  * Downloads a code zip from $sourceUrl and applies it to THIS device:
  * extracts everything normally, EXCEPT sync.php (the currently-executing
  * script), which is written via write-to-temp + atomic rename() to avoid
@@ -377,7 +515,7 @@ function sync_zip_selected_files($sourceDir, $selectedPaths, $allowedPaths, $zip
  * over. Then verifies every extracted file's checksum against the zip.
  * Shared by both "Update Source Code" and "Custom Update Source Code".
  */
-function sync_fetch_and_apply_code_zip($sourceUrl, $appDir, $htdocsDir) {
+function sync_fetch_and_apply_code_zip($sourceUrl, $appDir, $htdocsDir, $conn = null, $ownRole = null) {
     $tmpZip = sys_get_temp_dir() . '/' . SYNC_APP_FOLDER_NAME . '_code_incoming_' . uniqid() . '.zip';
     $ctx = stream_context_create(['http' => ['timeout' => 60, 'ignore_errors' => true]]);
     $data = @file_get_contents($sourceUrl, false, $ctx);
@@ -442,6 +580,25 @@ function sync_fetch_and_apply_code_zip($sourceUrl, $appDir, $htdocsDir) {
     $zip->close();
     @unlink($tmpZip);
 
+    // Custom Update Data may have embedded a whole-table sync SQL file at
+    // the zip root — import it and remove the stray file if so.
+    $dbUpdateNote = null;
+    $dataSqlPath = $htdocsDir . '/_custom_data_update.sql';
+    if (file_exists($dataSqlPath)) {
+        if ($conn !== null) {
+            $importResult = sync_import_sql_native_dispatch($dataSqlPath, $ownRole, $conn);
+            $dbUpdateNote = 'Database tables: ' . $importResult['message'];
+        } else {
+            $dbUpdateNote = 'Database tables: skipped (no DB connection available for this apply).';
+        }
+        @unlink($dataSqlPath);
+        // It was extracted as a regular "file" too — exclude it from the file
+        // checksum verification below, it's not a real code/data file.
+        $updatedFiles = array_values(array_filter($updatedFiles, function ($f) {
+            return basename($f['path']) !== '_custom_data_update.sql';
+        }));
+    }
+
     $filesMismatched = [];
     if ($extracted) {
         foreach ($updatedFiles as $f) {
@@ -459,7 +616,7 @@ function sync_fetch_and_apply_code_zip($sourceUrl, $appDir, $htdocsDir) {
 
     return [
         'ok' => $extracted,
-        'message' => ($extracted ? "Source code updated — $numFiles file(s) overlaid from PC." : 'Extraction failed.') . ($syncPhpVerifyNote ? ' ' . $syncPhpVerifyNote : ''),
+        'message' => ($extracted ? "Source code updated — $numFiles file(s) overlaid from PC." : 'Extraction failed.') . ($syncPhpVerifyNote ? ' ' . $syncPhpVerifyNote : '') . ($dbUpdateNote ? ' ' . $dbUpdateNote : ''),
         'updated_files' => $updatedFiles,
         'verification' => [
             'available' => true,
@@ -1397,7 +1554,8 @@ if (isset($_GET['action']) && $_GET['action'] === 'list_data_files') {
         echo json_encode(['ok' => false, 'message' => 'Invalid or missing token.']);
         exit();
     }
-    $tree = sync_build_data_tree($appDir);
+    include 'db_config.php'; // provides $conn, needed to list tables for the virtual optic_pos_db folder
+    $tree = sync_build_data_tree($appDir, $conn);
     if (ob_get_level() > 0) ob_clean();
     header('Content-Type: application/json');
     if (ob_get_level() > 0) { ob_clean(); }
@@ -1432,9 +1590,10 @@ if (isset($_GET['action']) && $_GET['action'] === 'serve_data_custom') {
         exit();
     }
 
+    include 'db_config.php'; // provides $conn for table exports
+
     $zipPath = sys_get_temp_dir() . '/' . SYNC_APP_FOLDER_NAME . '_data_custom_' . uniqid() . '.zip';
-    $allowedPaths = sync_flatten_code_tree(sync_build_data_tree($appDir));
-    $zipResult = sync_zip_selected_files($appDir, $requestedPaths, $allowedPaths, $zipPath);
+    $zipResult = sync_build_data_custom_zip($appDir, $conn, $requestedPaths, $zipPath);
     if (!$zipResult['ok']) {
         @unlink($zipPath);
         http_response_code(500);
@@ -2102,30 +2261,38 @@ if (isset($_POST['action'])) {
 
     // ---- Custom Update Data: proxy PC's data-folder file list to the browser ----
     if ($action === 'get_pc_data_file_list') {
-        if ($syncOwnRole !== 'android') {
+        if ($syncOwnRole === 'android') {
+            $listUrl = "http://" . $syncConfig['pc_ip'] . ":" . $syncConfig['pc_port'] . "/" . SYNC_APP_FOLDER_NAME . "/sync.php?action=list_data_files&token=" . urlencode(SYNC_TOKEN);
+        } elseif ($syncOwnRole === 'pc') {
+            $listUrl = "http://" . $syncConfig['android_ip'] . ":" . $syncConfig['android_port'] . "/" . SYNC_APP_FOLDER_NAME . "/sync.php?action=list_data_files&token=" . urlencode(SYNC_TOKEN);
+        } else {
             if (ob_get_level() > 0) { ob_clean(); }
-            echo json_encode(['ok' => false, 'message' => 'This action is only available on the Android device.']);
+            echo json_encode(['ok' => false, 'message' => 'Could not determine this device\'s role — check IP Settings.']);
             exit();
         }
-        $listUrl = "http://" . $syncConfig['pc_ip'] . ":" . $syncConfig['pc_port'] . "/" . SYNC_APP_FOLDER_NAME . "/sync.php?action=list_data_files&token=" . urlencode(SYNC_TOKEN);
         $ctx = stream_context_create(['http' => ['timeout' => 30, 'ignore_errors' => true]]);
         $response = @file_get_contents($listUrl, false, $ctx);
         if ($response === false) {
             if (ob_get_level() > 0) { ob_clean(); }
-            echo json_encode(['ok' => false, 'message' => 'Could not reach the PC to list files.']);
+            echo json_encode(['ok' => false, 'message' => 'Could not reach the other device to list files.']);
             exit();
         }
         $payload = json_decode($response, true);
         if (ob_get_level() > 0) { ob_clean(); }
-        echo json_encode(is_array($payload) ? $payload : ['ok' => false, 'message' => 'Unexpected response from PC.']);
+        echo json_encode(is_array($payload) ? $payload : ['ok' => false, 'message' => 'Unexpected response from the other device.']);
         exit();
     }
 
-    // ---- Custom Update Data: pull only the caller-selected data-folder files ----
+    // ---- Custom Update Data: pull only the caller-selected data files/tables ----
+    // Works on BOTH devices — always pulls from whichever device is "the other one".
     if ($action === 'pull_data_custom') {
-        if ($syncOwnRole !== 'android') {
+        if ($syncOwnRole === 'android') {
+            $sourceUrl = "http://" . $syncConfig['pc_ip'] . ":" . $syncConfig['pc_port'] . "/" . SYNC_APP_FOLDER_NAME . "/sync.php?action=serve_data_custom&token=" . urlencode(SYNC_TOKEN);
+        } elseif ($syncOwnRole === 'pc') {
+            $sourceUrl = "http://" . $syncConfig['android_ip'] . ":" . $syncConfig['android_port'] . "/" . SYNC_APP_FOLDER_NAME . "/sync.php?action=serve_data_custom&token=" . urlencode(SYNC_TOKEN);
+        } else {
             if (ob_get_level() > 0) { ob_clean(); }
-            echo json_encode(['ok' => false, 'message' => 'This action is only available on the Android device.']);
+            echo json_encode(['ok' => false, 'message' => 'Could not determine this device\'s role — check IP Settings.']);
             exit();
         }
         $selectedFiles = json_decode($_POST['files'] ?? '[]', true);
@@ -2134,8 +2301,8 @@ if (isset($_POST['action'])) {
             echo json_encode(['ok' => false, 'message' => 'No files selected.']);
             exit();
         }
-        $sourceUrl = "http://" . $syncConfig['pc_ip'] . ":" . $syncConfig['pc_port'] . "/" . SYNC_APP_FOLDER_NAME . "/sync.php?action=serve_data_custom&token=" . urlencode(SYNC_TOKEN) . "&files=" . urlencode(json_encode($selectedFiles));
-        $result = sync_fetch_and_apply_code_zip($sourceUrl, $appDir, $htdocsDir);
+        $sourceUrl .= "&files=" . urlencode(json_encode($selectedFiles));
+        $result = sync_fetch_and_apply_code_zip($sourceUrl, $appDir, $htdocsDir, $conn, $syncOwnRole);
         if (ob_get_level() > 0) { ob_clean(); }
         echo json_encode($result);
         exit();
@@ -3150,19 +3317,20 @@ if (isset($_POST['action'])) {
                                         <div class="sync-status" id="statusCustomUpdateCode"></div>
                                     </div>
                                 </div>
+                                <?php endif; ?>
 
+                                <?php $syncOtherDeviceLabel = ($syncOwnRole === 'android') ? 'the PC' : (($syncOwnRole === 'pc') ? 'Android' : 'the other device'); ?>
                                 <div class="sync-card collapsible-section" id="updateDataCard">
                                     <div class="section-header" role="button" tabindex="0" aria-expanded="false">
-                                        <span><span class="card-icon-trigger" onclick="event.stopPropagation(); showCardInfo('Custom Update Data', <?php echo htmlspecialchars(json_encode('Browse the device-specific data folders on the PC — qrcodes, main_qrcodes, pdf_file, data_json, database — and pick exactly which files to pull. These folders are excluded from Custom Update Source Code and Verify Full Sync since their contents legitimately differ per device; use this when you specifically want to grab something from one of them.'), ENT_QUOTES); ?>);">🗂️</span> Custom Update Data</span>
+                                        <span><span class="card-icon-trigger" onclick="event.stopPropagation(); showCardInfo('Custom Update Data', <?php echo htmlspecialchars(json_encode('Browse the device-specific data folders on the other device — qrcodes, main_qrcodes, pdf_file, data_json — plus a virtual "optic_pos_db" folder listing every database table, and pick exactly which ones to pull. These are excluded from Custom Update Source Code and Verify Full Sync since their contents legitimately differ per device; use this when you specifically want to grab something from one of them. Works on both PC and Android.'), ENT_QUOTES); ?>);">🗂️</span> Custom Update Data</span>
                                         <span class="section-toggle-icon">▸</span>
                                     </div>
                                     <div class="config-body">
-                                        <p class="desc">Browse <code>qrcodes</code>, <code>main_qrcodes</code>, <code>pdf_file</code>, <code>data_json</code>, and <code>database</code> on the PC, and pick exactly which files to pull.</p>
+                                        <p class="desc">Browse <code>qrcodes</code>, <code>main_qrcodes</code>, <code>pdf_file</code>, <code>data_json</code>, and database tables (as a virtual <code>optic_pos_db</code> folder) on <?php echo htmlspecialchars($syncOtherDeviceLabel); ?>, and pick exactly which ones to pull.</p>
                                         <button class="sync-btn" id="btnCustomUpdateData" onclick="openCustomUpdateDataModal()">🗂️ Custom Update Data</button>
                                         <div class="sync-status" id="statusCustomUpdateData"></div>
                                     </div>
                                 </div>
-                                <?php endif; ?>
 
                                 <div class="sync-card collapsible-section" id="activityPushCard">
                                     <div class="section-header" role="button" tabindex="0" aria-expanded="false">

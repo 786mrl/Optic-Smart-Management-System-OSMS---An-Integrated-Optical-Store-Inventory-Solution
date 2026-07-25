@@ -133,6 +133,15 @@ function phAppendEditLog($conn, $order_id, $group, $summary) {
     $conn->query("UPDATE customer_orders SET edit_log = '$encoded' WHERE id = $order_id");
 }
 
+// Build a single plain "field: old -> new" diff string. Every edit_log entry
+// on this page is made of one or more of these, joined with "; " — nothing
+// else (no extra narration) is ever written to edit_log.
+function phDiff($field, $old, $new) {
+    $old = ($old === null || $old === '') ? '(empty)' : $old;
+    $new = ($new === null || $new === '') ? '(empty)' : $new;
+    return "$field: $old -> $new";
+}
+
 // Build a custom-frame brand_key exactly like the JS side does in invoice.php:
 // [size+]dd/mm+brand(lowercase)
 function phBuildCustomFrameKey($brand, $size) {
@@ -204,32 +213,32 @@ function phIsCustomFrameUfc($ufc) {
 }
 
 // Try to restore +1 stock to whichever catalog table (frames_main / frame_staging) owns this ufc.
-// Returns ['table' => ..., 'sell_price' => ...] on success, or null if not found in either.
+// Returns ['table' => ..., 'sell_price' => ..., 'stock_before' => ...] on success, or null if not found in either.
 // frames_main.updated_at has no automatic ON UPDATE clause, so it's set explicitly here
 // (harmless no-op timing-wise for frame_staging, which already auto-updates).
 function phRestoreCatalogStock($conn, $ufc) {
     $ufc = $conn->real_escape_string($ufc);
     foreach (['frames_main', 'frame_staging'] as $tbl) {
-        $chk = $conn->query("SELECT sell_price FROM `$tbl` WHERE ufc = '$ufc' LIMIT 1");
+        $chk = $conn->query("SELECT sell_price, stock FROM `$tbl` WHERE ufc = '$ufc' LIMIT 1");
         if ($chk && $chk->num_rows > 0) {
             $row = $chk->fetch_assoc();
             $conn->query("UPDATE `$tbl` SET stock = stock + 1, updated_at = NOW() WHERE ufc = '$ufc'");
-            return ['table' => $tbl, 'sell_price' => (float)$row['sell_price']];
+            return ['table' => $tbl, 'sell_price' => (float)$row['sell_price'], 'stock_before' => (int)$row['stock']];
         }
     }
     return null;
 }
 
 // Try to deduct 1 stock from whichever catalog table owns this ufc, only if stock > 0.
-// Returns ['table' => ..., 'sell_price' => ...] on success, or null on failure (not found / out of stock).
+// Returns ['table' => ..., 'sell_price' => ..., 'stock_before' => ...] on success, or null on failure (not found / out of stock).
 function phDeductCatalogStock($conn, $ufc) {
     $ufc = $conn->real_escape_string($ufc);
     foreach (['frames_main', 'frame_staging'] as $tbl) {
-        $chk = $conn->query("SELECT sell_price FROM `$tbl` WHERE ufc = '$ufc' AND stock > 0 LIMIT 1");
+        $chk = $conn->query("SELECT sell_price, stock FROM `$tbl` WHERE ufc = '$ufc' AND stock > 0 LIMIT 1");
         if ($chk && $chk->num_rows > 0) {
             $row = $chk->fetch_assoc();
             $conn->query("UPDATE `$tbl` SET stock = stock - 1, updated_at = NOW() WHERE ufc = '$ufc'");
-            return ['table' => $tbl, 'sell_price' => (float)$row['sell_price']];
+            return ['table' => $tbl, 'sell_price' => (float)$row['sell_price'], 'stock_before' => (int)$row['stock']];
         }
     }
     return null;
@@ -401,7 +410,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_customer') {
         $curVal = ($field === 'examination_date') ? date('Y-m-d', strtotime($cur[$field])) : (string)$cur[$field];
         if ((string)$val !== $curVal) {
             $setParts[] = "`$field` = '" . $conn->real_escape_string($val) . "'";
-            $changes[]  = "$field: \"$curVal\" -> \"$val\"";
+            $changes[]  = phDiff($field, $curVal, $val);
         }
     }
 
@@ -444,7 +453,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_exam') {
         $val = trim($_POST[$f]);
         if ($val !== (string)$cur[$f]) {
             $setParts[] = "`$f` = " . ($val === '' ? 'NULL' : "'" . $conn->real_escape_string($val) . "'");
-            $changes[]  = "$f: \"{$cur[$f]}\" -> \"$val\"";
+            $changes[]  = phDiff($f, $cur[$f], $val);
         }
     }
     foreach ($toggleFields as $f) {
@@ -452,7 +461,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_exam') {
         $val = (int)$_POST[$f];
         if ($val !== (int)$cur[$f]) {
             $setParts[] = "`$f` = $val";
-            $changes[]  = "$f: {$cur[$f]} -> $val";
+            $changes[]  = phDiff($f, $cur[$f], $val);
         }
     }
 
@@ -481,33 +490,41 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_prescription') {
     if ($mode === 'revert') {
         // Customer decided to keep the original (unmodified) Rx.
         // The old prescription_modifications row is intentionally KEPT for history.
+        $curRes = $conn->query("SELECT lens_modification FROM customer_examinations WHERE invoice_number = '$inv' LIMIT 1");
+        $curRow = $curRes ? $curRes->fetch_assoc() : null;
+        if (!$curRow) { echo json_encode(['success' => false, 'error' => 'Examination record not found']); exit(); }
+        if ((string)$curRow['lens_modification'] === '0') { echo json_encode(['success' => true, 'changed' => false, 'lens_modification' => 0]); exit(); }
+
         $ok = $conn->query("UPDATE customer_examinations SET lens_modification = 0 WHERE invoice_number = '$inv'");
         if (!$ok) { echo json_encode(['success' => false, 'error' => $conn->error]); exit(); }
-        phAppendEditLog($conn, $order_id, 'prescription', 'Reverted to original prescription (previous modification kept in history, not deleted).');
-        echo json_encode(['success' => true, 'lens_modification' => 0]);
+        phAppendEditLog($conn, $order_id, 'prescription', phDiff('lens_modification', $curRow['lens_modification'], 0));
+        echo json_encode(['success' => true, 'changed' => true, 'lens_modification' => 0]);
         exit();
     }
 
     if ($mode === 'reapply') {
         // Customer changed their mind again and wants the last recorded modification back.
+        $curRes = $conn->query("SELECT lens_modification FROM customer_examinations WHERE invoice_number = '$inv' LIMIT 1");
+        $curRow = $curRes ? $curRes->fetch_assoc() : null;
+        if (!$curRow) { echo json_encode(['success' => false, 'error' => 'Examination record not found']); exit(); }
+        if ((string)$curRow['lens_modification'] === '1') { echo json_encode(['success' => true, 'changed' => false, 'lens_modification' => 1]); exit(); }
+
         $chk = $conn->query("SELECT modification_id FROM prescription_modifications WHERE invoice_number = '$inv' ORDER BY modified_at DESC LIMIT 1");
         if (!$chk || $chk->num_rows === 0) { echo json_encode(['success' => false, 'error' => 'No previous modification found to re-apply.']); exit(); }
         $ok = $conn->query("UPDATE customer_examinations SET lens_modification = 1 WHERE invoice_number = '$inv'");
         if (!$ok) { echo json_encode(['success' => false, 'error' => $conn->error]); exit(); }
-        phAppendEditLog($conn, $order_id, 'prescription', 'Re-applied the last recorded prescription modification.');
-        echo json_encode(['success' => true, 'lens_modification' => 1]);
+        phAppendEditLog($conn, $order_id, 'prescription', phDiff('lens_modification', $curRow['lens_modification'], 1));
+        echo json_encode(['success' => true, 'changed' => true, 'lens_modification' => 1]);
         exit();
     }
 
     if ($mode === 'new_modification') {
-        $od_sph  = $conn->real_escape_string($_POST['od_sph']  ?? '');
-        $od_cyl  = $conn->real_escape_string($_POST['od_cyl']  ?? '');
-        $od_axis = $conn->real_escape_string($_POST['od_axis'] ?? '');
-        $od_add  = $conn->real_escape_string($_POST['od_add']  ?? '');
-        $os_sph  = $conn->real_escape_string($_POST['os_sph']  ?? '');
-        $os_cyl  = $conn->real_escape_string($_POST['os_cyl']  ?? '');
-        $os_axis = $conn->real_escape_string($_POST['os_axis'] ?? '');
-        $os_add  = $conn->real_escape_string($_POST['os_add']  ?? '');
+        $new = [
+            'od_sph'  => trim($_POST['od_sph']  ?? ''), 'od_cyl' => trim($_POST['od_cyl'] ?? ''),
+            'od_axis' => trim($_POST['od_axis'] ?? ''), 'od_add' => trim($_POST['od_add'] ?? ''),
+            'os_sph'  => trim($_POST['os_sph']  ?? ''), 'os_cyl' => trim($_POST['os_cyl'] ?? ''),
+            'os_axis' => trim($_POST['os_axis'] ?? ''), 'os_add' => trim($_POST['os_add'] ?? ''),
+        ];
 
         // Whether to INSERT a new history row or UPDATE the latest one
         // in-place depends on the flag *at the moment of saving*:
@@ -524,34 +541,44 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_prescription') {
 
         $conn->begin_transaction();
         try {
+            $changes = [];
+
             if ($isCurrentlyModified) {
-                $latestRes = $conn->query("SELECT modification_id FROM prescription_modifications WHERE invoice_number = '$inv' ORDER BY modified_at DESC LIMIT 1");
+                $latestRes = $conn->query("SELECT * FROM prescription_modifications WHERE invoice_number = '$inv' ORDER BY modified_at DESC LIMIT 1");
                 $latestRow = $latestRes ? $latestRes->fetch_assoc() : null;
                 if (!$latestRow) throw new Exception('No existing modification row found to update.');
 
-                $modId = (int)$latestRow['modification_id'];
-                // prescription_modifications has no auto-update column, so modified_at is bumped explicitly.
-                $upd1 = $conn->query("UPDATE prescription_modifications SET
-                    od_sph = '$od_sph', od_cyl = '$od_cyl', od_axis = '$od_axis', od_add = '$od_add',
-                    os_sph = '$os_sph', os_cyl = '$os_cyl', os_axis = '$os_axis', os_add = '$os_add',
-                    modified_at = NOW()
-                    WHERE modification_id = $modId");
-                if (!$upd1) throw new Exception($conn->error);
-                $logMsg = "Updated the currently-active modification in place (OD $od_sph/$od_cyl/$od_axis/$od_add, OS $os_sph/$os_cyl/$os_axis/$os_add) — no new history row created.";
+                $setParts = [];
+                foreach ($new as $field => $val) {
+                    if ($val !== (string)$latestRow[$field]) {
+                        $setParts[] = "`$field` = '" . $conn->real_escape_string($val) . "'";
+                        $changes[]  = phDiff($field, $latestRow[$field], $val);
+                    }
+                }
+                if (!empty($setParts)) {
+                    $modId = (int)$latestRow['modification_id'];
+                    // prescription_modifications has no auto-update column, so modified_at is bumped explicitly.
+                    $upd1 = $conn->query("UPDATE prescription_modifications SET " . implode(', ', $setParts) . ", modified_at = NOW() WHERE modification_id = $modId");
+                    if (!$upd1) throw new Exception($conn->error);
+                }
             } else {
-                $ins = $conn->query("INSERT INTO prescription_modifications
+                $ins = $conn->prepare("INSERT INTO prescription_modifications
                     (invoice_number, od_sph, od_cyl, od_axis, od_add, os_sph, os_cyl, os_axis, os_add)
-                    VALUES ('$inv', '$od_sph', '$od_cyl', '$od_axis', '$od_add', '$os_sph', '$os_cyl', '$os_axis', '$os_add')");
-                if (!$ins) throw new Exception($conn->error);
-                $logMsg = "Inserted a new modification row (customer switched from original to modified): OD $od_sph/$od_cyl/$od_axis/$od_add, OS $os_sph/$os_cyl/$os_axis/$os_add.";
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                $ins->bind_param("sssssssss", $inv, $new['od_sph'], $new['od_cyl'], $new['od_axis'], $new['od_add'], $new['os_sph'], $new['os_cyl'], $new['os_axis'], $new['os_add']);
+                if (!$ins->execute()) throw new Exception($conn->error);
+                $ins->close();
+                foreach ($new as $field => $val) { $changes[] = phDiff("new_modification.$field", '', $val); }
             }
 
-            $upd2 = $conn->query("UPDATE customer_examinations SET lens_modification = 1 WHERE invoice_number = '$inv'");
-            if (!$upd2) throw new Exception($conn->error);
+            if (!$isCurrentlyModified) {
+                $conn->query("UPDATE customer_examinations SET lens_modification = 1 WHERE invoice_number = '$inv'");
+                $changes[] = phDiff('lens_modification', $curFlagRow['lens_modification'] ?? 0, 1);
+            }
 
             $conn->commit();
-            phAppendEditLog($conn, $order_id, 'prescription', $logMsg);
-            echo json_encode(['success' => true, 'lens_modification' => 1]);
+            if (!empty($changes)) phAppendEditLog($conn, $order_id, 'prescription', implode('; ', $changes));
+            echo json_encode(['success' => true, 'changed' => !empty($changes), 'lens_modification' => 1]);
         } catch (Exception $e) {
             $conn->rollback();
             echo json_encode(['success' => false, 'error' => $e->getMessage()]);
@@ -572,7 +599,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_lens') {
     $newLens = phLensLookupFull($newLensLabel);
     if (!$newLens) { echo json_encode(['success' => false, 'error' => 'Selected lens was not found in the current price list.']); exit(); }
 
-    $stmt = $conn->prepare("SELECT lens_name, total_amount, order_date FROM customer_orders WHERE id = ? LIMIT 1");
+    $stmt = $conn->prepare("SELECT lens_name, total_amount, due_date, order_date FROM customer_orders WHERE id = ? LIMIT 1");
     $stmt->bind_param("i", $order_id);
     $stmt->execute();
     $cur = $stmt->get_result()->fetch_assoc();
@@ -585,31 +612,35 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_lens') {
     // Adjust total_amount by the *difference* in selling price, rather than
     // recomputing it from scratch, so any manual discount baked into the
     // original total is preserved.
-    $oldLens        = phLensLookupFull($oldLensLabel); // may be null if old lens_name isn't in the JSON (renamed/removed)
-    $oldSelling     = $oldLens ? $oldLens['selling'] : 0;
-    $newSelling     = $newLens['selling'];
-    $delta          = $newSelling - $oldSelling;
-    $oldTotal       = (float)$cur['total_amount'];
-    $newTotal       = max(0, $oldTotal + $delta);
+    $oldLens    = phLensLookupFull($oldLensLabel); // may be null if old lens_name isn't in the JSON (renamed/removed)
+    $oldSelling = $oldLens ? $oldLens['selling'] : 0;
+    $newSelling = $newLens['selling'];
+    $oldTotal   = (float)$cur['total_amount'];
+    $newTotal   = max(0, $oldTotal + ($newSelling - $oldSelling));
 
     // Recompute due_date from order_date using the same lead-time settings invoice.php uses.
-    $leadDays  = phLensLeadTimeDays($conn);
-    $days      = ($newLens['source'] === 'stock') ? $leadDays['stock'] : $leadDays['lab'];
-    $newDueDate = null;
-    if (!empty($cur['order_date'])) {
-        $newDueDate = date('Y-m-d', strtotime($cur['order_date'] . " +{$days} days"));
+    $leadDays   = phLensLeadTimeDays($conn);
+    $days       = ($newLens['source'] === 'stock') ? $leadDays['stock'] : $leadDays['lab'];
+    $newDueDate = !empty($cur['order_date']) ? date('Y-m-d', strtotime($cur['order_date'] . " +{$days} days")) : null;
+
+    // Only touch the columns that actually change.
+    $setParts = ["lens_name = '" . $conn->real_escape_string($newLens['label']) . "'"];
+    $changes  = [phDiff('lens_name', $oldLensLabel, $newLens['label'])];
+
+    if ((float)$newTotal !== $oldTotal) {
+        $setParts[] = "total_amount = " . (float)$newTotal;
+        $changes[]  = phDiff('total_amount', $oldTotal, $newTotal);
+    }
+    $oldDueDateNorm = !empty($cur['due_date']) ? date('Y-m-d', strtotime($cur['due_date'])) : null;
+    if ($newDueDate !== $oldDueDateNorm) {
+        $setParts[] = "due_date = " . ($newDueDate ? "'" . $conn->real_escape_string($newDueDate) . "'" : 'NULL');
+        $changes[]  = phDiff('due_date', $oldDueDateNorm, $newDueDate);
     }
 
-    $stmt = $conn->prepare("UPDATE customer_orders SET lens_name = ?, total_amount = ?, due_date = ? WHERE id = ?");
-    $stmt->bind_param("sdsi", $newLens['label'], $newTotal, $newDueDate, $order_id);
-    if (!$stmt->execute()) { echo json_encode(['success' => false, 'error' => $conn->error]); exit(); }
-    $stmt->close();
+    $ok = $conn->query("UPDATE customer_orders SET " . implode(', ', $setParts) . " WHERE id = $order_id");
+    if (!$ok) { echo json_encode(['success' => false, 'error' => $conn->error]); exit(); }
 
-    phAppendEditLog($conn, $order_id, 'lens',
-        "lens_name: \"$oldLensLabel\" -> \"{$newLens['label']}\"; " .
-        "total_amount: Rp" . number_format($oldTotal, 0, ',', '.') . " -> Rp" . number_format($newTotal, 0, ',', '.') . " (selling price delta Rp" . number_format($delta, 0, ',', '.') . "); " .
-        "due_date: " . ($cur['order_date'] ?? '-') . " +{$days}d ({$newLens['source']}) -> " . ($newDueDate ?? '-')
-    );
+    phAppendEditLog($conn, $order_id, 'lens', implode('; ', $changes));
 
     echo json_encode([
         'success'      => true,
@@ -644,12 +675,25 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_frame') {
     $oldUfc      = trim($curOrder['frame_ufc'] ?? '');
     $oldIsCustom = phIsCustomFrameUfc($oldUfc);
     $oldTotal    = (float)$curOrder['total_amount'];
+
+    // ── No-op guard: skip entirely (no transaction, nothing touched) if the
+    // requested change wouldn't actually change anything. ──────────────────
+    if ($mode === 'catalog' && trim($_POST['new_ufc'] ?? '') === $oldUfc) {
+        echo json_encode(['success' => true, 'changed' => false]); exit();
+    }
+    if ($mode === 'custom_select' && trim($_POST['brand_key'] ?? '') === $oldUfc) {
+        echo json_encode(['success' => true, 'changed' => false]); exit();
+    }
+    if ($mode === 'remove' && $oldUfc === '') {
+        echo json_encode(['success' => true, 'changed' => false]); exit();
+    }
+
     $oldSellPrice = 0; // the customer-facing price of whatever frame is being replaced/removed
     $newSellPrice = 0; // the customer-facing price of the new frame (0 if removed)
 
     $conn->begin_transaction();
     try {
-        $logParts = [];
+        $changes = [];
 
         // ── Step 1: release the OLD frame ──────────────────────────
         if ($oldUfc !== '') {
@@ -660,13 +704,13 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_frame') {
                     $oldSellPrice = (float)$oldRow['sell_price'];
                     // Customer is no longer taking this custom frame at all — delete it outright.
                     phDeleteCustomFrameAndReclaimId($conn, $oldRow['id']);
-                    $logParts[] = "removed custom frame \"$oldUfc\" (customer no longer taking it, was Rp" . number_format($oldSellPrice, 0, ',', '.') . ")";
+                    $changes[] = phDiff('custom_frames row', "id={$oldRow['id']} brand_key=$oldUfc", 'deleted');
                 }
             } else {
                 $restored = phRestoreCatalogStock($conn, $oldUfc);
                 if ($restored) {
                     $oldSellPrice = $restored['sell_price'];
-                    $logParts[] = "restored +1 stock to {$restored['table']} for old frame \"$oldUfc\" (updated_at refreshed)";
+                    $changes[] = phDiff("{$restored['table']}.stock (ufc=$oldUfc)", $restored['stock_before'], $restored['stock_before'] + 1);
                 }
             }
         }
@@ -680,7 +724,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_frame') {
             $deducted = phDeductCatalogStock($conn, $newUfc);
             if (!$deducted) throw new Exception("Frame \"$newUfc\" not found or out of stock.");
             $newSellPrice = $deducted['sell_price'];
-            $logParts[] = "deducted -1 stock from {$deducted['table']} for new frame \"$newUfc\" (Rp" . number_format($newSellPrice, 0, ',', '.') . ", updated_at refreshed)";
+            $changes[] = phDiff("{$deducted['table']}.stock (ufc=$newUfc)", $deducted['stock_before'], $deducted['stock_before'] - 1);
 
         } elseif ($mode === 'custom_select') {
             $brandKey = trim($_POST['brand_key'] ?? '');
@@ -693,7 +737,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_frame') {
             $conn->query("UPDATE custom_frames SET is_purchased = 0 WHERE invoice_number = '$inv'");
             $conn->query("UPDATE custom_frames SET is_purchased = 1 WHERE invoice_number = '$inv' AND brand_key = '$safeKey'");
             $newUfc = $brandKey;
-            $logParts[] = "selected previously-saved custom frame \"$brandKey\" (Rp" . number_format($newSellPrice, 0, ',', '.') . ")";
+            $changes[] = phDiff('custom_frames.is_purchased (brand_key=' . $brandKey . ')', 0, 1);
 
         } elseif ($mode === 'custom_new') {
             $brand = trim($_POST['brand'] ?? '');
@@ -716,39 +760,36 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_frame') {
 
             $newUfc = $brandKey;
             $newSellPrice = (float)$sellPrice;
-            $logParts[] = "added new custom frame \"$brandKey\" (sell Rp" . number_format($newSellPrice, 0, ',', '.') . ")";
+            $changes[] = phDiff('custom_frames row', '(none)', "created: brand_key=$brandKey, sell_price=$sellPrice, buy_price=$buyPrice");
 
         } elseif ($mode === 'remove') {
             // Frame removed entirely, no replacement (frame_ufc becomes NULL, price contribution becomes 0).
             $newUfc = null;
             $newSellPrice = 0;
-            $logParts[] = 'frame removed, no replacement selected';
         }
 
         // ── Step 3: persist frame_ufc + adjusted total_amount ────────
         // total_amount is adjusted by the *difference* in frame selling
         // price (old → new), not recomputed from scratch, so any manual
         // discount baked into the original total is preserved.
-        $delta    = $newSellPrice - $oldSellPrice;
-        $newTotal = max(0, $oldTotal + $delta);
+        $newTotal = max(0, $oldTotal + ($newSellPrice - $oldSellPrice));
 
-        if ($newUfc === null) {
-            $stmt = $conn->prepare("UPDATE customer_orders SET frame_ufc = NULL, total_amount = ? WHERE id = ?");
-            $stmt->bind_param("di", $newTotal, $order_id);
-        } else {
-            $stmt = $conn->prepare("UPDATE customer_orders SET frame_ufc = ?, total_amount = ? WHERE id = ?");
-            $stmt->bind_param("sdi", $newUfc, $newTotal, $order_id);
+        $setParts = [];
+        if ($newUfc !== $oldUfc) {
+            $setParts[] = $newUfc === null ? "frame_ufc = NULL" : "frame_ufc = '" . $conn->real_escape_string($newUfc) . "'";
+            $changes[]  = phDiff('frame_ufc', $oldUfc, $newUfc);
         }
-        $stmt->execute();
-        $stmt->close();
+        if ((float)$newTotal !== $oldTotal) {
+            $setParts[] = "total_amount = " . (float)$newTotal;
+            $changes[]  = phDiff('total_amount', $oldTotal, $newTotal);
+        }
+        if (!empty($setParts)) {
+            $conn->query("UPDATE customer_orders SET " . implode(', ', $setParts) . " WHERE id = $order_id");
+        }
 
         $conn->commit();
 
-        $summary = ($oldUfc !== '' ? "old frame \"$oldUfc\"" : 'no previous frame') . ' -> '
-                 . ($newUfc !== null ? "new frame \"$newUfc\"" : 'removed') . ' | ' . implode('; ', $logParts)
-                 . ' | total_amount: Rp' . number_format($oldTotal, 0, ',', '.') . ' -> Rp' . number_format($newTotal, 0, ',', '.')
-                 . ' (frame price delta Rp' . number_format($delta, 0, ',', '.') . ')';
-        phAppendEditLog($conn, $order_id, 'frame', $summary);
+        if (!empty($changes)) phAppendEditLog($conn, $order_id, 'frame', implode('; ', $changes));
 
         // Compute fresh cost/source for the front-end to redraw the card.
         $frameCost   = 0;
@@ -801,17 +842,25 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
     $newAddress = trim($_POST['customer_address'] ?? $cur['customer_address']);
     $newDue     = trim($_POST['due_date']          ?? $cur['due_date']);
 
-    $changes = [];
-    if ($newPhone !== (string)$cur['customer_phone'])     $changes[] = "phone: \"{$cur['customer_phone']}\" -> \"$newPhone\"";
-    if ($newAddress !== (string)$cur['customer_address']) $changes[] = "address: \"{$cur['customer_address']}\" -> \"$newAddress\"";
-    if ($newDue !== (string)$cur['due_date'])              $changes[] = "due_date: \"{$cur['due_date']}\" -> \"$newDue\"";
+    $setParts = [];
+    $changes  = [];
+    if ($newPhone !== (string)$cur['customer_phone']) {
+        $setParts[] = "customer_phone = '" . $conn->real_escape_string($newPhone) . "'";
+        $changes[]  = phDiff('customer_phone', $cur['customer_phone'], $newPhone);
+    }
+    if ($newAddress !== (string)$cur['customer_address']) {
+        $setParts[] = "customer_address = '" . $conn->real_escape_string($newAddress) . "'";
+        $changes[]  = phDiff('customer_address', $cur['customer_address'], $newAddress);
+    }
+    if ($newDue !== (string)$cur['due_date']) {
+        $setParts[] = "due_date = " . ($newDue === '' ? 'NULL' : "'" . $conn->real_escape_string($newDue) . "'");
+        $changes[]  = phDiff('due_date', $cur['due_date'], $newDue);
+    }
 
-    if (empty($changes)) { echo json_encode(['success' => true, 'changed' => false]); exit(); }
+    if (empty($setParts)) { echo json_encode(['success' => true, 'changed' => false]); exit(); }
 
-    $stmt = $conn->prepare("UPDATE customer_orders SET customer_phone = ?, customer_address = ?, due_date = ? WHERE id = ?");
-    $stmt->bind_param("sssi", $newPhone, $newAddress, $newDue, $order_id);
-    if (!$stmt->execute()) { echo json_encode(['success' => false, 'error' => $conn->error]); exit(); }
-    $stmt->close();
+    $ok = $conn->query("UPDATE customer_orders SET " . implode(', ', $setParts) . " WHERE id = $order_id");
+    if (!$ok) { echo json_encode(['success' => false, 'error' => $conn->error]); exit(); }
 
     phAppendEditLog($conn, $order_id, 'order_info', implode('; ', $changes));
     echo json_encode(['success' => true, 'changed' => true, 'customer_phone' => $newPhone, 'customer_address' => $newAddress, 'due_date' => $newDue]);

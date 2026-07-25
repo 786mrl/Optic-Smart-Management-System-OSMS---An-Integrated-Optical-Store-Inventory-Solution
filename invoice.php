@@ -204,6 +204,7 @@
  
         // ── Stock deduction (when a frame was purchased) ───────────────
         $stockOk = true;
+        $current_time_unrecord = date('Y-m-d H:i:s');
         if (!empty($frameUfc)) {
             // Try frames_main first, then frame_staging
             $stockOk = false;
@@ -213,7 +214,80 @@
                 if ($chk && mysqli_num_rows($chk) > 0) {
                     $upd = mysqli_query($conn,
                         "UPDATE `$tbl` SET stock = stock - 1 WHERE ufc = '$frameUfc'");
-                    if ($upd) { $stockOk = true; break; }
+                    if ($upd) {
+                        $stockOk = true;
+
+                        // ── frame_unrecord snapshot ─────────────────────
+                        // Only needed when the frame came from frame_staging,
+                        // because a later push (staging -> frames_main) would
+                        // overwrite/replace the staging row and lose the fact
+                        // that 1 unit was already sold to a customer here.
+                        if ($tbl === 'frame_staging') {
+                            $frameRow = mysqli_fetch_assoc(mysqli_query($conn,
+                                "SELECT * FROM `frame_staging` WHERE ufc = '$frameUfc' LIMIT 1"));
+                            if ($frameRow) {
+                                // NOTE: in frame_unrecord, `stock` does NOT mean
+                                // remaining inventory (like it does in
+                                // frames_main/frame_staging). Here it means
+                                // "how many times this ufc has been bought by
+                                // customers". So a fresh record starts at 1,
+                                // and if the ufc is bought again later it is
+                                // incremented, not re-inserted/overwritten.
+                                $cols = ['ufc','brand','frame_code','frame_size','color_code',
+                                         'material','lens_shape','structure','size_range',
+                                         'gender_category','buy_price','sell_price',
+                                         'price_secret_code','stock','stock_age',
+                                         'created_at','updated_at'];
+                                $vals = [];
+                                foreach ($cols as $c) {
+                                    if ($c === 'stock') {
+                                        $vals[] = '1'; // purchase count, not remaining stock
+                                        continue;
+                                    }
+                                    if (!array_key_exists($c, $frameRow) || $frameRow[$c] === null) {
+                                        $vals[] = 'NULL';
+                                    } else {
+                                        $vals[] = "'" . mysqli_real_escape_string($conn, $frameRow[$c]) . "'";
+                                    }
+                                }
+                                $vals[] = '1'; // buying_status = 1 (purchased)
+
+                                $insertCols = implode(', ', array_map(fn($c) => "`$c`", $cols)) . ', `buying_status`';
+                                $insertVals = implode(', ', $vals);
+
+                                // Upsert: if this ufc was already recorded (bought
+                                // before), bump the purchase count instead of
+                                // inserting a new row.
+                                mysqli_query($conn,
+                                    "INSERT INTO `frame_unrecord` ($insertCols) VALUES ($insertVals)
+                                     ON DUPLICATE KEY UPDATE
+                                        stock = stock + 1,
+                                        buying_status = 1,
+                                        updated_at = '$current_time_unrecord'");
+
+                                // ── Cleanup when frame_staging stock hits 0 ──
+                                // $frameRow['stock'] already reflects the
+                                // post-decrement value (fetched after the
+                                // UPDATE above), so this check is accurate.
+                                if ((int)$frameRow['stock'] <= 0) {
+                                    mysqli_query($conn,
+                                        "DELETE FROM `frame_staging` WHERE ufc = '$frameUfc'");
+
+                                    // Only remove the QR code if it's actually
+                                    // sitting in qrcodes/. If it's missing there,
+                                    // this ufc already exists in frames_main and
+                                    // its barcode lives in main_qrcodes/ instead —
+                                    // in that case nothing should be deleted.
+                                    $qrPath = "qrcodes/" . $frameUfc . ".png";
+                                    if (file_exists($qrPath)) {
+                                        unlink($qrPath);
+                                    }
+                                }
+                            }
+                        }
+
+                        break;
+                    }
                 }
             }
         }
