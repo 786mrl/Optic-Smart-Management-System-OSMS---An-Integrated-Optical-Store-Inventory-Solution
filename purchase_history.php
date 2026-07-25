@@ -212,17 +212,103 @@ function phIsCustomFrameUfc($ufc) {
     return $ufc !== '' && is_numeric($ufc[0]);
 }
 
-// Try to restore +1 stock to whichever catalog table (frames_main / frame_staging) owns this ufc.
-// Returns ['table' => ..., 'sell_price' => ..., 'stock_before' => ...] on success, or null if not found in either.
-// frames_main.updated_at has no automatic ON UPDATE clause, so it's set explicitly here
-// (harmless no-op timing-wise for frame_staging, which already auto-updates).
-function phRestoreCatalogStock($conn, $ufc) {
+// Fetch a full row from a frame table (frames_main / frame_staging / frame_unrecord).
+function phGetFrameRow($conn, $table, $ufc) {
     $ufc = $conn->real_escape_string($ufc);
+    $r = $conn->query("SELECT * FROM `$table` WHERE ufc = '$ufc' LIMIT 1");
+    return $r ? $r->fetch_assoc() : null;
+}
+
+// The descriptive columns shared by frames_main / frame_staging / frame_unrecord
+// (everything except ufc, stock, and the bookkeeping timestamps).
+const PH_FRAME_DESC_COLS = ['brand', 'frame_code', 'frame_size', 'color_code', 'material',
+    'lens_shape', 'structure', 'size_range', 'gender_category', 'buy_price', 'sell_price',
+    'price_secret_code', 'stock_age'];
+
+// Move 1 unit from frame_staging → frame_unrecord (buying_status = 1).
+// frame_staging holds NOT-YET-CATALOGUED stock, and a separate bulk process
+// (outside this file) periodically migrates all of it into frames_main. If a
+// unit had already been committed to a customer order but was left sitting in
+// frame_staging, that migration would silently absorb it and lose track of the
+// commitment. Pulling the committed unit into frame_unrecord as soon as it's
+// chosen prevents that.
+function phMoveStagingUnitToUnrecord($conn, $ufc) {
+    $row = phGetFrameRow($conn, 'frame_staging', $ufc);
+    if (!$row) return false;
+    $safeUfc = $conn->real_escape_string($ufc);
+
+    $exists = $conn->query("SELECT stock FROM frame_unrecord WHERE ufc = '$safeUfc' LIMIT 1");
+    if ($exists && $exists->num_rows > 0) {
+        $conn->query("UPDATE frame_unrecord SET stock = stock + 1, buying_status = 1, updated_at = NOW() WHERE ufc = '$safeUfc'");
+    } else {
+        $cols = "ufc, " . implode(', ', PH_FRAME_DESC_COLS) . ", stock, buying_status, created_at, updated_at";
+        $vals = "'$safeUfc'";
+        foreach (PH_FRAME_DESC_COLS as $c) {
+            $v = $row[$c];
+            $vals .= ", " . ($v === null ? 'NULL' : "'" . $conn->real_escape_string($v) . "'");
+        }
+        $vals .= ", 1, 1, NOW(), NOW()";
+        $conn->query("INSERT INTO frame_unrecord ($cols) VALUES ($vals)");
+    }
+
+    if ((int)$row['stock'] <= 1) {
+        $conn->query("DELETE FROM frame_staging WHERE ufc = '$safeUfc' LIMIT 1");
+    } else {
+        $conn->query("UPDATE frame_staging SET stock = stock - 1, updated_at = NOW() WHERE ufc = '$safeUfc'");
+    }
+    return true;
+}
+
+// Reverse of phMoveStagingUnitToUnrecord: move 1 unit back from frame_unrecord
+// into frame_staging (the customer is no longer taking that particular unit).
+function phMoveUnrecordUnitToStaging($conn, $ufc) {
+    $row = phGetFrameRow($conn, 'frame_unrecord', $ufc);
+    if (!$row) return false;
+    $safeUfc = $conn->real_escape_string($ufc);
+
+    $exists = $conn->query("SELECT stock FROM frame_staging WHERE ufc = '$safeUfc' LIMIT 1");
+    if ($exists && $exists->num_rows > 0) {
+        $conn->query("UPDATE frame_staging SET stock = stock + 1, updated_at = NOW() WHERE ufc = '$safeUfc'");
+    } else {
+        $cols = "ufc, " . implode(', ', PH_FRAME_DESC_COLS) . ", stock, created_at, updated_at";
+        $vals = "'$safeUfc'";
+        foreach (PH_FRAME_DESC_COLS as $c) {
+            $v = $row[$c];
+            $vals .= ", " . ($v === null ? 'NULL' : "'" . $conn->real_escape_string($v) . "'");
+        }
+        $vals .= ", 1, NOW(), NOW()";
+        $conn->query("INSERT INTO frame_staging ($cols) VALUES ($vals)");
+    }
+
+    if ((int)$row['stock'] <= 1) {
+        $conn->query("DELETE FROM frame_unrecord WHERE ufc = '$safeUfc' LIMIT 1");
+    } else {
+        $conn->query("UPDATE frame_unrecord SET stock = stock - 1, updated_at = NOW() WHERE ufc = '$safeUfc'");
+    }
+    return true;
+}
+
+// Try to restore +1 stock for a frame that's being released (order edited away from it).
+// Checks frame_unrecord FIRST: if the frame currently lives there, it was originally
+// taken from frame_staging, so releasing it must give the unit back to frame_staging
+// (not to frames_main). Otherwise falls back to plain frames_main / frame_staging.
+// Returns ['table' => ..., 'sell_price' => ..., 'stock_before' => ...] on success, or null if not found anywhere.
+// frames_main.updated_at has no automatic ON UPDATE clause, so it's set explicitly here.
+function phRestoreCatalogStock($conn, $ufc) {
+    $safeUfc = $conn->real_escape_string($ufc);
+
+    $unrec = $conn->query("SELECT sell_price, stock FROM frame_unrecord WHERE ufc = '$safeUfc' LIMIT 1");
+    if ($unrec && $unrec->num_rows > 0) {
+        $row = $unrec->fetch_assoc();
+        phMoveUnrecordUnitToStaging($conn, $ufc);
+        return ['table' => 'frame_unrecord -> frame_staging', 'sell_price' => (float)$row['sell_price'], 'stock_before' => (int)$row['stock']];
+    }
+
     foreach (['frames_main', 'frame_staging'] as $tbl) {
-        $chk = $conn->query("SELECT sell_price, stock FROM `$tbl` WHERE ufc = '$ufc' LIMIT 1");
+        $chk = $conn->query("SELECT sell_price, stock FROM `$tbl` WHERE ufc = '$safeUfc' LIMIT 1");
         if ($chk && $chk->num_rows > 0) {
             $row = $chk->fetch_assoc();
-            $conn->query("UPDATE `$tbl` SET stock = stock + 1, updated_at = NOW() WHERE ufc = '$ufc'");
+            $conn->query("UPDATE `$tbl` SET stock = stock + 1, updated_at = NOW() WHERE ufc = '$safeUfc'");
             return ['table' => $tbl, 'sell_price' => (float)$row['sell_price'], 'stock_before' => (int)$row['stock']];
         }
     }
@@ -230,17 +316,27 @@ function phRestoreCatalogStock($conn, $ufc) {
 }
 
 // Try to deduct 1 stock from whichever catalog table owns this ufc, only if stock > 0.
+// frames_main is already-catalogued stock: plain deduction. frame_staging is NOT
+// YET catalogued: taking a unit from there relocates it into frame_unrecord (see
+// phMoveStagingUnitToUnrecord) instead of a plain deduction.
 // Returns ['table' => ..., 'sell_price' => ..., 'stock_before' => ...] on success, or null on failure (not found / out of stock).
 function phDeductCatalogStock($conn, $ufc) {
-    $ufc = $conn->real_escape_string($ufc);
-    foreach (['frames_main', 'frame_staging'] as $tbl) {
-        $chk = $conn->query("SELECT sell_price, stock FROM `$tbl` WHERE ufc = '$ufc' AND stock > 0 LIMIT 1");
-        if ($chk && $chk->num_rows > 0) {
-            $row = $chk->fetch_assoc();
-            $conn->query("UPDATE `$tbl` SET stock = stock - 1, updated_at = NOW() WHERE ufc = '$ufc'");
-            return ['table' => $tbl, 'sell_price' => (float)$row['sell_price'], 'stock_before' => (int)$row['stock']];
-        }
+    $safeUfc = $conn->real_escape_string($ufc);
+
+    $main = $conn->query("SELECT sell_price, stock FROM frames_main WHERE ufc = '$safeUfc' AND stock > 0 LIMIT 1");
+    if ($main && $main->num_rows > 0) {
+        $row = $main->fetch_assoc();
+        $conn->query("UPDATE frames_main SET stock = stock - 1, updated_at = NOW() WHERE ufc = '$safeUfc'");
+        return ['table' => 'frames_main', 'sell_price' => (float)$row['sell_price'], 'stock_before' => (int)$row['stock']];
     }
+
+    $staging = $conn->query("SELECT sell_price, stock FROM frame_staging WHERE ufc = '$safeUfc' AND stock > 0 LIMIT 1");
+    if ($staging && $staging->num_rows > 0) {
+        $row = $staging->fetch_assoc();
+        phMoveStagingUnitToUnrecord($conn, $ufc);
+        return ['table' => 'frame_staging -> frame_unrecord', 'sell_price' => (float)$row['sell_price'], 'stock_before' => (int)$row['stock']];
+    }
+
     return null;
 }
 
@@ -258,6 +354,31 @@ function phDeleteCustomFrameAndReclaimId($conn, $rowId) {
         // Next auto_increment value becomes the id we just freed up.
         $conn->query("ALTER TABLE custom_frames AUTO_INCREMENT = $rowId");
     }
+}
+
+// Update customer_examinations.lens_modification AND customer_orders.is_modified
+// together — the two columns must always carry the same value. Only touches a
+// column if its current value actually differs. Returns the phDiff() strings
+// for whatever it changed (empty array if both were already correct).
+function phSetLensModification($conn, $inv, $order_id, $newVal) {
+    $newVal = (int)$newVal;
+    $changes = [];
+
+    $examRes = $conn->query("SELECT lens_modification FROM customer_examinations WHERE invoice_number = '" . $conn->real_escape_string($inv) . "' LIMIT 1");
+    $examRow = $examRes ? $examRes->fetch_assoc() : null;
+    if ($examRow && (int)$examRow['lens_modification'] !== $newVal) {
+        $conn->query("UPDATE customer_examinations SET lens_modification = $newVal WHERE invoice_number = '" . $conn->real_escape_string($inv) . "'");
+        $changes[] = phDiff('lens_modification', $examRow['lens_modification'], $newVal);
+    }
+
+    $ordRes = $conn->query("SELECT is_modified FROM customer_orders WHERE id = " . (int)$order_id . " LIMIT 1");
+    $ordRow = $ordRes ? $ordRes->fetch_assoc() : null;
+    if ($ordRow && (int)$ordRow['is_modified'] !== $newVal) {
+        $conn->query("UPDATE customer_orders SET is_modified = $newVal WHERE id = " . (int)$order_id);
+        $changes[] = phDiff('is_modified', $ordRow['is_modified'], $newVal);
+    }
+
+    return $changes;
 }
 
 // Verify the currently logged-in user is an admin, returns [ok(bool), error(string)]
@@ -495,9 +616,8 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_prescription') {
         if (!$curRow) { echo json_encode(['success' => false, 'error' => 'Examination record not found']); exit(); }
         if ((string)$curRow['lens_modification'] === '0') { echo json_encode(['success' => true, 'changed' => false, 'lens_modification' => 0]); exit(); }
 
-        $ok = $conn->query("UPDATE customer_examinations SET lens_modification = 0 WHERE invoice_number = '$inv'");
-        if (!$ok) { echo json_encode(['success' => false, 'error' => $conn->error]); exit(); }
-        phAppendEditLog($conn, $order_id, 'prescription', phDiff('lens_modification', $curRow['lens_modification'], 0));
+        $changes = phSetLensModification($conn, $inv, $order_id, 0);
+        if (!empty($changes)) phAppendEditLog($conn, $order_id, 'prescription', implode('; ', $changes));
         echo json_encode(['success' => true, 'changed' => true, 'lens_modification' => 0]);
         exit();
     }
@@ -511,9 +631,8 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_prescription') {
 
         $chk = $conn->query("SELECT modification_id FROM prescription_modifications WHERE invoice_number = '$inv' ORDER BY modified_at DESC LIMIT 1");
         if (!$chk || $chk->num_rows === 0) { echo json_encode(['success' => false, 'error' => 'No previous modification found to re-apply.']); exit(); }
-        $ok = $conn->query("UPDATE customer_examinations SET lens_modification = 1 WHERE invoice_number = '$inv'");
-        if (!$ok) { echo json_encode(['success' => false, 'error' => $conn->error]); exit(); }
-        phAppendEditLog($conn, $order_id, 'prescription', phDiff('lens_modification', $curRow['lens_modification'], 1));
+        $changes = phSetLensModification($conn, $inv, $order_id, 1);
+        if (!empty($changes)) phAppendEditLog($conn, $order_id, 'prescription', implode('; ', $changes));
         echo json_encode(['success' => true, 'changed' => true, 'lens_modification' => 1]);
         exit();
     }
@@ -572,8 +691,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_prescription') {
             }
 
             if (!$isCurrentlyModified) {
-                $conn->query("UPDATE customer_examinations SET lens_modification = 1 WHERE invoice_number = '$inv'");
-                $changes[] = phDiff('lens_modification', $curFlagRow['lens_modification'] ?? 0, 1);
+                $changes = array_merge($changes, phSetLensModification($conn, $inv, $order_id, 1));
             }
 
             $conn->commit();
@@ -1050,10 +1168,20 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
             if (!empty($ljEarly[$lt])) {
                 foreach ($ljEarly[$lt] as $cat => $types) {
                     foreach ($types as $type => $info) {
+                        $lim = $info['limits'] ?? [];
                         $phEoLensOptions[$lt][] = [
-                            'label'   => trim($cat) . ' — ' . trim($type),
-                            'cost'    => (int)($info['cost']    ?? 0),
-                            'selling' => (int)($info['selling'] ?? 0),
+                            'label'    => trim($cat) . ' — ' . trim($type),
+                            'cost'     => (int)($info['cost']    ?? 0),
+                            'selling'  => (int)($info['selling'] ?? 0),
+                            // Rx-fit range, same fields invoice.php's lens recommendation
+                            // gate (lr_rxFits) uses — 0/0 pairs mean "no restriction".
+                            'sph_from' => (int)($lim['sph_from'] ?? 0),
+                            'sph_to'   => (int)($lim['sph_to']   ?? 0),
+                            'cyl_from' => (int)($lim['cyl_from'] ?? 0),
+                            'cyl_to'   => (int)($lim['cyl_to']   ?? 0),
+                            'comb_max' => (int)($lim['comb_max'] ?? 0),
+                            'add_from' => (int)($lim['add_from'] ?? 0),
+                            'add_to'   => (int)($lim['add_to']   ?? 0),
                         ];
                     }
                 }
@@ -2923,6 +3051,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
                             <label>Lens</label>
                             <select class="ph-modal-input" id="eo-l-name"></select>
                             <div class="ph-modal-preview" id="eo-l-preview"></div>
+                            <div class="ph-eo-note" id="eo-l-filter-note" style="margin-top:8px;"></div>
                         </div>
                         <div class="ph-modal-actions">
                             <button class="ph-modal-btn confirm" onclick="phEoSaveLens()">Save Lens</button>
@@ -4003,7 +4132,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
             });
 
             // Lens group
-            phEoBuildLensOptions();
+            phEoFilterLensOptions(); // builds the dropdown and greys out lenses that don't fit the current Rx
             var lensSelect = document.getElementById('eo-l-name');
             lensSelect.value = order.lens_name || '';
             // If the saved lens_name isn't one of the current JSON options
@@ -4073,6 +4202,10 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
             var group = btn.getAttribute('data-group');
             document.querySelectorAll('.ph-eo-group').forEach(function(g) { g.classList.toggle('active', g.getAttribute('data-group') === group); });
             phEoShowMsg('');
+            // Re-filter lens options against whatever Rx is currently in the Exam
+            // tab's fields (even if not saved yet), so a prescription change is
+            // immediately reflected in which lenses are selectable.
+            if (group === 'lens') phEoFilterLensOptions();
         });
 
         // ── Frame sub-tab switching ─────────────────────────────────────
@@ -4193,7 +4326,15 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
                 var el = document.getElementById('eo-e-' + f);
                 if (el) fields[f] = el.value;
             });
-            ['visual_habit','digital_usage','need_distance','need_intermediate','need_near'].forEach(function(f) {
+            // visual_habit / digital_usage are hidden <input> fields driven by the
+            // toggle-group buttons (values 1/2/3) — read .value, not .checked.
+            ['visual_habit', 'digital_usage'].forEach(function(f) {
+                var el = document.getElementById('eo-e-' + f);
+                if (el) fields[f] = el.value;
+            });
+            // need_distance / need_intermediate / need_near are real checkboxes
+            // driven by the vision-need icon buttons — read .checked.
+            ['need_distance', 'need_intermediate', 'need_near'].forEach(function(f) {
                 var el = document.getElementById('eo-e-' + f);
                 if (el) fields[f] = el.checked ? '1' : '0';
             });
@@ -4229,6 +4370,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
             select.innerHTML = '<option value="">— Select a lens —</option>';
 
             var groupLabels = { stock: 'STOCK LENS', lab: 'LAB / ORDER LENS' };
+            var limitFields = ['sph_from', 'sph_to', 'cyl_from', 'cyl_to', 'comb_max', 'add_from', 'add_to'];
             ['stock', 'lab'].forEach(function(lt) {
                 var items = (PH_EO_LENS_OPTIONS && PH_EO_LENS_OPTIONS[lt]) || [];
                 if (!items.length) return;
@@ -4240,11 +4382,83 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
                     opt.textContent = item.label;
                     opt.setAttribute('data-cost', item.cost);
                     opt.setAttribute('data-selling', item.selling);
+                    limitFields.forEach(function(f) { opt.setAttribute('data-' + f, item[f] || 0); });
                     optgroup.appendChild(opt);
                 });
                 select.appendChild(optgroup);
             });
             _phEoLensBuilt = true;
+        }
+
+        // Same Rx-fit gate as invoice.php's lens recommendation card (lr_rxFits),
+        // reimplemented client-side so it can react instantly to unsaved Exam-tab edits.
+        function phEoRxFits(lim, rSph, rCyl, lSph, lCyl, rAdd, lAdd) {
+            var maxC   = Math.max(Math.abs(rCyl), Math.abs(lCyl));
+            var maxAdd = Math.max(Math.abs(rAdd), Math.abs(lAdd));
+
+            // Sphere range (0/0 = no restriction)
+            if (lim.sph_from !== 0 || lim.sph_to !== 0) {
+                var sphMin = Math.min(lim.sph_from, lim.sph_to) / 100;
+                var sphMax = Math.max(lim.sph_from, lim.sph_to) / 100;
+                if (rSph < sphMin || rSph > sphMax) return false;
+                if (lSph < sphMin || lSph > sphMax) return false;
+            }
+
+            // Cylinder (0/0 = plano-only)
+            if (lim.cyl_from === 0 && lim.cyl_to === 0) {
+                if (maxC > 0) return false;
+            } else if (lim.cyl_to !== 0) {
+                if (maxC > Math.abs(lim.cyl_to) / 100) return false;
+            }
+
+            // Combined SPH+CYL
+            if (lim.comb_max !== 0) {
+                var maxS = Math.max(Math.abs(rSph), Math.abs(lSph));
+                if ((maxS + maxC) > Math.abs(lim.comb_max) / 100) return false;
+            }
+
+            // ADD range (progressive/kryptok/flattop)
+            if (lim.add_to !== 0) {
+                var addMin = Math.abs(lim.add_from) / 100;
+                var addMax = Math.abs(lim.add_to)   / 100;
+                if (maxAdd < addMin || maxAdd > addMax) return false;
+            }
+            return true;
+        }
+
+        // Grey out (and prevent selecting) any lens option whose Rx-fit range
+        // doesn't cover the prescription currently sitting in the Exam tab's
+        // "new" fields — matches invoice.php's lens recommendation gate.
+        function phEoFilterLensOptions() {
+            phEoBuildLensOptions();
+            var num = function(id) { var el = document.getElementById(id); return el ? (parseFloat(el.value) || 0) : 0; };
+            var rSph = num('eo-e-new_r_sph'), rCyl = num('eo-e-new_r_cyl'), rAdd = num('eo-e-new_r_add');
+            var lSph = num('eo-e-new_l_sph'), lCyl = num('eo-e-new_l_cyl'), lAdd = num('eo-e-new_l_add');
+
+            var select = document.getElementById('eo-l-name');
+            var hiddenCount = 0;
+            Array.prototype.forEach.call(select.options, function(opt) {
+                if (!opt.value) return; // keep the placeholder option always visible
+                var lim = {
+                    sph_from: parseInt(opt.getAttribute('data-sph_from')) || 0,
+                    sph_to:   parseInt(opt.getAttribute('data-sph_to'))   || 0,
+                    cyl_from: parseInt(opt.getAttribute('data-cyl_from')) || 0,
+                    cyl_to:   parseInt(opt.getAttribute('data-cyl_to'))   || 0,
+                    comb_max: parseInt(opt.getAttribute('data-comb_max')) || 0,
+                    add_from: parseInt(opt.getAttribute('data-add_from')) || 0,
+                    add_to:   parseInt(opt.getAttribute('data-add_to'))   || 0
+                };
+                var fits = phEoRxFits(lim, rSph, rCyl, lSph, lCyl, rAdd, lAdd);
+                opt.disabled = !fits;
+                opt.textContent = fits ? opt.value : (opt.value + ' (Rx out of range)');
+                if (!fits) hiddenCount++;
+            });
+
+            var note = document.getElementById('eo-l-filter-note');
+            if (note) {
+                note.textContent = 'Filtered by the prescription currently in the Exam Results tab' +
+                    (hiddenCount > 0 ? ' — ' + hiddenCount + ' lens type(s) out of range are greyed out.' : '.');
+            }
         }
 
         function phEoUpdateLensPreview() {
@@ -4260,8 +4474,14 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
         document.getElementById('eo-l-name').addEventListener('change', phEoUpdateLensPreview);
 
         function phEoSaveLens() {
-            var newName = document.getElementById('eo-l-name').value;
+            var select  = document.getElementById('eo-l-name');
+            var newName = select.value;
             if (!newName) { phEoShowMsg('Please select a lens.', true); return; }
+            var chosenOpt = select.options[select.selectedIndex];
+            if (chosenOpt && chosenOpt.disabled) {
+                phEoShowMsg('That lens does not cover the current prescription range. Pick another, or update the Exam Results first.', true);
+                return;
+            }
             phEoPost('edit_group_lens', { lens_name: newName }, function(data) {
                 if (!_phEo.card || !data.changed) return;
                 _phEo.card.setAttribute('data-lens', (data.lens_name || '').toLowerCase());
