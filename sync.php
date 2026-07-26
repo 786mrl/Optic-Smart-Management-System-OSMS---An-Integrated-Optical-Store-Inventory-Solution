@@ -3496,7 +3496,7 @@ if (isset($_POST['action'])) {
         <div class="iphelp-backdrop" id="customUpdateDataBackdrop">
             <div class="iphelp-modal" style="max-width:520px;">
                 <h2>🗂️ Custom Update Data</h2>
-                <p style="color:#9a9da1; font-size:12px; margin-bottom:10px;">Check the files you want to pull from the PC's data folders (qrcodes, main_qrcodes, pdf_file, data_json, database).</p>
+                <p style="color:#9a9da1; font-size:12px; margin-bottom:10px;" id="customUpdateDataIntroText">Check the files you want to pull.</p>
                 <div style="display:flex; gap:10px; margin-bottom:10px;">
                     <button type="button" class="iphelp-link-btn" onclick="toggleAllCustomDataFiles(true)">Select all</button>
                     <button type="button" class="iphelp-link-btn" onclick="toggleAllCustomDataFiles(false)">Select none</button>
@@ -3913,14 +3913,16 @@ if (isset($_POST['action'])) {
             //      qrcodes / main_qrcodes / pdf_file / data_json / database) ----
             function openCustomUpdateDataModal() {
                 const body = document.getElementById('customDataFileListBody');
-                body.textContent = 'Loading file list from PC...';
+                const otherLabel = syncOwnRoleJs === 'android' ? 'the PC' : (syncOwnRoleJs === 'pc' ? 'Android' : 'the other device');
+                document.getElementById('customUpdateDataIntroText').textContent = `Check the files you want to pull from ${otherLabel}'s data folders (qrcodes, main_qrcodes, pdf_file, data_json, and database tables).`;
+                body.textContent = `Loading file list from ${otherLabel}...`;
                 document.getElementById('customUpdateDataBackdrop').classList.add('active');
 
                 fetch('sync.php', { method: 'POST', body: new URLSearchParams({ action: 'get_pc_data_file_list' }) })
                     .then(r => r.json())
                     .then(data => {
                         if (!data.ok || !Array.isArray(data.tree) || data.tree.length === 0) {
-                            body.textContent = data.message || 'Could not load the file list from PC.';
+                            body.textContent = data.message || `Could not load the file list from ${otherLabel}.`;
                             return;
                         }
                         body.innerHTML = '';
