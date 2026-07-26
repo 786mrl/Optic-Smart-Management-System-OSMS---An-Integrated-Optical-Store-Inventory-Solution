@@ -1216,7 +1216,7 @@ function sync_is_within_update_window($settingValue) {
  * Per-file CRC32 map (relative path => crc32 hex), excluding .git/.svn/backups.
  * Used to pinpoint exactly which files differ between devices.
  */
-function sync_build_file_crc_manifest($appDir, $excludeDirNames = ['.git', '.svn', 'backups', 'qrcodes', 'main_qrcodes', 'pdf_file', 'data_json', 'database']) {
+function sync_build_file_crc_manifest($appDir, $excludeDirNames = ['.git', '.svn', 'backups']) {
     $files = [];
     if (!is_dir($appDir)) return $files;
     // db_config.php is EXPECTED to differ between devices (Android needs a
@@ -3556,7 +3556,12 @@ if (isset($_POST['action'])) {
             // used by Update Source Code and Cross-Device Data Sync so the exact
             // files/tables changed are visible, not just a summary sentence.
             // Renders exactly which files/tables differ after a "Verify Full Sync" check.
-            var syncLastVerifyDiffPaths = []; // populated by renderVerifyDiffs, used to pre-check Custom Update
+            var syncLastVerifyDiffPaths = []; // populated by renderVerifyDiffs, used to pre-check Custom Update (code) and Custom Update Data (files + virtual table paths)
+            var SYNC_DATA_FOLDER_NAMES = ['qrcodes', 'main_qrcodes', 'pdf_file', 'data_json', 'database'];
+            function syncIsDataPath(path) {
+                const topFolder = path.split('/')[0];
+                return SYNC_DATA_FOLDER_NAMES.includes(topFolder);
+            }
 
             function renderVerifyDiffs(statusEl, data) {
                 const existing = statusEl.parentElement.querySelector('.verify-diffs-box');
@@ -3566,31 +3571,46 @@ if (isset($_POST['action'])) {
                 const tableDiffs = Array.isArray(data.table_diffs) ? data.table_diffs : [];
 
                 // Strip the " (...)" suffix and the "optic_pos/" prefix so these
-                // match the plain relative paths used by the code-file checklist.
-                syncLastVerifyDiffPaths = fileDiffs
+                // match the plain relative paths used by the checklists. Table
+                // diffs are captured too, as virtual "optic_pos_db/<table>" paths,
+                // so Custom Update Data can auto-check them.
+                const cleanedFilePaths = fileDiffs
                     .map(d => d.replace(/\s*\(.*\)$/, '').replace(/^optic_pos\//, ''));
+                syncLastVerifyDiffPaths = cleanedFilePaths.concat(tableDiffs.map(t => 'optic_pos_db/' + t));
 
                 if (fileDiffs.length === 0 && tableDiffs.length === 0) return; // everything matched, nothing to show
+
+                // Split file diffs into "code" (everything Custom Update Source Code
+                // covers) vs "data" (qrcodes/main_qrcodes/pdf_file/data_json/database
+                // — legitimately different per device most of the time), so the two
+                // don't get mixed together in one confusing list.
+                const codeDiffs = fileDiffs.filter(d => !syncIsDataPath(d.replace(/\s*\(.*\)$/, '').replace(/^optic_pos\//, '')));
+                const dataDiffs = fileDiffs.filter(d => syncIsDataPath(d.replace(/\s*\(.*\)$/, '').replace(/^optic_pos\//, '')));
 
                 const box = document.createElement('div');
                 box.className = 'verify-diffs-box';
                 box.style.cssText = 'margin-top:10px; font-size:12px;';
 
-                if (fileDiffs.length > 0) {
+                function addGroup(title, items) {
+                    if (items.length === 0) return;
                     const d = document.createElement('details');
                     d.open = true;
-                    d.innerHTML = `<summary style="cursor:pointer; color:#ff8a65;">📄 ${fileDiffs.length} file(s) differ</summary>`;
+                    d.style.marginTop = box.children.length > 0 ? '8px' : '0';
+                    d.innerHTML = `<summary style="cursor:pointer; color:#ff8a65;">${title}</summary>`;
                     const list = document.createElement('div');
                     list.style.cssText = 'max-height:220px; overflow-y:auto; font-family:monospace; color:#c9cbce; margin-top:6px; white-space:pre-wrap;';
-                    list.textContent = fileDiffs.join('\n');
+                    list.textContent = items.join('\n');
                     d.appendChild(list);
                     box.appendChild(d);
                 }
 
+                addGroup(`📄 ${codeDiffs.length} source code file(s) differ`, codeDiffs);
+                addGroup(`🗂️ ${dataDiffs.length} data file(s) differ (qrcodes/main_qrcodes/pdf_file/data_json/database)`, dataDiffs);
+
                 if (tableDiffs.length > 0) {
                     const d2 = document.createElement('details');
                     d2.open = true;
-                    d2.style.marginTop = fileDiffs.length > 0 ? '8px' : '0';
+                    d2.style.marginTop = box.children.length > 0 ? '8px' : '0';
                     d2.innerHTML = `<summary style="cursor:pointer; color:#ff8a65;">🗄️ ${tableDiffs.length} table(s) differ</summary>`;
                     const list2 = document.createElement('div');
                     list2.style.cssText = 'color:#c9cbce; margin-top:6px;';
@@ -3874,6 +3894,19 @@ if (isset($_POST['action'])) {
                 return paths;
             }
 
+            // Puts anything flagged by the last Verify Full Sync at the top of
+            // each tree level (a flagged file, or a folder containing one),
+            // ahead of the normal folders-first ordering.
+            function nodeContainsFlagged(node) {
+                if (node.type === 'file') return syncLastVerifyDiffPaths.includes(node.path);
+                return node.children.some(nodeContainsFlagged);
+            }
+            function sortTreeFlaggedFirst(nodes) {
+                nodes.forEach(n => { if (n.type === 'folder') sortTreeFlaggedFirst(n.children); });
+                nodes.sort((a, b) => (nodeContainsFlagged(a) ? 0 : 1) - (nodeContainsFlagged(b) ? 0 : 1));
+                return nodes;
+            }
+
             function openCustomUpdateModal() {
                 const body = document.getElementById('customFileListBody');
                 body.textContent = 'Loading file list from PC...';
@@ -3887,7 +3920,7 @@ if (isset($_POST['action'])) {
                             return;
                         }
                         body.innerHTML = '';
-                        data.tree.forEach(node => renderCodeTreeNode(node, body, 0, 'custom-file-checkbox'));
+                        sortTreeFlaggedFirst(data.tree).forEach(node => renderCodeTreeNode(node, body, 0, 'custom-file-checkbox'));
                     })
                     .catch(() => { body.textContent = 'Request error while loading the file list.'; });
             }
@@ -3926,7 +3959,7 @@ if (isset($_POST['action'])) {
                             return;
                         }
                         body.innerHTML = '';
-                        data.tree.forEach(node => renderCodeTreeNode(node, body, 0, 'custom-data-file-checkbox'));
+                        sortTreeFlaggedFirst(data.tree).forEach(node => renderCodeTreeNode(node, body, 0, 'custom-data-file-checkbox'));
                     })
                     .catch(() => { body.textContent = 'Request error while loading the file list.'; });
             }
