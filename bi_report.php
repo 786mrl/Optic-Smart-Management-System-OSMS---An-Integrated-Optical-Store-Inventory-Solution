@@ -48,7 +48,7 @@
         $frameCostMap = [];
         $r = $conn->query("SELECT ufc, buy_price FROM frames_main WHERE buy_price IS NOT NULL AND buy_price > 0");
         if ($r) { while ($row = $r->fetch_assoc()) { $frameCostMap[strtoupper(trim($row['ufc']))] = (int)$row['buy_price']; } $r->free(); }
-        $r = $conn->query("SELECT ufc, buy_price FROM frame_staging WHERE buy_price IS NOT NULL AND buy_price > 0");
+        $r = $conn->query("SELECT ufc, buy_price FROM frame_unrecord WHERE buy_price IS NOT NULL AND buy_price > 0");
         if ($r) { while ($row = $r->fetch_assoc()) { $k = strtoupper(trim($row['ufc'])); if (!isset($frameCostMap[$k])) $frameCostMap[$k] = (int)$row['buy_price']; } $r->free(); }
 
         $customFrameMap = [];
