@@ -2347,8 +2347,11 @@ Gemini is AI and can make mistakes.
 SET FOREIGN_KEY_CHECKS = 0;
 
 TRUNCATE TABLE activity_log;
-TRUNCATE TABLE deleted_records;
 TRUNCATE TABLE frames_main;
 TRUNCATE TABLE frame_staging;
+TRUNCATE TABLE customer_examinations;
+TRUNCATE TABLE customer_orders;
+TRUNCATE TABLE customer_list;
+TRUNCATE TABLE custom_frames;
 
 SET FOREIGN_KEY_CHECKS = 1;

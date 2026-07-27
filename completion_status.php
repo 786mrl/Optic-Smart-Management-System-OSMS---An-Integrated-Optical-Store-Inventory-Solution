@@ -4091,7 +4091,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
             // the admin password again.
             var fd = new FormData();
             fd.append('action', 'edit_lock_access');
-            fetch('purchase_history.php', { method: 'POST', body: fd })
+            fetch('completion_status.php', { method: 'POST', body: fd })
                 .catch(function() {})
                 .then(function() {
                     // If anything was actually saved, refresh the page so every
@@ -4134,7 +4134,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
             fd.append('action', 'edit_verify_access');
             fd.append('password', pw);
 
-            fetch('purchase_history.php', { method: 'POST', body: fd })
+            fetch('completion_status.php', { method: 'POST', body: fd })
                 .then(function(r) { return r.json(); })
                 .then(function(data) {
                     btn.disabled = false;
@@ -4163,7 +4163,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
             fd.append('action', 'edit_get_details');
             fd.append('order_id', _phEo.orderId);
 
-            fetch('purchase_history.php', { method: 'POST', body: fd })
+            fetch('completion_status.php', { method: 'POST', body: fd })
                 .then(function(r) { return r.json(); })
                 .then(function(data) {
                     if (!data.success) {
@@ -4419,7 +4419,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
             fd.append('invoice_number', _phEo.invoice);
             Object.keys(extraFields).forEach(function(k) { fd.append(k, extraFields[k]); });
 
-            fetch('purchase_history.php', { method: 'POST', body: fd })
+            fetch('completion_status.php', { method: 'POST', body: fd })
                 .then(function(r) { return r.json(); })
                 .then(function(data) {
                     if (data.success) {
