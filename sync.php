@@ -326,10 +326,12 @@ function sync_list_code_only_files($sourceDir) {
  * sync_build_code_tree(), for "Custom Update Data".
  */
 function sync_data_literal_folders() {
-    // The real, on-disk folders shown in Custom Update Data — NOT including
-    // "database", which is represented as a virtual table-list folder instead
-    // (see sync_build_data_tree()).
-    return ['qrcodes', 'main_qrcodes', 'pdf_file', 'data_json'];
+    // The real, on-disk folders shown in Custom Update Data. "database" is
+    // included here too (for files like optic_pos_db.sql), but its backups/
+    // subfolder is excluded (see the exclude list passed when scanning it
+    // below) — the actual table DATA is represented by the separate virtual
+    // "optic_pos_db" folder in sync_build_data_tree() instead.
+    return ['qrcodes', 'main_qrcodes', 'pdf_file', 'data_json', 'database'];
 }
 
 function sync_build_data_tree($appDir, $conn) {
@@ -337,7 +339,10 @@ function sync_build_data_tree($appDir, $conn) {
     foreach (sync_data_literal_folders() as $folderName) {
         $folderPath = $appDir . '/' . $folderName;
         if (!is_dir($folderPath)) continue;
-        $children = sync_build_code_tree($folderPath, $folderName, ['.git', '.svn'], []);
+        // "database" gets its "backups" subfolder excluded — that's per-IP
+        // sync history, not something meant to be transferred between devices.
+        $excludeHere = ($folderName === 'database') ? ['.git', '.svn', 'backups'] : ['.git', '.svn'];
+        $children = sync_build_code_tree($folderPath, $folderName, $excludeHere, []);
         $tree[] = ['type' => 'folder', 'name' => $folderName, 'children' => $children];
     }
 
@@ -374,13 +379,19 @@ function sync_build_data_tree($appDir, $conn) {
  * request — never trusts the selection blindly, to prevent path traversal).
  * Generic: used by both Custom Update Source Code and Custom Update Data.
  */
-function sync_zip_selected_files($sourceDir, $selectedPaths, $allowedPaths, $zipFile) {
+function sync_zip_selected_files($sourceDir, $selectedPaths, $allowedPaths, $zipFile, $deleteFilePaths = []) {
     if (!class_exists('ZipArchive')) {
         return ['ok' => false, 'message' => 'PHP ZipArchive extension is not enabled on this server.'];
     }
     $selected = array_values(array_intersect($selectedPaths, $allowedPaths));
-    if (empty($selected)) {
-        return ['ok' => false, 'message' => 'No valid files selected.'];
+    // Deletions are NOT checked against $allowedPaths — these are paths the
+    // user confirmed (via Verify Full Sync) are missing at the source, so
+    // they'll never appear in the source's own file list.
+    $deleteFilePaths = array_values(array_filter($deleteFilePaths, function ($p) {
+        return is_string($p) && strpos($p, '..') === false;
+    }));
+    if (empty($selected) && empty($deleteFilePaths)) {
+        return ['ok' => false, 'message' => 'No valid files or deletions selected.'];
     }
 
     $zip = new ZipArchive();
@@ -396,8 +407,11 @@ function sync_zip_selected_files($sourceDir, $selectedPaths, $allowedPaths, $zip
         $zip->addFile($fullPath, $topFolderName . '/' . $relPath);
         $fileCount++;
     }
+    if (!empty($deleteFilePaths)) {
+        $zip->addFromString('_custom_data_deletes.json', json_encode($deleteFilePaths));
+    }
     $zip->close();
-    return ['ok' => true, 'message' => "Custom zip created with $fileCount files.", 'file_count' => $fileCount];
+    return ['ok' => true, 'message' => "Custom zip created with $fileCount file(s), " . count($deleteFilePaths) . ' deletion(s).', 'file_count' => $fileCount];
 }
 
 /**
@@ -406,16 +420,49 @@ function sync_zip_selected_files($sourceDir, $selectedPaths, $allowedPaths, $zip
  * activity_log-driven partial one). REPLACE INTO keeps it idempotent as
  * long as the table has a primary/unique key.
  */
+function sync_get_primary_key_column($conn, $table) {
+    $r = $conn->query("SHOW KEYS FROM `$table` WHERE Key_name = 'PRIMARY'");
+    if ($r && $row = $r->fetch_assoc()) return $row['Column_name'];
+    return null;
+}
+
+/**
+ * Exports REPLACE INTO statements for a table's full current data, AND
+ * returns the table's primary-key column + the exact set of PK values that
+ * currently exist at the source. The receiver uses this PK list to mirror-
+ * delete any local row whose key ISN'T in it — REPLACE INTO alone can only
+ * add/update rows, never remove ones the source has deleted.
+ */
 function sync_export_full_table_replace($conn, $table) {
+    $pkCol = sync_get_primary_key_column($conn, $table);
     $dataResult = $conn->query("SELECT * FROM `$table`");
     $sql = '';
+    $pkValues = [];
+
+    // Include the table's structure so a table that doesn't exist yet on the
+    // target device gets created there. Without this, REPLACE INTO alone
+    // silently does nothing for a brand-new table (e.g. one just created on
+    // this device and never synced before) — the target keeps reporting it
+    // as missing even after "Apply Selected Changes" says it succeeded.
+    $createResult = $conn->query("SHOW CREATE TABLE `$table`");
+    if ($createResult) {
+        $createRow = $createResult->fetch_array();
+        if ($createRow && isset($createRow[1])) {
+            // IF NOT EXISTS: never touches/overwrites a table that already
+            // exists on the target, only creates it when missing.
+            $createStmt = preg_replace('/^CREATE TABLE/', 'CREATE TABLE IF NOT EXISTS', $createRow[1], 1);
+            $sql .= $createStmt . ";\n";
+        }
+    }
     if ($dataResult && $dataResult->num_rows > 0) {
         $fields = $dataResult->fetch_fields();
         $fieldNames = array_map(function ($f) { return "`{$f->name}`"; }, $fields);
         $fieldList = implode(', ', $fieldNames);
         $isUsersTable = (strtolower($table) === 'users');
         $columnNamesLower = array_map(function ($f) { return strtolower($f->name); }, $fields);
+        $pkIdx = $pkCol !== null ? array_search(strtolower($pkCol), $columnNamesLower, true) : false;
         while ($row = $dataResult->fetch_row()) {
+            if ($pkIdx !== false) $pkValues[] = $row[$pkIdx];
             $values = [];
             foreach ($row as $idx => $val) {
                 if ($isUsersTable && in_array($columnNamesLower[$idx], ['session_token', 'session_expires'], true)) {
@@ -427,7 +474,166 @@ function sync_export_full_table_replace($conn, $table) {
             $sql .= "REPLACE INTO `$table` ($fieldList) VALUES (" . implode(', ', $values) . ");\n";
         }
     }
-    return $sql;
+    return ['sql' => $sql, 'pk_col' => $pkCol, 'pk_values' => $pkValues];
+}
+
+/**
+ * Splits a CREATE TABLE column-list body on top-level commas only (i.e. not
+ * commas nested inside parentheses, like the ones in `varchar(255)` or
+ * `ENUM('a','b')`), so each element returned is one whole column or key
+ * definition.
+ */
+function sync_split_top_level_commas($str) {
+    $parts = [];
+    $depth = 0;
+    $current = '';
+    $len = strlen($str);
+    for ($i = 0; $i < $len; $i++) {
+        $ch = $str[$i];
+        if ($ch === '(') $depth++;
+        if ($ch === ')') $depth--;
+        if ($ch === ',' && $depth === 0) {
+            $parts[] = trim($current);
+            $current = '';
+        } else {
+            $current .= $ch;
+        }
+    }
+    if (trim($current) !== '') $parts[] = trim($current);
+    return $parts;
+}
+
+/**
+ * Parses a `SHOW CREATE TABLE`-style statement and returns an ordered
+ * map of column_name => full column definition string. Key/index/
+ * constraint lines (PRIMARY KEY, UNIQUE KEY, FOREIGN KEY, CONSTRAINT,
+ * etc.) are intentionally skipped — this is used only to reconcile
+ * actual data columns (added/removed/changed), not indexes, so we never
+ * risk breaking an index or foreign key relationship on either device.
+ */
+function sync_parse_create_table_columns($createStmt) {
+    $parenStart = strpos($createStmt, '(');
+    if ($parenStart === false) return [];
+    $depth = 0;
+    $len = strlen($createStmt);
+    $parenEnd = null;
+    for ($i = $parenStart; $i < $len; $i++) {
+        if ($createStmt[$i] === '(') $depth++;
+        if ($createStmt[$i] === ')') {
+            $depth--;
+            if ($depth === 0) { $parenEnd = $i; break; }
+        }
+    }
+    if ($parenEnd === null) return [];
+    $body = substr($createStmt, $parenStart + 1, $parenEnd - $parenStart - 1);
+
+    $columns = [];
+    foreach (sync_split_top_level_commas($body) as $part) {
+        if (preg_match('/^`([^`]+)`\s+(.+)$/s', $part, $m)) {
+            $keyword = strtoupper(substr($part, 0, 20));
+            $isKeyOrConstraint = (
+                strpos($keyword, 'PRIMARY KEY') === 0 ||
+                strpos($keyword, 'UNIQUE KEY') === 0 ||
+                strpos($keyword, 'KEY ') === 0 ||
+                strpos($keyword, 'CONSTRAINT') === 0 ||
+                strpos($keyword, 'FOREIGN KEY') === 0 ||
+                strpos($keyword, 'FULLTEXT') === 0 ||
+                strpos($keyword, 'SPATIAL') === 0
+            );
+            if (!$isKeyOrConstraint) {
+                $columns[$m[1]] = trim(rtrim($part, ", \t\n\r"));
+            }
+        }
+    }
+    return $columns;
+}
+
+/**
+ * Reconciles the LOCAL structure of tables carried in a Custom Update Data
+ * dump against the SOURCE device's structure embedded in that same dump
+ * (as `CREATE TABLE IF NOT EXISTS` statements — see
+ * sync_export_full_table_replace()), so that a column added, removed, or
+ * changed on the source gets applied on the target too, not just brand-new
+ * tables. Only run for tables that already exist locally — a table that
+ * doesn't exist yet is created as-is by the CREATE TABLE IF NOT EXISTS
+ * statement during the normal import right after this runs, so there's
+ * nothing to reconcile for it here.
+ */
+function sync_reconcile_table_structures($conn, $sqlContent) {
+    $alteredTables = [];
+    $errors = [];
+    $offset = 0;
+    $needle = 'CREATE TABLE IF NOT EXISTS `';
+    while (($pos = strpos($sqlContent, $needle, $offset)) !== false) {
+        $tableStart = $pos + strlen($needle);
+        $tableEnd = strpos($sqlContent, '`', $tableStart);
+        if ($tableEnd === false) break;
+        $table = substr($sqlContent, $tableStart, $tableEnd - $tableStart);
+
+        $parenStart = strpos($sqlContent, '(', $tableEnd);
+        if ($parenStart === false) break;
+        $depth = 0;
+        $len = strlen($sqlContent);
+        $parenEnd = null;
+        for ($i = $parenStart; $i < $len; $i++) {
+            if ($sqlContent[$i] === '(') $depth++;
+            if ($sqlContent[$i] === ')') { $depth--; if ($depth === 0) { $parenEnd = $i; break; } }
+        }
+        if ($parenEnd === null) break;
+        $semicolonPos = strpos($sqlContent, ';', $parenEnd);
+        $offset = ($semicolonPos !== false) ? $semicolonPos + 1 : $parenEnd + 1;
+
+        $sourceCreateStmt = substr($sqlContent, $pos, ($semicolonPos !== false ? $semicolonPos : $parenEnd) - $pos);
+
+        // Only reconcile tables that already exist locally.
+        $existsResult = $conn->query("SHOW TABLES LIKE '" . $conn->real_escape_string($table) . "'");
+        if (!$existsResult || $existsResult->num_rows === 0) continue;
+
+        $localCreateResult = $conn->query("SHOW CREATE TABLE `$table`");
+        if (!$localCreateResult) continue;
+        $localCreateRow = $localCreateResult->fetch_array();
+        if (!$localCreateRow || !isset($localCreateRow[1])) continue;
+
+        $sourceColumns = sync_parse_create_table_columns($sourceCreateStmt);
+        $localColumns = sync_parse_create_table_columns($localCreateRow[1]);
+        if (empty($sourceColumns)) continue;
+
+        $alterParts = [];
+        $prevSourceCol = null;
+        foreach ($sourceColumns as $colName => $colDef) {
+            if (!array_key_exists($colName, $localColumns)) {
+                // New column header on the source — add it locally in the
+                // same position (or at the end if it was first there too).
+                $position = ($prevSourceCol === null) ? 'FIRST' : "AFTER `$prevSourceCol`";
+                $alterParts[] = "ADD COLUMN $colDef $position";
+            } elseif (trim($localColumns[$colName]) !== trim($colDef)) {
+                // Column exists on both sides but its definition changed
+                // (type, length, default, nullability, etc.) on the source.
+                $alterParts[] = "MODIFY COLUMN $colDef";
+            }
+            $prevSourceCol = $colName;
+        }
+        foreach ($localColumns as $colName => $colDef) {
+            if (!array_key_exists($colName, $sourceColumns)) {
+                // Column removed on the source — drop it locally too.
+                $alterParts[] = "DROP COLUMN `$colName`";
+            }
+        }
+
+        if (!empty($alterParts)) {
+            $alterSql = "ALTER TABLE `$table` " . implode(', ', $alterParts);
+            try {
+                if ($conn->query($alterSql)) {
+                    $alteredTables[] = $table;
+                } else {
+                    $errors[] = "$table (" . $conn->error . ')';
+                }
+            } catch (\mysqli_sql_exception $e) {
+                $errors[] = "$table (" . $e->getMessage() . ')';
+            }
+        }
+    }
+    return ['altered_tables' => $alteredTables, 'errors' => $errors];
 }
 
 /**
@@ -437,7 +643,7 @@ function sync_export_full_table_replace($conn, $table) {
  * selections never touch the filesystem — they're exported as REPLACE INTO
  * SQL and embedded as _custom_data_update.sql at the zip root.
  */
-function sync_build_data_custom_zip($appDir, $conn, $selectedPaths, $zipFile) {
+function sync_build_data_custom_zip($appDir, $conn, $selectedPaths, $zipFile, $deleteFilePaths = []) {
     if (!class_exists('ZipArchive')) {
         return ['ok' => false, 'message' => 'PHP ZipArchive extension is not enabled on this server.'];
     }
@@ -457,9 +663,19 @@ function sync_build_data_custom_zip($appDir, $conn, $selectedPaths, $zipFile) {
     foreach (sync_data_literal_folders() as $folderName) {
         $folderPath = $appDir . '/' . $folderName;
         if (!is_dir($folderPath)) continue;
-        $allowedFiles = array_merge($allowedFiles, sync_flatten_code_tree(sync_build_code_tree($folderPath, $folderName, ['.git', '.svn'], [])));
+        $excludeHere = ($folderName === 'database') ? ['.git', '.svn', 'backups'] : ['.git', '.svn'];
+        $allowedFiles = array_merge($allowedFiles, sync_flatten_code_tree(sync_build_code_tree($folderPath, $folderName, $excludeHere, [])));
     }
     $fileSelections = array_values(array_intersect($fileSelections, $allowedFiles));
+
+    // Delete-list is validated only against the allowed SCOPE prefix (folder
+    // names) — not against $allowedFiles, since these are paths that are
+    // EXPECTED not to exist at the source (that's the whole point: the user
+    // confirmed via Verify Full Sync that the source deleted them).
+    $allowedTopFolders = sync_data_literal_folders();
+    $deleteFilePaths = array_values(array_filter($deleteFilePaths, function ($p) use ($allowedTopFolders) {
+        return in_array(explode('/', $p)[0], $allowedTopFolders, true);
+    }));
 
     // Validate tables against what actually exists
     $actualTables = [];
@@ -469,8 +685,8 @@ function sync_build_data_custom_zip($appDir, $conn, $selectedPaths, $zipFile) {
     }
     $tableSelections = array_values(array_intersect($tableSelections, $actualTables));
 
-    if (empty($fileSelections) && empty($tableSelections)) {
-        return ['ok' => false, 'message' => 'No valid files or tables selected.'];
+    if (empty($fileSelections) && empty($tableSelections) && empty($deleteFilePaths)) {
+        return ['ok' => false, 'message' => 'No valid files, tables, or deletions selected.'];
     }
 
     $zip = new ZipArchive();
@@ -488,22 +704,35 @@ function sync_build_data_custom_zip($appDir, $conn, $selectedPaths, $zipFile) {
     }
 
     $tableCount = 0;
+    $tablePkManifest = [];
     if (!empty($tableSelections)) {
         $sql = "SET FOREIGN_KEY_CHECKS=0;\nSTART TRANSACTION;\n";
         foreach ($tableSelections as $table) {
-            $sql .= sync_export_full_table_replace($conn, $table);
+            $exp = sync_export_full_table_replace($conn, $table);
+            $sql .= $exp['sql'];
+            if ($exp['pk_col'] !== null) {
+                $tablePkManifest[] = ['table' => $table, 'pk_col' => $exp['pk_col'], 'pk_values' => $exp['pk_values']];
+            }
             $tableCount++;
         }
         $sql .= "COMMIT;\nSET FOREIGN_KEY_CHECKS=1;\n";
         $zip->addFromString('_custom_data_update.sql', $sql);
+        if (!empty($tablePkManifest)) {
+            $zip->addFromString('_custom_data_table_pks.json', json_encode($tablePkManifest));
+        }
+    }
+
+    if (!empty($deleteFilePaths)) {
+        $zip->addFromString('_custom_data_deletes.json', json_encode($deleteFilePaths));
     }
 
     $zip->close();
     return [
         'ok' => true,
-        'message' => "Custom data zip created with $fileCount file(s) and $tableCount table(s).",
+        'message' => "Custom data zip created with $fileCount file(s), $tableCount table(s), " . count($deleteFilePaths) . ' deletion(s).',
         'file_count' => $fileCount,
         'table_count' => $tableCount,
+        'delete_count' => count($deleteFilePaths),
     ];
 }
 
@@ -586,8 +815,33 @@ function sync_fetch_and_apply_code_zip($sourceUrl, $appDir, $htdocsDir, $conn = 
     $dataSqlPath = $htdocsDir . '/_custom_data_update.sql';
     if (file_exists($dataSqlPath)) {
         if ($conn !== null) {
-            $importResult = sync_import_sql_native_dispatch($dataSqlPath, $ownRole, $conn);
-            $dbUpdateNote = 'Database tables: ' . $importResult['message'];
+            try {
+                // Reconcile column-level structure (added/removed/changed
+                // columns) on tables that already exist locally BEFORE
+                // importing data — otherwise a REPLACE INTO referencing a
+                // newly-added source column would fail against the old
+                // local structure.
+                $structureNote = null;
+                $sqlContentForReconcile = file_get_contents($dataSqlPath);
+                if ($sqlContentForReconcile !== false) {
+                    $reconcileResult = sync_reconcile_table_structures($conn, $sqlContentForReconcile);
+                    if (!empty($reconcileResult['altered_tables'])) {
+                        $structureNote = 'Structure updated for ' . count($reconcileResult['altered_tables']) . ' table(s) (' . implode(', ', $reconcileResult['altered_tables']) . ').';
+                    }
+                    if (!empty($reconcileResult['errors'])) {
+                        $structureNote = ($structureNote !== null ? $structureNote . ' ' : '') . 'Structure update failed for: ' . implode('; ', $reconcileResult['errors']) . '.';
+                    }
+                }
+
+                $importResult = sync_import_sql_native_dispatch($dataSqlPath, $ownRole, $conn);
+                $dbUpdateNote = 'Database tables: ' . ($structureNote !== null ? $structureNote . ' ' : '') . $importResult['message'];
+            } catch (\mysqli_sql_exception $e) {
+                // A table in the dump may not exist locally yet (different
+                // schema/setup state on this device). Report it and keep
+                // going instead of aborting the rest of the apply (mirror-
+                // delete step, file deletions, etc. below still need to run).
+                $dbUpdateNote = 'Database tables: import failed — ' . $e->getMessage();
+            }
         } else {
             $dbUpdateNote = 'Database tables: skipped (no DB connection available for this apply).';
         }
@@ -597,6 +851,97 @@ function sync_fetch_and_apply_code_zip($sourceUrl, $appDir, $htdocsDir, $conn = 
         $updatedFiles = array_values(array_filter($updatedFiles, function ($f) {
             return basename($f['path']) !== '_custom_data_update.sql';
         }));
+    }
+
+    // Mirror-delete: for each synced table that carried a PK manifest, remove
+    // any LOCAL row whose key isn't in the source's current set — REPLACE
+    // INTO alone can only add/update, never delete rows the source removed.
+    $pkManifestPath = $htdocsDir . '/_custom_data_table_pks.json';
+    $deletedRowsNote = null;
+    if (file_exists($pkManifestPath)) {
+        $pkManifest = json_decode(file_get_contents($pkManifestPath), true);
+        @unlink($pkManifestPath);
+        $updatedFiles = array_values(array_filter($updatedFiles, function ($f) {
+            return basename($f['path']) !== '_custom_data_table_pks.json';
+        }));
+        if ($conn !== null && is_array($pkManifest)) {
+            // Only tables that actually exist locally can be mirror-deleted —
+            // a table the source has (even with 0 rows) may not exist yet on
+            // this device (different schema/setup state). Querying a
+            // nonexistent table throws with mysqli's default exception mode,
+            // which would otherwise abort this whole apply mid-loop and
+            // silently skip every remaining table/file. Skipped tables are
+            // reported back so the user can see what didn't get mirrored.
+            $localTables = [];
+            $tr = $conn->query("SHOW TABLES");
+            if ($tr) {
+                while ($row = $tr->fetch_array()) $localTables[] = $row[0];
+            }
+
+            $totalDeletedRows = 0;
+            $skippedTables = [];
+            foreach ($pkManifest as $entry) {
+                $table = $entry['table'] ?? null;
+                $pkCol = $entry['pk_col'] ?? null;
+                $pkValues = $entry['pk_values'] ?? [];
+                if ($table === null || $pkCol === null) continue;
+                if (!in_array($table, $localTables, true)) {
+                    // Nothing to mirror-delete from a table that doesn't
+                    // exist locally yet; the REPLACE INTO import (if this
+                    // table was also selected as data) will create/populate
+                    // it separately.
+                    $skippedTables[] = $table;
+                    continue;
+                }
+                try {
+                    if (empty($pkValues)) {
+                        // Source table is now empty — clear the local copy entirely.
+                        $conn->query("DELETE FROM `$table`");
+                    } else {
+                        $quoted = array_map(function ($v) use ($conn) { return "'" . $conn->real_escape_string($v) . "'"; }, $pkValues);
+                        $deleteQuery = "DELETE FROM `$table` WHERE `$pkCol` NOT IN (" . implode(',', $quoted) . ")";
+                        $conn->query($deleteQuery);
+                    }
+                    $totalDeletedRows += $conn->affected_rows > 0 ? $conn->affected_rows : 0;
+                } catch (\mysqli_sql_exception $e) {
+                    // Don't let one bad table abort the rest of the apply.
+                    $skippedTables[] = $table;
+                }
+            }
+            $deletedRowsNote = "Mirrored $totalDeletedRows local row(s) removed to match the source.";
+            if (!empty($skippedTables)) {
+                $deletedRowsNote .= ' Skipped mirror-delete for ' . count($skippedTables) . ' table(s) not present locally (' . implode(', ', array_unique($skippedTables)) . ').';
+            }
+        }
+    }
+
+    // Explicit local file deletions (files confirmed missing at the source,
+    // via Verify Full Sync, that the user chose to also remove here).
+    $deleteManifestPath = $htdocsDir . '/_custom_data_deletes.json';
+    $deletedFilesNote = null;
+    if (file_exists($deleteManifestPath)) {
+        $deleteList = json_decode(file_get_contents($deleteManifestPath), true);
+        @unlink($deleteManifestPath);
+        $updatedFiles = array_values(array_filter($updatedFiles, function ($f) {
+            return basename($f['path']) !== '_custom_data_deletes.json';
+        }));
+        if (is_array($deleteList)) {
+            $deletedCount = 0;
+            foreach ($deleteList as $relPath) {
+                // Safety: only ever delete within $appDir (htdocs/optic_pos/),
+                // never allow a path to escape via "..". $relPath is relative
+                // to the app folder itself (e.g. "try.php",
+                // "main_qrcodes/foo.png"), so it must be resolved against
+                // $appDir, not its parent $htdocsDir.
+                $target = realpath($appDir . '/' . $relPath);
+                $safeRoot = realpath($appDir);
+                if ($target !== false && $safeRoot !== false && strpos($target, $safeRoot) === 0 && is_file($target)) {
+                    @unlink($target);
+                    $deletedCount++;
+                }
+            }
+            $deletedFilesNote = "Deleted $deletedCount local file(s) confirmed missing at the source.";
+        }
     }
 
     $filesMismatched = [];
@@ -616,7 +961,7 @@ function sync_fetch_and_apply_code_zip($sourceUrl, $appDir, $htdocsDir, $conn = 
 
     return [
         'ok' => $extracted,
-        'message' => ($extracted ? "Source code updated — $numFiles file(s) overlaid from PC." : 'Extraction failed.') . ($syncPhpVerifyNote ? ' ' . $syncPhpVerifyNote : '') . ($dbUpdateNote ? ' ' . $dbUpdateNote : ''),
+        'message' => ($extracted ? "Source code updated — $numFiles file(s) overlaid from PC." : 'Extraction failed.') . ($syncPhpVerifyNote ? ' ' . $syncPhpVerifyNote : '') . ($dbUpdateNote ? ' ' . $dbUpdateNote : '') . ($deletedRowsNote ? ' ' . $deletedRowsNote : '') . ($deletedFilesNote ? ' ' . $deletedFilesNote : ''),
         'updated_files' => $updatedFiles,
         'verification' => [
             'available' => true,
@@ -1268,7 +1613,12 @@ function sync_compute_per_table_hashes($conn) {
             }
         }
         sort($lines); // order-independent — row order shouldn't count as a "difference"
-        $hashes[$table] = hash('sha256', implode("\n", $lines));
+        // Column list is hashed IN ADDITION to row data (and NOT sorted, since
+        // column order is part of the schema) — otherwise a schema change like
+        // adding a new column would be completely invisible whenever the table
+        // has 0 rows, since $lines would be empty either way.
+        $schemaLine = implode(',', $colsLower);
+        $hashes[$table] = hash('sha256', $schemaLine . "\n" . implode("\n", $lines));
     }
     return $hashes;
 }
@@ -1508,18 +1858,21 @@ if (isset($_GET['action']) && $_GET['action'] === 'serve_code_custom') {
     ignore_user_abort(true);
 
     $requestedPaths = json_decode($_GET['files'] ?? '[]', true);
-    if (!is_array($requestedPaths) || empty($requestedPaths)) {
+    $deletePaths = json_decode($_GET['deletes'] ?? '[]', true);
+    if (!is_array($requestedPaths)) $requestedPaths = [];
+    if (!is_array($deletePaths)) $deletePaths = [];
+    if (empty($requestedPaths) && empty($deletePaths)) {
         http_response_code(400);
         if (ob_get_level() > 0) ob_clean();
         header('Content-Type: application/json');
         if (ob_get_level() > 0) { ob_clean(); }
-        echo json_encode(['ok' => false, 'message' => 'No files specified.']);
+        echo json_encode(['ok' => false, 'message' => 'No files or deletions specified.']);
         exit();
     }
 
     $zipPath = sys_get_temp_dir() . '/' . SYNC_APP_FOLDER_NAME . '_code_custom_' . uniqid() . '.zip';
     $allowedPaths = sync_flatten_code_tree(sync_build_code_tree($appDir));
-    $zipResult = sync_zip_selected_files($appDir, $requestedPaths, $allowedPaths, $zipPath);
+    $zipResult = sync_zip_selected_files($appDir, $requestedPaths, $allowedPaths, $zipPath, $deletePaths);
     if (!$zipResult['ok']) {
         @unlink($zipPath);
         http_response_code(500);
@@ -1581,19 +1934,22 @@ if (isset($_GET['action']) && $_GET['action'] === 'serve_data_custom') {
     ignore_user_abort(true);
 
     $requestedPaths = json_decode($_GET['files'] ?? '[]', true);
-    if (!is_array($requestedPaths) || empty($requestedPaths)) {
+    $deletePaths = json_decode($_GET['deletes'] ?? '[]', true);
+    if (!is_array($requestedPaths)) $requestedPaths = [];
+    if (!is_array($deletePaths)) $deletePaths = [];
+    if (empty($requestedPaths) && empty($deletePaths)) {
         http_response_code(400);
         if (ob_get_level() > 0) ob_clean();
         header('Content-Type: application/json');
         if (ob_get_level() > 0) { ob_clean(); }
-        echo json_encode(['ok' => false, 'message' => 'No files specified.']);
+        echo json_encode(['ok' => false, 'message' => 'No files, tables, or deletions specified.']);
         exit();
     }
 
     include 'db_config.php'; // provides $conn for table exports
 
     $zipPath = sys_get_temp_dir() . '/' . SYNC_APP_FOLDER_NAME . '_data_custom_' . uniqid() . '.zip';
-    $zipResult = sync_build_data_custom_zip($appDir, $conn, $requestedPaths, $zipPath);
+    $zipResult = sync_build_data_custom_zip($appDir, $conn, $requestedPaths, $zipPath, $deletePaths);
     if (!$zipResult['ok']) {
         @unlink($zipPath);
         http_response_code(500);
@@ -2247,13 +2603,16 @@ if (isset($_POST['action'])) {
             exit();
         }
         $selectedFiles = json_decode($_POST['files'] ?? '[]', true);
-        if (!is_array($selectedFiles) || empty($selectedFiles)) {
+        $deleteFiles = json_decode($_POST['delete_files'] ?? '[]', true);
+        if (!is_array($selectedFiles)) $selectedFiles = [];
+        if (!is_array($deleteFiles)) $deleteFiles = [];
+        if (empty($selectedFiles) && empty($deleteFiles)) {
             if (ob_get_level() > 0) { ob_clean(); }
             echo json_encode(['ok' => false, 'message' => 'No files selected.']);
             exit();
         }
-        $sourceUrl = "http://" . $syncConfig['pc_ip'] . ":" . $syncConfig['pc_port'] . "/" . SYNC_APP_FOLDER_NAME . "/sync.php?action=serve_code_custom&token=" . urlencode(SYNC_TOKEN) . "&files=" . urlencode(json_encode($selectedFiles));
-        $result = sync_fetch_and_apply_code_zip($sourceUrl, $appDir, $htdocsDir);
+        $sourceUrl = "http://" . $syncConfig['pc_ip'] . ":" . $syncConfig['pc_port'] . "/" . SYNC_APP_FOLDER_NAME . "/sync.php?action=serve_code_custom&token=" . urlencode(SYNC_TOKEN) . "&files=" . urlencode(json_encode($selectedFiles)) . "&deletes=" . urlencode(json_encode($deleteFiles));
+        $result = sync_fetch_and_apply_code_zip($sourceUrl, $appDir, $htdocsDir, $conn, $syncOwnRole);
         if (ob_get_level() > 0) { ob_clean(); }
         echo json_encode($result);
         exit();
@@ -2296,12 +2655,15 @@ if (isset($_POST['action'])) {
             exit();
         }
         $selectedFiles = json_decode($_POST['files'] ?? '[]', true);
-        if (!is_array($selectedFiles) || empty($selectedFiles)) {
+        $deleteFiles = json_decode($_POST['delete_files'] ?? '[]', true);
+        if (!is_array($selectedFiles)) $selectedFiles = [];
+        if (!is_array($deleteFiles)) $deleteFiles = [];
+        if (empty($selectedFiles) && empty($deleteFiles)) {
             if (ob_get_level() > 0) { ob_clean(); }
             echo json_encode(['ok' => false, 'message' => 'No files selected.']);
             exit();
         }
-        $sourceUrl .= "&files=" . urlencode(json_encode($selectedFiles));
+        $sourceUrl .= "&files=" . urlencode(json_encode($selectedFiles)) . "&deletes=" . urlencode(json_encode($deleteFiles));
         $result = sync_fetch_and_apply_code_zip($sourceUrl, $appDir, $htdocsDir, $conn, $syncOwnRole);
         if (ob_get_level() > 0) { ob_clean(); }
         echo json_encode($result);
@@ -3488,7 +3850,11 @@ if (isset($_POST['action'])) {
                     <button type="button" class="iphelp-link-btn" onclick="toggleAllCustomFiles(false)">Select none</button>
                 </div>
                 <div id="customFileListBody" style="max-height:300px; overflow-y:auto; font-size:13px; color:#c9cbce;">Loading...</div>
-                <button type="button" class="sync-btn" style="margin-top:16px;" onclick="submitCustomUpdate()">🎯 Update Selected Files</button>
+                <div id="customFileDeleteSection" style="display:none; margin-top:14px;">
+                    <div style="font-size:12px; color:#ff8a65; font-weight:600; margin-bottom:6px;">🗑️ Also delete locally (confirmed missing on the PC):</div>
+                    <div id="customFileDeleteBody" style="max-height:150px; overflow-y:auto; font-size:12px; color:#c9cbce;"></div>
+                </div>
+                <button type="button" class="sync-btn" style="margin-top:16px;" onclick="submitCustomUpdate()">🎯 Apply Selected Changes</button>
                 <button type="button" class="iphelp-close-btn" onclick="closeCustomUpdateModal()">Cancel</button>
             </div>
         </div>
@@ -3502,7 +3868,11 @@ if (isset($_POST['action'])) {
                     <button type="button" class="iphelp-link-btn" onclick="toggleAllCustomDataFiles(false)">Select none</button>
                 </div>
                 <div id="customDataFileListBody" style="max-height:300px; overflow-y:auto; font-size:13px; color:#c9cbce;">Loading...</div>
-                <button type="button" class="sync-btn" style="margin-top:16px;" onclick="submitCustomUpdateData()">🗂️ Update Selected Files</button>
+                <div id="customDataDeleteSection" style="display:none; margin-top:14px;">
+                    <div style="font-size:12px; color:#ff8a65; font-weight:600; margin-bottom:6px;" id="customDataDeleteLabel">🗑️ Also delete locally:</div>
+                    <div id="customDataDeleteBody" style="max-height:150px; overflow-y:auto; font-size:12px; color:#c9cbce;"></div>
+                </div>
+                <button type="button" class="sync-btn" style="margin-top:16px;" onclick="submitCustomUpdateData()">🗂️ Apply Selected Changes</button>
                 <button type="button" class="iphelp-close-btn" onclick="closeCustomUpdateDataModal()">Cancel</button>
             </div>
         </div>
@@ -3557,6 +3927,7 @@ if (isset($_POST['action'])) {
             // files/tables changed are visible, not just a summary sentence.
             // Renders exactly which files/tables differ after a "Verify Full Sync" check.
             var syncLastVerifyDiffPaths = []; // populated by renderVerifyDiffs, used to pre-check Custom Update (code) and Custom Update Data (files + virtual table paths)
+            var syncLastVerifyMissingOnOther = []; // paths present here but confirmed missing at the other device — candidates for local deletion, not pulling
             var SYNC_DATA_FOLDER_NAMES = ['qrcodes', 'main_qrcodes', 'pdf_file', 'data_json', 'database'];
             function syncIsDataPath(path) {
                 const topFolder = path.split('/')[0];
@@ -3570,12 +3941,23 @@ if (isset($_POST['action'])) {
                 const fileDiffs = Array.isArray(data.file_diffs) ? data.file_diffs : [];
                 const tableDiffs = Array.isArray(data.table_diffs) ? data.table_diffs : [];
 
+                // "present on this device" but NOT "missing on THIS device" means
+                // the OTHER device is the one missing it — a deletion candidate,
+                // since there's nothing to pull (the source doesn't have it).
+                const missingOnOtherRegex = /\(missing on (?!THIS device)[^,]+, present on this device\)/i;
+                syncLastVerifyMissingOnOther = fileDiffs
+                    .filter(d => missingOnOtherRegex.test(d))
+                    .map(d => d.replace(/\s*\(.*\)$/, '').replace(/^optic_pos\//, ''));
+
                 // Strip the " (...)" suffix and the "optic_pos/" prefix so these
                 // match the plain relative paths used by the checklists. Table
                 // diffs are captured too, as virtual "optic_pos_db/<table>" paths,
-                // so Custom Update Data can auto-check them.
+                // so Custom Update Data can auto-check them. Files that are only
+                // missing-on-other are excluded here — they belong in the deletion
+                // list above instead, since there's nothing to pull for them.
                 const cleanedFilePaths = fileDiffs
-                    .map(d => d.replace(/\s*\(.*\)$/, '').replace(/^optic_pos\//, ''));
+                    .map(d => d.replace(/\s*\(.*\)$/, '').replace(/^optic_pos\//, ''))
+                    .filter(p => !syncLastVerifyMissingOnOther.includes(p));
                 syncLastVerifyDiffPaths = cleanedFilePaths.concat(tableDiffs.map(t => 'optic_pos_db/' + t));
 
                 if (fileDiffs.length === 0 && tableDiffs.length === 0) return; // everything matched, nothing to show
@@ -3921,6 +4303,7 @@ if (isset($_POST['action'])) {
                         }
                         body.innerHTML = '';
                         sortTreeFlaggedFirst(data.tree).forEach(node => renderCodeTreeNode(node, body, 0, 'custom-file-checkbox'));
+                        renderDeleteChecklist('customFileDeleteSection', 'customFileDeleteBody', 'custom-file-delete-checkbox', syncLastVerifyMissingOnOther.filter(p => !syncIsDataPath(p)));
                     })
                     .catch(() => { body.textContent = 'Request error while loading the file list.'; });
             }
@@ -3932,14 +4315,38 @@ if (isset($_POST['action'])) {
             }
             function submitCustomUpdate() {
                 const selected = Array.from(document.querySelectorAll('.custom-file-checkbox:checked')).map(cb => cb.value);
-                if (selected.length === 0) {
+                const toDelete = Array.from(document.querySelectorAll('.custom-file-delete-checkbox:checked')).map(cb => cb.value);
+                if (selected.length === 0 && toDelete.length === 0) {
                     alert('Select at least one file first.');
                     return;
                 }
-                if (!confirm(`Pull ${selected.length} selected file(s) from the PC and overlay them here?`)) return;
+                const parts = [];
+                if (selected.length > 0) parts.push(`pull ${selected.length} file(s)`);
+                if (toDelete.length > 0) parts.push(`delete ${toDelete.length} local file(s) confirmed missing on the PC`);
+                if (!confirm(`This will ${parts.join(' and ')}. Continue?`)) return;
                 closeCustomUpdateModal();
                 const btn = document.getElementById('btnCustomUpdateCode');
-                runAction('pull_code_custom', { files: JSON.stringify(selected) }, btn, 'statusCustomUpdateCode');
+                runAction('pull_code_custom', { files: JSON.stringify(selected), delete_files: JSON.stringify(toDelete) }, btn, 'statusCustomUpdateCode');
+            }
+
+            // Renders a small checklist for confirmed-missing-at-source paths, so
+            // the user can opt into also deleting them locally. Hidden entirely
+            // when there's nothing to offer.
+            function renderDeleteChecklist(sectionId, bodyId, checkboxClass, paths) {
+                const section = document.getElementById(sectionId);
+                const body = document.getElementById(bodyId);
+                body.innerHTML = '';
+                if (paths.length === 0) {
+                    section.style.display = 'none';
+                    return;
+                }
+                section.style.display = 'block';
+                paths.forEach(p => {
+                    const row = document.createElement('label');
+                    row.style.cssText = 'display:flex; align-items:center; gap:8px; padding:4px 0; cursor:pointer;';
+                    row.innerHTML = `<input type="checkbox" class="${checkboxClass}" value="${p}" checked style="width:16px; height:16px; flex-shrink:0;"><span style="font-family:monospace; word-break:break-all;">${p}</span>`;
+                    body.appendChild(row);
+                });
             }
 
             // ---- Custom Update Data (mirrors Custom Update Source Code, scoped to
@@ -3948,6 +4355,7 @@ if (isset($_POST['action'])) {
                 const body = document.getElementById('customDataFileListBody');
                 const otherLabel = syncOwnRoleJs === 'android' ? 'the PC' : (syncOwnRoleJs === 'pc' ? 'Android' : 'the other device');
                 document.getElementById('customUpdateDataIntroText').textContent = `Check the files you want to pull from ${otherLabel}'s data folders (qrcodes, main_qrcodes, pdf_file, data_json, and database tables).`;
+                document.getElementById('customDataDeleteLabel').textContent = `🗑️ Also delete locally (confirmed missing on ${otherLabel}):`;
                 body.textContent = `Loading file list from ${otherLabel}...`;
                 document.getElementById('customUpdateDataBackdrop').classList.add('active');
 
@@ -3960,6 +4368,7 @@ if (isset($_POST['action'])) {
                         }
                         body.innerHTML = '';
                         sortTreeFlaggedFirst(data.tree).forEach(node => renderCodeTreeNode(node, body, 0, 'custom-data-file-checkbox'));
+                        renderDeleteChecklist('customDataDeleteSection', 'customDataDeleteBody', 'custom-data-delete-checkbox', syncLastVerifyMissingOnOther.filter(p => syncIsDataPath(p)));
                     })
                     .catch(() => { body.textContent = 'Request error while loading the file list.'; });
             }
@@ -3971,14 +4380,18 @@ if (isset($_POST['action'])) {
             }
             function submitCustomUpdateData() {
                 const selected = Array.from(document.querySelectorAll('.custom-data-file-checkbox:checked')).map(cb => cb.value);
-                if (selected.length === 0) {
+                const toDelete = Array.from(document.querySelectorAll('.custom-data-delete-checkbox:checked')).map(cb => cb.value);
+                if (selected.length === 0 && toDelete.length === 0) {
                     alert('Select at least one file first.');
                     return;
                 }
-                if (!confirm(`Pull ${selected.length} selected file(s) from the PC and overlay them here?`)) return;
+                const parts = [];
+                if (selected.length > 0) parts.push(`pull ${selected.length} item(s)`);
+                if (toDelete.length > 0) parts.push(`delete ${toDelete.length} local file(s) confirmed missing on the other device`);
+                if (!confirm(`This will ${parts.join(' and ')}. Continue?`)) return;
                 closeCustomUpdateDataModal();
                 const btn = document.getElementById('btnCustomUpdateData');
-                runAction('pull_data_custom', { files: JSON.stringify(selected) }, btn, 'statusCustomUpdateData');
+                runAction('pull_data_custom', { files: JSON.stringify(selected), delete_files: JSON.stringify(toDelete) }, btn, 'statusCustomUpdateData');
             }
 
             // ---- Restore from Auto Backups (fly window with a pickable list) ----

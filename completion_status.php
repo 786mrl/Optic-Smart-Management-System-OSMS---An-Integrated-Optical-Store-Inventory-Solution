@@ -217,10 +217,12 @@ function phLensLookupFull($label, $preferredSource = null) {
             foreach ($types as $type => $info) {
                 if ($normalize(trim($cat) . ' / ' . trim($type)) === $target) {
                     $matches[] = [
-                        'cost'    => (int)($info['cost']    ?? 0),
-                        'selling' => (int)($info['selling'] ?? 0),
-                        'source'  => $lt, // 'stock' | 'lab'
-                        'label'   => trim($cat) . ' — ' . trim($type), // canonical stored format
+                        'cost'       => (int)($info['cost']    ?? 0),
+                        'selling'    => (int)($info['selling'] ?? 0),
+                        'source'     => $lt, // 'stock' | 'lab'
+                        'label'      => trim($cat) . ' — ' . trim($type), // canonical stored format
+                        'limits'     => $info['limits'] ?? [],
+                        'has_limits' => !empty($info['limits']),
                     ];
                 }
             }
@@ -232,6 +234,104 @@ function phLensLookupFull($label, $preferredSource = null) {
         return $matches[0];
     }
     return null;
+}
+
+// Same Rx-fit gate as invoice.php's lr_rxFits(). IMPORTANT: only call this when
+// the lens actually HAS limits defined (empty $lim means "no restriction data
+// at all", which invoice.php's own recommendation engine treats as "fits
+// anything" — not as "must be plano/zero everything". Skipping this distinction
+// was the cause of every lens, including an already-purchased one, showing as
+// "out of range" with an empty limits object being misread as all-zero limits.
+// Exactly mirrors invoice.php's lrValRaw(): a Rx value in the DB may be stored
+// either as shorthand ("-900" meaning -9.00) or already as full decimal
+// diopters ("-9.00" or "-0.75"). Any |value| >= 10 is treated as shorthand and
+// divided by 100. Used everywhere a Rx value is read for Rx-fit/category
+// checks so the interpretation always matches invoice.php's own engine.
+function phLrValRaw($raw) {
+    $val = floatval(str_replace('+', '', $raw ?? '0'));
+    if (abs($val) >= 10) $val /= 100.0;
+    return round($val, 2);
+}
+
+function phRxFitsLimits($lim, $rSph, $rCyl, $lSph, $lCyl, $rAdd, $lAdd) {
+    if (empty($lim)) return true;
+
+    $maxC   = max(abs($rCyl), abs($lCyl));
+    $maxAdd = max(abs($rAdd), abs($lAdd));
+
+    $rawFrom = isset($lim['sph_from']) ? (int)$lim['sph_from'] : 0;
+    $rawTo   = isset($lim['sph_to'])   ? (int)$lim['sph_to']   : 0;
+    if ($rawFrom != 0 || $rawTo != 0) {
+        $limSphMin = min($rawFrom, $rawTo) / 100.0;
+        $limSphMax = max($rawFrom, $rawTo) / 100.0;
+        if ($rSph < $limSphMin || $rSph > $limSphMax) return false;
+        if ($lSph < $limSphMin || $lSph > $limSphMax) return false;
+    }
+
+    $cylFrom = isset($lim['cyl_from']) ? (int)$lim['cyl_from'] : 0;
+    $cylTo   = isset($lim['cyl_to'])   ? (int)$lim['cyl_to']   : 0;
+    if ($cylFrom == 0 && $cylTo == 0) {
+        if ($maxC > 0.0) return false;
+    } elseif ($cylTo != 0) {
+        if ($maxC > abs($cylTo) / 100.0) return false;
+    }
+
+    $combMax = isset($lim['comb_max']) ? (int)$lim['comb_max'] : 0;
+    if ($combMax != 0) {
+        $maxS = max(abs($rSph), abs($lSph));
+        if (($maxS + $maxC) > abs($combMax) / 100.0) return false;
+    }
+
+    $addTo = isset($lim['add_to']) ? (int)$lim['add_to'] : 0;
+    if ($addTo != 0) {
+        $addFrom  = isset($lim['add_from']) ? (int)$lim['add_from'] : 0;
+        $limAddMin = abs($addFrom) / 100.0;
+        $limAddMax = abs($addTo)   / 100.0;
+        if ($maxAdd < $limAddMin || $maxAdd > $limAddMax) return false;
+    }
+    return true;
+}
+
+// The prescription currently "in effect" for an invoice: if a modification is
+// active, that's the latest prescription_modifications row; otherwise it's the
+// freshly-measured new_r_*/new_l_* Rx from the exam. Matches invoice.php's own
+// $lr_rMod branching for its lens recommendation engine. Returns
+// ['r_sph','r_cyl','r_add','l_sph','l_cyl','l_add'] as floats, or null if no
+// exam record exists at all.
+function phGetActiveRxByInvoice($conn, $invoiceNumber) {
+    $safeInv = $conn->real_escape_string($invoiceNumber);
+    $examRes = $conn->query("SELECT lens_modification, new_r_sph, new_r_cyl, new_r_add, new_l_sph, new_l_cyl, new_l_add FROM customer_examinations WHERE invoice_number = '$safeInv' LIMIT 1");
+    $exam = $examRes ? $examRes->fetch_assoc() : null;
+    if (!$exam) return null;
+
+    if ((string)($exam['lens_modification'] ?? '0') === '1') {
+        $modRes = $conn->query("SELECT od_sph, od_cyl, od_add, os_sph, os_cyl, os_add FROM prescription_modifications WHERE invoice_number = '$safeInv' ORDER BY modified_at DESC LIMIT 1");
+        $mod = $modRes ? $modRes->fetch_assoc() : null;
+        if ($mod) {
+            return [
+                'r_sph' => phLrValRaw($mod['od_sph']), 'r_cyl' => phLrValRaw($mod['od_cyl']), 'r_add' => phLrValRaw($mod['od_add']),
+                'l_sph' => phLrValRaw($mod['os_sph']), 'l_cyl' => phLrValRaw($mod['os_cyl']), 'l_add' => phLrValRaw($mod['os_add']),
+            ];
+        }
+    }
+    return [
+        'r_sph' => phLrValRaw($exam['new_r_sph']), 'r_cyl' => phLrValRaw($exam['new_r_cyl']), 'r_add' => phLrValRaw($exam['new_r_add']),
+        'l_sph' => phLrValRaw($exam['new_l_sph']), 'l_cyl' => phLrValRaw($exam['new_l_cyl']), 'l_add' => phLrValRaw($exam['new_l_add']),
+    ];
+}
+
+// Default custom-frame buy_price tier from its sell_price (same tiers used elsewhere in this app).
+function getCustomFrameBuyPrice($sellPrice) {
+    $sp = (int)$sellPrice;
+    if ($sp <= 90000)          return 20000;
+    elseif ($sp <= 150000)     return 30000;
+    elseif ($sp <= 180000)     return 36000;
+    elseif ($sp <= 200000)     return 42000;
+    elseif ($sp <= 250000)     return 54000;
+    elseif ($sp <= 300000)     return 62000;
+    elseif ($sp <= 350000)     return 70000;
+    elseif ($sp <= 400000)     return 92000;
+    else                       return 100000;
 }
 
 // Read lens lead times (in days) from the settings table, same keys/defaults as invoice.php.
@@ -556,8 +656,8 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_customer') {
         'customer_name'    => strtoupper(trim($_POST['customer_name'] ?? $cur['customer_name'])),
         'age'              => (string)(int)($_POST['age'] ?? $cur['age']),
         'gender'           => in_array($_POST['gender'] ?? '', ['MALE', 'FEMALE']) ? $_POST['gender'] : $cur['gender'],
-        'symptoms'         => $_POST['symptoms']   ?? $cur['symptoms'],
-        'exam_notes'       => $_POST['exam_notes'] ?? $cur['exam_notes'],
+        'symptoms'         => strtoupper($_POST['symptoms']   ?? $cur['symptoms']),
+        'exam_notes'       => strtoupper($_POST['exam_notes'] ?? $cur['exam_notes']),
     ];
 
     $setParts = [];
@@ -622,7 +722,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_exam') {
     ];
     $toggleFields = ['visual_habit','digital_usage','need_distance','need_intermediate','need_near'];
 
-    $curRes = $conn->query("SELECT " . implode(',', array_merge($fields, $toggleFields)) . " FROM customer_examinations WHERE invoice_number = '$inv' LIMIT 1");
+    $curRes = $conn->query("SELECT " . implode(',', array_merge($fields, $toggleFields)) . ",lens_modification FROM customer_examinations WHERE invoice_number = '$inv' LIMIT 1");
     $cur    = $curRes ? $curRes->fetch_assoc() : null;
     if (!$cur) { echo json_encode(['success' => false, 'error' => 'Examination record not found']); exit(); }
 
@@ -646,6 +746,39 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_exam') {
     }
 
     if (empty($setParts)) { echo json_encode(['success' => true, 'changed' => false]); exit(); }
+
+    // ── Rx-fit guard: whatever the new_r/new_l Rx ends up being after this
+    // save, it must still fit the lens the customer already has on this
+    // order (if that lens actually defines Rx limits at all — see
+    // phRxFitsLimits for why an empty limits object must NOT be treated as
+    // "reject everything"). This only applies when the raw exam Rx is
+    // actually the ACTIVE prescription (i.e. no modification is currently
+    // active) — if a modification IS active, the lens was matched against
+    // that modification, not these raw fields, so this check is skipped here
+    // (the same check runs instead when saving a new modification).
+    if ((string)($cur['lens_modification'] ?? '0') !== '1') {
+        $ordRes = $conn->query("SELECT lens_name FROM customer_orders WHERE id = " . (int)$order_id . " LIMIT 1");
+        $ordRow = $ordRes ? $ordRes->fetch_assoc() : null;
+        if ($ordRow && !empty($ordRow['lens_name'])) {
+            $lensInfo = phLensLookupFull($ordRow['lens_name']);
+            if ($lensInfo && $lensInfo['has_limits']) {
+                $merged = array_merge($cur, $_POST); // $_POST values (as submitted) override $cur where present
+                $fits = phRxFitsLimits(
+                    $lensInfo['limits'],
+                    phLrValRaw($merged['new_r_sph'] ?? 0), phLrValRaw($merged['new_r_cyl'] ?? 0),
+                    phLrValRaw($merged['new_l_sph'] ?? 0), phLrValRaw($merged['new_l_cyl'] ?? 0),
+                    phLrValRaw($merged['new_r_add'] ?? 0), phLrValRaw($merged['new_l_add'] ?? 0)
+                );
+                if (!$fits) {
+                    echo json_encode([
+                        'success' => false,
+                        'error'   => "This prescription no longer fits the currently selected lens (\"{$lensInfo['label']}\"). Change the lens first, or adjust the Rx to stay within its range.",
+                    ]);
+                    exit();
+                }
+            }
+        }
+    }
 
     $ok = $conn->query("UPDATE customer_examinations SET " . implode(', ', $setParts) . " WHERE invoice_number = '$inv'");
     if (!$ok) { echo json_encode(['success' => false, 'error' => $conn->error]); exit(); }
@@ -703,6 +836,30 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_prescription') {
             'os_sph'  => trim($_POST['os_sph']  ?? ''), 'os_cyl' => trim($_POST['os_cyl'] ?? ''),
             'os_axis' => trim($_POST['os_axis'] ?? ''), 'os_add' => trim($_POST['os_add'] ?? ''),
         ];
+
+        // This new/updated modification becomes the ACTIVE Rx once saved, so it
+        // must fit the order's currently selected lens (only enforced when that
+        // lens actually defines Rx limits at all).
+        $ordRes = $conn->query("SELECT lens_name FROM customer_orders WHERE id = " . (int)$order_id . " LIMIT 1");
+        $ordRow = $ordRes ? $ordRes->fetch_assoc() : null;
+        if ($ordRow && !empty($ordRow['lens_name'])) {
+            $lensInfo = phLensLookupFull($ordRow['lens_name']);
+            if ($lensInfo && $lensInfo['has_limits']) {
+                $fits = phRxFitsLimits(
+                    $lensInfo['limits'],
+                    phLrValRaw($new['od_sph']), phLrValRaw($new['od_cyl']),
+                    phLrValRaw($new['os_sph']), phLrValRaw($new['os_cyl']),
+                    phLrValRaw($new['od_add']), phLrValRaw($new['os_add'])
+                );
+                if (!$fits) {
+                    echo json_encode([
+                        'success' => false,
+                        'error'   => "This modification does not fit the currently selected lens (\"{$lensInfo['label']}\"). Change the lens first, or adjust these values to stay within its range.",
+                    ]);
+                    exit();
+                }
+            }
+        }
 
         // Whether to INSERT a new history row or UPDATE the latest one
         // in-place depends on the flag *at the moment of saving*:
@@ -777,7 +934,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_lens') {
     $newLens = phLensLookupFull($newLensLabel, $newLensSource);
     if (!$newLens) { echo json_encode(['success' => false, 'error' => 'Selected lens was not found in the current price list.']); exit(); }
 
-    $stmt = $conn->prepare("SELECT lens_name, total_amount, due_date, order_date FROM customer_orders WHERE id = ? LIMIT 1");
+    $stmt = $conn->prepare("SELECT lens_name, total_amount, due_date, order_date, invoice_number FROM customer_orders WHERE id = ? LIMIT 1");
     $stmt->bind_param("i", $order_id);
     $stmt->execute();
     $cur = $stmt->get_result()->fetch_assoc();
@@ -786,6 +943,26 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_lens') {
 
     $oldLensLabel = $cur['lens_name'];
     if ($newLens['label'] === $oldLensLabel) { echo json_encode(['success' => true, 'changed' => false]); exit(); }
+
+    // The customer's current Rx must still fit the newly picked lens (only
+    // enforced when that lens actually defines limits at all). Uses the
+    // ACTIVE Rx (modification if one is active, else the raw exam Rx).
+    if ($newLens['has_limits']) {
+        $safeInv = $conn->real_escape_string($cur['invoice_number'] ?? '');
+        $activeRx = phGetActiveRxByInvoice($conn, $cur['invoice_number'] ?? '');
+        if ($activeRx) {
+            $fits = phRxFitsLimits(
+                $newLens['limits'],
+                $activeRx['r_sph'], $activeRx['r_cyl'],
+                $activeRx['l_sph'], $activeRx['l_cyl'],
+                $activeRx['r_add'], $activeRx['l_add']
+            );
+            if (!$fits) {
+                echo json_encode(['success' => false, 'error' => "The customer's current prescription does not fit \"{$newLens['label']}\". Pick a different lens, or adjust the Rx first."]);
+                exit();
+            }
+        }
+    }
 
     // Adjust total_amount by the *difference* in selling price, rather than
     // recomputing it from scratch, so any manual discount baked into the
@@ -1016,8 +1193,8 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
     $stmt->close();
     if (!$cur) { echo json_encode(['success' => false, 'error' => 'Order not found']); exit(); }
 
-    $newPhone     = trim($_POST['customer_phone']   ?? $cur['customer_phone']);
-    $newAddress   = trim($_POST['customer_address'] ?? $cur['customer_address']);
+    $newPhone     = strtoupper(trim($_POST['customer_phone']   ?? $cur['customer_phone']));
+    $newAddress   = strtoupper(trim($_POST['customer_address'] ?? $cur['customer_address']));
     $newOrderDate = trim($_POST['order_date']       ?? $cur['order_date']);
 
     $setParts = [];
@@ -2579,11 +2756,12 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
             outline: none;
             transition: border-color 0.2s;
             box-sizing: border-box;
+            text-transform: uppercase;
         }
 
         .ph-modal-input:focus { border-color: rgba(0,255,136,0.35); }
 
-        .ph-modal-input.password-input { letter-spacing: 2px; }
+        .ph-modal-input.password-input { letter-spacing: 2px; text-transform: none; }
 
         .ph-modal-preview {
             font-size: 0.72rem;
@@ -3719,11 +3897,12 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
                         foreach ($types as $type => $info) {
                             $lim = $info['limits'] ?? [];
                             $phEoLensOptions[$lt][] = [
-                                'label'    => trim($cat) . ' — ' . trim($type),
-                                'category' => strtoupper(trim($cat)),
-                                'source'   => $lt,
-                                'cost'     => (int)($info['cost']    ?? 0),
-                                'selling'  => (int)($info['selling'] ?? 0),
+                                'label'      => trim($cat) . ' — ' . trim($type),
+                                'category'   => strtoupper(trim($cat)),
+                                'source'     => $lt,
+                                'cost'       => (int)($info['cost']    ?? 0),
+                                'selling'    => (int)($info['selling'] ?? 0),
+                                'has_limits' => !empty($lim),
                                 'sph_from' => (int)($lim['sph_from'] ?? 0),
                                 'sph_to'   => (int)($lim['sph_to']   ?? 0),
                                 'cyl_from' => (int)($lim['cyl_from'] ?? 0),
@@ -4523,6 +4702,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
                     opt.setAttribute('data-selling', item.selling);
                     opt.setAttribute('data-category', item.category);
                     opt.setAttribute('data-source', item.source);
+                    opt.setAttribute('data-has-limits', item.has_limits ? '1' : '0');
                     limitFields.forEach(function(f) { opt.setAttribute('data-' + f, item[f] || 0); });
                     optgroup.appendChild(opt);
                 });
@@ -4583,11 +4763,32 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
 
         function phEoFilterLensOptions() {
             phEoBuildLensOptions();
-            var num = function(id) { var el = document.getElementById(id); return el ? (parseFloat(el.value) || 0) : 0; };
-            var rSph = num('eo-e-new_r_sph'), rCyl = num('eo-e-new_r_cyl'), rAdd = num('eo-e-new_r_add');
-            var lSph = num('eo-e-new_l_sph'), lCyl = num('eo-e-new_l_cyl'), lAdd = num('eo-e-new_l_add');
+            // Mirrors invoice.php's lrValRaw(): a field's value may be entered as
+            // shorthand ("75" meaning 0.75) or full decimal ("0.75") — any |value|
+            // >= 10 is treated as shorthand and divided by 100.
+            var num = function(id) {
+                var el = document.getElementById(id);
+                if (!el) return 0;
+                var val = parseFloat(String(el.value).replace('+', '')) || 0;
+                if (Math.abs(val) >= 10) val = val / 100;
+                return Math.round(val * 100) / 100;
+            };
 
-            var age = num('eo-c-age');
+            // Same source rule invoice.php uses for its lens recommendation: use the
+            // MODIFIED prescription (OD/OS in the Prescription tab) when a modification
+            // is currently active, otherwise the raw "new" Rx from Exam Results.
+            var lensModActive = _phEo.details && _phEo.details.exam && String(_phEo.details.exam.lens_modification) === '1';
+            var rSph, rCyl, rAdd, lSph, lCyl, lAdd;
+            if (lensModActive) {
+                rSph = num('eo-p-od_sph'); rCyl = num('eo-p-od_cyl'); rAdd = num('eo-p-od_add');
+                lSph = num('eo-p-os_sph'); lCyl = num('eo-p-os_cyl'); lAdd = num('eo-p-os_add');
+            } else {
+                rSph = num('eo-e-new_r_sph'); rCyl = num('eo-e-new_r_cyl'); rAdd = num('eo-e-new_r_add');
+                lSph = num('eo-e-new_l_sph'); lCyl = num('eo-e-new_l_cyl'); lAdd = num('eo-e-new_l_add');
+            }
+
+            var plainNum = function(id) { var el = document.getElementById(id); return el ? (parseFloat(el.value) || 0) : 0; };
+            var age = plainNum('eo-c-age');
             var maxAdd = Math.max(Math.abs(rAdd), Math.abs(lAdd));
             var isPresbyopia = (maxAdd >= 0.75 && age >= 39);
             var needDist  = document.getElementById('eo-e-need_distance')     ? document.getElementById('eo-e-need_distance').checked     : false;
@@ -4611,7 +4812,8 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
                     add_from: parseInt(opt.getAttribute('data-add_from')) || 0,
                     add_to:   parseInt(opt.getAttribute('data-add_to'))   || 0
                 };
-                var rxOk  = phEoRxFits(lim, rSph, rCyl, lSph, lCyl, rAdd, lAdd);
+                var hasLimits = opt.getAttribute('data-has-limits') === '1';
+                var rxOk  = !hasLimits || phEoRxFits(lim, rSph, rCyl, lSph, lCyl, rAdd, lAdd);
                 var catOk = phEoCatAllowed(opt.getAttribute('data-category'), isPresbyopia, farOnlySV);
                 var fits  = rxOk && catOk;
                 opt.disabled = !fits;
@@ -4621,9 +4823,11 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
 
             var note = document.getElementById('eo-l-filter-note');
             if (note) {
-                note.textContent = 'Filtered by the prescription and vision-need in the Exam Results tab (age ' + age + ', ' +
-                    (isPresbyopia ? (farOnlySV ? 'presbyopic, distance only' : 'presbyopic, needs progressive design') : 'not presbyopic') + ')' +
-                    (hiddenCount > 0 ? ' — ' + hiddenCount + ' lens type(s) hidden.' : '.');
+                note.textContent = 'Filtered by the ' + (lensModActive ? 'MODIFIED' : 'original') + ' prescription (source: ' + (lensModActive ? 'Prescription tab OD/OS' : 'Exam Results new_r/new_l') + '). ' +
+                    'Age=' + age + ', R ADD=' + rAdd.toFixed(2) + ', L ADD=' + lAdd.toFixed(2) + ', maxADD=' + maxAdd.toFixed(2) + ' → ' +
+                    (isPresbyopia ? 'PRESBYOPIC' : 'not presbyopic') +
+                    (isPresbyopia ? ' (needDist=' + (needDist?1:0) + ' needInter=' + (needInter?1:0) + ' needNear=' + (needNear?1:0) + ' → ' + (farOnlySV ? 'distance-only, SV still allowed' : 'needs progressive design') + ')' : '') +
+                    (hiddenCount > 0 ? ' — ' + hiddenCount + ' lens type(s) hidden.' : ' — all lens types shown.');
             }
         }
 
