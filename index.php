@@ -16,6 +16,72 @@ include 'db_config.php';
 include 'config_helper.php';
 include 'auth_check.php';
 
+// ============================================================
+// Sync staleness check (read-only, runs once per page load).
+// 1) If activity_log has no rows at all -> do nothing.
+// 2) If it has rows, check the newest changed_at. If it's more
+//    than 1 day old, show a fly window warning telling the user
+//    to update the database on the OTHER device (PC vs Android
+//    is detected the same way sync.php does: via sync_config.json
+//    + SERVER_PORT/SERVER_ADDR).
+// This block does not modify sync.php or any other file/logic.
+// ============================================================
+$syncStaleWarningMessage = null;
+
+$syncStaleCheck = @$conn->query("SELECT MIN(changed_at) AS last_changed, COUNT(*) AS total FROM activity_log");
+if ($syncStaleCheck) {
+    $syncStaleRow = $syncStaleCheck->fetch_assoc();
+    if ($syncStaleRow && (int) $syncStaleRow['total'] > 0 && !empty($syncStaleRow['last_changed'])) {
+        $syncLastChangedTs = strtotime($syncStaleRow['last_changed']);
+        if ($syncLastChangedTs !== false && (time() - $syncLastChangedTs) > 86400) {
+            // Detect which device THIS is (pc/android/unknown), same logic
+            // as sync_detect_own_role() in sync.php, kept local here so
+            // sync.php itself is never touched.
+            $syncOwnDevice = 'unknown';
+            $syncConfigPath = __DIR__ . '/data_json/sync_config.json';
+            if (file_exists($syncConfigPath)) {
+                $syncConfigData = json_decode(file_get_contents($syncConfigPath), true);
+                if (is_array($syncConfigData)) {
+                    $syncPcPort = (string) ($syncConfigData['pc_port'] ?? '80');
+                    $syncAndroidPort = (string) ($syncConfigData['android_port'] ?? '8080');
+                    $syncOwnPort = (string) ($_SERVER['SERVER_PORT'] ?? '');
+
+                    if ($syncOwnPort !== '' && $syncPcPort !== $syncAndroidPort) {
+                        if ($syncOwnPort === $syncPcPort) $syncOwnDevice = 'pc';
+                        elseif ($syncOwnPort === $syncAndroidPort) $syncOwnDevice = 'android';
+                    }
+
+                    if ($syncOwnDevice === 'unknown') {
+                        $syncOwnIp = $_SERVER['SERVER_ADDR'] ?? null;
+                        if ($syncOwnIp !== null) {
+                            if ($syncOwnIp === ($syncConfigData['pc_ip'] ?? null)) $syncOwnDevice = 'pc';
+                            elseif ($syncOwnIp === ($syncConfigData['android_ip'] ?? null)) $syncOwnDevice = 'android';
+                        }
+                    }
+                }
+            }
+
+            $syncOtherDeviceLabel = ($syncOwnDevice === 'pc')
+                ? 'Android'
+                : (($syncOwnDevice === 'android') ? 'PC' : 'the other device');
+
+            $syncStaleWarningMessage = "The last recorded database change was more than 1 day ago. "
+                . "Please open Sync and update the database on the $syncOtherDeviceLabel to keep both devices in sync.";
+        }
+    }
+}
+
+// Only show the fly window once per login session: if it has already been
+// shown since the user logged in, suppress it on subsequent page loads.
+// Logging out clears the session, so it reappears after a fresh login.
+if ($syncStaleWarningMessage !== null) {
+    if (!empty($_SESSION['syncStaleWarningShown'])) {
+        $syncStaleWarningMessage = null;
+    } else {
+        $_SESSION['syncStaleWarningShown'] = true;
+    }
+}
+
 ?>
 
 <!DOCTYPE html>
@@ -312,6 +378,44 @@ include 'auth_check.php';
         .fly-window-btn.primary {
             color: #7fe3f0;
         }
+
+        /* ===== Sync button on the main grid: glowing "needs push" state ===== */
+        /* Applied only when the sync staleness warning is active (server-side
+           flag), so it keeps pulsing continuously until the user presses it
+           to go push/sync - this is the visual cue that a sync is pending. */
+        .neu-button.sync-needs-push {
+            animation: syncNeedsPushGlow 1.4s ease-in-out infinite;
+        }
+
+        .neu-button.sync-needs-push:active {
+            animation-play-state: paused;
+        }
+
+        @keyframes syncNeedsPushGlow {
+            0% {
+                box-shadow: 0 0 6px rgba(103, 232, 249, 0.45);
+                transform: scale(1);
+            }
+            50% {
+                box-shadow: 0 0 22px rgba(103, 232, 249, 1);
+                transform: scale(1.03);
+            }
+            100% {
+                box-shadow: 0 0 6px rgba(103, 232, 249, 0.45);
+                transform: scale(1);
+            }
+        }
+
+        /* Makes the "Verify Full Sync" instruction stand out inside the
+           stale-sync warning fly window. */
+        .sync-verify-highlight {
+            display: block;
+            margin-top: 8px;
+            color: #ffd166;
+            font-size: 13px;
+            letter-spacing: 0.2px;
+            text-shadow: 0 0 10px rgba(255, 209, 102, 0.5);
+        }
     </style>
 </head>
 <body>
@@ -368,7 +472,7 @@ include 'auth_check.php';
                             <div class="led"></div>
                         </button>
                 
-                        <button class="neu-button" data-url="sync.php" onclick="handleButtonClick(this)">
+                        <button class="neu-button<?php echo $syncStaleWarningMessage ? ' sync-needs-push' : ''; ?>" data-url="sync.php" onclick="handleButtonClick(this)">
                             <span class="icon">🔄</span>
                             Sync
                             <div class="led"></div>
@@ -411,7 +515,48 @@ include 'auth_check.php';
             </div>
         </div>
     </div>
-    
+
+    <?php if ($syncStaleWarningMessage): ?>
+    <!-- Fly Window 3: Sync staleness warning (auto-shown on page load when activity_log's newest change is more than 1 day old) -->
+    <div class="fly-window-backdrop active" id="syncStaleWarningBackdrop">
+        <div class="fly-window-card">
+            <h3>⚠️ Sync Update Needed</h3>
+            <p class="fly-window-desc"><?php echo htmlspecialchars($syncStaleWarningMessage); ?> <strong class="sync-verify-highlight">First, please perform a Verify Full Sync check.</strong></p>
+            <div class="fly-window-actions">
+                <button type="button" class="fly-window-btn primary" id="syncStaleWarningClose" disabled>Close (5)</button>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
+
+    <script>
+        // ===== Sync staleness warning: close button stays disabled for 5s =====
+        (function () {
+            const staleBackdrop = document.getElementById('syncStaleWarningBackdrop');
+            const staleCloseBtn = document.getElementById('syncStaleWarningClose');
+            if (!staleBackdrop || !staleCloseBtn) return;
+
+            let staleSecondsLeft = 5;
+            staleCloseBtn.textContent = 'Close (' + staleSecondsLeft + ')';
+
+            const staleCountdown = setInterval(function () {
+                staleSecondsLeft--;
+                if (staleSecondsLeft <= 0) {
+                    clearInterval(staleCountdown);
+                    staleCloseBtn.textContent = 'Close';
+                    staleCloseBtn.disabled = false;
+                } else {
+                    staleCloseBtn.textContent = 'Close (' + staleSecondsLeft + ')';
+                }
+            }, 1000);
+
+            staleCloseBtn.addEventListener('click', function () {
+                if (staleCloseBtn.disabled) return;
+                staleBackdrop.classList.remove('active');
+            });
+        })();
+    </script>
+
     <script>
         function handleButtonClick(element) {
             const targetUrl = element.getAttribute('data-url');
@@ -482,6 +627,17 @@ include 'auth_check.php';
                 });
             }
         });
+
+        // Stops the Sync button's pulsing glow the moment it is pressed
+        // (i.e. as soon as the user pushes/navigates to sync.php), without
+        // touching the shared handleButtonClick logic used by other buttons.
+        (function () {
+            const syncBtn = document.querySelector('.neu-button.sync-needs-push');
+            if (!syncBtn) return;
+            syncBtn.addEventListener('click', () => {
+                syncBtn.classList.remove('sync-needs-push');
+            });
+        })();
 
         // ===== Triple-click / triple-tap on the company name =====
         // Opens the Database Backup Blocking Time fly windows (Main Admin only).
