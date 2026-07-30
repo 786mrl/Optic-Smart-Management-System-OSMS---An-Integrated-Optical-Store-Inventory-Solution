@@ -1428,135 +1428,6 @@ function sync_import_sql_native_dispatch($sqlFile, $ownRole, $conn) {
     return $result;
 }
 
-function sync_parse_activity_item($listValue) {
-    $listValue = trim($listValue);
-    if (preg_match('/^(.+?)\s*\[folder\]\s*$/i', $listValue, $m)) {
-        return ['type' => 'folder', 'name' => trim($m[1])];
-    }
-    return ['type' => 'table', 'name' => $listValue];
-}
-
-function sync_find_date_column($conn, $table) {
-    // Explicit mapping based on the actual optic_pos_db schema — far more
-    // reliable than guessing from column names/types. Update this list if
-    // tables are added/changed.
-    $knownDateColumns = [
-        'customer_examinations'        => 'updated_at',   // added via add_updated_at_columns.sql, auto-tracks real last-changed time
-        'customer_orders'               => 'updated_at',
-        'custom_frames'                 => 'updated_at',   // added via add_updated_at_columns.sql
-        'deleted_records'                => 'deleted_at',
-        'frames_main'                    => 'updated_at',
-        'frame_staging'                  => 'updated_at',
-        'prescription_modifications'    => 'modified_at',
-        'activity_log'                   => 'changed_at',
-    ];
-    if (isset($knownDateColumns[$table])) {
-        return $knownDateColumns[$table];
-    }
-
-    // Fallback for any table not in the map above: best-effort guess.
-    $result = $conn->query("SHOW COLUMNS FROM `$table`");
-    if (!$result) return null;
-    $candidates = [];
-    while ($col = $result->fetch_assoc()) {
-        $type = strtolower($col['Type']);
-        if (strpos($type, 'date') !== false || strpos($type, 'timestamp') !== false) {
-            $candidates[] = $col['Field'];
-        }
-    }
-    if (empty($candidates)) return null;
-    foreach (['changed_at', 'updated_at', 'created_at', 'modified_at', 'deleted_at', 'examination_date', 'order_date', 'date'] as $preferred) {
-        if (in_array($preferred, $candidates, true)) return $preferred;
-    }
-    return $candidates[0];
-}
-
-function sync_export_table_rows_partial($conn, $table, $dateStr) {
-    $dateCol = sync_find_date_column($conn, $table);
-    if ($dateCol !== null) {
-        $safeDate = $conn->real_escape_string(date('Y-m-d', strtotime($dateStr)));
-        $where = "WHERE DATE(`$dateCol`) = '" . $safeDate . "'";
-    } else {
-        $where = '';
-    }
-
-    $dataResult = $conn->query("SELECT * FROM `$table` $where");
-    $sql = '';
-    $rowCount = 0;
-    if ($dataResult && $dataResult->num_rows > 0) {
-        $fields = $dataResult->fetch_fields();
-        $fieldNames = array_map(function ($f) { return "`{$f->name}`"; }, $fields);
-        $fieldList = implode(', ', $fieldNames);
-        $isUsersTable = (strtolower($table) === 'users');
-        $columnNamesLower = array_map(function ($f) { return strtolower($f->name); }, $fields);
-
-        while ($row = $dataResult->fetch_row()) {
-            $values = [];
-            foreach ($row as $idx => $val) {
-                if ($isUsersTable && in_array($columnNamesLower[$idx], ['session_token', 'session_expires'], true)) {
-                    $values[] = 'NULL';
-                    continue;
-                }
-                $values[] = ($val === null) ? 'NULL' : "'" . $conn->real_escape_string($val) . "'";
-            }
-            $sql .= "REPLACE INTO `$table` ($fieldList) VALUES (" . implode(', ', $values) . ");\n";
-            $rowCount++;
-        }
-    }
-    return ['sql' => $sql, 'row_count' => $rowCount, 'date_col' => $dateCol];
-}
-
-function sync_zip_specific_folders($appDir, $folderNames, $zipFile) {
-    if (!class_exists('ZipArchive')) {
-        return ['ok' => false, 'message' => 'PHP ZipArchive extension is not enabled on this server.'];
-    }
-    $zip = new ZipArchive();
-    if (file_exists($zipFile)) @unlink($zipFile);
-    if ($zip->open($zipFile, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
-        return ['ok' => false, 'message' => "Could not create zip file: $zipFile"];
-    }
-    $topFolderName = basename($appDir);
-    $fileCount = 0;
-    $fileList = [];
-    foreach ($folderNames as $folderName) {
-        $folderPath = $appDir . '/' . $folderName;
-        if (!is_dir($folderPath)) continue;
-        $iterator = new RecursiveIteratorIterator(
-            new RecursiveDirectoryIterator($folderPath, FilesystemIterator::SKIP_DOTS),
-            RecursiveIteratorIterator::SELF_FIRST
-        );
-        foreach ($iterator as $item) {
-            $relativePath = $topFolderName . '/' . $folderName . '/' . str_replace('\\', '/', substr($item->getPathname(), strlen($folderPath) + 1));
-            if ($item->isDir()) {
-                $zip->addEmptyDir($relativePath);
-            } else {
-                $zip->addFile($item->getPathname(), $relativePath);
-                $fileCount++;
-                $fileList[] = [
-                    'path' => $relativePath,
-                    'size' => sync_format_bytes($item->getSize()),
-                    'crc32' => sprintf('%08x', crc32(file_get_contents($item->getPathname()))),
-                ];
-            }
-        }
-    }
-    return ['ok' => true, 'zip' => $zip, 'file_count' => $fileCount, 'file_list' => $fileList];
-}
-
-function sync_is_within_update_window($settingValue) {
-    if (!preg_match('/^(\d{1,2}):(\d{2})$/', trim((string) $settingValue), $m)) {
-        return false;
-    }
-    $hour = (int) $m[1];
-    $min = (int) $m[2];
-    $now = time();
-    $todayStart = mktime($hour, $min, 0, (int) date('n'), (int) date('j'), (int) date('Y'));
-    foreach ([$todayStart, strtotime('-1 day', $todayStart)] as $start) {
-        if ($now >= $start && $now < ($start + 8 * 3600)) return true;
-    }
-    return false;
-}
-
 /**
  * Per-file CRC32 map (relative path => crc32 hex), excluding .git/.svn/backups.
  * Used to pinpoint exactly which files differ between devices.
@@ -1970,14 +1841,6 @@ if (isset($_GET['action']) && $_GET['action'] === 'serve_data_custom') {
 }
 
 // ============================================================
-// ENDPOINT: receive a PARTIAL update pushed from the other device
-// (activity_log-driven). Token-protected, no session — the sender isn't
-// logged in here. Accepts the raw zip bytes as the POST body: folders are
-// overlaid (never deleted — this is a subset, not a full mirror), and
-// _partial_update.sql (if present) is imported into this device's DB.
-// Called as: sync.php?action=receive_partial_update&token=... (POST body = zip bytes)
-// ============================================================
-// ============================================================
 // ENDPOINT: reports this device's current state fingerprint (file manifest
 // hash + database dump hash), for "Verify Full Sync" to compare against the
 // other device WITHOUT transferring or changing anything.
@@ -1999,139 +1862,6 @@ if (isset($_GET['action']) && $_GET['action'] === 'get_full_state_hash') {
     header('Content-Type: application/json');
     if (ob_get_level() > 0) { ob_clean(); }
     echo json_encode(array_merge(['ok' => true], $state));
-    exit();
-}
-
-if (isset($_GET['action']) && $_GET['action'] === 'receive_partial_update') {
-    $token = $_GET['token'] ?? '';
-    if (!hash_equals(SYNC_TOKEN, $token)) {
-        http_response_code(403);
-        if (ob_get_level() > 0) ob_clean();
-        header('Content-Type: application/json');
-        if (ob_get_level() > 0) { ob_clean(); }
-        echo json_encode(['ok' => false, 'message' => 'Invalid or missing token.']);
-        exit();
-    }
-
-    $rawBody = file_get_contents('php://input');
-    if ($rawBody === false || strlen($rawBody) === 0) {
-        if (ob_get_level() > 0) ob_clean();
-        header('Content-Type: application/json');
-        if (ob_get_level() > 0) { ob_clean(); }
-        echo json_encode(['ok' => false, 'message' => 'No data received.']);
-        exit();
-    }
-
-    $tmpZip = sys_get_temp_dir() . '/' . SYNC_APP_FOLDER_NAME . '_partial_incoming.zip';
-    file_put_contents($tmpZip, $rawBody);
-
-    if (!class_exists('ZipArchive')) {
-        @unlink($tmpZip);
-        if (ob_get_level() > 0) ob_clean();
-        header('Content-Type: application/json');
-        if (ob_get_level() > 0) { ob_clean(); }
-        echo json_encode(['ok' => false, 'message' => 'PHP ZipArchive extension is not enabled on this server.']);
-        exit();
-    }
-    $zip = new ZipArchive();
-    if ($zip->open($tmpZip) !== true) {
-        @unlink($tmpZip);
-        if (ob_get_level() > 0) ob_clean();
-        header('Content-Type: application/json');
-        if (ob_get_level() > 0) { ob_clean(); }
-        echo json_encode(['ok' => false, 'message' => 'Could not open the incoming update zip.']);
-        exit();
-    }
-    $extracted = $zip->extractTo($htdocsDir); // overlay only — no mirror-delete
-    $numFiles = $zip->numFiles;
-    $zip->close();
-    @unlink($tmpZip);
-
-    if (!$extracted) {
-        if (ob_get_level() > 0) ob_clean();
-        header('Content-Type: application/json');
-        if (ob_get_level() > 0) { ob_clean(); }
-        echo json_encode(['ok' => false, 'message' => 'Extraction failed.']);
-        exit();
-    }
-
-    $sqlFile = $htdocsDir . '/_partial_update.sql';
-    $importMessage = 'No database changes in this update.';
-    $conn = null;
-    if (file_exists($sqlFile) && filesize($sqlFile) > 0) {
-        include 'db_config.php'; // provides $conn for this unauthenticated request
-        $importResult = sync_import_sql_file($conn, $sqlFile);
-        $importMessage = $importResult['message'];
-        if (!$importResult['ok']) {
-            @unlink($sqlFile);
-            if (ob_get_level() > 0) ob_clean();
-            header('Content-Type: application/json');
-            if (ob_get_level() > 0) { ob_clean(); }
-            echo json_encode(['ok' => false, 'message' => 'File update OK, but DB import failed: ' . $importMessage]);
-            exit();
-        }
-    }
-    @unlink($sqlFile);
-
-    // Verify what actually landed against the sender's manifest (file CRCs +
-    // expected row counts per table), so both sides can trust the push worked.
-    $manifestPath = $htdocsDir . '/_partial_update_manifest.json';
-    $verification = ['available' => false];
-    if (file_exists($manifestPath)) {
-        $manifest = json_decode(file_get_contents($manifestPath), true);
-        @unlink($manifestPath);
-        if (is_array($manifest)) {
-            $filesChecked = 0;
-            $filesMismatched = [];
-            foreach (($manifest['files'] ?? []) as $f) {
-                $filesChecked++;
-                $localPath = $htdocsDir . '/' . $f['path'];
-                if (!file_exists($localPath)) {
-                    $filesMismatched[] = $f['path'] . ' (missing)';
-                    continue;
-                }
-                $localCrc = sprintf('%08x', crc32(file_get_contents($localPath)));
-                if ($localCrc !== $f['crc32']) {
-                    $filesMismatched[] = $f['path'] . ' (checksum mismatch)';
-                }
-            }
-
-            $tablesChecked = 0;
-            $tablesMismatched = [];
-            if ($conn !== null) {
-                foreach (($manifest['tables'] ?? []) as $t) {
-                    $tablesChecked++;
-                    $actualCount = 0;
-                    if (!empty($t['date_col'])) {
-                        $safeDate = $conn->real_escape_string($t['date']);
-                        $r = $conn->query("SELECT COUNT(*) AS c FROM `{$t['table']}` WHERE DATE(`{$t['date_col']}`) = '$safeDate'");
-                        $actualCount = $r ? (int) $r->fetch_assoc()['c'] : 0;
-                    } else {
-                        $r = $conn->query("SELECT COUNT(*) AS c FROM `{$t['table']}`");
-                        $actualCount = $r ? (int) $r->fetch_assoc()['c'] : 0;
-                    }
-                    if ($actualCount < (int) $t['expected_rows']) {
-                        $tablesMismatched[] = "{$t['table']} (expected {$t['expected_rows']}, found $actualCount)";
-                    }
-                }
-            }
-
-            $verification = [
-                'available' => true,
-                'files_ok' => empty($filesMismatched),
-                'files_checked' => $filesChecked,
-                'files_mismatched' => $filesMismatched,
-                'tables_ok' => empty($tablesMismatched),
-                'tables_checked' => $tablesChecked,
-                'tables_mismatched' => $tablesMismatched,
-            ];
-        }
-    }
-
-    if (ob_get_level() > 0) ob_clean();
-    header('Content-Type: application/json');
-    if (ob_get_level() > 0) { ob_clean(); }
-    echo json_encode(['ok' => true, 'message' => "Applied $numFiles file(s). $importMessage", 'verification' => $verification]);
     exit();
 }
 
@@ -2160,20 +1890,6 @@ if ($mainAdminResult && $mainAdminResult->num_rows > 0) {
     $sync_main_admin_username = $mainAdminResult->fetch_assoc()['setting_value'] ?? '';
 }
 
-// --- Activity-log-driven cross-device update: time window + pending count ---
-$syncBlockingTimeSetting = '';
-$blockingTimeResult = $conn->query("SELECT setting_value FROM settings WHERE setting_key = 'db_backup_blocking_time' LIMIT 1");
-if ($blockingTimeResult && $blockingTimeResult->num_rows > 0) {
-    $syncBlockingTimeSetting = $blockingTimeResult->fetch_assoc()['setting_value'] ?? '';
-}
-$syncUpdateWindowOpen = sync_is_within_update_window($syncBlockingTimeSetting);
-
-$syncPendingActivityCount = 0;
-$activityCountResult = @$conn->query("SELECT COUNT(*) AS c FROM activity_log");
-if ($activityCountResult && $activityCountResult->num_rows > 0) {
-    $syncPendingActivityCount = (int) ($activityCountResult->fetch_assoc()['c'] ?? 0);
-}
-
 // --- Connection-test gating: IP Settings and Full System stay locked until
 //     both "Test PC" and "Test Android" have succeeded at least once this session. ---
 $syncPcTestOk      = $_SESSION['sync_conn_ok']['pc'] ?? null;      // null = not tested yet, true/false = last result
@@ -2189,6 +1905,7 @@ $syncIpSettingsLocked = !($syncPcTestOk === false || $syncAndroidTestOk === fals
 // previously broke the Connection Test info button).
 $syncInfoConnTest = 'Checks whether Apache on the PC/Android is running and reachable, before attempting a real sync.<br><br>This device\'s IP right now: <code>' . htmlspecialchars($_SERVER['SERVER_ADDR'] ?? 'unknown') . '</code>';
 $syncInfoIpSettings = 'Locked until a Connection Test actually fails for a device — before any test, or once both succeed, editing is blocked to prevent accidental changes. A device becomes editable here only while its Connection Test is failing.';
+$syncInfoVerifyFullSync = 'Compares this device\'s ENTIRE source code and ENTIRE database against the other device by hashing both sides — nothing is transferred or changed, this is read-only. Confirms whether PC and Android are byte-for-byte identical right now.<br><br>Locked until Connection Test succeeds for both PC and Android (see the Connection Test card above) — the same requirement as Full System.';
 $syncInfoCreateZip = 'Creates <code>optic_pos.zip</code> in the htdocs folder (this device), complete with the latest database dump and a file manifest.<br><br>Also generates a 2-digit confirmation code the OTHER device needs to enter before it can pull from this one.';
 $syncInfoPullPc = 'This device will fetch data from the PC (' . htmlspecialchars($syncConfig['pc_ip'] . ':' . $syncConfig['pc_port']) . '), then extract it and import its database.<br><br><b>Mirror overwrite: any local file not present on the PC will be deleted.</b><br><br>Run this from <b>Android</b>. Requires the 2-digit code shown on the PC after it runs "Create Local ZIP".';
 if ($syncOwnRole === 'pc') $syncInfoPullPc .= '<br><br>🚫 This device IS the configured PC — cannot pull from itself.';
@@ -2426,137 +2143,6 @@ if (isset($_POST['action'])) {
         $result = sync_import_sql_native_dispatch($file, $syncOwnRole, $conn);
         if (ob_get_level() > 0) { ob_clean(); }
         echo json_encode(['ok' => $result['ok'], 'message' => $result['message']]);
-        exit();
-    }
-
-    // ---- Push activity-log-driven partial update to the OTHER device ----
-    // target='pc' means "send MY changes TO the PC" (only valid when this
-    // device IS Android). target='android' means the reverse.
-    if ($action === 'push_scoped_update') {
-        $target = $_POST['target'] ?? '';
-        if ($target === 'pc' && $syncOwnRole !== 'android') {
-            if (ob_get_level() > 0) { ob_clean(); }
-            echo json_encode(['ok' => false, 'message' => 'This device is not Android — cannot push to the PC from here.']);
-            exit();
-        }
-        if ($target === 'android' && $syncOwnRole !== 'pc') {
-            if (ob_get_level() > 0) { ob_clean(); }
-            echo json_encode(['ok' => false, 'message' => 'This device is not the PC — cannot push to Android from here.']);
-            exit();
-        }
-        if (!in_array($target, ['pc', 'android'], true)) {
-            if (ob_get_level() > 0) { ob_clean(); }
-            echo json_encode(['ok' => false, 'message' => 'Unknown target.']);
-            exit();
-        }
-        if (!$syncUpdateWindowOpen) {
-            if (ob_get_level() > 0) { ob_clean(); }
-            echo json_encode(['ok' => false, 'message' => 'Outside the allowed update window (see Settings → db_backup_blocking_time).']);
-            exit();
-        }
-
-        $logResult = $conn->query("SELECT * FROM activity_log");
-        if (!$logResult || $logResult->num_rows === 0) {
-            if (ob_get_level() > 0) { ob_clean(); }
-            echo json_encode(['ok' => false, 'message' => 'Nothing pending in activity_log — nothing to push.']);
-            exit();
-        }
-
-        $folderNames = [];
-        $tableEntries = [];
-        $rowIds = [];
-        while ($row = $logResult->fetch_assoc()) {
-            $rowIds[] = $row['id'];
-            $item = sync_parse_activity_item($row['list']);
-            if ($item['type'] === 'folder') {
-                $folderNames[$item['name']] = true;
-            } else {
-                $tableEntries[] = ['table' => $item['name'], 'date' => $row['changed_at']];
-            }
-        }
-        $folderNames = array_keys($folderNames);
-
-        // Build the zip: flagged folders + a _partial_update.sql at the root
-        $zipPath = sys_get_temp_dir() . '/' . SYNC_APP_FOLDER_NAME . '_push_' . uniqid() . '.zip';
-        $zipBuild = sync_zip_specific_folders($appDir, $folderNames, $zipPath);
-        if (!$zipBuild['ok']) {
-            if (ob_get_level() > 0) { ob_clean(); }
-            echo json_encode(['ok' => false, 'message' => $zipBuild['message']]);
-            exit();
-        }
-        $zip = $zipBuild['zip'];
-
-        $sqlText = "SET FOREIGN_KEY_CHECKS=0;\nSTART TRANSACTION;\n";
-        $totalRows = 0;
-        $tablesSummary = [];
-        $tableExpectations = [];
-        foreach ($tableEntries as $te) {
-            $exp = sync_export_table_rows_partial($conn, $te['table'], $te['date']);
-            $sqlText .= $exp['sql'];
-            $totalRows += $exp['row_count'];
-            $tablesSummary[] = $te['table'] . ' (' . $exp['row_count'] . ' rows)';
-            $tableExpectations[] = [
-                'table' => $te['table'],
-                'date' => date('Y-m-d', strtotime($te['date'])),
-                'date_col' => $exp['date_col'],
-                'expected_rows' => $exp['row_count'],
-            ];
-        }
-        $sqlText .= "COMMIT;\nSET FOREIGN_KEY_CHECKS=1;\n";
-        $zip->addFromString('_partial_update.sql', $sqlText);
-        // Verification manifest: lets the receiver confirm what actually landed
-        // matches what was sent (file checksums + expected row counts per table).
-        $zip->addFromString('_partial_update_manifest.json', json_encode([
-            'files' => $zipBuild['file_list'],
-            'tables' => $tableExpectations,
-        ]));
-        $zip->close();
-
-        // Push to the target device
-        if ($target === 'pc') {
-            $targetUrl = "http://" . $syncConfig['pc_ip'] . ":" . $syncConfig['pc_port'] . "/" . SYNC_APP_FOLDER_NAME . "/sync.php?action=receive_partial_update&token=" . urlencode(SYNC_TOKEN);
-        } else {
-            $targetUrl = "http://" . $syncConfig['android_ip'] . ":" . $syncConfig['android_port'] . "/" . SYNC_APP_FOLDER_NAME . "/sync.php?action=receive_partial_update&token=" . urlencode(SYNC_TOKEN);
-        }
-        $zipBytes = file_get_contents($zipPath);
-        @unlink($zipPath);
-        $ctx = stream_context_create(['http' => [
-            'method' => 'POST',
-            'header' => "Content-Type: application/octet-stream\r\n",
-            'content' => $zipBytes,
-            'timeout' => 120,
-            'ignore_errors' => true,
-        ]]);
-        $response = @file_get_contents($targetUrl, false, $ctx);
-
-        if ($response === false) {
-            if (ob_get_level() > 0) { ob_clean(); }
-            echo json_encode(['ok' => false, 'message' => 'Could not reach the target device to push the update.']);
-            exit();
-        }
-        $responsePayload = json_decode($response, true);
-        if (!is_array($responsePayload) || empty($responsePayload['ok'])) {
-            $msg = is_array($responsePayload) ? ($responsePayload['message'] ?? 'Target device rejected the update.') : 'Target device returned an unexpected response.';
-            if (ob_get_level() > 0) { ob_clean(); }
-            echo json_encode(['ok' => false, 'message' => $msg]);
-            exit();
-        }
-
-        // Success — remove the exact rows that were included in this push
-        if (!empty($rowIds)) {
-            $idList = implode(',', array_map('intval', $rowIds));
-            $conn->query("DELETE FROM activity_log WHERE id IN ($idList)");
-        }
-
-        if (ob_get_level() > 0) { ob_clean(); }
-        echo json_encode([
-            'ok' => true,
-            'message' => 'Pushed ' . count($folderNames) . ' folder(s) and ' . $totalRows . ' row(s) across ' . count($tableEntries) . ' table item(s). Target says: ' . $responsePayload['message'] . '. Cleared ' . count($rowIds) . ' activity_log entr' . (count($rowIds) === 1 ? 'y' : 'ies') . '.',
-            'tables_summary' => $tablesSummary,
-            'folders_summary' => $folderNames,
-            'updated_files' => $zipBuild['file_list'],
-            'verification' => $responsePayload['verification'] ?? ['available' => false],
-        ]);
         exit();
     }
 
@@ -2889,6 +2475,34 @@ if (isset($_POST['action'])) {
         } else {
             if (ob_get_level() > 0) { ob_clean(); }
             echo json_encode(['ok' => false, 'message' => 'Incorrect Main Admin password.']);
+        }
+        exit();
+    }
+
+    // ---- Verify the CURRENTLY LOGGED-IN user's own password ----
+    // Used to gate Database Management's Backup Now / Restore / Browse
+    // Backups buttons: whoever is signed in right now must re-enter their
+    // own password before any of those actions are allowed to run.
+    if ($action === 'verify_current_user_password') {
+        $inputPassword = $_POST['password'] ?? '';
+        if ($inputPassword === '') {
+            if (ob_get_level() > 0) { ob_clean(); }
+            echo json_encode(['ok' => false, 'message' => 'Please enter your password.']);
+            exit();
+        }
+        $stmt = $conn->prepare("SELECT password_hash FROM users WHERE id = ? LIMIT 1");
+        $stmt->bind_param("i", $_SESSION['user_id']);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        $userRow = $res->fetch_assoc();
+        $stmt->close();
+
+        if ($userRow && password_verify($inputPassword, $userRow['password_hash'])) {
+            if (ob_get_level() > 0) { ob_clean(); }
+            echo json_encode(['ok' => true, 'message' => 'Verified.']);
+        } else {
+            if (ob_get_level() > 0) { ob_clean(); }
+            echo json_encode(['ok' => false, 'message' => 'Incorrect password.']);
         }
         exit();
     }
@@ -3694,65 +3308,46 @@ if (isset($_POST['action'])) {
                                     </div>
                                 </div>
 
-                                <div class="sync-card collapsible-section" id="activityPushCard">
-                                    <div class="section-header" role="button" tabindex="0" aria-expanded="false">
-                                        <span><span class="card-icon-trigger" onclick="event.stopPropagation(); showCardInfo('Cross-Device Data Sync', <?php echo htmlspecialchars(json_encode('Pushes exactly what activity_log says changed on THIS device — flagged folders are sent whole; flagged tables send only the rows matching that day. On success, the pushed activity_log entries are deleted here. Only available during the update window set by Settings → db_backup_blocking_time (8 hours from that time of day).'), ENT_QUOTES); ?>);">🔄</span> Cross-Device Data Sync</span>
-                                        <span class="section-toggle-icon">▸</span>
-                                    </div>
-                                    <div class="config-body">
-                                        <p class="desc">Pending items on this device: <b><?php echo $syncPendingActivityCount; ?></b></p>
-                                        <?php if (!$syncUpdateWindowOpen): ?>
-                                            <p class="desc" style="color:#ff8a65;">🕒 Outside the allowed update window (opens at <?php echo htmlspecialchars($syncBlockingTimeSetting ?: '—'); ?>, for 8 hours). Button hidden until then.</p>
-                                        <?php elseif ($syncOwnRole === 'android'): ?>
-                                            <button class="sync-btn" id="btnPushToPc" onclick="confirmPushScoped('pc', this, 'statusPushScoped')">📤 Update PC Data</button>
-                                        <?php elseif ($syncOwnRole === 'pc'): ?>
-                                            <button class="sync-btn" id="btnPushToAndroid" onclick="confirmPushScoped('android', this, 'statusPushScoped')">📤 Update Android Data</button>
-                                        <?php else: ?>
-                                            <p class="desc">Device role could not be determined — check IP Settings.</p>
-                                        <?php endif; ?>
-                                        <div class="sync-status" id="statusPushScoped"></div>
-                                    </div>
-                                </div>
-
                             </div>
                         </div>
                     </div>
 
-                    <div class="sync-card collapsible-section" id="verifyFullSyncCard">
+                    <div class="sync-card collapsible-section" id="verifyFullSyncCard" data-locked="<?php echo $syncBothConnected ? '0' : '1'; ?>">
                         <div class="section-header" role="button" tabindex="0" aria-expanded="false">
-                            <span><span class="card-icon-trigger" onclick="event.stopPropagation(); showCardInfo('Verify Full Sync', <?php echo htmlspecialchars(json_encode('Compares this device\'s ENTIRE source code and ENTIRE database against the other device by hashing both sides — nothing is transferred or changed, this is read-only. Confirms whether PC and Android are byte-for-byte identical right now.'), ENT_QUOTES); ?>);">🔍</span> Verify Full Sync</span>
+                            <span><span class="card-icon-trigger" onclick="event.stopPropagation(); showCardInfo('Verify Full Sync', <?php echo htmlspecialchars(json_encode($syncInfoVerifyFullSync), ENT_QUOTES); ?>);">🔍</span> Verify Full Sync<span id="verifyFullSyncLockSuffix"><?php echo $syncBothConnected ? '' : ' 🔒'; ?></span></span>
                             <span class="section-toggle-icon">▸</span>
                         </div>
+                        <p class="desc" id="verifyFullSyncLockNote" style="padding: 0 20px 16px; <?php echo $syncBothConnected ? 'display:none;' : ''; ?>">🔒 Locked until Connection Test succeeds for <b>both</b> PC and Android (see the Connection Test card above).</p>
                         <div class="config-body">
                             <p class="desc">Read-only check: confirms whether PC and Android currently have identical source code and identical database content.</p>
-                            <button class="sync-btn" id="btnVerifyFullSync" onclick="runAction('verify_full_sync', {}, this, 'statusVerifyFullSync')">🔍 Verify PC ⇄ Android</button>
+                            <button class="sync-btn" id="btnVerifyFullSync" onclick="runAction('verify_full_sync', {}, this, 'statusVerifyFullSync')" <?php echo $syncBothConnected ? '' : 'disabled'; ?>>🔍 Verify PC ⇄ Android</button>
                             <div class="sync-status" id="statusVerifyFullSync"></div>
                         </div>
                     </div>
 
                     <div class="sync-card collapsible-section" id="dbManagementCard">
                         <div class="section-header" role="button" tabindex="0" aria-expanded="false">
-                            <span><span class="card-icon-trigger" onclick="event.stopPropagation(); showCardInfo('Database Management', <?php echo htmlspecialchars(json_encode('Manual backup and restore tools for this device\'s database — independent of Connection Test / Pull. Backup Now saves to a fixed file; Restore Manual Backup loads it back; Restore from Auto Backups picks from the automatic backups made before every Pull.'), ENT_QUOTES); ?>);">🗄️</span> Database Management</span>
+                            <span><span class="card-icon-trigger" onclick="event.stopPropagation(); showCardInfo('Database Management', <?php echo htmlspecialchars(json_encode('Manual backup and restore tools for this device\'s database — independent of Connection Test / Pull. Backup Now saves to a fixed file; Restore Manual Backup loads it back; Restore from Auto Backups picks from the automatic backups made before every Pull.<br><br>Each of these three actions asks you to re-enter your own login password first, to confirm it\'s really you before anything runs.'), ENT_QUOTES); ?>);">🗄️</span> Database Management</span>
                             <span class="section-toggle-icon">▸</span>
                         </div>
                         <div class="config-body">
 
                             <div style="font-size:13px; color:#9a9da1; font-weight:600; margin-bottom:8px;">💾 BACKUP NOW</div>
-                            <button class="sync-btn" id="btnBackupNow" onclick="runAction('backup_db_now', {}, this, 'statusBackupNow')">💾 Backup Now</button>
+                            <button class="sync-btn" id="btnBackupNow" onclick="requestPasswordThen('backup_now', this, 'statusBackupNow')">💾 Backup Now</button>
                             <div class="sync-status" id="statusBackupNow"></div>
 
                             <hr style="border: none; border-top: 1px solid rgba(255,255,255,0.06); margin: 18px 0;">
 
                             <div style="font-size:13px; color:#9a9da1; font-weight:600; margin-bottom:8px;">♻️ RESTORE MANUAL BACKUP</div>
                             <p class="desc">Restores <code>database/optic_pos_db.sql</code> into this device's live database.</p>
-                            <button class="sync-btn warn" id="btnRestoreFixed" onclick="confirmRestoreFixed(this, 'statusRestoreFixed')">♻️ Restore</button>
+                            <button class="sync-btn warn" id="btnRestoreFixed" onclick="requestPasswordThen('restore_fixed', this, 'statusRestoreFixed')">♻️ Restore</button>
                             <div class="sync-status" id="statusRestoreFixed"></div>
 
                             <hr style="border: none; border-top: 1px solid rgba(255,255,255,0.06); margin: 18px 0;">
 
                             <div style="font-size:13px; color:#9a9da1; font-weight:600; margin-bottom:8px;">🗂️ RESTORE FROM AUTO BACKUPS</div>
                             <p class="desc">Browse this device's automatic pre-Pull backups and pick one to restore.</p>
-                            <button class="sync-btn" id="btnBrowseBackups" onclick="openBackupList(this)">🗂️ Browse Backups</button>
+                            <button class="sync-btn" id="btnBrowseBackups" onclick="requestPasswordThen('browse_backups', this, 'statusBrowseBackups')">🗂️ Browse Backups</button>
                             <div class="sync-status" id="statusBrowseBackups"></div>
 
                         </div>
@@ -3891,6 +3486,20 @@ if (isset($_POST['action'])) {
                 <h2>🗂️ Auto Backups — <span id="backupListIpLabel"></span></h2>
                 <div id="backupListBody" style="color:#c9cbce; font-size:13px; line-height:1.6;">Loading...</div>
                 <button type="button" class="iphelp-close-btn" onclick="closeBackupList()">Close</button>
+            </div>
+        </div>
+
+        <!-- Fly window: confirm the logged-in user's own password before Backup Now / Restore / Browse Backups run -->
+        <div class="iphelp-backdrop" id="passwordConfirmBackdrop" onclick="if(event.target===this) closePasswordConfirm()">
+            <div class="iphelp-modal" style="max-width:400px; text-align:center;">
+                <h2 id="passwordConfirmTitle">🔒 Confirm Your Password</h2>
+                <p style="color:#9a9da1; font-size:13px; margin-bottom:14px;">For your security, please re-enter your login password to continue.</p>
+                <input type="password" class="input-field" id="passwordConfirmInput" placeholder="Your password" autocomplete="off" style="width:100%; margin-bottom:10px;">
+                <p id="passwordConfirmMsg" style="font-size:12px; min-height:16px; margin-bottom:10px;"></p>
+                <div style="display:flex; gap:10px; justify-content:center;">
+                    <button type="button" class="iphelp-close-btn" onclick="closePasswordConfirm()">Cancel</button>
+                    <button type="button" class="btn-save" id="passwordConfirmSubmitBtn" onclick="submitPasswordConfirm()">Confirm</button>
+                </div>
             </div>
         </div>
 
@@ -4118,7 +3727,7 @@ if (isset($_POST['action'])) {
                         }
 
                         // Update Source Code / Cross-Device Data Sync: show exactly what changed
-                        if ((action === 'pull_code_only' || action === 'pull_code_custom' || action === 'pull_data_custom' || action === 'push_scoped_update') && data.ok) {
+                        if ((action === 'pull_code_only' || action === 'pull_code_custom' || action === 'pull_data_custom') && data.ok) {
                             renderUpdatedItemsList(statusEl, data);
                         }
 
@@ -4165,7 +3774,7 @@ if (isset($_POST['action'])) {
 
                 const params = new URLSearchParams({ action: 'test_connection', target });
 
-                fetch('sync.php', { method: 'POST', body: params })
+                return fetch('sync.php', { method: 'POST', body: params })
                     .then(r => r.json())
                     .then(data => {
                         setStatus(statusEl, data.ok, data.message);
@@ -4224,17 +3833,80 @@ if (isset($_POST['action'])) {
                 document.getElementById('cardInfoBackdrop').classList.remove('active');
             }
 
-            // ---- Restore Manual Backup (database/optic_pos_db.sql) ----
-            function confirmRestoreFixed(btn, statusId) {
-                if (!confirm('This will REPLACE this device\'s current database with database/optic_pos_db.sql. Continue?')) return;
-                runAction('restore_fixed_backup', {}, btn, statusId);
+            // ---- Database Management: password confirmation gate ----
+            // Backup Now, Restore Manual Backup, and Browse Backups all route
+            // through here first. Nothing actually runs until the currently
+            // logged-in user re-enters their own password in the fly window
+            // and it's verified against the server.
+            var pendingPasswordAction = null; // { kind, btn, statusId }
+
+            function requestPasswordThen(kind, btn, statusId) {
+                pendingPasswordAction = { kind: kind, btn: btn, statusId: statusId };
+                const input = document.getElementById('passwordConfirmInput');
+                const msg = document.getElementById('passwordConfirmMsg');
+                input.value = '';
+                msg.textContent = '';
+                document.getElementById('passwordConfirmBackdrop').classList.add('active');
+                setTimeout(function () { input.focus(); }, 50);
             }
 
-            // ---- Cross-Device Data Sync (activity_log-driven partial push) ----
-            function confirmPushScoped(target, btn, statusId) {
-                var label = target === 'pc' ? 'PC' : 'Android';
-                if (!confirm(`This will push this device's pending activity_log changes to ${label}, and clear them here on success. Continue?`)) return;
-                runAction('push_scoped_update', { target }, btn, statusId);
+            function closePasswordConfirm() {
+                document.getElementById('passwordConfirmBackdrop').classList.remove('active');
+                pendingPasswordAction = null;
+            }
+
+            function submitPasswordConfirm() {
+                const input = document.getElementById('passwordConfirmInput');
+                const msg = document.getElementById('passwordConfirmMsg');
+                const submitBtn = document.getElementById('passwordConfirmSubmitBtn');
+                const inputVal = input.value;
+
+                if (inputVal === '') {
+                    msg.textContent = 'Please enter your password.';
+                    msg.style.color = '#ff3131';
+                    return;
+                }
+
+                submitBtn.disabled = true;
+                msg.textContent = 'Verifying...';
+                msg.style.color = '';
+
+                fetch('sync.php', {
+                    method: 'POST',
+                    body: new URLSearchParams({ action: 'verify_current_user_password', password: inputVal })
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.ok) {
+                        const pending = pendingPasswordAction;
+                        document.getElementById('passwordConfirmBackdrop').classList.remove('active');
+                        pendingPasswordAction = null;
+                        if (pending) executePasswordGatedAction(pending);
+                    } else {
+                        msg.textContent = data.message || 'Incorrect password.';
+                        msg.style.color = '#ff3131';
+                    }
+                })
+                .catch(() => {
+                    msg.textContent = 'Verification request failed. Please try again.';
+                    msg.style.color = '#ff3131';
+                })
+                .finally(() => {
+                    submitBtn.disabled = false;
+                });
+            }
+
+            // Runs the actual Database Management action, only ever called
+            // after the password above has been verified.
+            function executePasswordGatedAction(pending) {
+                if (pending.kind === 'backup_now') {
+                    runAction('backup_db_now', {}, pending.btn, pending.statusId);
+                } else if (pending.kind === 'restore_fixed') {
+                    if (!confirm('This will REPLACE this device\'s current database with database/optic_pos_db.sql. Continue?')) return;
+                    runAction('restore_fixed_backup', {}, pending.btn, pending.statusId);
+                } else if (pending.kind === 'browse_backups') {
+                    openBackupList(pending.btn);
+                }
             }
 
             // ---- Custom Update Source Code (fly window checklist) ----
@@ -4452,6 +4124,32 @@ if (isset($_POST['action'])) {
                     if (otherHeader) otherHeader.setAttribute('aria-expanded', 'false');
                 });
             }
+            // Opens a top-level card by id (used for the automatic flow: Connection
+            // Test success -> Verify Full Sync opens itself -> closing Verify Full
+            // Sync opens Full System). Refuses to open a locked card. Pass
+            // scrollTo=true to smoothly scroll the card into view once opened.
+            function openTopLevelSectionById(id, scrollTo) {
+                var section = document.getElementById(id);
+                if (!section || section.dataset.locked === '1') return;
+                syncCloseAllTopLevel();
+                section.classList.add('is-open');
+                var header = section.querySelector(':scope > .section-header');
+                if (header) header.setAttribute('aria-expanded', 'true');
+
+                // Opening Full System satisfies the "sync first" reminder.
+                if (id === 'fullSystemSection' && syncNeedsSyncFirst) {
+                    syncNeedsSyncFirst = false;
+                    section.classList.remove('needs-sync-glow');
+                    syncRefreshGating();
+                }
+
+                if (scrollTo) {
+                    var scrollBlock = (id === 'fullSystemSection') ? 'center' : 'start';
+                    setTimeout(function () {
+                        section.scrollIntoView({ behavior: 'smooth', block: scrollBlock });
+                    }, 150); // small delay so the section-open transition finishes first
+                }
+            }
             (function () {
                 syncTopLevelSections.forEach(function (section) {
                     var header = section.querySelector(':scope > .section-header');
@@ -4465,6 +4163,8 @@ if (isset($_POST['action'])) {
                         }
 
                         var willOpen = !section.classList.contains('is-open');
+                        // Closing Verify Full Sync automatically moves on to Full System.
+                        var closingVerifyFullSync = (section.id === 'verifyFullSyncCard' && !willOpen);
                         syncCloseAllTopLevel();
 
                         if (willOpen) {
@@ -4477,20 +4177,8 @@ if (isset($_POST['action'])) {
                                 section.classList.remove('needs-sync-glow');
                                 syncRefreshGating();
                             }
-
-                            // First time Full System opens with pending activity_log
-                            // items, draw attention to the push card and scroll to it.
-                            if (section.id === 'fullSystemSection' && syncPendingActivityCount > 0 && !syncActivityCardHighlighted) {
-                                syncActivityCardHighlighted = true;
-                                setTimeout(function () {
-                                    var card = document.getElementById('activityPushCard');
-                                    if (card) {
-                                        card.classList.add('needs-sync-glow');
-                                        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                                        setTimeout(function () { card.classList.remove('needs-sync-glow'); }, 6000);
-                                    }
-                                }, 250); // small delay so the section-open transition finishes first
-                            }
+                        } else if (closingVerifyFullSync) {
+                            openTopLevelSectionById('fullSystemSection', true);
                         }
                     }
 
@@ -4509,8 +4197,7 @@ if (isset($_POST['action'])) {
             var syncConnState = { pc: <?php echo json_encode($syncPcTestOk); ?>, android: <?php echo json_encode($syncAndroidTestOk); ?> };
             var syncOwnRoleJs = <?php echo json_encode($syncOwnRole); ?>;
             var syncNeedsSyncFirst = false; // set true if the user says the OTHER device was used last
-            var syncPendingActivityCount = <?php echo (int) $syncPendingActivityCount; ?>;
-            var syncActivityCardHighlighted = false; // only auto-highlight once per page load
+            var syncAutoVerifyTriggered = false; // only auto-run Verify Full Sync once per page load
 
             // ---- "Which device did you use last?" fly window (shown on every page load) ----
             function answerLastUsedDevice(device) {
@@ -4521,6 +4208,10 @@ if (isset($_POST['action'])) {
                     if (fullSection) fullSection.classList.add('needs-sync-glow');
                     syncRefreshGating();
                 }
+                // Only after the user has answered this prompt do we start the
+                // automatic Connection Test & IP Settings -> Test PC -> Test
+                // Android sequence (buttons are left in place, just auto-triggered).
+                startAutoConnectionTest();
             }
             // Auto-show on load — no auto-dismiss, the user must pick one.
             document.getElementById('lastUsedDeviceBackdrop').classList.add('active');
@@ -4552,6 +4243,17 @@ if (isset($_POST['action'])) {
                 var fullLockNote = document.getElementById('fullSystemLockNote');
                 if (fullLockNote) fullLockNote.style.display = bothOk ? 'none' : '';
 
+                // Verify Full Sync: same gate as Full System — locked until
+                // Connection Test succeeds for both PC and Android.
+                var verifySection = document.getElementById('verifyFullSyncCard');
+                if (verifySection) verifySection.dataset.locked = bothOk ? '0' : '1';
+                var verifyLockSuffix = document.getElementById('verifyFullSyncLockSuffix');
+                if (verifyLockSuffix) verifyLockSuffix.textContent = bothOk ? '' : ' 🔒';
+                var verifyLockNote = document.getElementById('verifyFullSyncLockNote');
+                if (verifyLockNote) verifyLockNote.style.display = bothOk ? 'none' : '';
+                var btnVerifyFullSync = document.getElementById('btnVerifyFullSync');
+                if (btnVerifyFullSync) btnVerifyFullSync.disabled = !bothOk;
+
                 // Pull CARDS (not just their buttons) are locked entirely when this
                 // device IS that role — can't pull from itself.
                 var ownRole = <?php echo json_encode($syncOwnRole); ?>;
@@ -4565,15 +4267,39 @@ if (isset($_POST['action'])) {
                 if (btnPullAndroid) btnPullAndroid.disabled = !bothOk || ownRole === 'android';
 
                 // Once both devices are confirmed connected, auto-close the
-                // Connection Test card — its job is done for this session.
+                // Connection Test card — its job is done for this session —
+                // then automatically open Verify Full Sync and run it (the
+                // button itself is left in place, this just triggers it once).
                 if (bothOk) {
                     var connCard = document.getElementById('connTestCard');
                     if (connCard && connCard.classList.contains('is-open')) {
                         syncCloseAllTopLevel();
                     }
+                    if (!syncAutoVerifyTriggered) {
+                        syncAutoVerifyTriggered = true;
+                        openTopLevelSectionById('verifyFullSyncCard', true);
+                        var autoVerifyBtn = document.getElementById('btnVerifyFullSync');
+                        if (autoVerifyBtn) runAction('verify_full_sync', {}, autoVerifyBtn, 'statusVerifyFullSync');
+                    }
                 }
             }
             syncRefreshGating();
+
+            // ---- Auto-run (called once the user answers "which device did you ----
+            // ---- use last?"): open Connection Test & IP Settings, then test  ----
+            // ---- PC, then test Android, one after another. The buttons       ----
+            // ---- themselves are left in place — this just triggers them      ----
+            // ---- automatically instead of requiring a manual click.          ----
+            function startAutoConnectionTest() {
+                openTopLevelSectionById('connTestCard');
+                var btnTestPc = document.getElementById('btnTestPc');
+                var btnTestAndroid = document.getElementById('btnTestAndroid');
+                if (btnTestPc && btnTestAndroid) {
+                    Promise.resolve(testConnection('pc', btnTestPc, 'statusTestPc')).then(function () {
+                        testConnection('android', btnTestAndroid, 'statusTestAndroid');
+                    });
+                }
+            }
         </script>
 
         <script>
