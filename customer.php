@@ -53,16 +53,16 @@
     $currentTime = date('H:i');
     $timeReached = ($currentTime >= $blockingTime);
 
-    // Customer Prescription and Invoice share the same tracked items, but
-    // are still checked independently of each other.
-    $customerPrescriptionItems = ['customer_examinations', 'customer_orders', 'custom_frames', 'prescription_modifications', 'data_json [folder]', 'pdf_file [folder]'];
+    // Customer Prescription, Invoice, and Completion Status each have their
+    // own single tracked log label now, checked independently of each other.
+    $customerPrescriptionItems = ['CUSTOMER PRESCRIPTION'];
     $customerPrescriptionLocked = isAnyItemLogged($conn, $customerPrescriptionItems) && $timeReached;
 
-    $invoiceItems = ['customer_examinations', 'customer_orders', 'custom_frames', 'prescription_modifications'];
+    $invoiceItems = ['INVOICE'];
     $invoiceLocked = isAnyItemLogged($conn, $invoiceItems) && $timeReached;
 
-    // Completion Status only cares about customer_orders.
-    $completionStatusItems = ['customer_orders'];
+    // Completion Status follows the same rule with its own tracked log label.
+    $completionStatusItems = ['COMPLETION STATUS'];
     $completionStatusLocked = isAnyItemLogged($conn, $completionStatusItems) && $timeReached;
 ?>
 
@@ -243,129 +243,6 @@
             z-index: 1000;
         }
 
-        /* ===== Affected-items confirmation fly window ===== */
-        .affected-backdrop {
-            position: fixed;
-            inset: 0;
-            background: rgba(0, 0, 0, 0);
-            backdrop-filter: blur(0px);
-            -webkit-backdrop-filter: blur(0px);
-            z-index: 1100;
-            opacity: 0;
-            pointer-events: none;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: background 0.3s ease, opacity 0.3s ease, backdrop-filter 0.3s ease;
-        }
-
-        .affected-backdrop.active {
-            background: rgba(0, 0, 0, 0.6);
-            backdrop-filter: blur(10px);
-            -webkit-backdrop-filter: blur(10px);
-            opacity: 1;
-            pointer-events: auto;
-        }
-
-        .affected-modal {
-            background: #1c1e22;
-            border-radius: 18px;
-            padding: 24px;
-            width: 90%;
-            max-width: 420px;
-            box-shadow:
-                8px 8px 20px rgba(0, 0, 0, 0.55),
-                -8px -8px 20px rgba(255, 255, 255, 0.03);
-            transform: scale(0.9);
-            opacity: 0;
-            transition: transform 0.25s ease, opacity 0.25s ease;
-        }
-
-        .affected-backdrop.active .affected-modal {
-            transform: scale(1);
-            opacity: 1;
-        }
-
-        .affected-modal h2 {
-            color: #f2f2f2;
-            font-size: 15px;
-            letter-spacing: 0.5px;
-            margin: 0 0 16px 0;
-            text-align: center;
-        }
-
-        .affected-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-bottom: 20px;
-        }
-
-        .affected-table th, .affected-table td {
-            text-align: left;
-            padding: 8px 10px;
-            font-size: 13px;
-            color: #e0e0e0;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-        }
-
-        /* Colored item name (list content) inside the affected-items table */
-        .affected-table td.affected-item-name {
-            color: #7fe3f0;
-            font-weight: 600;
-        }
-
-        .affected-table th {
-            color: #9a9da1;
-            font-weight: 600;
-            font-size: 11px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        .affected-table input[type="checkbox"] {
-            width: 16px;
-            height: 16px;
-            accent-color: #ff8a65;
-            cursor: pointer;
-        }
-
-        .affected-actions {
-            display: flex;
-            gap: 10px;
-            justify-content: flex-end;
-        }
-
-        .affected-actions button {
-            border: none;
-            border-radius: 24px;
-            padding: 8px 18px;
-            font-size: 12px;
-            font-weight: 600;
-            letter-spacing: 0.4px;
-            cursor: pointer;
-            font-family: inherit;
-            transition: transform 0.15s ease, box-shadow 0.15s ease;
-        }
-
-        .affected-actions button:active {
-            transform: scale(0.96);
-        }
-
-        .affected-confirm-btn {
-            background: #17181b;
-            color: #7fe3f0;
-            box-shadow:
-                inset 2px 2px 5px rgba(0, 0, 0, 0.6),
-                inset -2px -2px 5px rgba(255, 255, 255, 0.04);
-        }
-
-        .affected-cancel-btn {
-            background: #17181b;
-            color: #9a9da1;
-            box-shadow:
-                inset 2px 2px 5px rgba(0, 0, 0, 0.6),
-                inset -2px -2px 5px rgba(255, 255, 255, 0.04);
-        }
     </style>
 </head>
 <body>
@@ -403,7 +280,7 @@
                             <div class="led"></div>
                         </button>
                     <?php else: ?>
-                        <button class="neu-button" data-url="customer_prescription.php" data-affected-items="customer_examinations, customer_orders, custom_frames, prescription_modifications, data_json [folder], pdf_file [folder]" onclick="handleButtonClick(this)">
+                        <button class="neu-button" data-url="customer_prescription.php" data-log-label="CUSTOMER PRESCRIPTION" onclick="handleButtonClick(this)">
                             <span class="icon">📋</span>
                             Customer Prescription
                             <div class="led"></div>
@@ -417,7 +294,7 @@
                             <div class="led"></div>
                         </button>
                     <?php else: ?>
-                        <button class="neu-button" data-url="invoice.php" data-affected-items="customer_examinations, customer_orders, custom_frames, prescription_modifications" onclick="handleButtonClick(this)">
+                        <button class="neu-button" data-url="invoice.php" data-log-label="INVOICE" onclick="handleButtonClick(this)">
                             <span class="icon">💳</span>
                             Invoice
                             <div class="led"></div>
@@ -431,7 +308,7 @@
                             <div class="led"></div>
                         </button>
                     <?php else: ?>
-                        <button class="neu-button" data-url="completion_status.php" data-affected-items="customer_orders" onclick="handleButtonClick(this)">
+                        <button class="neu-button" data-url="completion_status.php" data-log-label="COMPLETION STATUS" onclick="handleButtonClick(this)">
                             <span class="icon">✅</span>
                             Completion Status
                             <div class="led"></div>
@@ -496,28 +373,7 @@
     </div>    
     <div class="logo-backdrop" id="logoBackdrop" ondblclick="zoomOutLogo(document.getElementById('storeLogo'))"></div>
 
-    <!-- Fly window: confirmation before leaving the page after visiting a tracked module -->
-    <div class="affected-backdrop" id="affectedBackdrop">
-        <div class="affected-modal">
-            <h2>AFFECTED FILES OR DATABASE</h2>
-            <table class="affected-table">
-                <thead>
-                    <tr>
-                        <th style="width: 30px;"></th>
-                        <th>Item</th>
-                    </tr>
-                </thead>
-                <tbody id="affectedTableBody">
-                    <!-- Rows are rendered dynamically by JS based on the items tied to the button clicked -->
-                </tbody>
-            </table>
-            <div class="affected-actions">
-                <button type="button" class="affected-cancel-btn" onclick="cancelAffectedModal()">Cancel</button>
-                <button type="button" class="affected-confirm-btn" onclick="confirmAffectedModal()">Confirm</button>
-            </div>
-        </div>
-    </div>
-        
+
     <!-- button logout, back animation for logo -->
     <script>
         // Single tap/click on the logo zooms it in (only if not already zoomed).
@@ -532,11 +388,6 @@
             imgEl.classList.remove('zoomed');
             document.getElementById('logoBackdrop').classList.remove('active');
         }
-
-        // Holds the action ('back' or 'logout') and element waiting to run
-        // after the affected-items confirmation modal is resolved.
-        let pendingAction = null;
-        let pendingElement = null;
 
         // Actual pill-shrink animation for the Back button, then navigate.
         function runBackAnimation(element) {
@@ -584,230 +435,75 @@
             }, 220);
         }
 
-        function openAffectedModal(items) {
-            // Render one checkbox row per affected item. Each item gets its
-            // own row/state so they can be selected or deselected individually.
-            const tbody = document.getElementById('affectedTableBody');
-            tbody.innerHTML = '';
-            items.forEach((item, index) => {
-                const row = document.createElement('tr');
-
-                const checkboxCell = document.createElement('td');
-                const checkbox = document.createElement('input');
-                checkbox.type = 'checkbox';
-                checkbox.checked = true;
-                checkbox.className = 'affected-item-checkbox';
-                checkbox.setAttribute('data-item', item);
-                checkbox.id = 'affectedItemCheckbox' + index;
-                checkboxCell.appendChild(checkbox);
-
-                const nameCell = document.createElement('td');
-                nameCell.className = 'affected-item-name';
-                nameCell.textContent = item;
-
-                row.appendChild(checkboxCell);
-                row.appendChild(nameCell);
-                tbody.appendChild(row);
-            });
-
-            document.getElementById('affectedBackdrop').classList.add('active');
+        // Reads the data-log-label attribute off a button.
+        function getLogLabel(element) {
+            return element.getAttribute('data-log-label') || '';
         }
 
-        function closeAffectedModal() {
-            document.getElementById('affectedBackdrop').classList.remove('active');
-        }
-
-        // Runs whichever action (back/logout) is currently pending.
-        function executePendingAction() {
-            const action = pendingAction;
-            const element = pendingElement;
-            pendingAction = null;
-            pendingElement = null;
-
-            if (action === 'back') {
-                runBackAnimation(element);
-            } else if (action === 'logout') {
-                runLogoutAnimation(element);
-            }
-        }
-
-        // Cancel button: close the modal and abort the pending action entirely.
-        function cancelAffectedModal() {
-            closeAffectedModal();
-            pendingAction = null;
-            pendingElement = null;
-        }
-
-        // Confirm button: log to activity_log only for items still checked,
-        // then proceed with the pending action either way. Each checked item
-        // is sent as a separate entry, so it is stored as its own row rather
-        // than being combined together. Once confirmed (regardless of what
-        // was checked), the accumulated visited-modules tracker is cleared
-        // so it doesn't carry over into the next visit.
-        function confirmAffectedModal() {
-            const checkedItems = Array.from(document.querySelectorAll('.affected-item-checkbox:checked'))
-                .map(cb => cb.getAttribute('data-item'));
-            closeAffectedModal();
-
-            if (checkedItems.length === 0) {
-                clearVisitedModules();
-                executePendingAction();
-                return;
-            }
-
-            fetch('log_activity.php', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ list: checkedItems })
-            })
-            .then(() => {
-                clearVisitedModules();
-                executePendingAction();
-            })
-            .catch(() => {
-                clearVisitedModules();
-                executePendingAction();
-            });
-        }
-
-        // ===== Universal "visitedModules" tracker =====
-        // Any button with a data-affected-items attribute is a "tracked
-        // module". Each tracked module pressed gets recorded here (its own
-        // entry, keyed by URL) so multiple tracked buttons pressed in the
-        // same visit all contribute their items - but only the ones that
-        // were actually pressed, nothing assumed.
-        const VISITED_MODULES_KEY = 'visitedModules';
-
-        function getVisitedModules() {
-            try {
-                const raw = localStorage.getItem(VISITED_MODULES_KEY);
-                const parsed = raw ? JSON.parse(raw) : [];
-                return Array.isArray(parsed) ? parsed : [];
-            } catch (e) {
-                return [];
-            }
-        }
-
-        function saveVisitedModules(modules) {
-            localStorage.setItem(VISITED_MODULES_KEY, JSON.stringify(modules));
-        }
-
-        // Records/updates a tracked module's affected items. If the same
-        // module is pressed again, its entry is replaced (not duplicated).
-        function recordVisitedModule(moduleUrl, items) {
-            const modules = getVisitedModules().filter(m => m.module !== moduleUrl);
-            modules.push({ module: moduleUrl, items: items });
-            saveVisitedModules(modules);
-        }
-
-        function clearVisitedModules() {
-            localStorage.removeItem(VISITED_MODULES_KEY);
-        }
-
-        // Merges the items of every tracked module pressed so far into one
-        // deduplicated list, to be shown in the confirmation modal.
-        function getMergedAffectedItems() {
-            const modules = getVisitedModules();
-            const merged = [];
-            modules.forEach(m => {
-                (m.items || []).forEach(item => {
-                    if (!merged.includes(item)) {
-                        merged.push(item);
-                    }
-                });
-            });
-            return merged;
-        }
-
-        // Reads the comma-separated data-affected-items attribute off a
-        // button and turns it into a clean array of item names.
-        function getAffectedItems(element) {
-            const raw = element.getAttribute('data-affected-items') || '';
-            return raw.split(',').map(item => item.trim()).filter(item => item.length > 0);
-        }
-
-        // Whether the affected-items confirmation modal should be shown:
-        // relevant whenever at least one tracked module has been pressed
-        // since the last confirmation.
-        function shouldConfirmAffectedItems() {
-            return getVisitedModules().length > 0;
-        }
-
-        // Asks the server which of the merged items are NOT already
-        // logged in activity_log (exact match). Only those are worth
-        // asking the user to confirm - if an item's row already exists,
-        // re-showing it in the modal would just re-log the same thing.
-        function fetchUnloggedItems(items) {
+        // Asks the server which of the given labels are NOT already logged
+        // in activity_log (exact match). Only those are worth logging -
+        // if a label's row already exists, logging it again is unnecessary.
+        function fetchUnloggedItems(labels) {
             return fetch('check_logged_items.php', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ list: items })
+                body: JSON.stringify({ list: labels })
             })
             .then(res => res.json())
-            .then(data => (data && data.success) ? data.unloggedItems : items)
-            .catch(() => items); // if the check fails, fall back to showing everything
+            .then(data => (data && data.success) ? data.unloggedItems : labels)
+            .catch(() => labels); // if the check fails, fall back to logging everything
         }
 
-        // Shared logic for both Back and Logout: merge tracked items,
-        // ask the server which ones are still unlogged, then either show
-        // the modal with just those, or skip the modal entirely and run
-        // the action directly if every tracked item is already logged.
-        function proceedWithConfirmation(action, element) {
-            if (!shouldConfirmAffectedItems()) {
-                if (action === 'back') runBackAnimation(element);
-                else if (action === 'logout') runLogoutAnimation(element);
-                return;
-            }
-
-            const mergedItems = getMergedAffectedItems();
-            fetchUnloggedItems(mergedItems).then(unloggedItems => {
-                if (unloggedItems.length === 0) {
-                    // Everything tracked is already logged - nothing new
-                    // to confirm, so clear the tracker and proceed as if
-                    // nothing had been pending.
-                    clearVisitedModules();
-                    if (action === 'back') runBackAnimation(element);
-                    else if (action === 'logout') runLogoutAnimation(element);
-                    return;
-                }
-
-                pendingAction = action;
-                pendingElement = element;
-                openAffectedModal(unloggedItems);
-            });
-        }
-
-        // Animate the new pill-style Back button before navigating
+        // Back and Logout no longer trigger any logging - they just run
+        // their animation and proceed straight away.
         function handleBackClick(element) {
-            proceedWithConfirmation('back', element);
+            runBackAnimation(element);
         }
 
-        // Animate the new pill-style Logout button before logging out
         function handleLogoutClick(element) {
-            proceedWithConfirmation('logout', element);
+            runLogoutAnimation(element);
         }
 
         // Function executed when a grid menu button is clicked.
-        // Navigates directly - the affected-items modal is not triggered
-        // here, only when leaving the page afterwards via Back/Logout.
-        // If the button is a tracked module (has data-affected-items),
-        // its items are recorded first so they can be shown later.
+        // If the button is a tracked module (has data-log-label), its label
+        // is logged to activity_log right here - but only if it hasn't been
+        // logged before. Navigation happens either way, right after.
         function handleButtonClick(element) {
             const targetUrl = element.getAttribute('data-url');
-            const items = getAffectedItems(element);
-            if (items.length > 0) {
-                recordVisitedModule(targetUrl, items);
+            const logLabel = getLogLabel(element);
+
+            const navigate = () => {
+                // 1. Save this URL to localStorage as the active button identity
+                localStorage.setItem('activeMenuUrl', targetUrl);
+
+                // 2. Add the active class immediately (for an instant visual effect)
+                document.querySelectorAll('.neu-button').forEach(btn => btn.classList.remove('active'));
+                element.classList.add('active');
+
+                // 3. Navigate to the page
+                window.location.href = targetUrl;
+            };
+
+            if (!logLabel) {
+                navigate();
+                return;
             }
 
-            // 1. Save this URL to localStorage as the active button identity
-            localStorage.setItem('activeMenuUrl', targetUrl);
+            fetchUnloggedItems([logLabel]).then(unloggedLabels => {
+                if (unloggedLabels.length === 0) {
+                    // Already logged before - nothing new to save.
+                    navigate();
+                    return;
+                }
 
-            // 2. Add the active class immediately (for an instant visual effect)
-            document.querySelectorAll('.neu-button').forEach(btn => btn.classList.remove('active'));
-            element.classList.add('active');
-
-            // 3. Navigate to the page
-            window.location.href = targetUrl;
+                fetch('log_activity.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ list: unloggedLabels })
+                })
+                .then(navigate)
+                .catch(navigate);
+            });
         }
 
         // Function that runs automatically when the page is refreshed or returned to (Back)

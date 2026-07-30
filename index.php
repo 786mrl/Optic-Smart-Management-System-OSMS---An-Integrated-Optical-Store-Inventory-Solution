@@ -193,6 +193,125 @@ include 'auth_check.php';
             transform: translate(-50%, -50%) scale(2.8);
             z-index: 1000;
         }
+
+        /* Company name: signal that it is tappable/clickable for the hidden feature */
+        .company-name {
+            cursor: pointer;
+            user-select: none;
+        }
+
+        /* ===== Blocking Time fly windows (triple-click on company name) ===== */
+        .fly-window-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0);
+            backdrop-filter: blur(0px);
+            -webkit-backdrop-filter: blur(0px);
+            z-index: 1001;
+            opacity: 0;
+            pointer-events: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.3s ease, opacity 0.3s ease, backdrop-filter 0.3s ease;
+        }
+
+        .fly-window-backdrop.active {
+            background: rgba(0, 0, 0, 0.65);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .fly-window-card {
+            background: #1c1e22;
+            border-radius: 18px;
+            padding: 26px 24px;
+            width: 90%;
+            max-width: 340px;
+            box-shadow:
+                10px 10px 24px rgba(0, 0, 0, 0.55),
+                -10px -10px 24px rgba(255, 255, 255, 0.03);
+            transform: scale(0.85);
+            opacity: 0;
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+        }
+
+        .fly-window-backdrop.active .fly-window-card {
+            transform: scale(1);
+            opacity: 1;
+        }
+
+        .fly-window-card h3 {
+            color: #f2f2f2;
+            font-size: 15px;
+            margin: 0 0 6px 0;
+            text-align: center;
+        }
+
+        .fly-window-card p.fly-window-desc {
+            color: #9a9da1;
+            font-size: 12px;
+            text-align: center;
+            margin: 0 0 18px 0;
+        }
+
+        .fly-window-card input[type="password"],
+        .fly-window-card input[type="time"] {
+            width: 100%;
+            box-sizing: border-box;
+            background: #17181b;
+            border: none;
+            border-radius: 10px;
+            padding: 12px 14px;
+            color: #f2f2f2;
+            font-size: 14px;
+            box-shadow: inset 3px 3px 6px rgba(0, 0, 0, 0.6), inset -3px -3px 6px rgba(255, 255, 255, 0.04);
+            margin-bottom: 14px;
+        }
+
+        .fly-window-card input[type="password"]:focus,
+        .fly-window-card input[type="time"]:focus {
+            outline: none;
+            box-shadow: inset 3px 3px 6px rgba(0, 0, 0, 0.6), inset -3px -3px 6px rgba(255, 255, 255, 0.04), 0 0 8px rgba(103, 232, 249, 0.4);
+        }
+
+        .fly-window-error {
+            color: #ff3131;
+            font-size: 11px;
+            text-align: center;
+            min-height: 14px;
+            margin: -6px 0 12px 0;
+        }
+
+        .fly-window-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .fly-window-btn {
+            flex: 1;
+            border: none;
+            border-radius: 10px;
+            padding: 10px 0;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            font-family: inherit;
+            background: #17181b;
+            color: #9a9da1;
+            box-shadow: 4px 4px 10px rgba(0, 0, 0, 0.55), -4px -4px 10px rgba(255, 255, 255, 0.03);
+            transition: transform 0.15s ease, color 0.15s ease;
+        }
+
+        .fly-window-btn:active {
+            transform: scale(0.96);
+        }
+
+        .fly-window-btn.primary {
+            color: #7fe3f0;
+        }
     </style>
 </head>
 <body>
@@ -217,7 +336,7 @@ include 'auth_check.php';
                     <div class="logo-box">
                         <img id="storeLogo" src="<?php echo htmlspecialchars($BRAND_IMAGE_PATH); ?>" alt="Brand Logo" style="height: 40px;" onclick="zoomInLogo(this)" ondblclick="zoomOutLogo(this)">
                     </div>
-                    <h1 class="company-name"><?php echo htmlspecialchars($STORE_NAME); ?></h1>
+                    <h1 class="company-name" id="companyNameTrigger"><?php echo htmlspecialchars($STORE_NAME); ?></h1>
                     <p class="company-address"><?php echo htmlspecialchars($STORE_ADDRESS); ?></p>
                 </div>
             </div>
@@ -264,6 +383,34 @@ include 'auth_check.php';
         </footer>
     </div>    
     <div class="logo-backdrop" id="logoBackdrop" ondblclick="zoomOutLogo(document.getElementById('storeLogo'))"></div>
+
+    <!-- Fly Window 1: Main Admin password verification (triggered by triple-click/tap on company name) -->
+    <div class="fly-window-backdrop" id="blockingTimePasswordBackdrop">
+        <div class="fly-window-card">
+            <h3>Main Admin Verification</h3>
+            <p class="fly-window-desc">Enter the Main Admin password to configure the Database Backup Blocking Time.</p>
+            <input type="password" id="blockingTimePasswordInput" placeholder="Main Admin password" autocomplete="off">
+            <div class="fly-window-error" id="blockingTimePasswordError"></div>
+            <div class="fly-window-actions">
+                <button type="button" class="fly-window-btn" id="blockingTimePasswordCancel">Cancel</button>
+                <button type="button" class="fly-window-btn primary" id="blockingTimePasswordSubmit">Verify</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Fly Window 2: Edit Database Backup Blocking Time -->
+    <div class="fly-window-backdrop" id="blockingTimeEditBackdrop">
+        <div class="fly-window-card">
+            <h3>Database Backup Blocking Time</h3>
+            <p class="fly-window-desc">Set the time of day after which database backup is blocked.</p>
+            <input type="time" id="blockingTimeEditInput">
+            <div class="fly-window-error" id="blockingTimeEditError"></div>
+            <div class="fly-window-actions">
+                <button type="button" class="fly-window-btn" id="blockingTimeEditCancel">Cancel</button>
+                <button type="button" class="fly-window-btn primary" id="blockingTimeEditSave">Save</button>
+            </div>
+        </div>
+    </div>
     
     <script>
         function handleButtonClick(element) {
@@ -335,6 +482,139 @@ include 'auth_check.php';
                 });
             }
         });
+
+        // ===== Triple-click / triple-tap on the company name =====
+        // Opens the Database Backup Blocking Time fly windows (Main Admin only).
+        (function () {
+            const companyNameEl = document.getElementById('companyNameTrigger');
+            const passwordBackdrop = document.getElementById('blockingTimePasswordBackdrop');
+            const passwordInput = document.getElementById('blockingTimePasswordInput');
+            const passwordError = document.getElementById('blockingTimePasswordError');
+            const passwordSubmitBtn = document.getElementById('blockingTimePasswordSubmit');
+            const passwordCancelBtn = document.getElementById('blockingTimePasswordCancel');
+
+            const editBackdrop = document.getElementById('blockingTimeEditBackdrop');
+            const editInput = document.getElementById('blockingTimeEditInput');
+            const editError = document.getElementById('blockingTimeEditError');
+            const editSaveBtn = document.getElementById('blockingTimeEditSave');
+            const editCancelBtn = document.getElementById('blockingTimeEditCancel');
+
+            let clickCount = 0;
+            let clickTimer = null;
+            const CLICK_WINDOW_MS = 600; // max gap between clicks/taps to count as consecutive
+
+            function openPasswordWindow() {
+                passwordInput.value = '';
+                passwordError.textContent = '';
+                passwordBackdrop.classList.add('active');
+                setTimeout(() => passwordInput.focus(), 150);
+            }
+
+            function closePasswordWindow() {
+                passwordBackdrop.classList.remove('active');
+            }
+
+            function openEditWindow(currentValue) {
+                editInput.value = currentValue || '20:30';
+                editError.textContent = '';
+                editBackdrop.classList.add('active');
+            }
+
+            function closeEditWindow() {
+                editBackdrop.classList.remove('active');
+            }
+
+            companyNameEl.addEventListener('click', function () {
+                clickCount++;
+                if (clickTimer) clearTimeout(clickTimer);
+
+                if (clickCount === 3) {
+                    clickCount = 0;
+                    openPasswordWindow();
+                    return;
+                }
+
+                clickTimer = setTimeout(() => {
+                    clickCount = 0;
+                }, CLICK_WINDOW_MS);
+            });
+
+            passwordCancelBtn.addEventListener('click', closePasswordWindow);
+            passwordBackdrop.addEventListener('click', function (evt) {
+                if (evt.target === passwordBackdrop) closePasswordWindow();
+            });
+
+            passwordSubmitBtn.addEventListener('click', function () {
+                const password = passwordInput.value;
+                if (password === '') {
+                    passwordError.textContent = 'Please enter the Main Admin password.';
+                    return;
+                }
+
+                passwordSubmitBtn.disabled = true;
+                fetch('blocking_time_ajax.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: 'action=verify&password=' + encodeURIComponent(password)
+                })
+                .then(res => res.json())
+                .then(data => {
+                    passwordSubmitBtn.disabled = false;
+                    if (data.success) {
+                        closePasswordWindow();
+                        openEditWindow(data.current_value);
+                        // Keep the verified password to authorize the update step
+                        editSaveBtn.dataset.verifiedPassword = password;
+                    } else {
+                        passwordError.textContent = data.message || 'Verification failed.';
+                    }
+                })
+                .catch(() => {
+                    passwordSubmitBtn.disabled = false;
+                    passwordError.textContent = 'Connection error. Please try again.';
+                });
+            });
+
+            passwordInput.addEventListener('keydown', function (evt) {
+                if (evt.key === 'Enter') passwordSubmitBtn.click();
+            });
+
+            editCancelBtn.addEventListener('click', closeEditWindow);
+            editBackdrop.addEventListener('click', function (evt) {
+                if (evt.target === editBackdrop) closeEditWindow();
+            });
+
+            editSaveBtn.addEventListener('click', function () {
+                const newTime = editInput.value;
+                const verifiedPassword = editSaveBtn.dataset.verifiedPassword || '';
+
+                if (!newTime) {
+                    editError.textContent = 'Please select a time.';
+                    return;
+                }
+
+                editSaveBtn.disabled = true;
+                fetch('blocking_time_ajax.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: 'action=update&password=' + encodeURIComponent(verifiedPassword) +
+                          '&blocking_time=' + encodeURIComponent(newTime)
+                })
+                .then(res => res.json())
+                .then(data => {
+                    editSaveBtn.disabled = false;
+                    if (data.success) {
+                        closeEditWindow();
+                    } else {
+                        editError.textContent = data.message || 'Update failed.';
+                    }
+                })
+                .catch(() => {
+                    editSaveBtn.disabled = false;
+                    editError.textContent = 'Connection error. Please try again.';
+                });
+            });
+        })();
     </script>
 </body>
 </html>
