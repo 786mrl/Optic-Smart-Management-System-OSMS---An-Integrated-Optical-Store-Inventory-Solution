@@ -200,7 +200,7 @@ $user_message = "Please analyze the following refractive examination.\n\n" .
 
 // 9. CALL GEMINI API
 // Using gemini-2.5-flash (free tier: 10 RPM, 500 RPD, best balance for medical reasoning)
-$model = 'gemini-3.5-flash';
+$model = 'gemini-2.5-flash';
 $url = "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key=" . GEMINI_API_KEY;
 
 $max_output_tokens = 6144;
