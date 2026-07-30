@@ -198,7 +198,15 @@ function sync_zip_code_only($sourceDir, $zipFile) {
     // one for Termux's MariaDB). Overlaying the wrong one breaks the DB
     // connection entirely on the receiving device.
     $excludedRootFiles = ['db_config.php'];
-    foreach (glob($sourceDir . '/*.{php,css,js}', GLOB_BRACE) as $filePath) {
+    // glob() with a wildcard pattern (even combined with GLOB_BRACE) never
+    // matches "hidden" dotfiles like .local_secrets.php — same behavior as
+    // shell glob. A second glob against '.*.{php,css,js}' (which DOES match
+    // leading-dot names) picks those up too.
+    $rootCodeFiles = array_merge(
+        glob($sourceDir . '/*.{php,css,js}', GLOB_BRACE),
+        glob($sourceDir . '/.*.{php,css,js}', GLOB_BRACE)
+    );
+    foreach ($rootCodeFiles as $filePath) {
         if (!is_file($filePath)) continue;
         if (in_array(basename($filePath), $excludedRootFiles, true)) continue;
         $zip->addFile($filePath, $topFolderName . '/' . basename($filePath));
@@ -292,7 +300,13 @@ function sync_flatten_code_tree($tree) {
 function sync_list_code_only_files($sourceDir) {
     $files = [];
     $excludedRootFiles = ['db_config.php'];
-    foreach (glob($sourceDir . '/*.{php,css,js}', GLOB_BRACE) as $filePath) {
+    // See sync_zip_code_only() — glob() alone silently skips leading-dot
+    // files like .local_secrets.php, so a second dot-pattern glob is needed.
+    $rootCodeFiles = array_merge(
+        glob($sourceDir . '/*.{php,css,js}', GLOB_BRACE),
+        glob($sourceDir . '/.*.{php,css,js}', GLOB_BRACE)
+    );
+    foreach ($rootCodeFiles as $filePath) {
         if (!is_file($filePath)) continue;
         if (in_array(basename($filePath), $excludedRootFiles, true)) continue;
         $files[] = ['path' => basename($filePath), 'size' => sync_format_bytes(filesize($filePath))];
@@ -1465,6 +1479,26 @@ function sync_compute_per_table_hashes($conn) {
     if (!$tablesResult) return $hashes;
     while ($row = $tablesResult->fetch_array()) {
         $table = $row[0];
+        $isActivityLogTable = (strtolower($table) === 'activity_log');
+
+        // activity_log is expected to legitimately differ per device (each
+        // device logs its own activity), so its row CONTENT must never count
+        // as a sync mismatch. Only its structure — columns added, removed,
+        // or renamed — should be detected. We still query SELECT * (rather
+        // than skipping the query) purely to read the column list via
+        // fetch_fields(); the row data itself is simply never hashed in.
+        if ($isActivityLogTable) {
+            $fields = [];
+            $dataResult = $conn->query("SELECT * FROM `$table` LIMIT 0");
+            if ($dataResult) {
+                $fields = $dataResult->fetch_fields();
+            }
+            $colsLower = array_map(function ($f) { return strtolower($f->name); }, $fields);
+            $schemaLine = implode(',', $colsLower);
+            $hashes[$table] = hash('sha256', $schemaLine);
+            continue;
+        }
+
         $dataResult = $conn->query("SELECT * FROM `$table`");
         $lines = [];
         if ($dataResult) {
@@ -1866,6 +1900,35 @@ if (isset($_GET['action']) && $_GET['action'] === 'get_full_state_hash') {
 }
 
 // ============================================================
+// ENDPOINT: receives a "custom update finished" signal FROM the other
+// device and stores it locally so THIS device's own waiting fly window
+// (opened after a Verify Full Sync mismatch, see 'check_custom_update_signal'
+// below) can pick it up on its next poll. Token-protected only, same as
+// get_full_state_hash above — the caller isn't logged in here.
+// Called as: sync.php?action=receive_custom_update_signal&token=...&from=pc|android
+// ============================================================
+if (isset($_GET['action']) && $_GET['action'] === 'receive_custom_update_signal') {
+    $token = $_GET['token'] ?? '';
+    if (!hash_equals(SYNC_TOKEN, $token)) {
+        http_response_code(403);
+        if (ob_get_level() > 0) ob_clean();
+        header('Content-Type: application/json');
+        if (ob_get_level() > 0) { ob_clean(); }
+        echo json_encode(['ok' => false, 'message' => 'Invalid or missing token.']);
+        exit();
+    }
+    if (!is_dir($syncJsonDir)) mkdir($syncJsonDir, 0755, true);
+    $signalFile = $syncJsonDir . '/sync_pending_signal.json';
+    $from = ($_GET['from'] ?? '') === 'android' ? 'android' : (($_GET['from'] ?? '') === 'pc' ? 'pc' : 'unknown');
+    file_put_contents($signalFile, json_encode(['received_at' => time(), 'from' => $from]));
+    if (ob_get_level() > 0) ob_clean();
+    header('Content-Type: application/json');
+    if (ob_get_level() > 0) { ob_clean(); }
+    echo json_encode(['ok' => true, 'message' => 'Signal received.']);
+    exit();
+}
+
+// ============================================================
 // Normal page load below this point needs a logged-in admin session.
 // ============================================================
 session_start();
@@ -2041,6 +2104,18 @@ if (isset($_POST['action'])) {
             sort($tableDiffs);
         }
 
+        // When there's a mismatch, also report whether activity_log currently
+        // has any rows. This is what the client uses to decide whether to open
+        // the "waiting for signal from other device" fly window — if the log
+        // is already empty there's nothing to wait for.
+        $activityLogHasRows = false;
+        $activityLogRowCount = 0;
+        if (!($filesMatch && $dbMatch)) {
+            $countResult = $conn->query("SELECT COUNT(*) AS cnt FROM `activity_log`");
+            $activityLogRowCount = ($countResult && ($row = $countResult->fetch_assoc())) ? (int) $row['cnt'] : 0;
+            $activityLogHasRows = $activityLogRowCount > 0;
+        }
+
         if (ob_get_level() > 0) { ob_clean(); }
         echo json_encode([
             'ok' => $filesMatch && $dbMatch, // reflects the RESULT (match/mismatch), not just "the check ran"
@@ -2054,6 +2129,161 @@ if (isset($_POST['action'])) {
             'other_label' => $otherLabel,
             'file_diffs' => $fileDiffs,
             'table_diffs' => $tableDiffs,
+            'activity_log_has_rows' => $activityLogHasRows,
+            'activity_log_row_count' => $activityLogRowCount,
+        ]);
+        exit();
+    }
+
+    // ---- Reset activity_log: only ever called right after a Verify Full Sync
+    // that reported "Everything matches". Re-checks the db_match itself
+    // (never trusts the client's word for it) before touching any data, then
+    // clears activity_log rows only if it actually has any. Since activity_log
+    // row content is intentionally excluded from the sync hash (see
+    // sync_compute_per_table_hashes), wiping it here never causes a future
+    // mismatch — each device is still free to accumulate its own log again
+    // right after.
+    if ($action === 'reset_activity_log_if_synced') {
+        if ($syncOwnRole === 'android') {
+            $otherUrl = "http://" . $syncConfig['pc_ip'] . ":" . $syncConfig['pc_port'] . "/" . SYNC_APP_FOLDER_NAME . "/sync.php?action=get_full_state_hash&token=" . urlencode(SYNC_TOKEN);
+        } elseif ($syncOwnRole === 'pc') {
+            $otherUrl = "http://" . $syncConfig['android_ip'] . ":" . $syncConfig['android_port'] . "/" . SYNC_APP_FOLDER_NAME . "/sync.php?action=get_full_state_hash&token=" . urlencode(SYNC_TOKEN);
+        } else {
+            if (ob_get_level() > 0) { ob_clean(); }
+            echo json_encode(['ok' => false, 'message' => 'Could not determine this device\'s role — check IP Settings.']);
+            exit();
+        }
+
+        $ownState = sync_compute_full_state_hash($appDir, $conn);
+
+        $ctx = stream_context_create(['http' => ['timeout' => 60, 'ignore_errors' => true]]);
+        $response = @file_get_contents($otherUrl, false, $ctx);
+        if ($response === false) {
+            if (ob_get_level() > 0) { ob_clean(); }
+            echo json_encode(['ok' => false, 'message' => 'Could not reach the other device to re-verify before resetting.']);
+            exit();
+        }
+        $otherState = json_decode($response, true);
+        if (!is_array($otherState) || empty($otherState['ok'])) {
+            if (ob_get_level() > 0) { ob_clean(); }
+            echo json_encode(['ok' => false, 'message' => 'The other device rejected the re-verify request; activity_log was not touched.']);
+            exit();
+        }
+
+        $filesMatch = hash_equals((string) $ownState['file_hash'], (string) $otherState['file_hash']);
+        $dbMatch = hash_equals((string) $ownState['db_hash'], (string) $otherState['db_hash']);
+
+        if (!$filesMatch || !$dbMatch) {
+            // Safety net: state must have changed between the Verify Full
+            // Sync call and this call. Do nothing.
+            if (ob_get_level() > 0) { ob_clean(); }
+            echo json_encode(['ok' => false, 'message' => 'State no longer matches — activity_log was not reset.', 'reset' => false]);
+            exit();
+        }
+
+        $countResult = $conn->query("SELECT COUNT(*) AS cnt FROM `activity_log`");
+        $rowCount = ($countResult && ($row = $countResult->fetch_assoc())) ? (int) $row['cnt'] : 0;
+
+        if ($rowCount === 0) {
+            if (ob_get_level() > 0) { ob_clean(); }
+            echo json_encode(['ok' => true, 'message' => 'activity_log is already empty — nothing to reset.', 'reset' => false, 'rows_deleted' => 0]);
+            exit();
+        }
+
+        $truncateOk = $conn->query("TRUNCATE TABLE `activity_log`");
+
+        if (ob_get_level() > 0) { ob_clean(); }
+        echo json_encode([
+            'ok' => (bool) $truncateOk,
+            'message' => $truncateOk
+                ? "activity_log reset — $rowCount row(s) cleared."
+                : ('Failed to clear activity_log: ' . $conn->error),
+            'reset' => (bool) $truncateOk,
+            'rows_deleted' => $rowCount,
+        ]);
+        exit();
+    }
+
+    // ---- Notify the other device that a Custom Update Data was just
+    // finished on THIS device. Fire-and-forget: hits the other device's
+    // 'receive_custom_update_signal' endpoint so its waiting fly window
+    // (shown after a Verify Full Sync mismatch on that side) can pick it
+    // up. Failure here is non-fatal — the other side just won't get the
+    // signal and can re-run Verify Full Sync / retry the update instead. ----
+    if ($action === 'notify_custom_update_done') {
+        if ($syncOwnRole === 'android') {
+            $signalUrl = "http://" . $syncConfig['pc_ip'] . ":" . $syncConfig['pc_port'] . "/" . SYNC_APP_FOLDER_NAME . "/sync.php?action=receive_custom_update_signal&token=" . urlencode(SYNC_TOKEN) . "&from=android";
+        } elseif ($syncOwnRole === 'pc') {
+            $signalUrl = "http://" . $syncConfig['android_ip'] . ":" . $syncConfig['android_port'] . "/" . SYNC_APP_FOLDER_NAME . "/sync.php?action=receive_custom_update_signal&token=" . urlencode(SYNC_TOKEN) . "&from=pc";
+        } else {
+            if (ob_get_level() > 0) { ob_clean(); }
+            echo json_encode(['ok' => false, 'message' => 'Could not determine this device\'s role — check IP Settings.']);
+            exit();
+        }
+
+        $ctx = stream_context_create(['http' => ['timeout' => 20, 'ignore_errors' => true]]);
+        $response = @file_get_contents($signalUrl, false, $ctx);
+        $decoded = $response !== false ? json_decode($response, true) : null;
+        $sent = is_array($decoded) && !empty($decoded['ok']);
+
+        if (ob_get_level() > 0) { ob_clean(); }
+        echo json_encode([
+            'ok' => $sent,
+            'message' => $sent
+                ? 'The other device was notified that the custom update finished.'
+                : 'Could not reach the other device to notify it — it will not auto-clear its activity log until it is notified or re-verified.',
+        ]);
+        exit();
+    }
+
+    // ---- Check whether a "custom update finished" signal from the other
+    // device has arrived (see 'receive_custom_update_signal' above, which
+    // writes data_json/sync_pending_signal.json). Called on a poll interval
+    // by the "waiting for signal" fly window that opens after a Verify Full
+    // Sync mismatch, while activity_log still has rows. Consumes the signal
+    // (deletes the file) the moment it's found, so it's only ever acted on
+    // once, then clears activity_log exactly like reset_activity_log_if_synced
+    // does — the arriving signal itself is what confirms the other device's
+    // user finished their custom update, so no re-verify of the full state is
+    // needed here. ----
+    if ($action === 'check_custom_update_signal') {
+        $signalFile = $syncJsonDir . '/sync_pending_signal.json';
+        if (!file_exists($signalFile)) {
+            if (ob_get_level() > 0) { ob_clean(); }
+            echo json_encode(['ok' => true, 'signal_received' => false]);
+            exit();
+        }
+
+        $signalData = json_decode(@file_get_contents($signalFile), true);
+        @unlink($signalFile); // consume immediately so it only fires once
+
+        $countResult = $conn->query("SELECT COUNT(*) AS cnt FROM `activity_log`");
+        $rowCount = ($countResult && ($row = $countResult->fetch_assoc())) ? (int) $row['cnt'] : 0;
+
+        if ($rowCount === 0) {
+            if (ob_get_level() > 0) { ob_clean(); }
+            echo json_encode([
+                'ok' => true,
+                'signal_received' => true,
+                'reset' => false,
+                'rows_deleted' => 0,
+                'message' => 'Signal received — activity_log was already empty.',
+            ]);
+            exit();
+        }
+
+        $truncateOk = $conn->query("TRUNCATE TABLE `activity_log`");
+
+        if (ob_get_level() > 0) { ob_clean(); }
+        echo json_encode([
+            'ok' => (bool) $truncateOk,
+            'signal_received' => true,
+            'reset' => (bool) $truncateOk,
+            'rows_deleted' => $rowCount,
+            'from' => is_array($signalData) ? ($signalData['from'] ?? 'unknown') : 'unknown',
+            'message' => $truncateOk
+                ? "Signal received from the other device — activity_log reset ($rowCount row(s) cleared)."
+                : ('Signal received, but failed to clear activity_log: ' . $conn->error),
         ]);
         exit();
     }
@@ -2644,6 +2874,30 @@ if (isset($_POST['action'])) {
             .needs-sync-glow {
                 animation: syncNeedsSyncGlow 1.6s ease-in-out infinite;
                 border: 1px solid rgba(255, 190, 90, 0.5);
+            }
+
+            /* Pulsing "push me" glow on the Custom Update Source Code / Custom
+               Update Data buttons: turned on when the last Verify Full Sync
+               found a mismatch in the area that specific button covers, so
+               it's obvious which update button actually needs to be pushed. */
+            @keyframes syncUpdateBtnGlow {
+                0%, 100% {
+                    box-shadow:
+                        0 6px 16px rgba(34, 211, 238, 0.35),
+                        0 0 0 1px rgba(255, 255, 255, 0.06) inset,
+                        0 0 0 0 rgba(255, 255, 120, 0.9);
+                    filter: brightness(1);
+                }
+                50% {
+                    box-shadow:
+                        0 6px 22px rgba(34, 211, 238, 0.55),
+                        0 0 0 1px rgba(255, 255, 255, 0.08) inset,
+                        0 0 14px 6px rgba(255, 255, 120, 0.9);
+                    filter: brightness(1.35);
+                }
+            }
+            .sync-card.needs-update-glow {
+                animation: syncUpdateBtnGlow 1s ease-in-out infinite;
             }
 
             /* The leading emoji in a card title doubles as the info trigger —
@@ -3436,6 +3690,57 @@ if (isset($_POST['action'])) {
             </div>
         </div>
 
+        <!-- Activity Log Reset fly window: shown automatically right after a
+             Verify Full Sync that reported "Everything matches", if
+             activity_log actually had rows that got cleared. -->
+        <div class="iphelp-backdrop" id="activityLogResetBackdrop">
+            <div class="iphelp-modal" style="text-align:center; max-width:420px;">
+                <h2>🧹 Activity Log Reset</h2>
+                <p id="activityLogResetText" style="color:#c9cbce; font-size:13px; line-height:1.6;">
+                    Source code and database are fully in sync on this device and the other device.
+                    The activity log was reset.
+                </p>
+                <button type="button" class="iphelp-close-btn" onclick="closeActivityLogResetModal()">OK</button>
+            </div>
+        </div>
+
+        <!-- Waiting-for-signal fly window: shown after a Verify Full Sync
+             MISMATCH if activity_log still has rows on this device. Stays
+             open (polling in the background) until the other device signals
+             that its Custom Update Data finished, at which point activity_log
+             here is cleared and the existing Activity Log Reset fly window
+             is shown. -->
+        <div class="iphelp-backdrop" id="waitingSyncSignalBackdrop">
+            <div class="iphelp-modal" style="text-align:center; max-width:420px;">
+                <div class="processing-spinner"></div>
+                <h2 style="margin-top:16px;">📡 Waiting For Other Device</h2>
+                <p id="waitingSyncSignalText" style="color:#c9cbce; font-size:13px; line-height:1.6;">
+                    Verify Full Sync found a mismatch, and this device's activity log still has entries.
+                    Waiting for a signal that a Custom Update Data was completed on the other device —
+                    once it arrives, the activity log here will be cleared automatically.
+                </p>
+                <button type="button" class="iphelp-close-btn" onclick="closeWaitingSyncSignalModal()">Cancel Waiting</button>
+            </div>
+        </div>
+
+        <!-- Forced-logout fly window: shown right after a successful Pull from
+             PC/Android, Custom Update Source Code, Custom Update Data, Restore
+             Manual Backup, or Restore from Browse Backups. Counts down from 5
+             then redirects to logout.php automatically, so nobody keeps
+             working against data that was just replaced underneath them. -->
+        <div class="iphelp-backdrop" id="forceLogoutBackdrop">
+            <div class="iphelp-modal" style="text-align:center; max-width:420px;">
+                <h2>🔒 Update Completed</h2>
+                <p style="color:#c9cbce; font-size:13px; line-height:1.6;">
+                    This device's code, data, or database was just updated. You will be logged out
+                    automatically to keep the data valid.
+                </p>
+                <p style="color:#7fe3f0; font-size:15px; font-weight:600; margin-top:14px;">
+                    Logging out in <span id="forceLogoutCountdown">5</span>...
+                </p>
+            </div>
+        </div>
+
         <div class="iphelp-backdrop" id="customUpdateBackdrop">
             <div class="iphelp-modal" style="max-width:520px;">
                 <h2>🎯 Custom Update Source Code</h2>
@@ -3543,6 +3848,13 @@ if (isset($_POST['action'])) {
                 return SYNC_DATA_FOLDER_NAMES.includes(topFolder);
             }
 
+            // Adds/removes the pulsing "push me" glow on a Custom Update card.
+            function syncSetUpdateButtonGlow(cardId, shouldGlow) {
+                const card = document.getElementById(cardId);
+                if (!card) return;
+                card.classList.toggle('needs-update-glow', !!shouldGlow);
+            }
+
             function renderVerifyDiffs(statusEl, data) {
                 const existing = statusEl.parentElement.querySelector('.verify-diffs-box');
                 if (existing) existing.remove();
@@ -3569,7 +3881,13 @@ if (isset($_POST['action'])) {
                     .filter(p => !syncLastVerifyMissingOnOther.includes(p));
                 syncLastVerifyDiffPaths = cleanedFilePaths.concat(tableDiffs.map(t => 'optic_pos_db/' + t));
 
-                if (fileDiffs.length === 0 && tableDiffs.length === 0) return; // everything matched, nothing to show
+                if (fileDiffs.length === 0 && tableDiffs.length === 0) {
+                    // Everything matched — nothing to show, and neither Custom
+                    // Update card needs pushing anymore.
+                    syncSetUpdateButtonGlow('updateCodeCard', false);
+                    syncSetUpdateButtonGlow('updateDataCard', false);
+                    return;
+                }
 
                 // Split file diffs into "code" (everything Custom Update Source Code
                 // covers) vs "data" (qrcodes/main_qrcodes/pdf_file/data_json/database
@@ -3597,6 +3915,12 @@ if (isset($_POST['action'])) {
 
                 addGroup(`📄 ${codeDiffs.length} source code file(s) differ`, codeDiffs);
                 addGroup(`🗂️ ${dataDiffs.length} data file(s) differ (qrcodes/main_qrcodes/pdf_file/data_json/database)`, dataDiffs);
+
+                // Light up whichever Custom Update card actually needs pushing:
+                // source code diffs -> Custom Update Source Code card, data
+                // file diffs or table diffs -> Custom Update Data card.
+                syncSetUpdateButtonGlow('updateCodeCard', codeDiffs.length > 0);
+                syncSetUpdateButtonGlow('updateDataCard', dataDiffs.length > 0 || tableDiffs.length > 0);
 
                 if (tableDiffs.length > 0) {
                     const d2 = document.createElement('details');
@@ -3665,6 +3989,33 @@ if (isset($_POST['action'])) {
                 statusEl.insertAdjacentElement('afterend', box);
             }
 
+            // Actions that pull in / overwrite this device's own code, data, or
+            // database from elsewhere (Pull from PC/Android, Custom Update Source
+            // Code, Custom Update Data, Restore Manual Backup, Restore from Browse
+            // Backups). After any of these finish successfully, the currently
+            // logged-in session is forced to log out so nobody keeps working
+            // against data that's just been replaced underneath them.
+            const LOGOUT_AFTER_ACTIONS = ['pull', 'pull_code_custom', 'pull_data_custom', 'restore_fixed_backup', 'restore_ip_backup'];
+            function scheduleLogoutAfterSync(statusEl) {
+                if (statusEl) {
+                    statusEl.textContent += '\n🔒 Update completed — logging out to keep data valid...';
+                }
+                const backdrop = document.getElementById('forceLogoutBackdrop');
+                const countEl = document.getElementById('forceLogoutCountdown');
+                let remaining = 5;
+                backdrop.classList.add('active');
+                countEl.textContent = remaining;
+                const timer = setInterval(() => {
+                    remaining -= 1;
+                    if (remaining <= 0) {
+                        clearInterval(timer);
+                        window.location.href = 'logout.php';
+                        return;
+                    }
+                    countEl.textContent = remaining;
+                }, 1000);
+            }
+
             function runAction(action, extraParams, btn, statusId) {
                 const statusEl = document.getElementById(statusId);
                 btn.disabled = true;
@@ -3731,9 +4082,42 @@ if (isset($_POST['action'])) {
                             renderUpdatedItemsList(statusEl, data);
                         }
 
+                        // Custom Update Data finished successfully on this device:
+                        // let the other device know, in case it's sitting in the
+                        // "waiting for signal" fly window after a mismatched
+                        // Verify Full Sync (see openWaitingSyncSignalModal).
+                        if (action === 'pull_data_custom' && data.ok) {
+                            sendCustomUpdateDoneSignal();
+                        }
+
                         // Verify Full Sync: show exactly which files/tables differ, if any
                         if (action === 'verify_full_sync' && (data.file_diffs || data.table_diffs)) {
                             renderVerifyDiffs(statusEl, data);
+                        }
+
+                        // Verify Full Sync: if the result is a full match ("Everything
+                        // matches"), check whether activity_log has any content and
+                        // clear it, then show a fly window confirming the reset. If the
+                        // result is a mismatch, do nothing here at all.
+                        if (action === 'verify_full_sync' && data.ok) {
+                            maybeResetActivityLogAfterVerify();
+                        }
+
+                        // Verify Full Sync: if the result is a MISMATCH and this
+                        // device's activity_log still has rows, open the waiting
+                        // fly window and start listening for a signal that the
+                        // other device finished a Custom Update Data. If the
+                        // mismatch is found but activity_log is already empty,
+                        // do nothing here, same as before.
+                        if (action === 'verify_full_sync' && !data.ok && data.activity_log_has_rows) {
+                            openWaitingSyncSignalModal();
+                        }
+
+                        // Force logout after a successful pull / custom update /
+                        // restore, so the session can't keep operating on data
+                        // that was just replaced from another device.
+                        if (LOGOUT_AFTER_ACTIONS.includes(action) && data.ok) {
+                            scheduleLogoutAfterSync(statusEl);
                         }
                     })
                     .catch(err => {
@@ -3962,6 +4346,7 @@ if (isset($_POST['action'])) {
             }
 
             function openCustomUpdateModal() {
+                syncSetUpdateButtonGlow('updateCodeCard', false); // button was pushed, stop reminding
                 const body = document.getElementById('customFileListBody');
                 body.textContent = 'Loading file list from PC...';
                 document.getElementById('customUpdateBackdrop').classList.add('active');
@@ -4024,6 +4409,7 @@ if (isset($_POST['action'])) {
             // ---- Custom Update Data (mirrors Custom Update Source Code, scoped to
             //      qrcodes / main_qrcodes / pdf_file / data_json / database) ----
             function openCustomUpdateDataModal() {
+                syncSetUpdateButtonGlow('updateDataCard', false); // button was pushed, stop reminding
                 const body = document.getElementById('customDataFileListBody');
                 const otherLabel = syncOwnRoleJs === 'android' ? 'the PC' : (syncOwnRoleJs === 'pc' ? 'Android' : 'the other device');
                 document.getElementById('customUpdateDataIntroText').textContent = `Check the files you want to pull from ${otherLabel}'s data folders (qrcodes, main_qrcodes, pdf_file, data_json, and database tables).`;
@@ -4107,7 +4493,10 @@ if (isset($_POST['action'])) {
                 statusEl.textContent = 'Restoring...';
                 fetch('sync.php', { method: 'POST', body: new URLSearchParams({ action: 'restore_ip_backup', file: fileName }) })
                     .then(r => r.json())
-                    .then(data => setStatus(statusEl, data.ok, data.message))
+                    .then(data => {
+                        setStatus(statusEl, data.ok, data.message);
+                        if (data.ok) scheduleLogoutAfterSync(statusEl);
+                    })
                     .catch(err => setStatus(statusEl, false, 'Request error: ' + err));
             }
 
@@ -4497,6 +4886,84 @@ if (isset($_POST['action'])) {
 
             function closeAffectedModal() {
                 document.getElementById('affectedBackdrop').classList.remove('active');
+            }
+
+            // ===== Activity Log Reset fly window =====
+            function openActivityLogResetModal(rowsDeleted) {
+                const textEl = document.getElementById('activityLogResetText');
+                if (textEl) {
+                    textEl.textContent = `Source code and database are fully in sync on this device and the other device. The activity log was reset (${rowsDeleted} row(s) cleared).`;
+                }
+                document.getElementById('activityLogResetBackdrop').classList.add('active');
+            }
+
+            function closeActivityLogResetModal() {
+                document.getElementById('activityLogResetBackdrop').classList.remove('active');
+            }
+
+            // Called only right after a Verify Full Sync reports "Everything
+            // matches" (data.ok === true for that action). Re-verifies on the
+            // server before touching anything, and only shows the fly window
+            // if activity_log actually had rows that got cleared — a no-op
+            // (already empty, or state changed mid-flight) shows nothing.
+            function maybeResetActivityLogAfterVerify() {
+                const params = new URLSearchParams({ action: 'reset_activity_log_if_synced' });
+                fetch('sync.php', { method: 'POST', body: params })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data && data.ok && data.reset) {
+                            openActivityLogResetModal(data.rows_deleted || 0);
+                        }
+                    })
+                    .catch(() => { /* silent — this is a background convenience check, not a user-initiated action */ });
+            }
+
+            // ===== Waiting-for-signal fly window (mismatch case) =====
+            // Opened after a Verify Full Sync MISMATCH if activity_log still
+            // has rows on this device. Polls check_custom_update_signal every
+            // few seconds; once the other device's Custom Update Data finishes
+            // and its signal arrives here, activity_log is cleared server-side
+            // and this reuses the existing Activity Log Reset fly window to
+            // confirm it, same as the "everything matches" path does.
+            var waitingSyncSignalTimer = null;
+
+            function openWaitingSyncSignalModal() {
+                document.getElementById('waitingSyncSignalBackdrop').classList.add('active');
+                if (waitingSyncSignalTimer) clearInterval(waitingSyncSignalTimer);
+                waitingSyncSignalTimer = setInterval(pollCustomUpdateSignal, 3000);
+                pollCustomUpdateSignal(); // also check immediately, don't wait 3s for the first poll
+            }
+
+            function closeWaitingSyncSignalModal() {
+                document.getElementById('waitingSyncSignalBackdrop').classList.remove('active');
+                if (waitingSyncSignalTimer) {
+                    clearInterval(waitingSyncSignalTimer);
+                    waitingSyncSignalTimer = null;
+                }
+            }
+
+            function pollCustomUpdateSignal() {
+                const params = new URLSearchParams({ action: 'check_custom_update_signal' });
+                fetch('sync.php', { method: 'POST', body: params })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (!data || !data.signal_received) return; // nothing yet, keep polling
+                        closeWaitingSyncSignalModal();
+                        if (data.reset) {
+                            openActivityLogResetModal(data.rows_deleted || 0);
+                        }
+                    })
+                    .catch(() => { /* silent — just try again on the next poll tick */ });
+            }
+
+            // Called automatically right after a Custom Update Data (action
+            // 'pull_data_custom') finishes successfully on THIS device — lets
+            // the other device know, in case its own Verify Full Sync is
+            // sitting in the waiting fly window above. Silent/best-effort:
+            // the update on this device already succeeded either way.
+            function sendCustomUpdateDoneSignal() {
+                const params = new URLSearchParams({ action: 'notify_custom_update_done' });
+                fetch('sync.php', { method: 'POST', body: params }).catch(() => { /* silent */ });
             }
 
             // Runs whichever action (back/logout/navigate) is currently pending.
