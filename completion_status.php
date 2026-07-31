@@ -223,6 +223,7 @@ function phLensLookupFull($label, $preferredSource = null) {
                         'label'      => trim($cat) . ' — ' . trim($type), // canonical stored format
                         'limits'     => $info['limits'] ?? [],
                         'has_limits' => !empty($info['limits']),
+                        'category'   => strtoupper(trim($cat)),
                     ];
                 }
             }
@@ -290,6 +291,69 @@ function phRxFitsLimits($lim, $rSph, $rCyl, $lSph, $lCyl, $rAdd, $lAdd) {
         if ($maxAdd < $limAddMin || $maxAdd > $limAddMax) return false;
     }
     return true;
+}
+
+// Same category gate as the client-side phEoCatAllowed(): a patient only needs
+// a Progressive-family lens (not plain Single Vision) once they're presbyopic
+// AND actually need more than distance vision. Used only to build the
+// non-blocking mismatch warning below — never to reject a save outright.
+function phEoCatAllowedPHP($category, $isPresbyopia, $farOnlySV) {
+    $isSV   = $category === 'SINGLE VISION';
+    $isProg = in_array($category, ['PROGRESSIVE', 'KRYPTOK', 'FLATTOP'], true);
+    if ($farOnlySV) return $isSV;
+    if ($isPresbyopia) return $isProg;
+    return $isSV;
+}
+
+// After an Exam Results / Prescription save, check whether the order's
+// currently-assigned lens (customer_orders.lens_name) still matches the Rx
+// that is now active — both the numeric Rx-fit range AND the SV-vs-progressive
+// design. This is intentionally NOT a save blocker: it only informs the
+// front-end so it can show a "wrong design for this Rx" warning and point the
+// user at the Lens tab, instead of losing the edit the user just made.
+// Returns null if there's nothing to warn about (no lens assigned yet, lens
+// not found in the price list, or no active Rx to compare against).
+function phEoCheckLensMismatch($conn, $order_id, $inv) {
+    $ordRes = $conn->query("SELECT lens_name FROM customer_orders WHERE id = " . (int)$order_id . " LIMIT 1");
+    $ordRow = $ordRes ? $ordRes->fetch_assoc() : null;
+    if (!$ordRow || empty($ordRow['lens_name'])) return null;
+
+    $lensInfo = phLensLookupFull($ordRow['lens_name']);
+    if (!$lensInfo) return null;
+
+    $activeRx = phGetActiveRxByInvoice($conn, $inv);
+    if (!$activeRx) return null;
+
+    $rxOk = !$lensInfo['has_limits'] || phRxFitsLimits(
+        $lensInfo['limits'],
+        $activeRx['r_sph'], $activeRx['r_cyl'],
+        $activeRx['l_sph'], $activeRx['l_cyl'],
+        $activeRx['r_add'], $activeRx['l_add']
+    );
+
+    $needRes = $conn->query("SELECT age, need_distance, need_intermediate, need_near FROM customer_examinations WHERE invoice_number = '" . $conn->real_escape_string($inv) . "' LIMIT 1");
+    $needRow = $needRes ? $needRes->fetch_assoc() : [];
+    $age        = (float)($needRow['age'] ?? 0);
+    $needDist   = !empty($needRow['need_distance']);
+    $needInter  = !empty($needRow['need_intermediate']);
+    $needNear   = !empty($needRow['need_near']);
+
+    $maxAdd       = max(abs($activeRx['r_add']), abs($activeRx['l_add']));
+    $isPresbyopia = ($maxAdd >= 0.75 && $age >= 39);
+    $farOnlySV    = $isPresbyopia && $needDist && !$needInter && !$needNear;
+    $catOk        = phEoCatAllowedPHP($lensInfo['category'], $isPresbyopia, $farOnlySV);
+
+    if ($rxOk && $catOk) return null;
+
+    $reason = !$rxOk
+        ? "the new prescription is outside this lens's supported Rx range"
+        : "this prescription now needs a different lens design (Single Vision vs. Progressive/Kryptok/Flattop)";
+
+    return [
+        'mismatch'   => true,
+        'lens_label' => $lensInfo['label'],
+        'reason'     => "The current lens (\"{$lensInfo['label']}\") no longer fits this Rx — {$reason}. Update the lens on the Lens tab.",
+    ];
 }
 
 // The prescription currently "in effect" for an invoice: if a modification is
@@ -747,44 +811,29 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_exam') {
 
     if (empty($setParts)) { echo json_encode(['success' => true, 'changed' => false]); exit(); }
 
-    // ── Rx-fit guard: whatever the new_r/new_l Rx ends up being after this
-    // save, it must still fit the lens the customer already has on this
-    // order (if that lens actually defines Rx limits at all — see
-    // phRxFitsLimits for why an empty limits object must NOT be treated as
-    // "reject everything"). This only applies when the raw exam Rx is
-    // actually the ACTIVE prescription (i.e. no modification is currently
-    // active) — if a modification IS active, the lens was matched against
-    // that modification, not these raw fields, so this check is skipped here
-    // (the same check runs instead when saving a new modification).
-    if ((string)($cur['lens_modification'] ?? '0') !== '1') {
-        $ordRes = $conn->query("SELECT lens_name FROM customer_orders WHERE id = " . (int)$order_id . " LIMIT 1");
-        $ordRow = $ordRes ? $ordRes->fetch_assoc() : null;
-        if ($ordRow && !empty($ordRow['lens_name'])) {
-            $lensInfo = phLensLookupFull($ordRow['lens_name']);
-            if ($lensInfo && $lensInfo['has_limits']) {
-                $merged = array_merge($cur, $_POST); // $_POST values (as submitted) override $cur where present
-                $fits = phRxFitsLimits(
-                    $lensInfo['limits'],
-                    phLrValRaw($merged['new_r_sph'] ?? 0), phLrValRaw($merged['new_r_cyl'] ?? 0),
-                    phLrValRaw($merged['new_l_sph'] ?? 0), phLrValRaw($merged['new_l_cyl'] ?? 0),
-                    phLrValRaw($merged['new_r_add'] ?? 0), phLrValRaw($merged['new_l_add'] ?? 0)
-                );
-                if (!$fits) {
-                    echo json_encode([
-                        'success' => false,
-                        'error'   => "This prescription no longer fits the currently selected lens (\"{$lensInfo['label']}\"). Change the lens first, or adjust the Rx to stay within its range.",
-                    ]);
-                    exit();
-                }
-            }
-        }
-    }
-
     $ok = $conn->query("UPDATE customer_examinations SET " . implode(', ', $setParts) . " WHERE invoice_number = '$inv'");
     if (!$ok) { echo json_encode(['success' => false, 'error' => $conn->error]); exit(); }
 
     phAppendEditLog($conn, $order_id, 'exam_results', implode('; ', $changes));
-    echo json_encode(['success' => true, 'changed' => true]);
+
+    // ── Lens-mismatch warning (non-blocking): whatever the new_r/new_l Rx
+    // ended up being after this save, it may no longer fit — or no longer be
+    // the right design for — the lens the customer already has on this
+    // order. This only applies when the raw exam Rx is actually the ACTIVE
+    // prescription (i.e. no modification is currently active) — if a
+    // modification IS active, the lens is matched against that modification
+    // instead, so the check is skipped here (it runs when saving/reverting a
+    // modification instead). The save always succeeds either way; this only
+    // adds a warning for the front-end to surface.
+    $lensMismatch = ((string)($cur['lens_modification'] ?? '0') !== '1')
+        ? phEoCheckLensMismatch($conn, $order_id, $inv)
+        : null;
+
+    echo json_encode([
+        'success'       => true,
+        'changed'       => true,
+        'lens_mismatch' => $lensMismatch,
+    ]);
     exit();
 }
 
@@ -810,7 +859,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_prescription') {
 
         $changes = phSetLensModification($conn, $inv, $order_id, 0);
         if (!empty($changes)) phAppendEditLog($conn, $order_id, 'prescription', implode('; ', $changes));
-        echo json_encode(['success' => true, 'changed' => true, 'lens_modification' => 0]);
+        echo json_encode(['success' => true, 'changed' => true, 'lens_modification' => 0, 'lens_mismatch' => phEoCheckLensMismatch($conn, $order_id, $inv)]);
         exit();
     }
 
@@ -825,7 +874,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_prescription') {
         if (!$chk || $chk->num_rows === 0) { echo json_encode(['success' => false, 'error' => 'No previous modification found to re-apply.']); exit(); }
         $changes = phSetLensModification($conn, $inv, $order_id, 1);
         if (!empty($changes)) phAppendEditLog($conn, $order_id, 'prescription', implode('; ', $changes));
-        echo json_encode(['success' => true, 'changed' => true, 'lens_modification' => 1]);
+        echo json_encode(['success' => true, 'changed' => true, 'lens_modification' => 1, 'lens_mismatch' => phEoCheckLensMismatch($conn, $order_id, $inv)]);
         exit();
     }
 
@@ -836,30 +885,6 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_prescription') {
             'os_sph'  => trim($_POST['os_sph']  ?? ''), 'os_cyl' => trim($_POST['os_cyl'] ?? ''),
             'os_axis' => trim($_POST['os_axis'] ?? ''), 'os_add' => trim($_POST['os_add'] ?? ''),
         ];
-
-        // This new/updated modification becomes the ACTIVE Rx once saved, so it
-        // must fit the order's currently selected lens (only enforced when that
-        // lens actually defines Rx limits at all).
-        $ordRes = $conn->query("SELECT lens_name FROM customer_orders WHERE id = " . (int)$order_id . " LIMIT 1");
-        $ordRow = $ordRes ? $ordRes->fetch_assoc() : null;
-        if ($ordRow && !empty($ordRow['lens_name'])) {
-            $lensInfo = phLensLookupFull($ordRow['lens_name']);
-            if ($lensInfo && $lensInfo['has_limits']) {
-                $fits = phRxFitsLimits(
-                    $lensInfo['limits'],
-                    phLrValRaw($new['od_sph']), phLrValRaw($new['od_cyl']),
-                    phLrValRaw($new['os_sph']), phLrValRaw($new['os_cyl']),
-                    phLrValRaw($new['od_add']), phLrValRaw($new['os_add'])
-                );
-                if (!$fits) {
-                    echo json_encode([
-                        'success' => false,
-                        'error'   => "This modification does not fit the currently selected lens (\"{$lensInfo['label']}\"). Change the lens first, or adjust these values to stay within its range.",
-                    ]);
-                    exit();
-                }
-            }
-        }
 
         // Whether to INSERT a new history row or UPDATE the latest one
         // in-place depends on the flag *at the moment of saving*:
@@ -912,7 +937,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_prescription') {
 
             $conn->commit();
             if (!empty($changes)) phAppendEditLog($conn, $order_id, 'prescription', implode('; ', $changes));
-            echo json_encode(['success' => true, 'changed' => !empty($changes), 'lens_modification' => 1]);
+            echo json_encode(['success' => true, 'changed' => !empty($changes), 'lens_modification' => 1, 'lens_mismatch' => phEoCheckLensMismatch($conn, $order_id, $inv)]);
         } catch (Exception $e) {
             $conn->rollback();
             echo json_encode(['success' => false, 'error' => $e->getMessage()]);
@@ -2864,6 +2889,43 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
         }
         .ph-eo-tab.active { color: #00ff88; border-color: rgba(0,255,136,0.4); background: rgba(0,255,136,0.08); }
 
+        /* Draws attention to the Lens tab when the Rx just edited no longer
+           fits the order's current lens — purely visual, doesn't block anything. */
+        .ph-eo-tab.ph-eo-tab-warn {
+            color: #ffaa00; border-color: rgba(255,170,0,0.5); background: rgba(255,170,0,0.1);
+            animation: phEoTabPulse 1.1s ease-in-out infinite;
+        }
+        @keyframes phEoTabPulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(255,170,0,0.55); }
+            50%      { box-shadow: 0 0 0 6px rgba(255,170,0,0); }
+        }
+
+        /* Floating "lens no longer fits" warning — a small fly-in card, not a
+           blocking modal, so the edit that was just saved stays visible. */
+        .ph-eo-fly-warn {
+            position: fixed; right: 22px; bottom: 22px; z-index: 10000;
+            max-width: 320px; padding: 14px 16px; border-radius: 14px;
+            background: var(--bg-color); border: 1px solid rgba(255,170,0,0.4);
+            box-shadow: 6px 6px 14px var(--shadow-dark), -6px -6px 14px var(--shadow-light), 0 0 22px rgba(255,170,0,0.12);
+            animation: phEoFlyIn 0.28s ease-out;
+        }
+        @keyframes phEoFlyIn {
+            from { opacity: 0; transform: translateY(14px) scale(0.97); }
+            to   { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        .ph-eo-fly-warn-title {
+            display: flex; align-items: center; gap: 6px;
+            font-size: 0.7rem; font-weight: 900; color: #ffaa00; letter-spacing: 0.3px; margin-bottom: 6px;
+        }
+        .ph-eo-fly-warn-text { font-size: 0.68rem; line-height: 1.45; color: var(--text-muted); margin-bottom: 12px; }
+        .ph-eo-fly-warn-actions { display: flex; gap: 8px; justify-content: flex-end; }
+        .ph-eo-fly-warn-actions button {
+            font-family: inherit; font-size: 0.64rem; font-weight: 800; letter-spacing: 0.3px;
+            padding: 7px 12px; border-radius: 9px; border: 1px solid rgba(255,255,255,0.1); cursor: pointer;
+            background: var(--bg-color); color: var(--text-muted);
+        }
+        .ph-eo-fly-warn-actions button.ph-eo-fly-warn-go { color: #ffaa00; border-color: rgba(255,170,0,0.4); background: rgba(255,170,0,0.1); }
+
         .ph-eo-group { display: none; }
         .ph-eo-group.active { display: block; }
 
@@ -4207,6 +4269,14 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
                     <button class="ph-modal-btn cancel" onclick="phCloseEditOrderModal()">Close</button>
                 </div>
     <div id="ph-toast"></div>
+    <div class="ph-eo-fly-warn" id="ph-eo-fly-warn" style="display:none;">
+        <div class="ph-eo-fly-warn-title">⚠ Lens no longer matches this Rx</div>
+        <div class="ph-eo-fly-warn-text" id="ph-eo-fly-warn-text"></div>
+        <div class="ph-eo-fly-warn-actions">
+            <button type="button" onclick="phEoDismissLensWarn()">Dismiss</button>
+            <button type="button" class="ph-eo-fly-warn-go" onclick="phEoGoToLensTab()">Go to Lens tab</button>
+        </div>
+    </div>
     <script>
         // ── Toast (shared by the Edit Order modal) ──────────────────────────
         var _phToastTimer = null;
@@ -4242,6 +4312,31 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
             el.classList.toggle('error', !!isError);
         }
 
+        // ── Lens-mismatch warning (non-blocking) ───────────────────────────
+        // Called after an Exam Results / Prescription save whose response
+        // included a `lens_mismatch` object: the edit itself already saved
+        // fine, but the order's current lens no longer fits the new Rx. Shows
+        // a floating warning card and pulses the Lens tab button instead of
+        // rejecting the save outright.
+        function phEoShowLensWarn(mismatch) {
+            if (!mismatch || !mismatch.mismatch) return;
+            document.getElementById('ph-eo-fly-warn-text').textContent = mismatch.reason || 'The current lens no longer fits this prescription.';
+            document.getElementById('ph-eo-fly-warn').style.display = 'block';
+            var lensTab = document.querySelector('#ph-eo-tabs .ph-eo-tab[data-group="lens"]');
+            if (lensTab) lensTab.classList.add('ph-eo-tab-warn');
+        }
+
+        function phEoDismissLensWarn() {
+            document.getElementById('ph-eo-fly-warn').style.display = 'none';
+            var lensTab = document.querySelector('#ph-eo-tabs .ph-eo-tab[data-group="lens"]');
+            if (lensTab) lensTab.classList.remove('ph-eo-tab-warn');
+        }
+
+        function phEoGoToLensTab() {
+            var lensTab = document.querySelector('#ph-eo-tabs .ph-eo-tab[data-group="lens"]');
+            if (lensTab) lensTab.click(); // click handler switches the group and clears the warning
+        }
+
         // ── Open / close ─────────────────────────────────────────────────
         function phOpenEditOrderModal(orderId, invoiceNumber) {
             _phEo.orderId = orderId;
@@ -4253,6 +4348,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
             document.getElementById('ph-eo-gate-error').textContent = '';
             document.getElementById('ph-eo-gate-password').value = '';
             phEoShowMsg('');
+            phEoDismissLensWarn();
 
             // Every single open of the editor requires the admin password
             // again — there is no silent bypass, even right after a previous
@@ -4263,6 +4359,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
 
         function phCloseEditOrderModal() {
             document.getElementById('ph-eo-overlay').classList.remove('open');
+            phEoDismissLensWarn();
             if (_phEo.frameStreamStop) _phEo.frameStreamStop(); // stop the camera if it was left running
 
             // Invalidate the server-side unlock immediately, so the next time
@@ -4523,7 +4620,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
             // Re-filter lens options against whatever Rx is currently in the Exam
             // tab's fields (even if not saved yet), so a prescription change is
             // immediately reflected in which lenses are selectable.
-            if (group === 'lens') phEoFilterLensOptions();
+            if (group === 'lens') { phEoFilterLensOptions(); phEoDismissLensWarn(); }
         });
 
         // ── Frame sub-tab switching ─────────────────────────────────────
@@ -4605,6 +4702,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
                         if (data.changed !== false) _phEo.hasChanges = true; // some endpoints don't send `changed`; treat as changed
                         phEoShowMsg('✅ Saved.');
                         phShowToast('✅ Order updated');
+                        if (data.lens_mismatch) phEoShowLensWarn(data.lens_mismatch); // save still succeeded — this is just a nudge to the Lens tab
                         if (onSuccess) onSuccess(data);
                     } else {
                         phEoShowMsg('❌ ' + (data.error || 'Failed to save.'), true);
