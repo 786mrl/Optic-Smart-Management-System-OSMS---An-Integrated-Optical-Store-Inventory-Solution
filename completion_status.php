@@ -21,7 +21,7 @@
     // Format nama di DB: "CATEGORY / TYPE" (contoh: "SINGLE VISION / BLUERAY")
     // Semua nama di bawah key "stock" dianggap lensa stock
     $stockLensNames = [];
-    $lensJsonPath   = __DIR__ . '/lense_prices.json';
+    $lensJsonPath   = __DIR__ . '/data_json/lense_prices.json';
     if (file_exists($lensJsonPath)) {
         $lensData = json_decode(file_get_contents($lensJsonPath), true);
         if (!empty($lensData['stock']) && is_array($lensData['stock'])) {
@@ -194,7 +194,7 @@ function phBuildCustomFrameKey($brand, $size) {
 function phLensLookupFull($label, $preferredSource = null) {
     $label = trim($label);
     if ($label === '') return null;
-    $jsonPath = __DIR__ . '/lense_prices.json';
+    $jsonPath = __DIR__ . '/data_json/lense_prices.json';
     if (!file_exists($jsonPath)) return null;
     $data = json_decode(file_get_contents($jsonPath), true);
     if (!$data) return null;
@@ -3887,7 +3887,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
     // with the JSON. Label format ("Category — Type", em dash, original
     // casing) matches exactly what invoice.php writes into lens_name.
     $phEoLensOptions = ['stock' => [], 'lab' => []];
-    $phEoLensJsonPath = __DIR__ . '/lense_prices.json';
+    $phEoLensJsonPath = __DIR__ . '/data_json/lense_prices.json';
     if (file_exists($phEoLensJsonPath)) {
         $phEoLj = json_decode(file_get_contents($phEoLensJsonPath), true);
         if (!empty($phEoLj)) {
