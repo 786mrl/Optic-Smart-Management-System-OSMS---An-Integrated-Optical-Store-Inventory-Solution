@@ -2802,6 +2802,15 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
         /* ── Edit Order → Lens tab: custom neumorphic lens list ─────────── */
         .eo-l-select-hidden { display: none; }
 
+        .eo-l-header {
+            font-size: 1.05rem !important;
+            font-weight: 800 !important;
+            color: var(--text-main) !important;
+            letter-spacing: 0.5px !important;
+            text-transform: uppercase;
+            margin-bottom: 10px !important;
+        }
+
         .eo-l-custom {
             max-height: 280px;
             overflow-y: auto;
@@ -2815,12 +2824,15 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
         }
 
         .eo-l-opt-group-label {
-            font-size: 0.6rem;
+            font-size: 0.62rem;
+            font-weight: 700;
             letter-spacing: 0.8px;
             text-transform: uppercase;
-            color: var(--text-muted);
-            padding: 6px 4px 0;
+            padding: 8px 4px 2px;
         }
+
+        .eo-l-opt-group-label--stock { color: #00ff88; }
+        .eo-l-opt-group-label--lab   { color: #ffaa00; }
 
         .eo-l-opt {
             display: flex;
@@ -2835,12 +2847,34 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
             user-select: none;
             -webkit-user-select: none;
             -webkit-tap-highlight-color: transparent;
-            transition: box-shadow 0.15s ease, transform 0.1s ease, opacity 0.15s ease;
+            transition: box-shadow 0.18s ease, transform 0.15s ease, opacity 0.15s ease;
+        }
+
+        /* Hover "lift" animation — desktop only, so it doesn't get stuck active on touch */
+        @media (hover: hover) and (pointer: fine) {
+            .eo-l-opt:not(.disabled):hover {
+                transform: translateY(-2px) scale(1.01);
+                box-shadow: 7px 7px 16px var(--shadow-dark), -7px -7px 16px var(--shadow-light), 0 0 10px rgba(0,255,136,0.12);
+            }
         }
 
         .eo-l-opt:active { transform: scale(0.98); }
 
-        .eo-l-opt-main { display: flex; flex-direction: column; gap: 3px; overflow: hidden; }
+        .eo-l-opt-main { display: flex; flex-direction: column; gap: 4px; overflow: hidden; }
+
+        .eo-l-opt-name-row { display: flex; align-items: center; gap: 7px; overflow: hidden; }
+
+        .eo-l-opt-badge {
+            flex-shrink: 0;
+            font-size: 0.52rem;
+            font-weight: 800;
+            letter-spacing: 0.5px;
+            padding: 2px 6px;
+            border-radius: 6px;
+        }
+
+        .eo-l-opt-badge--stock { color: #00ff88; background: rgba(0,255,136,0.12); border: 1px solid rgba(0,255,136,0.3); }
+        .eo-l-opt-badge--lab   { color: #ffaa00; background: rgba(255,170,0,0.12); border: 1px solid rgba(255,170,0,0.3); }
 
         .eo-l-opt-name {
             font-size: 0.76rem;
@@ -2860,52 +2894,97 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
             font-weight: 700;
         }
 
+        .eo-l-opt-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+        .eo-l-opt-check {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #00ff88;
+            color: #06110c;
+            font-size: 0.65rem;
+            font-weight: 900;
+        }
+
         .eo-l-opt-price {
             font-size: 0.72rem;
             font-weight: 700;
             color: #00ff88;
             font-family: monospace;
-            flex-shrink: 0;
             white-space: nowrap;
         }
 
+        /* Selected lens: markedly more prominent than the rest */
         .eo-l-opt.selected {
-            box-shadow: 0 0 12px rgba(0,255,136,0.3), inset 3px 3px 7px var(--shadow-dark), inset -3px -3px 7px var(--shadow-light);
-            border: 1px solid rgba(0,255,136,0.4);
+            background: linear-gradient(135deg, rgba(0,255,136,0.10), rgba(0,255,136,0.02));
+            box-shadow: 0 0 16px rgba(0,255,136,0.35), inset 2px 2px 5px var(--shadow-dark), inset -2px -2px 5px var(--shadow-light);
+            border: 1px solid rgba(0,255,136,0.55);
+            transform: scale(1.015);
         }
+
+        .eo-l-opt.selected .eo-l-opt-name { color: #00ff88; }
 
         .eo-l-opt.disabled {
             cursor: not-allowed;
-            opacity: 0.42;
+            opacity: 0.55;
             box-shadow: inset 3px 3px 6px var(--shadow-dark), inset -3px -3px 6px var(--shadow-light);
         }
 
-        .eo-l-opt.disabled .eo-l-opt-price { color: var(--text-muted); }
+        .eo-l-opt.disabled:not(.selected) .eo-l-opt-price { color: var(--text-muted); }
 
         .eo-l-opt-empty { font-size: 0.72rem; color: var(--text-muted); font-style: italic; padding: 8px 4px; }
 
+        /* Long-press feature flyout — centered, scrollable, dismiss on outside tap */
+        .eo-l-flyout-backdrop {
+            position: fixed;
+            inset: 0;
+            z-index: 9998;
+            display: none;
+            background: rgba(0,0,0,0.55);
+            backdrop-filter: blur(2px);
+        }
+
+        .eo-l-flyout-backdrop.show { display: block; }
+
         .eo-l-flyout {
             position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
             z-index: 9999;
             display: none;
-            min-width: 210px;
-            max-width: 280px;
+            width: 88%;
+            max-width: 320px;
+            max-height: 70vh;
+            overflow-y: auto;
             background: var(--bg-color);
-            border-radius: 16px;
-            padding: 14px 16px;
-            box-shadow: 12px 12px 28px var(--shadow-dark), -12px -12px 28px var(--shadow-light);
-            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 18px;
+            padding: 18px 20px;
+            box-shadow: 14px 14px 32px var(--shadow-dark), -14px -14px 32px var(--shadow-light);
+            border: 1px solid rgba(0,255,136,0.2);
         }
 
         .eo-l-flyout.show { display: block; }
 
         .eo-l-flyout-title {
-            font-size: 0.72rem;
-            font-weight: 700;
-            color: var(--text-main);
+            font-size: 0.85rem;
+            font-weight: 800;
+            color: #00ff88;
             text-transform: uppercase;
-            margin-bottom: 8px;
-            padding-bottom: 8px;
+            margin-bottom: 4px;
+        }
+
+        .eo-l-flyout-source {
+            font-size: 0.62rem;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            color: #ffaa00;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            padding-bottom: 10px;
             border-bottom: 1px solid rgba(255,255,255,0.08);
         }
 
@@ -2913,12 +2992,13 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
             display: flex;
             justify-content: space-between;
             gap: 12px;
-            font-size: 0.68rem;
+            font-size: 0.7rem;
             color: var(--text-muted);
-            padding: 4px 0;
+            padding: 5px 0;
         }
 
-        .eo-l-flyout-row span:last-child { color: var(--text-main); font-weight: 600; text-align: right; }
+        .eo-l-flyout-val-green { color: #00ff88 !important; font-weight: 700; }
+        .eo-l-flyout-val-amber { color: #ffaa00 !important; font-weight: 700; }
 
         .eo-l-flyout-empty { font-size: 0.68rem; color: var(--text-muted); font-style: italic; margin-top: 4px; }
 
@@ -2926,19 +3006,40 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
             display: flex;
             flex-wrap: wrap;
             gap: 6px;
-            margin-top: 8px;
+            margin-top: 10px;
         }
 
         .eo-l-flyout-tag {
-            font-size: 0.6rem;
+            font-size: 0.62rem;
             font-weight: 700;
             letter-spacing: 0.2px;
-            color: #00ff88;
-            background: rgba(0,255,136,0.08);
-            border: 1px solid rgba(0,255,136,0.25);
+            color: #7ee8ff;
+            background: rgba(126,232,255,0.08);
+            border: 1px solid rgba(126,232,255,0.28);
             border-radius: 8px;
-            padding: 4px 8px;
+            padding: 4px 9px;
         }
+
+        /* Save Lens / Close buttons — a bit more presence than the plain default */
+        .ph-eo-group[data-group="lens"] .ph-modal-btn.confirm {
+            background: linear-gradient(135deg, rgba(0,255,136,0.16), rgba(0,255,136,0.04));
+            border: 1px solid rgba(0,255,136,0.4);
+            box-shadow: 6px 6px 14px var(--shadow-dark), -6px -6px 14px var(--shadow-light);
+        }
+
+        .ph-eo-group[data-group="lens"] .ph-modal-btn.confirm:hover {
+            box-shadow: 0 0 14px rgba(0,255,136,0.3), 6px 6px 14px var(--shadow-dark), -6px -6px 14px var(--shadow-light);
+        }
+
+        #ph-eo-close-btn {
+            background: linear-gradient(135deg, rgba(255,255,255,0.05), rgba(255,255,255,0.0));
+            border: 1px solid rgba(255,255,255,0.14);
+            box-shadow: 6px 6px 14px var(--shadow-dark), -6px -6px 14px var(--shadow-light);
+            transition: box-shadow 0.15s ease, transform 0.1s ease;
+        }
+
+        #ph-eo-close-btn:hover { box-shadow: 8px 8px 18px var(--shadow-dark), -8px -8px 18px var(--shadow-light); }
+        #ph-eo-close-btn:active { transform: scale(0.97); }
 
         .ph-modal-actions {
             display: flex;
@@ -4145,6 +4246,20 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
                     $phEoLensOptions[$lt][] = $it;
                 }
             }
+
+            // Cross-source rule: if a lens (matched by base name) is available in
+            // STOCK, its LAB/ORDER counterpart isn't needed — stock is ready
+            // immediately, so hide the lab duplicate from the list entirely.
+            $stockBaseLabels = [];
+            foreach ($phEoLensOptions['stock'] as $it) {
+                $stockBaseLabels[$it['base_label']] = true;
+            }
+            foreach ($phEoLensOptions['lab'] as $i => $it) {
+                $phEoLensOptions['lab'][$i]['hidden_dup_source'] = isset($stockBaseLabels[$it['base_label']]);
+            }
+            foreach ($phEoLensOptions['stock'] as $i => $it) {
+                $phEoLensOptions['stock'][$i]['hidden_dup_source'] = false;
+            }
         }
     }
 ?>
@@ -4346,14 +4461,13 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
                     <!-- ── Group: Lens ──────────────────────────────── -->
                     <div class="ph-eo-group" data-group="lens">
                         <div class="ph-modal-field">
-                            <label>Lens</label>
+                            <label class="eo-l-header">👓 LENS</label>
                             <!-- The real <select> stays as the single source of truth driving all
                                  existing filter/save logic; it's visually hidden and the custom
                                  neumorphic list below is what the user actually sees and taps. -->
                             <select class="ph-modal-input eo-l-select-hidden" id="eo-l-name"></select>
                             <div class="eo-l-custom" id="eo-l-custom"></div>
                             <div class="ph-modal-preview" id="eo-l-preview"></div>
-                            <div class="ph-eo-note" id="eo-l-filter-note" style="margin-top:8px;"></div>
                         </div>
                         <div class="ph-modal-actions">
                             <button class="ph-modal-btn confirm" onclick="phEoSaveLens()">Save Lens</button>
@@ -4362,6 +4476,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
 
                     <!-- Long-press (PC) / press-and-hold (Android) flyout showing a lens's
                          recorded features, from lense_prices.json -->
+                    <div class="eo-l-flyout-backdrop" id="eo-l-flyout-backdrop"></div>
                     <div class="eo-l-flyout" id="eo-l-flyout"></div>
 
                     <!-- ── Group: Frame ─────────────────────────────── -->
@@ -4442,7 +4557,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
 
                 <div class="ph-modal-preview" id="ph-eo-msg"></div>
                 <div class="ph-modal-actions" style="margin-top:6px;">
-                    <button class="ph-modal-btn cancel" onclick="phCloseEditOrderModal()">Close</button>
+                    <button class="ph-modal-btn cancel" id="ph-eo-close-btn" onclick="phCloseEditOrderModal()">Close</button>
                 </div>
     <div id="ph-toast"></div>
     <div class="ph-eo-fly-warn" id="ph-eo-fly-warn" style="display:none;">
@@ -4986,7 +5101,8 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
                     // Extra descriptive fields from lense_prices.json, shown in the
                     // long-press/press-and-hold features flyout.
                     opt.setAttribute('data-features', JSON.stringify(item.features || {}));
-                    if (!item.is_primary) opt.disabled = true;
+                    opt.setAttribute('data-hiddendup', item.hidden_dup_source ? '1' : '0');
+                    if (!item.is_primary || item.hidden_dup_source) opt.disabled = true;
                     limitFields.forEach(function(f) { opt.setAttribute('data-' + f, item[f] || 0); });
                     optgroup.appendChild(opt);
                 });
@@ -5084,7 +5200,6 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
             var farOnlySV = isPresbyopia && needDist && !needInter && !needNear;
 
             var select = document.getElementById('eo-l-name');
-            var hiddenCount = 0;
             Array.prototype.forEach.call(select.options, function(opt) {
                 if (!opt.value) return; // keep the placeholder option always visible
                 var lim = {
@@ -5098,26 +5213,17 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
                 };
                 var hasLimits  = opt.getAttribute('data-has-limits') === '1';
                 var isPrimary  = opt.getAttribute('data-isprimary') !== '0';
+                var hiddenDup  = opt.getAttribute('data-hiddendup') === '1';
                 var rxOk  = !hasLimits || phEoRxFits(lim, rSph, rCyl, lSph, lCyl, rAdd, lAdd);
                 var catOk = phEoCatAllowed(opt.getAttribute('data-category'), isPresbyopia, farOnlySV);
-                var fits  = rxOk && catOk && isPrimary;
+                var fits  = rxOk && catOk && isPrimary && !hiddenDup;
                 opt.disabled = !fits;
                 var selling  = opt.getAttribute('data-selling');
                 var priceTxt = selling ? ' — Rp ' + Number(selling).toLocaleString('id-ID') : '';
-                var reason = fits ? '' : (!isPrimary ? ' (duplicate — a cheaper option exists)' : (!rxOk ? ' (Rx out of range)' : ' (wrong design for this Rx)'));
+                var reason = fits ? '' : (hiddenDup ? ' (also available in stock)' : (!isPrimary ? ' (duplicate — a cheaper option exists)' : (!rxOk ? ' (Rx out of range)' : ' (wrong design for this Rx)')));
                 opt.textContent = opt.getAttribute('data-baselabel') + priceTxt + reason;
-                if (!fits) hiddenCount++;
             });
             phEoRenderCustomLensUI();
-
-            var note = document.getElementById('eo-l-filter-note');
-            if (note) {
-                note.textContent = 'Filtered by the ' + (lensModActive ? 'MODIFIED' : 'original') + ' prescription (source: ' + (lensModActive ? 'Prescription tab OD/OS' : 'Exam Results new_r/new_l') + '). ' +
-                    'Age=' + age + ', R ADD=' + rAdd.toFixed(2) + ', L ADD=' + lAdd.toFixed(2) + ', maxADD=' + maxAdd.toFixed(2) + ' → ' +
-                    (isPresbyopia ? 'PRESBYOPIC' : 'not presbyopic') +
-                    (isPresbyopia ? ' (needDist=' + (needDist?1:0) + ' needInter=' + (needInter?1:0) + ' needNear=' + (needNear?1:0) + ' → ' + (farOnlySV ? 'distance-only, SV still allowed' : 'needs progressive design') + ')' : '') +
-                    (hiddenCount > 0 ? ' — ' + hiddenCount + ' lens type(s) hidden.' : ' — all lens types shown.');
-            }
         }
 
         function phEoUpdateLensPreview() {
@@ -5146,64 +5252,99 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
             if (!select || !custom) return;
             custom.innerHTML = '';
 
-            var currentGroupLabel = null;
-            var count = 0;
+            var groupMeta = {
+                stock: { label: '📦 STOCK LENS — ready now',        cls: 'stock' },
+                lab:   { label: '🔬 LAB / ORDER LENS — made to order', cls: 'lab' }
+            };
+            var bySource = { stock: [], lab: [] };
             Array.prototype.forEach.call(select.options, function(opt) {
                 if (!opt.value) return; // skip the "— Select a lens —" placeholder
-                count++;
+                var src = opt.getAttribute('data-source') || 'stock';
+                var isSelected = select.value === opt.value;
+                // Only list lenses that can actually be picked — except the one
+                // already assigned to this order, so it stays visible even if it
+                // no longer qualifies (e.g. Rx changed since it was chosen).
+                if (opt.disabled && !isSelected) return;
+                (bySource[src] || bySource.stock).push(opt);
+            });
 
-                var groupLabel = (opt.parentNode && opt.parentNode.tagName === 'OPTGROUP') ? opt.parentNode.label : null;
-                if (groupLabel && groupLabel !== currentGroupLabel) {
-                    currentGroupLabel = groupLabel;
-                    var head = document.createElement('div');
-                    head.className = 'eo-l-opt-group-label';
-                    head.textContent = currentGroupLabel;
-                    custom.appendChild(head);
-                }
+            var count = 0;
+            ['stock', 'lab'].forEach(function(src) {
+                var items = bySource[src];
+                if (!items.length) return;
 
-                var isPrimary = opt.getAttribute('data-isprimary') !== '0';
-                var disabled  = opt.disabled;
+                var head = document.createElement('div');
+                head.className = 'eo-l-opt-group-label eo-l-opt-group-label--' + groupMeta[src].cls;
+                head.textContent = groupMeta[src].label;
+                custom.appendChild(head);
 
-                var row = document.createElement('div');
-                row.className = 'eo-l-opt' + (disabled ? ' disabled' : '') + (select.value === opt.value ? ' selected' : '');
+                items.forEach(function(opt) {
+                    count++;
+                    var disabled   = opt.disabled;
+                    var isSelected = select.value === opt.value;
+                    var isPrimary  = opt.getAttribute('data-isprimary') !== '0';
+                    var hiddenDup  = opt.getAttribute('data-hiddendup') === '1';
 
-                var main = document.createElement('div');
-                main.className = 'eo-l-opt-main';
-                var name = document.createElement('div');
-                name.className = 'eo-l-opt-name';
-                name.textContent = opt.getAttribute('data-baselabel') || opt.value;
-                main.appendChild(name);
-                if (disabled) {
-                    var tag = document.createElement('div');
-                    tag.className = 'eo-l-opt-tag';
-                    tag.textContent = !isPrimary ? 'Cheaper option available — use that one instead'
-                        : (opt.textContent.indexOf('(') !== -1 ? opt.textContent.slice(opt.textContent.indexOf('(')) : 'Not selectable');
-                    main.appendChild(tag);
-                }
-                row.appendChild(main);
+                    var row = document.createElement('div');
+                    row.className = 'eo-l-opt' + (disabled ? ' disabled' : '') + (isSelected ? ' selected' : '');
 
-                var selling = opt.getAttribute('data-selling');
-                var price = document.createElement('div');
-                price.className = 'eo-l-opt-price';
-                price.textContent = (selling !== null && selling !== '' && Number(selling) > 0) ? 'Rp ' + Number(selling).toLocaleString('id-ID') : '';
-                row.appendChild(price);
+                    var main = document.createElement('div');
+                    main.className = 'eo-l-opt-main';
 
-                if (!disabled) {
-                    row.addEventListener('click', function() {
-                        select.value = opt.value;
-                        select.dispatchEvent(new Event('change'));
-                    });
-                }
+                    var nameRow = document.createElement('div');
+                    nameRow.className = 'eo-l-opt-name-row';
+                    var badge = document.createElement('span');
+                    badge.className = 'eo-l-opt-badge eo-l-opt-badge--' + groupMeta[src].cls;
+                    badge.textContent = src === 'stock' ? 'STOCK' : 'LAB';
+                    nameRow.appendChild(badge);
+                    var name = document.createElement('span');
+                    name.className = 'eo-l-opt-name';
+                    name.textContent = opt.getAttribute('data-baselabel') || opt.value;
+                    nameRow.appendChild(name);
+                    main.appendChild(nameRow);
 
-                phEoAttachLensFlyout(row, opt); // long-press / press-and-hold works on disabled rows too
+                    if (disabled) {
+                        var tag = document.createElement('div');
+                        tag.className = 'eo-l-opt-tag';
+                        tag.textContent = hiddenDup ? 'Also available in stock — currently assigned'
+                            : (!isPrimary ? 'Cheaper option available — currently assigned'
+                            : (opt.textContent.indexOf('(') !== -1 ? opt.textContent.slice(opt.textContent.indexOf('(')) : 'Currently assigned'));
+                        main.appendChild(tag);
+                    }
+                    row.appendChild(main);
 
-                custom.appendChild(row);
+                    var right = document.createElement('div');
+                    right.className = 'eo-l-opt-right';
+                    if (isSelected) {
+                        var check = document.createElement('span');
+                        check.className = 'eo-l-opt-check';
+                        check.textContent = '✓';
+                        right.appendChild(check);
+                    }
+                    var selling = opt.getAttribute('data-selling');
+                    var price = document.createElement('div');
+                    price.className = 'eo-l-opt-price';
+                    price.textContent = (selling !== null && selling !== '' && Number(selling) > 0) ? 'Rp ' + Number(selling).toLocaleString('id-ID') : '';
+                    right.appendChild(price);
+                    row.appendChild(right);
+
+                    if (!disabled) {
+                        row.addEventListener('click', function() {
+                            select.value = opt.value;
+                            select.dispatchEvent(new Event('change'));
+                        });
+                    }
+
+                    phEoAttachLensFlyout(row, opt); // long-press / press-and-hold works even on the disabled "currently assigned" row
+
+                    custom.appendChild(row);
+                });
             });
 
             if (!count) {
                 var empty = document.createElement('div');
                 empty.className = 'eo-l-opt-empty';
-                empty.textContent = 'No lens options available.';
+                empty.textContent = 'No lens options fit the current prescription.';
                 custom.appendChild(empty);
             }
         }
@@ -5224,18 +5365,21 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
         }
 
         function phEoShowLensFlyout(opt, row) {
-            var flyout = document.getElementById('eo-l-flyout');
+            var flyout   = document.getElementById('eo-l-flyout');
+            var backdrop = document.getElementById('eo-l-flyout-backdrop');
             if (!flyout) return;
 
+            var srcTxt = (opt.getAttribute('data-source') === 'lab') ? '🔬 LAB / ORDER' : '📦 STOCK';
             var features = [];
             try { features = JSON.parse(opt.getAttribute('data-features') || '[]'); } catch (e) { features = []; }
             if (!Array.isArray(features)) features = [];
 
             var html = '<div class="eo-l-flyout-title">' + (opt.getAttribute('data-baselabel') || opt.value) + '</div>';
+            html += '<div class="eo-l-flyout-source">' + srcTxt + '</div>';
             var selling = opt.getAttribute('data-selling');
             var cost    = opt.getAttribute('data-cost');
-            if (selling) html += '<div class="eo-l-flyout-row"><span>Selling price</span><span>Rp ' + Number(selling).toLocaleString('id-ID') + '</span></div>';
-            if (cost)    html += '<div class="eo-l-flyout-row"><span>Cost price</span><span>Rp ' + Number(cost).toLocaleString('id-ID') + '</span></div>';
+            if (selling) html += '<div class="eo-l-flyout-row"><span>Selling price</span><span class="eo-l-flyout-val-green">Rp ' + Number(selling).toLocaleString('id-ID') + '</span></div>';
+            if (cost)    html += '<div class="eo-l-flyout-row"><span>Cost price</span><span class="eo-l-flyout-val-amber">Rp ' + Number(cost).toLocaleString('id-ID') + '</span></div>';
 
             if (features.length) {
                 html += '<div class="eo-l-flyout-features">';
@@ -5247,18 +5391,17 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
                 html += '<div class="eo-l-flyout-empty">No feature details recorded for this lens.</div>';
             }
             flyout.innerHTML = html;
-
-            var rect = row.getBoundingClientRect();
-            flyout.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - 296)) + 'px';
-            flyout.style.top  = (rect.bottom + 6) + 'px';
             flyout.classList.add('show');
+            if (backdrop) backdrop.classList.add('show');
 
             var closeFlyout = function(e) {
-                if (flyout.contains(e.target)) return;
+                if (e && flyout.contains(e.target)) return; // click/tap inside the flyout itself doesn't close it
                 flyout.classList.remove('show');
+                if (backdrop) backdrop.classList.remove('show');
                 document.removeEventListener('mousedown', closeFlyout);
                 document.removeEventListener('touchstart', closeFlyout);
             };
+            if (backdrop) backdrop.onclick = closeFlyout;
             setTimeout(function() {
                 document.addEventListener('mousedown', closeFlyout);
                 document.addEventListener('touchstart', closeFlyout);
