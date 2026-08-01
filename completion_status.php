@@ -2788,6 +2788,20 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
 
         .ph-modal-input.password-input { letter-spacing: 2px; text-transform: none; }
 
+        /* ── Edit-order editor (#ph-eo-editor): dark-neumorphism-matching text
+           colors for the Customer → Order Info tabs, scoped so nothing
+           outside this editor is affected. ── */
+        #ph-eo-editor .ph-modal-field label {
+            color: #00ff88;
+            opacity: 0.85;
+        }
+        #ph-eo-editor .ph-eo-group:not([data-group="lens"]) .ph-modal-input {
+            color: #00d4ff;
+        }
+        #ph-eo-editor .ph-modal-sub {
+            color: #aa88ff;
+        }
+
         .ph-modal-preview {
             font-size: 0.72rem;
             color: #ffaa00;
@@ -3115,6 +3129,42 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
 
         /* ── Edit Order modal (wide, tabbed) ─────────────────────── */
         .ph-modal.ph-modal-wide { max-width: 640px; max-height: 88vh; overflow-y: auto; }
+        /* Admin verification gate: shown alone, so the modal shrinks to half width */
+        .ph-modal.ph-modal-wide.ph-eo-narrow { max-width: 320px; }
+
+        /* ── Admin Verification Required gate — redesigned ──────────────── */
+        .ph-eo-gate-icon {
+            width: 52px;
+            height: 52px;
+            margin: 0 auto 14px;
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.4rem;
+            background: var(--bg-color);
+            box-shadow: 6px 6px 12px var(--shadow-dark), -6px -6px 12px var(--shadow-light);
+        }
+
+        #ph-eo-gate .ph-modal-title {
+            text-align: center;
+            font-size: 0.85rem;
+        }
+
+        #ph-eo-gate .ph-modal-sub {
+            text-align: center;
+            font-size: 0.66rem;
+            line-height: 1.4;
+        }
+
+        #ph-eo-gate .ph-modal-actions {
+            flex-direction: column-reverse;
+            gap: 8px;
+        }
+
+        #ph-eo-gate .ph-modal-btn {
+            width: 100%;
+        }
 
         .ph-eo-tabs {
             display: flex; flex-wrap: wrap; gap: 6px;
@@ -3243,6 +3293,27 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
             background: rgba(255,170,0,0.06); border: 1px solid rgba(255,170,0,0.2);
             border-radius: 12px; padding: 10px 12px; margin: 10px 0;
         }
+
+        .ph-eo-lastmod-card {
+            border-radius: 16px; padding: 14px; margin: 10px 0;
+            border: 1px solid rgba(255,255,255,0.08);
+            background: var(--bg-color);
+            box-shadow: inset 2px 2px 5px var(--shadow-dark), inset -2px -2px 5px var(--shadow-light);
+        }
+        .ph-eo-lastmod-label {
+            font-size: 0.66rem; font-weight: 700; color: var(--text-muted);
+            letter-spacing: 0.3px; margin-bottom: 10px;
+        }
+        .ph-eo-lastmod-table { width: 100%; border-collapse: collapse; }
+        .ph-eo-lastmod-table th {
+            font-size: 0.58rem; color: var(--text-muted); text-align: center;
+            letter-spacing: 0.5px; font-weight: 700; padding: 4px 6px 8px;
+        }
+        .ph-eo-lastmod-table td {
+            font-size: 0.72rem; color: var(--text-main); text-align: center;
+            padding: 7px 6px; border-top: 1px solid rgba(255,255,255,0.07);
+        }
+        .ph-eo-lastmod-table td.ph-eo-rx-label { text-align: left; }
 
         .ph-eo-subtabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
         .ph-eo-subtab {
@@ -4278,7 +4349,8 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
 
             <!-- Step 1: admin password gate (shown until session unlocked) -->
             <div id="ph-eo-gate">
-                <div class="ph-modal-title">🔒 Admin Verification Required</div>
+                <div class="ph-eo-gate-icon">🔒</div>
+                <div class="ph-modal-title">Admin Verification Required</div>
                 <div class="ph-modal-sub">Editing an order touches stock &amp; financial records. Admin role + password required.</div>
                 <div class="ph-modal-field">
                     <label>Your Password</label>
@@ -4427,25 +4499,29 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
                     <!-- ── Group: Prescription (modification handling) ─ -->
                     <div class="ph-eo-group" data-group="prescription">
                         <div class="ph-modal-sub" id="eo-p-status">Current status: —</div>
-                        <div id="eo-p-lastmod" class="ph-eo-note" style="display:none;"></div>
+                        <div id="eo-p-lastmod" class="ph-eo-lastmod-card" style="display:none;">
+                            <div id="eo-p-lastmod-label" class="ph-eo-lastmod-label"></div>
+                            <table class="ph-eo-lastmod-table">
+                                <thead>
+                                    <tr><th></th><th>SPH</th><th>CYL</th><th>AXIS</th><th>ADD</th></tr>
+                                </thead>
+                                <tbody>
+                                    <tr><td class="ph-eo-rx-label">OD</td><td id="eo-p-lastmod-od_sph"></td><td id="eo-p-lastmod-od_cyl"></td><td id="eo-p-lastmod-od_axis"></td><td id="eo-p-lastmod-od_add"></td></tr>
+                                    <tr><td class="ph-eo-rx-label">OS</td><td id="eo-p-lastmod-os_sph"></td><td id="eo-p-lastmod-os_cyl"></td><td id="eo-p-lastmod-os_axis"></td><td id="eo-p-lastmod-os_add"></td></tr>
+                                </tbody>
+                            </table>
+                        </div>
 
                         <div class="ph-modal-actions" style="margin-top:6px;">
                             <span class="ph-eo-info-wrap">
                                 <button class="ph-modal-btn cancel" id="eo-p-revert-btn" onclick="phEoPrescriptionSimple('revert')">↩ Revert to Original Rx</button>
-                                <span class="ph-eo-info" data-tooltip="Switches the customer back to the ORIGINAL (unmodified) prescription. The modification already on record is kept as history, not deleted.">ⓘ</span>
                             </span>
                             <span class="ph-eo-info-wrap">
                                 <button class="ph-modal-btn confirm" id="eo-p-reapply-btn" onclick="phEoPrescriptionSimple('reapply')">↪ Re-apply Last Modification</button>
-                                <span class="ph-eo-info" data-tooltip="Turns the last recorded modification back ON without retyping it. Only shown while the original Rx is currently active and a previous modification exists.">ⓘ</span>
                             </span>
-                        </div>
-                        <div class="ph-eo-note" style="margin-top:10px;">
-                            <b>Revert</b> switches the customer back to their original Rx — the modification already on record is kept as history, not deleted.
-                            <b>Re-apply</b> only appears after a revert, to quickly restore that same last-recorded modification without retyping it.
                         </div>
 
                         <div style="margin:18px 0 8px;font-size:0.65rem;color:var(--text-muted);letter-spacing:0.6px;text-transform:uppercase;">Or record a brand-new modification</div>
-                        <div class="ph-eo-note" id="eo-p-prefill-note">Fields below are pre-filled with the prescription the customer is currently using — edit whichever values changed.</div>
                         <div class="ph-eo-rx-grid ph-eo-rx-grid-4">
                             <div></div><div class="ph-eo-rx-head">SPH</div><div class="ph-eo-rx-head">CYL</div><div class="ph-eo-rx-head">AXIS</div><div class="ph-eo-rx-head">ADD</div>
                             <div class="ph-eo-rx-label">OD</div>
@@ -4646,6 +4722,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
             // successful edit in the same browser session.
             document.getElementById('ph-eo-gate').style.display = 'block';
             document.getElementById('ph-eo-editor').style.display = 'none';
+            document.querySelector('#ph-eo-overlay .ph-modal').classList.add('ph-eo-narrow');
         }
 
         function phCloseEditOrderModal() {
@@ -4709,6 +4786,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
                     if (data.success) {
                         document.getElementById('ph-eo-gate').style.display = 'none';
                         document.getElementById('ph-eo-editor').style.display = 'block';
+                        document.querySelector('#ph-eo-overlay .ph-modal').classList.remove('ph-eo-narrow');
                         phEoLoadDetails(false);
                     } else {
                         err.textContent = data.error || 'Verification failed.';
@@ -4738,6 +4816,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
                             // Session not unlocked yet — show the password gate instead.
                             document.getElementById('ph-eo-gate').style.display = 'block';
                             document.getElementById('ph-eo-editor').style.display = 'none';
+                            document.querySelector('#ph-eo-overlay .ph-modal').classList.add('ph-eo-narrow');
                             return;
                         }
                         phEoShowMsg(data.error || 'Failed to load order details.', true);
@@ -4752,6 +4831,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
                     if (silentFallbackToGate) {
                         document.getElementById('ph-eo-gate').style.display = 'block';
                         document.getElementById('ph-eo-editor').style.display = 'none';
+                        document.querySelector('#ph-eo-overlay .ph-modal').classList.add('ph-eo-narrow');
                         return;
                     }
                     phEoShowMsg('Connection error while loading order.', true);
@@ -4815,9 +4895,15 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
             if (data.last_mod) {
                 var m = data.last_mod;
                 lastModEl.style.display = 'block';
-                lastModEl.textContent = 'Last recorded modification (' + (m.modified_at || '') + '): OD ' +
-                    (m.od_sph || '-') + '/' + (m.od_cyl || '-') + '/' + (m.od_axis || '-') + '/' + (m.od_add || '-') +
-                    ' — OS ' + (m.os_sph || '-') + '/' + (m.os_cyl || '-') + '/' + (m.os_axis || '-') + '/' + (m.os_add || '-');
+                document.getElementById('eo-p-lastmod-label').textContent = 'Last recorded modification (' + (m.modified_at || '') + '):';
+                document.getElementById('eo-p-lastmod-od_sph').textContent  = m.od_sph  || '-';
+                document.getElementById('eo-p-lastmod-od_cyl').textContent  = m.od_cyl  || '-';
+                document.getElementById('eo-p-lastmod-od_axis').textContent = m.od_axis || '-';
+                document.getElementById('eo-p-lastmod-od_add').textContent  = m.od_add  || '-';
+                document.getElementById('eo-p-lastmod-os_sph').textContent  = m.os_sph  || '-';
+                document.getElementById('eo-p-lastmod-os_cyl').textContent  = m.os_cyl  || '-';
+                document.getElementById('eo-p-lastmod-os_axis').textContent = m.os_axis || '-';
+                document.getElementById('eo-p-lastmod-os_add').textContent  = m.os_add  || '-';
             } else {
                 lastModEl.style.display = 'none';
             }
