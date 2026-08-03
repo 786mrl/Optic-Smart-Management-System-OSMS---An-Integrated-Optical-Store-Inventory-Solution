@@ -2740,7 +2740,7 @@ if (isset($_POST['action'])) {
             echo json_encode(['ok' => false, 'message' => 'Please enter your password.']);
             exit();
         }
-        $stmt = $conn->prepare("SELECT password_hash FROM users WHERE id = ? LIMIT 1");
+        $stmt = $conn->prepare("SELECT password_hash FROM users WHERE user_id = ? LIMIT 1");
         $stmt->bind_param("i", $_SESSION['user_id']);
         $stmt->execute();
         $res = $stmt->get_result();
@@ -3822,8 +3822,8 @@ if (isset($_POST['action'])) {
                 <input type="password" class="input-field" id="passwordConfirmInput" placeholder="Your password" autocomplete="off" style="width:100%; margin-bottom:10px;">
                 <p id="passwordConfirmMsg" style="font-size:12px; min-height:16px; margin-bottom:10px;"></p>
                 <div style="display:flex; gap:10px; justify-content:center;">
-                    <button type="button" class="iphelp-close-btn" onclick="closePasswordConfirm()">Cancel</button>
-                    <button type="button" class="btn-save" id="passwordConfirmSubmitBtn" onclick="submitPasswordConfirm()">Confirm</button>
+                    <button type="button" class="iphelp-close-btn" onclick="closePasswordConfirm()" style="flex:1; margin-top:0; padding:12px; font-size:14px; font-weight:600;">Cancel</button>
+                    <button type="button" class="btn-save" id="passwordConfirmSubmitBtn" onclick="submitPasswordConfirm()" style="flex:1; margin-top:0; padding:12px; font-size:14px; font-weight:700;">Confirm</button>
                 </div>
             </div>
         </div>
