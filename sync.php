@@ -1465,7 +1465,14 @@ function sync_build_file_crc_manifest($appDir, $excludeDirNames = ['.git', '.svn
     // mismatch even when everything is actually fine.
     // .gitignore and .htaccess are local/environment config, not app code —
     // they're excluded from the comparison so they never show up as diffs.
-    $excludedFiles = ['db_config.php', '.gitignore', '.htaccess'];
+    // sync_pending_signal.json is a per-device, transient signal file (see
+    // receive_custom_update_signal / check_custom_update_signal) — it is
+    // written on ONE device only and consumed/deleted on its next poll, so
+    // its mere presence/absence must never count as a sync mismatch.
+    // (database/backups is already excluded via the 'backups' dir-name
+    // filter above — qrcodes, main_qrcodes, pdf_file, data_json, and the
+    // rest of database/ are all still compared as normal.)
+    $excludedFiles = ['db_config.php', '.gitignore', '.htaccess', 'sync_pending_signal.json'];
     $dirIterator = new RecursiveDirectoryIterator($appDir, FilesystemIterator::SKIP_DOTS);
     $filtered = new RecursiveCallbackFilterIterator($dirIterator, function ($current) use ($excludeDirNames) {
         if ($current->isDir() && in_array($current->getFilename(), $excludeDirNames, true)) return false;
