@@ -139,14 +139,25 @@ $syncConfig = sync_load_config($syncJsonFile);
  * sync_config.json. Used to disable the matching Pull card entirely.
  * Returns 'pc' | 'android' | 'unknown'.
  *
- * Primary signal: SERVER_PORT. Comparing IP alone is unreliable — if the
+ * Primary signal: presence of the Termux filesystem root
+ * (/data/data/com.termux), which only ever exists on Android — this is
+ * unambiguous and unaffected by whatever port Apache/php-fpm happens to be
+ * listening on. This is checked FIRST because SERVER_PORT alone became
+ * unreliable after the Termux server moved from mod_php to php-fpm (the
+ * reported port on Android can end up matching the PC's port, causing
+ * Android to misdetect itself as 'pc').
+ *
+ * Fallback signal: SERVER_PORT. Comparing IP alone is unreliable — if the
  * page is opened via "localhost" or "127.0.0.1" instead of the LAN IP,
  * SERVER_ADDR reports the loopback address instead of the real one, so it
  * never matches the configured pc_ip/android_ip. The port Apache is
  * actually listening on (80 for XAMPP, 8080 for Termux in this setup)
- * stays correct regardless of hostname used to reach it.
+ * stays correct regardless of hostname used to reach it, PROVIDED the
+ * Termux check above didn't already resolve it.
  */
 function sync_detect_own_role($syncConfig) {
+    if (is_dir('/data/data/com.termux')) return 'android';
+
     $ownPort = (string) ($_SERVER['SERVER_PORT'] ?? '');
     $pcPort = (string) $syncConfig['pc_port'];
     $androidPort = (string) $syncConfig['android_port'];
@@ -1452,7 +1463,9 @@ function sync_build_file_crc_manifest($appDir, $excludeDirNames = ['.git', '.svn
     // db_config.php is EXPECTED to differ between devices (Android needs a
     // socket param, PC doesn't) — comparing it would always false-flag as a
     // mismatch even when everything is actually fine.
-    $excludedFiles = ['db_config.php'];
+    // .gitignore and .htaccess are local/environment config, not app code —
+    // they're excluded from the comparison so they never show up as diffs.
+    $excludedFiles = ['db_config.php', '.gitignore', '.htaccess'];
     $dirIterator = new RecursiveDirectoryIterator($appDir, FilesystemIterator::SKIP_DOTS);
     $filtered = new RecursiveCallbackFilterIterator($dirIterator, function ($current) use ($excludeDirNames) {
         if ($current->isDir() && in_array($current->getFilename(), $excludeDirNames, true)) return false;
