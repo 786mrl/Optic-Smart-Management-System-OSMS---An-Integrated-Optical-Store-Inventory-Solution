@@ -3132,6 +3132,13 @@ if (isset($_POST['action']) && $_POST['action'] === 'edit_group_order_info') {
         /* Admin verification gate: shown alone, so the modal shrinks to half width */
         .ph-modal.ph-modal-wide.ph-eo-narrow { max-width: 320px; }
 
+        /* On mobile, keep the wide Edit Order modal centered (not stuck to
+           the bottom like the smaller confirm-style .ph-modal sheets). */
+        @media (max-width: 600px) {
+            #ph-eo-overlay.ph-modal-overlay { align-items: center; padding: 12px; }
+            #ph-eo-overlay .ph-modal.ph-modal-wide { border-radius: 24px; max-height: 90vh; }
+        }
+
         /* ── Admin Verification Required gate — redesigned ──────────────── */
         .ph-eo-gate-icon {
             width: 52px;
