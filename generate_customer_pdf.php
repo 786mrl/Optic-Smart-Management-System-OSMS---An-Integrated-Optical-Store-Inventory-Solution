@@ -11,10 +11,11 @@
  * (tracked via customer_list.last_pdf_number), that old file is deleted first
  * so there's only ever one current PDF per customer.
  *
- * Called from customer_history.php's "Download PDF" button (POST), with:
- *   - phone            (required) resolved customer_phone
- *   - analysis_json    (optional) the last AI trend analysis result, as JSON,
- *                       so the PDF can include it without re-calling Gemini.
+ * Called automatically right after a successful "Generate AI Analysis" (see
+ * customer_history.php), with:
+ *   - match_key        (required) customer_list.match_key for this customer
+ *   - analysis_json    (optional) the AI trend analysis result, as JSON, so
+ *                       the PDF can include it without re-calling Gemini.
  * -------------------------------------------------------------
  */
 
@@ -31,10 +32,10 @@ function pdf_txt($s) {
     return $converted !== false ? $converted : $s;
 }
 
-$phone = trim($_POST['phone'] ?? $_GET['phone'] ?? '');
-if ($phone === '') {
+$match_key = trim($_POST['match_key'] ?? $_GET['match_key'] ?? '');
+if ($match_key === '') {
     http_response_code(400);
-    die('Missing phone parameter.');
+    die('Missing match_key parameter.');
 }
 
 $analysis = null;
@@ -43,24 +44,44 @@ if (!empty($_POST['analysis_json'])) {
     if (is_array($decoded)) $analysis = $decoded;
 }
 
-// ── Resolve customer (same phone-based grouping as customer_history.php) ───
-$stmt = $conn->prepare("SELECT customer_name, last_customer_number, last_pdf_number FROM customer_list WHERE customer_phone = ? LIMIT 1");
-$stmt->bind_param('s', $phone);
+// ── Resolve customer (same match_key grouping as customer_history.php) ─────
+$stmt = $conn->prepare("SELECT customer_name, customer_phone, last_customer_number, last_pdf_number FROM customer_list WHERE match_key = ? LIMIT 1");
+$stmt->bind_param('s', $match_key);
 $stmt->execute();
 $cl = $stmt->get_result()->fetch_assoc();
 $stmt->close();
 
 if (!$cl) {
     http_response_code(404);
-    die('Customer not found in customer_list for this phone number.');
+    die('Customer not found in customer_list for this match_key.');
 }
 
-$canon_name       = $cl['customer_name'];
-$canon_number     = $cl['last_customer_number'];
-$old_pdf_number   = $cl['last_pdf_number'];
+$canon_name      = $cl['customer_name'];
+$canon_phone     = $cl['customer_phone'];
+$canon_number    = $cl['last_customer_number'];
+$old_pdf_number  = $cl['last_pdf_number'];
+$key_prefix      = substr($match_key, 0, 3);
 
-$stmt2 = $conn->prepare("SELECT * FROM customer_orders WHERE customer_phone = ? ORDER BY order_date ASC");
-$stmt2->bind_param('s', $phone);
+if ($key_prefix === 'PN:' && $canon_phone && $canon_name) {
+    $stmt2 = $conn->prepare("
+        SELECT o.* FROM customer_orders o
+        INNER JOIN customer_examinations ce ON ce.invoice_number = o.invoice_number
+        WHERE o.customer_phone = ? AND ce.customer_name = ?
+        ORDER BY o.order_date ASC
+    ");
+    $stmt2->bind_param('ss', $canon_phone, $canon_name);
+} elseif ($key_prefix === 'PH:' && $canon_phone) {
+    $stmt2 = $conn->prepare("SELECT * FROM customer_orders WHERE customer_phone = ? ORDER BY order_date ASC");
+    $stmt2->bind_param('s', $canon_phone);
+} else {
+    $stmt2 = $conn->prepare("
+        SELECT o.* FROM customer_orders o
+        INNER JOIN customer_examinations ce ON ce.invoice_number = o.invoice_number
+        WHERE ce.customer_name = ?
+        ORDER BY o.order_date ASC
+    ");
+    $stmt2->bind_param('s', $canon_name);
+}
 $stmt2->execute();
 $orders = $stmt2->get_result()->fetch_all(MYSQLI_ASSOC);
 $stmt2->close();
@@ -68,7 +89,7 @@ $stmt2->close();
 $order_invoices = array_filter(array_column($orders, 'invoice_number'), fn($v) => $v && $v !== '00');
 
 // Examinations: name is NOT unique across customers, so only fall back to a
-// name match when this phone has no order invoices at all to disambiguate by.
+// name match when this customer has no order invoices at all to disambiguate by.
 $exam_conditions = [];
 $exam_types  = '';
 $exam_params = [];
@@ -169,7 +190,7 @@ $pdf->AddPage();
 $pdf->SetFont('Arial', 'B', 12);
 $pdf->Cell(0, 7, pdf_txt($canon_name), 0, 1);
 $pdf->SetFont('Arial', '', 10);
-$pdf->Cell(95, 6, pdf_txt('Phone: ' . $phone), 0, 0);
+$pdf->Cell(95, 6, pdf_txt('Phone: ' . ($canon_phone ?: '-')), 0, 0);
 $pdf->Cell(0, 6, pdf_txt('Customer Number: ' . $canon_number), 0, 1);
 $pdf->Cell(95, 6, pdf_txt('Total Examinations: ' . count($examinations)), 0, 0);
 $pdf->Cell(0, 6, pdf_txt('Total Orders: ' . count($orders)), 0, 1);
@@ -183,6 +204,12 @@ function rxDisp($v) {
     if ($v === null || $v === '' ) return '-';
     $f = (float)$v;
     return $f > 0 ? ('+' . $v) : (string)$v;
+}
+function pdf_visual_habit_label($v) {
+    switch ((int)$v) { case 1: return 'Indoor'; case 2: return 'Outdoor'; case 3: return 'Both'; default: return '-'; }
+}
+function pdf_digital_usage_label($v) {
+    switch ((int)$v) { case 1: return 'Low (<2H)'; case 2: return 'Moderate (2H-5H)'; case 3: return 'High (>5H)'; default: return '-'; }
 }
 
 foreach ($examinations as $idx => $e) {
@@ -225,8 +252,8 @@ foreach ($examinations as $idx => $e) {
     $pdf->SetFont('Arial', '', 8);
     $meta = [];
     if (!empty($e['age']))      $meta[] = 'Age: ' . (int)$e['age'];
-    $meta[] = 'Visual Habit: ' . (!empty($e['visual_habit']) ? 'Near' : 'Distance');
-    $meta[] = 'Digital Usage: ' . (!empty($e['digital_usage']) ? 'High' : 'Normal');
+    $meta[] = 'Visual Habit: ' . pdf_visual_habit_label($e['visual_habit'] ?? null);
+    if (!empty($e['digital_usage'])) $meta[] = 'Digital Usage: ' . pdf_digital_usage_label($e['digital_usage']);
     $needs = [];
     if (!empty($e['need_distance']))     $needs[] = 'Distance';
     if (!empty($e['need_intermediate'])) $needs[] = 'Intermediate';
@@ -327,8 +354,8 @@ if (file_exists($new_path)) @unlink($new_path);
 
 $pdf->Output('F', $new_path);
 
-$stmt4 = $conn->prepare("UPDATE customer_list SET last_pdf_number = ? WHERE customer_phone = ?");
-$stmt4->bind_param('ss', $canon_number, $phone);
+$stmt4 = $conn->prepare("UPDATE customer_list SET last_pdf_number = ? WHERE match_key = ?");
+$stmt4->bind_param('ss', $canon_number, $match_key);
 $stmt4->execute();
 $stmt4->close();
 

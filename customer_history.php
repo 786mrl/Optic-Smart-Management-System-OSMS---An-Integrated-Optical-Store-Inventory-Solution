@@ -6,10 +6,10 @@ include 'config_helper.php';
 include 'auth_check.php';
 
 // ── Search / resolve customer identity ──────────────────────────────────────
-// Customers are grouped by PHONE NUMBER — the only field that stays consistent
-// across orders (name and customer_number can both change over time). The
-// canonical name/number/phone for a customer live in `customer_list`, which is
-// kept in sync automatically by DB triggers on customer_orders.
+// Customers are grouped by a `match_key` in `customer_list`: PHONE if usable,
+// else NAME as a fallback (see customer_list_migration.sql for exact rules).
+// Junk records (no phone, no name, no lens purchase) never enter customer_list
+// at all, so they simply won't be found here.
 $search_input = strtoupper(trim($_GET['q'] ?? ''));
 $customer_data = null;
 $examinations  = [];
@@ -17,152 +17,157 @@ $orders        = [];
 $error_msg     = '';
 $all_customers = null; // populated only when search is the "ALL" keyword
 
-if (strtoupper($search_input) === 'ALL') {
-    $stmt_all = $conn->prepare("SELECT customer_phone, customer_name, last_customer_number FROM customer_list ORDER BY customer_name ASC");
+if ($search_input === 'ALL') {
+    $stmt_all = $conn->prepare("SELECT match_key, customer_phone, customer_name, last_customer_number, total_purchase_count FROM customer_list ORDER BY customer_name ASC");
     $stmt_all->execute();
     $all_customers = $stmt_all->get_result()->fetch_all(MYSQLI_ASSOC);
     $stmt_all->close();
 
-    // Visit count per customer — same invoice-based matching logic used in the
-    // main resolution below (name-only fallback ONLY when there are no orders
-    // at all), so counts stay consistent with what "open detail" will show.
     foreach ($all_customers as &$c) {
-        $stmt_inv = $conn->prepare("SELECT invoice_number FROM customer_orders WHERE customer_phone = ? AND invoice_number IS NOT NULL AND invoice_number <> '00'");
-        $stmt_inv->bind_param('s', $c['customer_phone']);
-        $stmt_inv->execute();
-        $invs = array_column($stmt_inv->get_result()->fetch_all(MYSQLI_ASSOC), 'invoice_number');
-        $stmt_inv->close();
+        $c['visit_count'] = 0;
+        $prefix = substr($c['match_key'], 0, 3);
 
-        if (!empty($invs)) {
-            $ph = implode(',', array_fill(0, count($invs), '?'));
-            $types = str_repeat('s', count($invs));
-            $stmt_cnt = $conn->prepare("SELECT COUNT(*) AS cnt FROM customer_examinations WHERE invoice_number IN ($ph)");
-            $stmt_cnt->bind_param($types, ...$invs);
+        if ($prefix === 'PN:') {
+            // Phone+Name key: only count orders/exams that belong to BOTH this
+            // phone AND this name (so a shared phone with a different name —
+            // e.g. mother/child — doesn't get counted together).
+            $stmt_inv = $conn->prepare("
+                SELECT o.invoice_number FROM customer_orders o
+                INNER JOIN customer_examinations ce ON ce.invoice_number = o.invoice_number
+                WHERE o.customer_phone = ? AND ce.customer_name = ? AND o.invoice_number <> '00'
+            ");
+            $stmt_inv->bind_param('ss', $c['customer_phone'], $c['customer_name']);
+        } elseif ($prefix === 'PH:') {
+            $stmt_inv = $conn->prepare("SELECT invoice_number FROM customer_orders WHERE customer_phone = ? AND invoice_number IS NOT NULL AND invoice_number <> '00'");
+            $stmt_inv->bind_param('s', $c['customer_phone']);
+        } else { // NM:
+            $stmt_inv = null;
+        }
+
+        if ($stmt_inv) {
+            $stmt_inv->execute();
+            $invs = array_column($stmt_inv->get_result()->fetch_all(MYSQLI_ASSOC), 'invoice_number');
+            $stmt_inv->close();
+            if (!empty($invs)) {
+                $ph = implode(',', array_fill(0, count($invs), '?'));
+                $types = str_repeat('s', count($invs));
+                $stmt_cnt = $conn->prepare("SELECT COUNT(*) AS cnt FROM customer_examinations WHERE invoice_number IN ($ph)");
+                $stmt_cnt->bind_param($types, ...$invs);
+                $stmt_cnt->execute();
+                $c['visit_count'] = (int)($stmt_cnt->get_result()->fetch_assoc()['cnt'] ?? 0);
+                $stmt_cnt->close();
+            }
         } else {
             $stmt_cnt = $conn->prepare("SELECT COUNT(*) AS cnt FROM customer_examinations WHERE customer_name = ?");
             $stmt_cnt->bind_param('s', $c['customer_name']);
+            $stmt_cnt->execute();
+            $c['visit_count'] = (int)($stmt_cnt->get_result()->fetch_assoc()['cnt'] ?? 0);
+            $stmt_cnt->close();
         }
-        $stmt_cnt->execute();
-        $c['visit_count'] = (int)($stmt_cnt->get_result()->fetch_assoc()['cnt'] ?? 0);
-        $stmt_cnt->close();
     }
     unset($c);
 } elseif ($search_input !== '') {
     $like = '%' . $search_input . '%';
-    $canon_phone = null;
 
-    // 1) Try to resolve a phone number directly: from customer_list (name or
-    //    phone match), or from customer_orders (phone or invoice match).
+    // 1) Resolve straight from customer_list (source of truth: phone, name, or
+    //    the match_key itself).
     $stmt = $conn->prepare("
-        SELECT customer_phone FROM customer_list
-        WHERE customer_phone = ? OR customer_name LIKE ?
+        SELECT match_key, customer_name, customer_phone, customer_address, last_customer_number
+        FROM customer_list
+        WHERE customer_phone = ? OR customer_name LIKE ? OR match_key = ?
         ORDER BY updated_at DESC LIMIT 1
     ");
-    $stmt->bind_param('ss', $search_input, $like);
+    $stmt->bind_param('sss', $search_input, $like, $search_input);
     $stmt->execute();
-    $r = $stmt->get_result()->fetch_assoc();
+    $row = $stmt->get_result()->fetch_assoc();
     $stmt->close();
-    if ($r) $canon_phone = $r['customer_phone'];
 
-    if (!$canon_phone) {
-        $stmt2 = $conn->prepare("
-            SELECT customer_phone FROM customer_orders
-            WHERE invoice_number = ? OR customer_phone LIKE ?
-            ORDER BY order_date DESC LIMIT 1
-        ");
+    // 2) Not in customer_list yet? Try resolving via raw orders/exams (covers
+    //    brand-new records the trigger may not have caught, or search by
+    //    invoice number).
+    if (!$row) {
+        $stmt2 = $conn->prepare("SELECT customer_phone, customer_address, customer_number FROM customer_orders WHERE invoice_number = ? OR customer_phone LIKE ? ORDER BY order_date DESC LIMIT 1");
         $stmt2->bind_param('ss', $search_input, $like);
         $stmt2->execute();
         $r2 = $stmt2->get_result()->fetch_assoc();
         $stmt2->close();
-        if ($r2) $canon_phone = $r2['customer_phone'];
-    }
 
-    // 2) Fall back to customer_examinations (by name or invoice) for customers
-    //    who only have an exam record so far (no order/phone yet), then try to
-    //    resolve their phone via that exam's invoice_number if one exists.
-    $canon_name    = null;
-    $pivot_invoice = null;
+        if ($r2) {
+            $stmt2b = $conn->prepare("SELECT match_key, customer_name, customer_phone, customer_address, last_customer_number FROM customer_list WHERE customer_phone = ? LIMIT 1");
+            $stmt2b->bind_param('s', $r2['customer_phone']);
+            $stmt2b->execute();
+            $row = $stmt2b->get_result()->fetch_assoc();
+            $stmt2b->close();
+        }
 
-    if (!$canon_phone) {
-        $stmt3 = $conn->prepare("
-            SELECT invoice_number, customer_name FROM customer_examinations
-            WHERE invoice_number = ? OR customer_name LIKE ?
-            ORDER BY examination_date DESC LIMIT 1
-        ");
-        $stmt3->bind_param('ss', $search_input, $like);
-        $stmt3->execute();
-        $r3 = $stmt3->get_result()->fetch_assoc();
-        $stmt3->close();
-        if ($r3) {
-            $canon_name    = $r3['customer_name'];
-            $pivot_invoice = $r3['invoice_number'];
-            if ($pivot_invoice && $pivot_invoice !== '00') {
-                $stmt4 = $conn->prepare("SELECT customer_phone FROM customer_orders WHERE invoice_number = ? LIMIT 1");
-                $stmt4->bind_param('s', $pivot_invoice);
-                $stmt4->execute();
-                $r4 = $stmt4->get_result()->fetch_assoc();
-                $stmt4->close();
-                if ($r4) $canon_phone = $r4['customer_phone'];
+        if (!$row) {
+            $stmt3 = $conn->prepare("SELECT invoice_number, customer_name FROM customer_examinations WHERE invoice_number = ? OR customer_name LIKE ? ORDER BY examination_date DESC LIMIT 1");
+            $stmt3->bind_param('ss', $search_input, $like);
+            $stmt3->execute();
+            $r3 = $stmt3->get_result()->fetch_assoc();
+            $stmt3->close();
+            if ($r3) {
+                $stmt3b = $conn->prepare("SELECT match_key, customer_name, customer_phone, customer_address, last_customer_number FROM customer_list WHERE customer_name = ? LIMIT 1");
+                $stmt3b->bind_param('s', $r3['customer_name']);
+                $stmt3b->execute();
+                $row = $stmt3b->get_result()->fetch_assoc();
+                $stmt3b->close();
             }
         }
     }
 
-    if (!$canon_phone && !$canon_name) {
+    if (!$row) {
         $error_msg = 'Data not found for: <strong>' . htmlspecialchars($search_input) . '</strong>';
     } else {
-        $canon_number = null;
+        $match_key     = $row['match_key'];
+        $canon_name    = $row['customer_name'];
+        $canon_phone   = $row['customer_phone'];
+        $canon_address = $row['customer_address'];
+        $canon_number  = $row['last_customer_number'];
+        $key_prefix    = substr($match_key, 0, 3);
 
-        // 3) Once we have a phone, pull the canonical name/number from
-        //    customer_list (source of truth) — falls back to whatever name we
-        //    already found if this phone isn't in customer_list yet.
-        if ($canon_phone) {
-            $stmt5 = $conn->prepare("SELECT customer_name, last_customer_number FROM customer_list WHERE customer_phone = ? LIMIT 1");
-            $stmt5->bind_param('s', $canon_phone);
-            $stmt5->execute();
-            $r5 = $stmt5->get_result()->fetch_assoc();
-            $stmt5->close();
-            if ($r5) {
-                $canon_name   = $r5['customer_name'];
-                $canon_number = $r5['last_customer_number'];
-            }
-        }
-
-        // 4) All orders for this phone (the reliable grouping key for orders).
-        $order_invoices = [];
-        if ($canon_phone) {
+        // 3) Orders for this customer.
+        if ($key_prefix === 'PN:' && $canon_phone && $canon_name) {
+            // Phone+Name key: scope strictly to orders whose linked exam name
+            // ALSO matches — this is what keeps two different people sharing
+            // one phone (e.g. mother/child) from being merged together.
+            $stmt6 = $conn->prepare("
+                SELECT o.* FROM customer_orders o
+                INNER JOIN customer_examinations ce ON ce.invoice_number = o.invoice_number
+                WHERE o.customer_phone = ? AND ce.customer_name = ?
+                ORDER BY o.order_date ASC
+            ");
+            $stmt6->bind_param('ss', $canon_phone, $canon_name);
+        } elseif ($key_prefix === 'PH:' && $canon_phone) {
+            // Phone-only key (name wasn't known when this customer_list row
+            // was created) — scope by phone alone.
             $stmt6 = $conn->prepare("SELECT * FROM customer_orders WHERE customer_phone = ? ORDER BY order_date ASC");
             $stmt6->bind_param('s', $canon_phone);
-            $stmt6->execute();
-            $orders = $stmt6->get_result()->fetch_all(MYSQLI_ASSOC);
-            $stmt6->close();
-            $order_invoices = array_filter(array_column($orders, 'invoice_number'), fn($v) => $v && $v !== '00');
+        } else {
+            // Name-only key (no usable phone at all): pull orders via invoice
+            // numbers of exams recorded under this name.
+            $stmt6 = $conn->prepare("
+                SELECT o.* FROM customer_orders o
+                INNER JOIN customer_examinations ce ON ce.invoice_number = o.invoice_number
+                WHERE ce.customer_name = ?
+                ORDER BY o.order_date ASC
+            ");
+            $stmt6->bind_param('s', $canon_name);
         }
+        $stmt6->execute();
+        $orders = $stmt6->get_result()->fetch_all(MYSQLI_ASSOC);
+        $stmt6->close();
+        $order_invoices = array_filter(array_column($orders, 'invoice_number'), fn($v) => $v && $v !== '00');
 
-        // 5) Examinations: name is NOT unique (two different customers can share
-        //    the same name), so we must NOT blanket-match by customer_name when
-        //    this phone already has orders — that would merge a different
-        //    customer's exams in just because the name matches. Instead:
-        //      - If this phone has order invoices, match ONLY by invoice_number
-        //        tied to those orders (plus the original pivot invoice, if any,
-        //        in case it's an exam-only visit with no purchase yet).
-        //      - Only fall back to a name-based match when this phone has NO
-        //        orders/invoices at all to disambiguate by.
+        // 4) Examinations.
         $exam_conditions = [];
         $exam_types  = '';
         $exam_params = [];
-
-        $linked_invoices = $order_invoices;
-        if ($pivot_invoice && $pivot_invoice !== '00' && !in_array($pivot_invoice, $linked_invoices, true)) {
-            $linked_invoices[] = $pivot_invoice;
-        }
-
-        if (!empty($linked_invoices)) {
-            $placeholders = implode(',', array_fill(0, count($linked_invoices), '?'));
+        if (!empty($order_invoices)) {
+            $placeholders = implode(',', array_fill(0, count($order_invoices), '?'));
             $exam_conditions[] = "invoice_number IN ($placeholders)";
-            foreach ($linked_invoices as $inv) { $exam_types .= 's'; $exam_params[] = $inv; }
+            foreach ($order_invoices as $inv) { $exam_types .= 's'; $exam_params[] = $inv; }
         } elseif ($canon_name) {
-            // No orders/invoices at all for this phone — name match is the
-            // only option we have left (best-effort for exam-only customers).
             $exam_conditions[] = 'customer_name = ?';
             $exam_types .= 's';
             $exam_params[] = $canon_name;
@@ -178,10 +183,12 @@ if (strtoupper($search_input) === 'ALL') {
         }
 
         $customer_data = [
-            'name'          => $canon_name   ?? '—',
-            'phone'         => $canon_phone  ?? '—',
-            'number'        => $canon_number ?? '—',
-            'pivot_invoice' => $pivot_invoice ?? ($order_invoices[0] ?? '—'),
+            'name'          => $canon_name    ?? '—',
+            'phone'         => $canon_phone   ?? '—',
+            'address'       => $canon_address ?? '—',
+            'number'        => $canon_number  ?? '—',
+            'match_key'     => $match_key,
+            'pivot_invoice' => $order_invoices[0] ?? '—',
         ];
     }
 }
@@ -194,6 +201,35 @@ function fmt_rx($v) {
     return $f > 0 ? '+' . $v : $v;
 }
 function rx_float($v) { return ($v === null || $v === '') ? null : (float)$v; }
+
+// Shorthand Rx notation used by the optician convention: -1.00 -> "-100",
+// -0.25 -> "-25", +0.75 -> "+75" (no decimal point, value x100).
+function fmt_rx_short($v) {
+    if ($v === null || $v === '') return '—';
+    $f = (float)$v;
+    if (abs($f) < 0.001) return '0';
+    $n = (int)round($f * 100);
+    return $n > 0 ? '+' . $n : (string)$n;
+}
+
+// visual_habit: 1=Indoor, 2=Outdoor, 3=Both (indoor & outdoor)
+function visual_habit_label($v) {
+    switch ((int)$v) {
+        case 1: return 'Indoor';
+        case 2: return 'Outdoor';
+        case 3: return 'Both (Indoor & Outdoor)';
+        default: return '—';
+    }
+}
+// digital_usage: 1=Low (<2H), 2=Moderate (2H-5H), 3=High (>5H)
+function digital_usage_label($v) {
+    switch ((int)$v) {
+        case 1: return 'Low (<2H)';
+        case 2: return 'Moderate (2H-5H)';
+        case 3: return 'High (>5H)';
+        default: return '—';
+    }
+}
 function visit_gap_label($days) {
     if ($days < 30)  return $days . ' days';
     if ($days < 365) return round($days/30) . ' mos';
@@ -295,8 +331,8 @@ $ai_history_payload = [
             'need_distance'     => (bool)($e['need_distance'] ?? false),
             'need_intermediate' => (bool)($e['need_intermediate'] ?? false),
             'need_near'         => (bool)($e['need_near'] ?? false),
-            'visual_habit'      => !empty($e['visual_habit']) ? 'near' : 'distance',
-            'digital_usage'     => (bool)($e['digital_usage'] ?? false),
+            'visual_habit'      => visual_habit_label($e['visual_habit'] ?? null),
+            'digital_usage'     => digital_usage_label($e['digital_usage'] ?? null),
             'lens_modification' => (bool)($e['lens_modification'] ?? false),
             'symptoms'          => trim($e['symptoms'] ?? ''),
             'exam_notes'        => trim($e['exam_notes'] ?? ''),
@@ -385,7 +421,7 @@ $ai_history_payload = [
         .ch-id-name { font-size: 17px; font-weight: 700; color: var(--text-main); margin-bottom: 4px; }
         .ch-id-sub  { font-size: 12px; color: var(--text-muted); }
         .ch-id-sub span { color: var(--text-color); }
-        .ch-id-badges { display: flex; gap: 8px; flex-wrap: wrap; margin-left: auto; }
+        .ch-id-badges { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; margin-left: auto; }
         .ch-badge {
             display: inline-flex; align-items: center; gap: 5px;
             border-radius: 10px; padding: 5px 13px; font-size: 11px; font-weight: 700;
@@ -440,16 +476,23 @@ $ai_history_payload = [
         .ch-all-sub  { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
         .ch-all-arrow { font-size: 20px; color: var(--text-muted); }
 
-        /* ── Group wrapper cards (Business vs Customer) ─────────────────── */
+        /* ── Group wrapper cards (Business vs Customer), shown as tabs ───── */
+        .ch-tabs {
+            display: flex; gap: 10px; flex-wrap: wrap;
+            margin: 30px 0 12px;
+        }
+        .ch-tabs:first-of-type { margin-top: 8px; }
+        .ch-tabs .ch-group-header {
+            flex: 1; min-width: 200px; margin: 0;
+        }
         .ch-group-header {
             display: flex; align-items: center; gap: 10px;
-            margin: 30px 0 12px;
             cursor: pointer; user-select: none;
             background: var(--card-bg); border-radius: 16px; padding: 12px 16px;
             transition: background .15s;
         }
         .ch-group-header:hover { background: rgba(255,255,255,0.05); }
-        .ch-group-header:first-of-type { margin-top: 8px; }
+        .ch-group-header.open { background: rgba(255,255,255,0.06); box-shadow: inset 2px 2px 5px var(--shadow-dark); }
         .ch-group-arrow {
             font-size: 13px; color: var(--text-muted); flex-shrink: 0;
             transition: transform .25s;
@@ -528,6 +571,39 @@ $ai_history_payload = [
         }
         .ch-ai-meta { text-align: center; font-size: 10px; color: #555; margin-top: 10px; }
 
+        /* ── PDF fly-window (shown automatically after AI analysis) ─────── */
+        .ch-pdf-fly-overlay {
+            display: none; position: fixed; inset: 0; z-index: 9999;
+            background: rgba(0,0,0,0.6); backdrop-filter: blur(2px);
+            align-items: center; justify-content: center;
+        }
+        .ch-pdf-fly-overlay.open { display: flex; }
+        .ch-pdf-fly-window {
+            width: min(900px, 94vw); height: min(90vh, 1100px);
+            background: var(--bg-color); border-radius: 16px; overflow: hidden;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+            display: flex; flex-direction: column;
+        }
+        .ch-pdf-fly-bar {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 12px 16px; background: var(--card-bg);
+            font-size: 13px; font-weight: 700; color: var(--text-main);
+        }
+        .ch-pdf-fly-btn {
+            display: inline-block; margin-left: 8px; padding: 6px 14px;
+            border-radius: 10px; background: var(--accent-solid); color: #fff;
+            font-size: 11px; font-weight: 700; text-decoration: none; border: none; cursor: pointer;
+        }
+        .ch-pdf-fly-iframe { flex: 1; border: none; background: #525659; }
+
+        .ch-acc-mini-body { display: none; margin-top: 10px; }
+        .ch-acc-mini.open .ch-acc-mini-body { display: block; animation: chSlide .2s ease-out; }
+        .ch-acc-mini .ch-analysis-title {
+            cursor: pointer; user-select: none; display: flex; align-items: center; justify-content: space-between;
+        }
+        .ch-acc-mini .ch-acc-arrow { font-size: 10px; transition: transform .2s; }
+        .ch-acc-mini.open .ch-acc-arrow { transform: rotate(180deg); color: var(--accent-solid); }
+
         /* ── Section header ──────────────────────────────────────────── */
         .ch-section {
             display: flex; align-items: center; justify-content: space-between;
@@ -549,8 +625,8 @@ $ai_history_payload = [
         }
 
         /* ── Chart cards ─────────────────────────────────────────────── */
-        .ch-chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 4px; }
-        @media(max-width:680px) { .ch-chart-grid { grid-template-columns: 1fr; } }
+        /* Each prescription trend chart takes the full row width. */
+        .ch-chart-grid { display: grid; grid-template-columns: 1fr; gap: 14px; margin-bottom: 4px; }
         .ch-chart-card {
             background: var(--bg-color); border-radius: 18px; padding: 18px 20px;
             box-shadow: 8px 8px 16px var(--shadow-dark), -8px -8px 16px var(--shadow-light);
@@ -559,7 +635,9 @@ $ai_history_payload = [
         .ch-chart-wrap  { position: relative; height: 180px; }
 
         /* ── Analysis cards ──────────────────────────────────────────── */
-        .ch-analysis-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; margin-bottom: 4px; }
+        /* Analysis Summary cards (Visit Patterns, Payment Status, Prescription
+           Changes, Recent Activities) always stack full-width, one per row. */
+        .ch-analysis-grid { display: grid; grid-template-columns: 1fr; gap: 14px; margin-bottom: 4px; }
         .ch-analysis-card {
             background: var(--bg-color); border-radius: 18px; padding: 18px 20px;
             box-shadow: 8px 8px 16px var(--shadow-dark), -8px -8px 16px var(--shadow-light);
@@ -575,21 +653,46 @@ $ai_history_payload = [
         .ch-a-val.teal  { color: var(--accent-solid); }
 
         /* Rx change table */
-        .ch-rx-tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
-        .ch-rx-tbl th { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--text-muted); padding: 5px 6px; text-align: center; }
-        .ch-rx-tbl td { padding: 6px; text-align: center; color: var(--text-color); border-bottom: 1px solid rgba(255,255,255,0.03); }
-        .ch-rx-tbl td:first-child { text-align: left; }
-        .ch-rx-tbl tr:last-child td { border-bottom: none; }
+        .ch-rx-changes-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-top: 8px; }
+        .ch-rx-eye-card {
+            background: var(--bg-color); border-radius: 14px; padding: 12px 14px;
+            box-shadow: 5px 5px 10px var(--shadow-dark), -5px -5px 10px var(--shadow-light);
+        }
+        .ch-rx-eye-title { font-size: 11px; font-weight: 800; letter-spacing: .4px; color: var(--accent-solid); margin-bottom: 8px; }
+        .ch-rx-change-row {
+            display: flex; align-items: center; gap: 8px; padding: 6px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.04); font-size: 12.5px; font-family: monospace;
+        }
+        .ch-rx-change-row:last-child { border-bottom: none; }
+        .ch-rx-comp { width: 34px; flex-shrink: 0; color: var(--text-muted); font-weight: 700; }
+        .ch-rx-from { color: var(--text-muted); min-width: 40px; text-align: right; }
+        .ch-rx-to   { color: var(--text-main); font-weight: 700; min-width: 40px; text-align: right; }
+        .ch-rx-delta { margin-left: auto; font-weight: 800; }
+        .ch-rx-badges { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+        .ch-rx-badge {
+            font-size: 10px; color: var(--text-muted); background: rgba(255,255,255,0.03);
+            border-radius: 8px; padding: 3px 8px;
+        }
+        .ch-rx-badge b { color: var(--text-main); font-weight: 700; }
 
         /* ── Timeline ────────────────────────────────────────────────── */
-        .ch-timeline { position: relative; padding-left: 18px; }
-        .ch-timeline::before { content: ''; position: absolute; left: 5px; top: 0; bottom: 0; width: 2px; background: rgba(255,255,255,0.05); border-radius: 2px; }
+        .ch-timeline { position: relative; padding-left: 26px; }
+        .ch-timeline::before { content: ''; position: absolute; left: 9px; top: 4px; bottom: 4px; width: 2px; background: linear-gradient(180deg, var(--accent-solid), transparent); border-radius: 2px; }
+        .ch-timeline-scroll { max-height: 320px; overflow-y: auto; padding-right: 6px; }
+        .ch-timeline-scroll::-webkit-scrollbar { width: 5px; }
+        .ch-timeline-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 4px; }
         .ch-tl-item { position: relative; margin-bottom: 12px; }
-        .ch-tl-dot  { position: absolute; left: -15px; top: 7px; width: 8px; height: 8px; border-radius: 50%; border: 2px solid var(--bg-color); }
+        .ch-tl-dot  {
+            position: absolute; left: -26px; top: 2px; width: 19px; height: 19px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center; font-size: 10px;
+            border: 2px solid var(--bg-color); box-shadow: 0 0 0 1px rgba(255,255,255,0.08);
+        }
         .ch-tl-box  {
             background: var(--card-bg); border-radius: 12px; padding: 9px 14px;
             box-shadow: 4px 4px 8px var(--shadow-dark), -4px -4px 8px var(--shadow-light);
+            transition: transform .15s;
         }
+        .ch-tl-box:hover { transform: translateX(2px); }
         .ch-tl-date { font-size: 10px; color: var(--text-muted); margin-bottom: 1px; }
         .ch-tl-text { font-size: 12px; color: var(--text-main); font-weight: 600; }
         .ch-tl-sub  { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
@@ -904,6 +1007,7 @@ $ai_history_payload = [
                             value="<?= htmlspecialchars($search_input) ?>"
                             autocomplete="off" autofocus
                             oninput="this.value = this.value.toUpperCase()"
+                            onfocus="this.select()"
                         >
                         <button type="submit" class="ch-search-btn">Search</button>
                     </div>
@@ -927,7 +1031,7 @@ $ai_history_payload = [
                     <span class="ch-all-avatar"><?= mb_substr($c['customer_name'] ?: '?', 0, 1) ?></span>
                     <span class="ch-all-info">
                         <span class="ch-all-name"><?= htmlspecialchars($c['customer_name'] ?: '(no name)') ?></span>
-                        <span class="ch-all-sub">📞 <?= htmlspecialchars($c['customer_phone']) ?> &nbsp;·&nbsp; No. Customer: <?= htmlspecialchars($c['last_customer_number'] ?: '—') ?> &nbsp;·&nbsp; 👁 <?= $c['visit_count'] ?> kunjungan</span>
+                        <span class="ch-all-sub">📞 <?= htmlspecialchars($c['customer_phone'] ?: '—') ?> &nbsp;·&nbsp; No. Customer: <?= htmlspecialchars($c['last_customer_number'] ?: '—') ?> &nbsp;·&nbsp; 👁 <?= $c['visit_count'] ?> kunjungan &nbsp;·&nbsp; 🛒 <?= (int)$c['total_purchase_count'] ?>x belanja</span>
                     </span>
                     <span class="ch-all-arrow">›</span>
                 </a>
@@ -952,7 +1056,7 @@ $ai_history_payload = [
                 <div class="ch-avatar"><?= mb_substr($customer_data['name'], 0, 1) ?></div>
                 <div class="ch-id-info">
                     <div class="ch-id-name"><?= htmlspecialchars($customer_data['name']) ?></div>
-                    <div class="ch-id-sub">📞 <span><?= htmlspecialchars($customer_data['phone']) ?></span> &nbsp;·&nbsp; No. Customer: <span><?= htmlspecialchars($customer_data['number']) ?></span></div>
+                    <div class="ch-id-sub">📞 <span><?= htmlspecialchars($customer_data['phone']) ?></span> &nbsp;·&nbsp; <span><?= htmlspecialchars($customer_data['number']) ?></span></div>
                 </div>
                 <div class="ch-id-badges">
                     <span class="ch-badge exam">👁 <?= $exam_count ?> examinations</span>
@@ -963,13 +1067,25 @@ $ai_history_payload = [
                 </div>
             </div>
 
-            <div class="ch-group-header" id="bizHeader" onclick="toggleGroup('bizCard','bizHeader')">
-                <div class="ch-group-icon">🏢</div>
-                <div class="ch-group-titles">
-                    <div class="ch-group-title">Business Overview</div>
-                    <div class="ch-group-sub">Ringkasan transaksi, pembayaran, dan riwayat pesanan</div>
+            <div class="ch-tabs">
+                <div class="ch-group-header" id="bizHeader" onclick="chTab('biz')">
+                    <div class="ch-group-icon">🏢</div>
+                    <div class="ch-group-titles">
+                        <div class="ch-group-title">Business Overview</div>
+                        <div class="ch-group-sub">Ringkasan transaksi, pembayaran, dan riwayat pesanan</div>
+                    </div>
+                    <span class="ch-group-arrow">▼</span>
                 </div>
-                <span class="ch-group-arrow">▼</span>
+                <?php if (!empty($examinations)): ?>
+                <div class="ch-group-header" id="custHeader" onclick="chTab('cust')">
+                    <div class="ch-group-icon">🧑</div>
+                    <div class="ch-group-titles">
+                        <div class="ch-group-title">Customer Record</div>
+                        <div class="ch-group-sub">Riwayat pemeriksaan mata, resep, dan analisis AI</div>
+                    </div>
+                    <span class="ch-group-arrow">▼</span>
+                </div>
+                <?php endif; ?>
             </div>
             <div class="ch-card-business ch-collapsed" id="bizCard">
 
@@ -1023,8 +1139,9 @@ $ai_history_payload = [
             </div>
             <div class="ch-analysis-grid">
 
-                <div class="ch-analysis-card">
-                    <div class="ch-analysis-title">📅 Visit Patterns</div>
+                <div class="ch-analysis-card ch-acc-mini" id="biz-visit" data-group="bizsub">
+                    <div class="ch-analysis-title" onclick="accToggle(event,'bizsub','biz-visit')">📅 Visit Patterns <span class="ch-acc-arrow">▼</span></div>
+                    <div class="ch-acc-mini-body">
                     <?php
                     $first_visit = !empty($exam_dates) ? date('d M Y', strtotime(reset($exam_dates))) : '—';
                     $last_visit  = !empty($exam_dates) ? date('d M Y', strtotime(end($exam_dates)))   : '—';
@@ -1034,61 +1151,67 @@ $ai_history_payload = [
                     <div class="ch-analysis-row"><span class="ch-a-key">Average interval</span><span class="ch-a-val"><?= $avg_gap_days !== null ? visit_gap_label($avg_gap_days) : '—' ?></span></div>
                     <div class="ch-analysis-row"><span class="ch-a-key">Shortest interval</span><span class="ch-a-val"><?= !empty($visit_gaps) ? visit_gap_label(min($visit_gaps)) : '—' ?></span></div>
                     <div class="ch-analysis-row"><span class="ch-a-key">Longest interval</span><span class="ch-a-val"><?= !empty($visit_gaps) ? visit_gap_label(max($visit_gaps)) : '—' ?></span></div>
+                    </div>
                 </div>
 
-                <div class="ch-analysis-card">
-                    <div class="ch-analysis-title">💰 Payment Status</div>
+                <div class="ch-analysis-card ch-acc-mini" id="biz-payment" data-group="bizsub">
+                    <div class="ch-analysis-title" onclick="accToggle(event,'bizsub','biz-payment')">💰 Payment Status <span class="ch-acc-arrow">▼</span></div>
+                    <div class="ch-acc-mini-body">
                     <div class="ch-analysis-row"><span class="ch-a-key">Total amount</span><span class="ch-a-val"><?= fmt_idr($total_spent) ?></span></div>
                     <div class="ch-analysis-row"><span class="ch-a-key">Total paid</span><span class="ch-a-val good"><?= fmt_idr($total_paid) ?></span></div>
                     <div class="ch-analysis-row"><span class="ch-a-key">Remaining balance</span><span class="ch-a-val <?= $unpaid_amount>0?'bad':'good' ?>"><?= fmt_idr($unpaid_amount) ?></span></div>
                     <div class="ch-analysis-row"><span class="ch-a-key">Fully paid orders</span><span class="ch-a-val good"><?= $paid_orders ?></span></div>
                     <div class="ch-analysis-row"><span class="ch-a-key">Partial / unpaid</span><span class="ch-a-val <?= ($partial_orders+$unpaid_orders)>0?'warn':'good' ?>"><?= $partial_orders + $unpaid_orders ?></span></div>
+                    </div>
                 </div>
 
                 <?php if (count($rx_trend) >= 2):
                     $fr = $rx_trend[0]; $lr = $rx_trend[count($rx_trend)-1];
                     function rdelta($a,$b){ return ($a===null||$b===null)?null:round($b-$a,2); }
                     function dcls($d){ if($d===null)return''; if($d<0)return'bad'; if($d>0)return'warn'; return'good'; }
-                    function dstr($d){ if($d===null)return'—'; return $d>0?'+'.$d:(string)$d; }
+                    function dstr_short($d){ if($d===null)return'—'; $n=(int)round($d*100); return $n>0?'+'.$n:(string)$n; }
                 ?>
-                <div class="ch-analysis-card">
-                    <div class="ch-analysis-title">👁 Prescription Changes</div>
-                    <table class="ch-rx-tbl">
-                        <thead><tr><th>Eye</th><th>Comp.</th><th>Initial</th><th></th><th>Final</th><th>Δ</th></tr></thead>
-                        <tbody>
+                <div class="ch-analysis-card ch-acc-mini" id="biz-rx" data-group="bizsub">
+                    <div class="ch-analysis-title" onclick="accToggle(event,'bizsub','biz-rx')">👁 Prescription Changes <span class="ch-acc-arrow">▼</span></div>
+                    <div class="ch-acc-mini-body">
+                    <div class="ch-rx-changes-grid">
                         <?php foreach ([
-                            ['OD','SPH',$fr['r_sph'],$lr['r_sph']],
-                            ['OD','CYL',$fr['r_cyl'],$lr['r_cyl']],
-                            ['OS','SPH',$fr['l_sph'],$lr['l_sph']],
-                            ['OS','CYL',$fr['l_cyl'],$lr['l_cyl']],
-                        ] as [$eye,$comp,$from,$to]):
-                            $d = rdelta($from,$to);
-                        ?>
-                        <tr>
-                            <td><?= $eye ?></td><td><?= $comp ?></td>
-                            <td><?= fmt_rx($from) ?></td><td class="rx-arr">→</td>
-                            <td><?= fmt_rx($to) ?></td>
-                            <td class="ch-a-val <?= dcls($d) ?>"><?= dstr($d) ?></td>
-                        </tr>
+                            ['OD (Right)', [['SPH',$fr['r_sph'],$lr['r_sph']], ['CYL',$fr['r_cyl'],$lr['r_cyl']]]],
+                            ['OS (Left)',  [['SPH',$fr['l_sph'],$lr['l_sph']], ['CYL',$fr['l_cyl'],$lr['l_cyl']]]],
+                        ] as [$eye_label, $rows]): ?>
+                        <div class="ch-rx-eye-card">
+                            <div class="ch-rx-eye-title"><?= $eye_label ?></div>
+                            <?php foreach ($rows as [$comp, $from, $to]):
+                                $d = rdelta($from, $to);
+                            ?>
+                            <div class="ch-rx-change-row">
+                                <span class="ch-rx-comp"><?= $comp ?></span>
+                                <span class="ch-rx-from"><?= fmt_rx_short($from) ?></span>
+                                <span class="rx-arr">→</span>
+                                <span class="ch-rx-to"><?= fmt_rx_short($to) ?></span>
+                                <span class="ch-rx-delta <?= dcls($d) ?>"><?= dstr_short($d) ?></span>
+                            </div>
+                            <?php endforeach; ?>
+                        </div>
                         <?php endforeach; ?>
-                        </tbody>
-                    </table>
+                    </div>
+                    </div>
                 </div>
                 <?php endif; ?>
 
                 <?php
                 $events = [];
                 foreach ($examinations as $e) $events[] = ['date'=>$e['examination_date'],'type'=>'exam','label'=>'Examination','sub'=>$e['examination_code']];
-                foreach ($orders as $o)       $events[] = ['date'=>$o['order_date'],'type'=>'order','label'=>$o['invoice_number'],'sub'=>fmt_idr($o['total_amount'])];
+                foreach ($orders as $o)       $events[] = ['date'=>$o['order_date'],'type'=>'order','label'=>'No. Customer: '.($o['customer_number'] ?? '—'),'sub'=>fmt_idr($o['total_amount'])];
                 usort($events, fn($a,$b)=>strcmp($b['date'],$a['date']));
-                $events = array_slice($events, 0, 6);
                 ?>
-                <div class="ch-analysis-card">
-                    <div class="ch-analysis-title">🕐 Recent Activities</div>
-                    <div class="ch-timeline">
+                <div class="ch-analysis-card ch-acc-mini" id="biz-recent" data-group="bizsub">
+                    <div class="ch-analysis-title" onclick="accToggle(event,'bizsub','biz-recent')">🕐 Recent Activities <span class="ch-acc-arrow">▼</span></div>
+                    <div class="ch-acc-mini-body">
+                    <div class="ch-timeline ch-timeline-scroll">
                         <?php foreach ($events as $ev): ?>
                         <div class="ch-tl-item">
-                            <div class="ch-tl-dot" style="background:<?= $ev['type']==='exam'?'#3b82f6':'var(--accent-solid)' ?>"></div>
+                            <div class="ch-tl-dot" style="background:<?= $ev['type']==='exam'?'#3b82f6':'var(--accent-solid)' ?>"><?= $ev['type']==='exam'?'👁':'🛒' ?></div>
                             <div class="ch-tl-box">
                                 <div class="ch-tl-date"><?= date('d M Y', strtotime($ev['date'])) ?></div>
                                 <div class="ch-tl-text"><?= htmlspecialchars($ev['label']) ?></div>
@@ -1096,6 +1219,7 @@ $ai_history_payload = [
                             </div>
                         </div>
                         <?php endforeach; ?>
+                    </div>
                     </div>
                 </div>
 
@@ -1117,8 +1241,8 @@ $ai_history_payload = [
                 $s_label = order_status_label($o['order_status']);
                 $fill_color = $o_pct>=100 ? 'var(--success)' : ($o_pct>0 ? 'var(--warning)' : 'var(--danger)');
             ?>
-            <div class="ch-acc" id="ocard-<?= $oi ?>">
-                <div class="ch-acc-header" onclick="toggle('ocard-<?= $oi ?>')">
+            <div class="ch-acc" id="ocard-<?= $oi ?>" data-group="orders">
+                <div class="ch-acc-header" onclick="accToggle(event,'orders','ocard-<?= $oi ?>')">
                     <div style="width:8px;height:8px;border-radius:50%;background:<?= $s_color ?>;flex-shrink:0;box-shadow:0 0 6px <?= $s_color ?>"></div>
                     <span class="ch-inv"><?= htmlspecialchars($o['invoice_number']) ?></span>
                     <span style="font-size:11px;color:var(--text-muted)"><?= date('d M Y', strtotime($o['order_date'])) ?></span>
@@ -1152,17 +1276,6 @@ $ai_history_payload = [
             </div><!-- /.ch-card-business -->
 
             <?php if (!empty($examinations)): ?>
-            <div class="ch-group-header" id="custHeader" onclick="toggleGroup('custCard','custHeader')">
-                <div class="ch-group-icon">🧑</div>
-                <div class="ch-group-titles">
-                    <div class="ch-group-title">Customer Record</div>
-                    <div class="ch-group-sub">Riwayat pemeriksaan mata, resep, dan analisis AI</div>
-                </div>
-                <button type="button" class="ch-ai-btn" id="ch_pdf_btn" style="background:linear-gradient(135deg,#2c3e50,#4a5568)" onclick="event.stopPropagation(); downloadCustomerPdf()">
-                    <span id="ch_pdf_btn_label">📄 Download PDF</span>
-                </button>
-                <span class="ch-group-arrow">▼</span>
-            </div>
             <div class="ch-card-customer ch-collapsed" id="custCard">
 
             <?php if (count($rx_trend) >= 2): ?>
@@ -1202,8 +1315,8 @@ $ai_history_payload = [
                 $has_add          = !empty(trim($e['new_r_add'] ?? '')) || !empty(trim($e['new_l_add'] ?? ''));
                 $show_lens_req    = !empty($e['need_distance']) && !empty($e['need_near']) && $has_add;
             ?>
-            <div class="ch-acc" id="ecard-<?= $idx ?>">
-                <div class="ch-acc-header" onclick="toggle('ecard-<?= $idx ?>')">
+            <div class="ch-acc" id="ecard-<?= $idx ?>" data-group="exams">
+                <div class="ch-acc-header" onclick="accToggle(event,'exams','ecard-<?= $idx ?>')">
                     <span class="ch-date-badge"><?= date('d M Y', strtotime($e['examination_date'])) ?></span>
                     <span class="ch-code"><?= htmlspecialchars($e['examination_code']) ?></span>
                     <?php if ($e['invoice_number'] && $e['invoice_number'] !== '00'): ?>
@@ -1217,45 +1330,42 @@ $ai_history_payload = [
                     <span class="ch-acc-arrow">▼</span>
                 </div>
                 <div class="ch-acc-body">
-                    <table class="ch-rx-table">
-                        <thead>
-                            <tr>
-                                <th>Eye</th>
-                                <th>Old SPH</th><th>Old CYL</th><th>Old AX</th>
-                                <th style="color:#333">→</th>
-                                <th>New SPH</th><th>New CYL</th><th>New AX</th><th>ADD</th><th>VA</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td>OD (Right)</td>
-                                <?= rx_td_ch($e['old_r_sph']) ?><?= rx_td_ch($e['old_r_cyl']) ?>
-                                <td><?= htmlspecialchars($e['old_r_ax'] ?: '—') ?></td>
-                                <td class="rx-arr">→</td>
-                                <?= rx_td_ch($e['new_r_sph']) ?><?= rx_td_ch($e['new_r_cyl']) ?>
-                                <td><?= htmlspecialchars($e['new_r_ax'] ?: '—') ?></td>
-                                <?= rx_td_ch($e['new_r_add']) ?>
-                                <td><?= htmlspecialchars($e['new_r_visus'] ?: '—') ?></td>
-                            </tr>
-                            <tr>
-                                <td>OS (Left)</td>
-                                <?= rx_td_ch($e['old_l_sph']) ?><?= rx_td_ch($e['old_l_cyl']) ?>
-                                <td><?= htmlspecialchars($e['old_l_ax'] ?: '—') ?></td>
-                                <td class="rx-arr">→</td>
-                                <?= rx_td_ch($e['new_l_sph']) ?><?= rx_td_ch($e['new_l_cyl']) ?>
-                                <td><?= htmlspecialchars($e['new_l_ax'] ?: '—') ?></td>
-                                <?= rx_td_ch($e['new_l_add']) ?>
-                                <td><?= htmlspecialchars($e['new_l_visus'] ?: '—') ?></td>
-                            </tr>
-                        </tbody>
-                    </table>
+                    <div class="ch-rx-changes-grid">
+                        <?php foreach ([
+                            ['OD (Right)', $e['old_r_sph'], $e['old_r_cyl'], $e['old_r_ax'], $e['new_r_sph'], $e['new_r_cyl'], $e['new_r_ax'], $e['new_r_add'], $e['new_r_visus']],
+                            ['OS (Left)',  $e['old_l_sph'], $e['old_l_cyl'], $e['old_l_ax'], $e['new_l_sph'], $e['new_l_cyl'], $e['new_l_ax'], $e['new_l_add'], $e['new_l_visus']],
+                        ] as [$eye_label, $osph, $ocyl, $oax, $nsph, $ncyl, $nax, $nadd, $nva]): ?>
+                        <div class="ch-rx-eye-card">
+                            <div class="ch-rx-eye-title"><?= $eye_label ?></div>
+                            <div class="ch-rx-change-row">
+                                <span class="ch-rx-comp">SPH</span>
+                                <span class="ch-rx-from"><?= fmt_rx_short($osph) ?></span>
+                                <span class="rx-arr">→</span>
+                                <span class="ch-rx-to"><?= fmt_rx_short($nsph) ?></span>
+                            </div>
+                            <div class="ch-rx-change-row">
+                                <span class="ch-rx-comp">CYL</span>
+                                <span class="ch-rx-from"><?= fmt_rx_short($ocyl) ?></span>
+                                <span class="rx-arr">→</span>
+                                <span class="ch-rx-to"><?= fmt_rx_short($ncyl) ?></span>
+                            </div>
+                            <div class="ch-rx-badges">
+                                <span class="ch-rx-badge">AX <b><?= htmlspecialchars($nax ?: '—') ?></b></span>
+                                <span class="ch-rx-badge">ADD <b><?= fmt_rx_short($nadd) ?></b></span>
+                                <span class="ch-rx-badge">VA <b><?= htmlspecialchars($nva ?: '—') ?></b></span>
+                            </div>
+                        </div>
+                        <?php endforeach; ?>
+                    </div>
 
                     <div class="ch-meta-wrap">
                         <?php if ($e['pd_dist']): ?><div class="ch-meta-chip"><span class="ch-meta-label">PD Distance</span><span class="ch-meta-val"><?= htmlspecialchars($e['pd_dist']) ?></span></div><?php endif; ?>
                         <?php if ($e['ucva_r']||$e['ucva_l']): ?><div class="ch-meta-chip"><span class="ch-meta-label">UCVA OD/OS</span><span class="ch-meta-val"><?= htmlspecialchars($e['ucva_r']?:'—') ?> / <?= htmlspecialchars($e['ucva_l']?:'—') ?></span></div><?php endif; ?>
                         <?php if ($e['age']): ?><div class="ch-meta-chip"><span class="ch-meta-label">Age at Exam</span><span class="ch-meta-val"><?= (int)$e['age'] ?> years old</span></div><?php endif; ?>
-                        <div class="ch-meta-chip"><span class="ch-meta-label">Visual Habit</span><span class="ch-meta-val"><?= $e['visual_habit'] ? 'Near' : 'Distance' ?></span></div>
-                        <?php if ($e['digital_usage']): ?><div class="ch-meta-chip"><span class="ch-meta-label">Digital</span><span class="ch-meta-val" style="color:var(--warning)">High</span></div><?php endif; ?>
+                        <div class="ch-meta-chip"><span class="ch-meta-label">Visual Habit</span><span class="ch-meta-val">🏠 <?= visual_habit_label($e['visual_habit']) ?></span></div>
+                        <?php $du = (int)($e['digital_usage'] ?? 0); if ($du): ?>
+                        <div class="ch-meta-chip"><span class="ch-meta-label">Digital Usage</span><span class="ch-meta-val" style="color:<?= $du>=3?'var(--danger)':($du==2?'var(--warning)':'var(--success)') ?>">📱 <?= digital_usage_label($du) ?></span></div>
+                        <?php endif; ?>
                         <?php if ($e['lens_modification']): ?><div class="ch-meta-chip"><span class="ch-meta-label">Modification</span><span class="ch-meta-val" style="color:var(--warning)">Yes</span></div><?php endif; ?>
                     </div>
 
@@ -1346,17 +1456,41 @@ $ai_history_payload = [
         const base = d.toLocaleDateString('en-US', {day:'2-digit',month:'short',year:'2-digit'});
         return t.label === 'old' ? base + ' (Lama)' : base;
     });
-    const grid  = 'rgba(255,255,255,0.04)';
-    const ticks = '#555';
+    const grid  = 'rgba(255,255,255,0.05)';
+    const ticks = '#666';
+
+    function rxShort(v) {
+        if (v === null || v === undefined) return '—';
+        const n = Math.round(v * 100);
+        return n > 0 ? '+' + n : String(n);
+    }
+    function gradientFill(ctx, color) {
+        const g = ctx.createLinearGradient(0, 0, 0, 260);
+        g.addColorStop(0, color.replace('CC', '33'));
+        g.addColorStop(1, color.replace('CC', '00'));
+        return g;
+    }
+
+    const tooltipDefaults = {
+        backgroundColor: '#1a1d21', borderColor: 'rgba(255,255,255,0.08)', borderWidth: 1,
+        titleColor: '#e2e8f0', bodyColor: '#a0aec0', padding: 10, cornerRadius: 10,
+        titleFont: { size: 11, weight: '700' }, bodyFont: { size: 11 },
+        callbacks: { label: (ctx) => ` ${ctx.dataset.label}: ${rxShort(ctx.raw)}` }
+    };
     const defaults = {
         responsive: true, maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
         plugins: {
-            legend: { labels: { color: '#a0aec0', font: {size:11} } },
-            tooltip: { backgroundColor: '#2a2e32', borderColor: '#3a3e42', borderWidth: 1, titleColor: '#e2e8f0', bodyColor: '#a0aec0' }
+            legend: { labels: { color: '#a0aec0', font: {size:11}, usePointStyle: true, pointStyle: 'circle', padding: 14 } },
+            tooltip: tooltipDefaults
+        },
+        elements: {
+            point: { radius: 4, hoverRadius: 6, borderWidth: 2, backgroundColor: '#1a1d21' },
+            line: { borderJoinStyle: 'round', borderCapStyle: 'round' }
         },
         scales: {
-            x: { grid:{color:grid}, ticks:{color:ticks,font:{size:10}}, border:{color:grid} },
-            y: { grid:{color:grid}, ticks:{color:ticks,font:{size:11}}, border:{color:grid} }
+            x: { grid:{color:grid, drawTicks:false}, ticks:{color:ticks,font:{size:10}}, border:{color:grid} },
+            y: { grid:{color:grid, drawTicks:false}, ticks:{color:ticks,font:{size:11}, callback:(v)=>rxShort(v)}, border:{display:false} }
         }
     };
     new Chart(document.getElementById('chartSph'), {
@@ -1364,22 +1498,22 @@ $ai_history_payload = [
         data: {
             labels,
             datasets: [
-                { label:'OD SPH', data:trend.map(t=>t.r_sph), borderColor:'#00d4ff', backgroundColor:'rgba(0,212,255,0.08)', pointBackgroundColor:'#00d4ff', tension:.35, borderWidth:2 },
-                { label:'OS SPH', data:trend.map(t=>t.l_sph), borderColor:'#a855f7', backgroundColor:'rgba(168,85,247,0.08)', pointBackgroundColor:'#a855f7', tension:.35, borderWidth:2 }
+                { label:'OD SPH', data:trend.map(t=>t.r_sph), borderColor:'#00d4ff', backgroundColor:(c)=>gradientFill(c.chart.ctx,'#00d4ffCC'), pointBackgroundColor:'#00d4ff', pointBorderColor:'#00d4ff', fill:true, tension:.4, borderWidth:2.5 },
+                { label:'OS SPH', data:trend.map(t=>t.l_sph), borderColor:'#a855f7', backgroundColor:(c)=>gradientFill(c.chart.ctx,'#a855f7CC'), pointBackgroundColor:'#a855f7', pointBorderColor:'#a855f7', fill:true, tension:.4, borderWidth:2.5 }
             ]
         },
-        options: JSON.parse(JSON.stringify(defaults))
+        options: defaults
     });
     new Chart(document.getElementById('chartCyl'), {
         type: 'line',
         data: {
             labels,
             datasets: [
-                { label:'OD CYL', data:trend.map(t=>t.r_cyl), borderColor:'#00ffaa', backgroundColor:'rgba(0,255,170,0.08)', pointBackgroundColor:'#00ffaa', tension:.35, borderWidth:2 },
-                { label:'OS CYL', data:trend.map(t=>t.l_cyl), borderColor:'#f1c40f', backgroundColor:'rgba(241,196,15,0.08)', pointBackgroundColor:'#f1c40f', tension:.35, borderWidth:2 }
+                { label:'OD CYL', data:trend.map(t=>t.r_cyl), borderColor:'#00ffaa', backgroundColor:(c)=>gradientFill(c.chart.ctx,'#00ffaaCC'), pointBackgroundColor:'#00ffaa', pointBorderColor:'#00ffaa', fill:true, tension:.4, borderWidth:2.5 },
+                { label:'OS CYL', data:trend.map(t=>t.l_cyl), borderColor:'#f1c40f', backgroundColor:(c)=>gradientFill(c.chart.ctx,'#f1c40fCC'), pointBackgroundColor:'#f1c40f', pointBorderColor:'#f1c40f', fill:true, tension:.4, borderWidth:2.5 }
             ]
         },
-        options: JSON.parse(JSON.stringify(defaults))
+        options: defaults
     });
 })();
 </script>
@@ -1487,6 +1621,11 @@ $ai_history_payload = [
                     <p class="ch-ai-meta">model: ${escHtml(data.meta.model)} · tokens in/out: ${data.meta.input_tokens || '?'}/${data.meta.output_tokens || '?'}</p>
                 `;
             }
+
+            // Auto-generate the PDF right after a successful analysis, then show
+            // it in a fly-window (no separate download button needed anymore).
+            label.innerHTML = '<span class="ch-ai-spinner"></span> MEMBUAT PDF...';
+            await generateAndShowPdf(data.analysis);
         } catch (err) {
             document.getElementById('ch_ai_result').innerHTML = `
                 <div class="ch-ai-error">
@@ -1499,57 +1638,110 @@ $ai_history_payload = [
             label.innerHTML = originalLabel;
         }
     };
+
+    window.generateAndShowPdf = async function(analysis) {
+        const matchKey = <?= json_encode($customer_data['match_key'] ?? '') ?>;
+        if (!matchKey) return;
+
+        try {
+            const body = new URLSearchParams();
+            body.set('match_key', matchKey);
+            if (analysis) body.set('analysis_json', JSON.stringify(analysis));
+
+            const res = await fetch('generate_customer_pdf.php', { method: 'POST', body });
+            const data = await res.json().catch(() => ({ success: false }));
+
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || `Gagal membuat PDF (status ${res.status})`);
+            }
+
+            openPdfFlyWindow(data.file_path);
+        } catch (err) {
+            document.getElementById('ch_ai_result').innerHTML += `
+                <div class="ch-ai-error" style="margin-top:10px">
+                    <strong>⚠ PDF GAGAL DIBUAT</strong><br>
+                    <small>${escHtml(err.message)}</small>
+                </div>
+            `;
+        }
+    };
+
+    window.openPdfFlyWindow = function(filePath) {
+        let overlay = document.getElementById('ch_pdf_fly');
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.id = 'ch_pdf_fly';
+            overlay.className = 'ch-pdf-fly-overlay';
+            overlay.innerHTML = `
+                <div class="ch-pdf-fly-window">
+                    <div class="ch-pdf-fly-bar">
+                        <span>📄 Customer Record PDF</span>
+                        <span>
+                            <a id="ch_pdf_fly_open" href="#" target="_blank" class="ch-pdf-fly-btn">Buka Tab Baru</a>
+                            <button type="button" class="ch-pdf-fly-btn" onclick="document.getElementById('ch_pdf_fly').classList.remove('open')">✕ Tutup</button>
+                        </span>
+                    </div>
+                    <iframe id="ch_pdf_fly_frame" class="ch-pdf-fly-iframe"></iframe>
+                </div>
+            `;
+            document.body.appendChild(overlay);
+        }
+        document.getElementById('ch_pdf_fly_frame').src = filePath + '?t=' + Date.now();
+        document.getElementById('ch_pdf_fly_open').href = filePath;
+        overlay.classList.add('open');
+    };
 })();
 </script>
 <?php endif; ?>
 
 <script>
+
 function toggle(id) {
     const el = document.getElementById(id);
     if (el) el.classList.toggle('open');
 }
 
-function toggleGroup(cardId, headerId) {
-    const card = document.getElementById(cardId);
-    const header = document.getElementById(headerId);
-    if (card) card.classList.toggle('ch-collapsed');
-    if (header) header.classList.toggle('open');
+// Accordion behavior: a single click opens this card and closes its siblings
+// in the same group (default collapsed). A double-click/double-tap opens it
+// WITHOUT closing the others, so more than one card can stay open at once.
+function accToggle(e, group, id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const isMulti = e && e.detail >= 2;
+    const willOpen = !el.classList.contains('open');
+    if (willOpen && !isMulti) {
+        document.querySelectorAll('[data-group="' + group + '"]').forEach(function (sib) {
+            if (sib !== el) sib.classList.remove('open');
+        });
+    }
+    el.classList.toggle('open');
 }
 
-async function downloadCustomerPdf() {
-    const btn = document.getElementById('ch_pdf_btn');
-    const label = document.getElementById('ch_pdf_btn_label');
-    const original = label.innerHTML;
-    const phone = <?= json_encode($customer_data['phone'] ?? '') ?>;
+// Tab behavior for Business Overview / Customer Record: clicking one tab
+// shows its content below and hides the other tab's content. Clicking the
+// currently-open tab again collapses it.
+function chTab(which) {
+    const tabs = {
+        biz:  { cardId: 'bizCard',  headerId: 'bizHeader' },
+        cust: { cardId: 'custCard', headerId: 'custHeader' }
+    };
+    const target = tabs[which];
+    if (!target) return;
+    const targetCard = document.getElementById(target.cardId);
+    if (!targetCard) return;
+    const wasOpen = !targetCard.classList.contains('ch-collapsed');
 
-    if (!phone || phone === '—') {
-        alert('Nomor telepon customer tidak ditemukan, PDF tidak bisa dibuat.');
-        return;
-    }
+    Object.keys(tabs).forEach(function (key) {
+        const card = document.getElementById(tabs[key].cardId);
+        const header = document.getElementById(tabs[key].headerId);
+        if (card) card.classList.add('ch-collapsed');
+        if (header) header.classList.remove('open');
+    });
 
-    btn.disabled = true;
-    label.innerHTML = '<span class="ch-ai-spinner"></span> MEMBUAT PDF...';
-
-    try {
-        const body = new URLSearchParams();
-        body.set('phone', phone);
-        if (window.__chLastAiAnalysis) {
-            body.set('analysis_json', JSON.stringify(window.__chLastAiAnalysis));
-        }
-
-        const res = await fetch('generate_customer_pdf.php', { method: 'POST', body });
-        const data = await res.json().catch(() => ({ success: false }));
-
-        if (!res.ok || !data.success) {
-            throw new Error(data.error || `Gagal membuat PDF (status ${res.status})`);
-        }
-
-        window.open(data.file_path, '_blank');
-    } catch (err) {
-        alert('Gagal membuat PDF: ' + err.message);
-    } finally {
-        btn.disabled = false;
-        label.innerHTML = original;
+    if (!wasOpen) {
+        targetCard.classList.remove('ch-collapsed');
+        const targetHeader = document.getElementById(target.headerId);
+        if (targetHeader) targetHeader.classList.add('open');
     }
 }
 
