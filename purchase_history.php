@@ -263,14 +263,52 @@
     $r3 = $conn->query("SELECT invoice_number, buy_price FROM custom_frames");
     if ($r3) { while ($r = $r3->fetch_assoc()) { $customMapEarly[$r['invoice_number']] = (int)$r['buy_price']; } $r3->free(); }
 
+    // ── Lens lab/stock lead times (from settings table) ────────────────
+    // Used to determine whether a lens with entries in BOTH 'stock' and 'lab'
+    // (e.g. Kryptok — HMC) was actually ordered as stock or lab, based on the
+    // gap in days between order_date and due_date, instead of always
+    // defaulting to 'stock'.
+    $phLensLeadLab   = null;
+    $phLensLeadStock = null;
+    $rLead = $conn->query("SELECT setting_key, setting_value FROM settings WHERE setting_key IN ('lens_lab_lead_time_days', 'lens_stock_lead_time_days')");
+    if ($rLead) {
+        while ($rowLead = $rLead->fetch_assoc()) {
+            if ($rowLead['setting_key'] === 'lens_lab_lead_time_days') {
+                $phLensLeadLab = (int)$rowLead['setting_value'];
+            } elseif ($rowLead['setting_key'] === 'lens_stock_lead_time_days') {
+                $phLensLeadStock = (int)$rowLead['setting_value'];
+            }
+        }
+        $rLead->free();
+    }
+
+    // Determines the lens source ('lab' or 'stock') for an order based on the
+    // gap (in days) between order_date and due_date, matched against the
+    // lead-time settings above. Returns null when it can't be determined
+    // (missing dates or no exact match), so callers can fall back gracefully.
+    function phDetermineLensSourceType($orderDate, $dueDate, $leadLab, $leadStock) {
+        if (empty($orderDate) || empty($dueDate)) return null;
+        $diffDays = (int)round((strtotime($dueDate) - strtotime($orderDate)) / 86400);
+        if ($leadLab !== null && $diffDays === $leadLab) return 'lab';
+        if ($leadStock !== null && $diffDays === $leadStock) return 'stock';
+        return null;
+    }
+
     // Full lens lookup (cost, selling price, stock/lab source) by matching a
     // "Category — Type" (or "Category / Type") label against lense_prices.json.
-    // Matching is separator/case tolerant. Whole 'stock' source is tried first —
-    // if it has ANY match, that's used; only if 'stock' has no match at all does
-    // 'lab' get tried. Within whichever single source ends up being used, if more
-    // than one entry normalizes to the same label, the cheapest (lowest selling
-    // price) one is picked.
-    function phLensLookupFull($label) {
+    // Matching is separator/case tolerant.
+    //
+    // A lens label can exist in BOTH 'stock' and 'lab' (e.g. Kryptok — HMC),
+    // each with its own cost. Which one applies depends on how THIS order was
+    // actually fulfilled, not just on which section happens to list the label.
+    // If $preferredSource ('stock' or 'lab', usually derived from the
+    // order_date→due_date gap vs. the lead-time settings) is given and has a
+    // match, that source is used. Otherwise, 'stock' is tried first, then
+    // 'lab', as a fallback when the source can't be determined. Within
+    // whichever single source ends up being used, if more than one entry
+    // normalizes to the same label, the cheapest (lowest selling price) one
+    // is picked.
+    function phLensLookupFull($label, $preferredSource = null) {
         $label = trim($label);
         if ($label === '') return null;
         $jsonPath = __DIR__ . '/data_json/lense_prices.json';
@@ -284,7 +322,13 @@
         };
         $target = $normalize($label);
 
-        foreach (['stock', 'lab'] as $lt) {
+        // Try the preferred source first (if valid and it has a match).
+        $sourceOrder = ['stock', 'lab'];
+        if ($preferredSource === 'stock' || $preferredSource === 'lab') {
+            $sourceOrder = array_unique(array_merge([$preferredSource], $sourceOrder));
+        }
+
+        foreach ($sourceOrder as $lt) {
             if (empty($data[$lt])) continue;
             $matches = [];
             foreach ($data[$lt] as $cat => $types) {
@@ -311,7 +355,8 @@
     foreach ($orders as $o) {
         $oAmt = (int)$o['total_amount'];
         $oPkg = (int)($o['packaging_cost'] ?? 19500);
-        $oLensLookup = phLensLookupFull($o['lens_name'] ?? '');
+        $oPreferredType = phDetermineLensSourceType($o['order_date'] ?? null, $o['due_date'] ?? null, $phLensLeadLab, $phLensLeadStock);
+        $oLensLookup = phLensLookupFull($o['lens_name'] ?? '', $oPreferredType);
         $oLc  = $oLensLookup ? $oLensLookup['cost'] : 0;
         $oUfc = strtoupper(trim($o['frame_ufc'] ?? ''));
         $oFc  = (strlen($oUfc) > 0 && is_numeric($oUfc[0]))
@@ -1494,13 +1539,14 @@
             }
 
             // ── Lens cost ─────────────────────────────────────────────
-            // Resolved via phLensLookupFull() — matches the JSON exactly (prefers
-            // a "stock" entry over "lab" when a label exists in both, otherwise
-            // falls back to "lab"), instead of guessing stock/lab from the
-            // order_date→due_date gap (that guess could pick the wrong price
-            // entirely, e.g. showing a lab-only lens's far higher lab cost when
-            // the order was actually a stock lens, or vice versa).
-            $lensLookup = phLensLookupFull($lensName);
+            // Resolved via phLensLookupFull(). When a lens label exists in
+            // BOTH 'stock' and 'lab' (e.g. Kryptok — HMC), the correct source
+            // is determined from the order_date→due_date gap matched against
+            // the lens_lab_lead_time_days / lens_stock_lead_time_days settings.
+            // Falls back to "stock" then "lab" only if the gap doesn't match
+            // either lead time exactly.
+            $lensPreferredType = phDetermineLensSourceType($o['order_date'] ?? null, $o['due_date'] ?? null, $phLensLeadLab, $phLensLeadStock);
+            $lensLookup = phLensLookupFull($lensName, $lensPreferredType);
             $lensCost   = $lensLookup ? $lensLookup['cost'] : 0;
             $lensSource = $lensLookup ? $lensLookup['label'] : '—';
             $lensType   = $lensLookup ? $lensLookup['source'] : 'stock';
