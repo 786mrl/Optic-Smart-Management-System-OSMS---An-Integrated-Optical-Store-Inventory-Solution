@@ -200,7 +200,11 @@ function fmt_rx($v) {
     $f = (float)$v;
     return $f > 0 ? '+' . $v : $v;
 }
-function rx_float($v) { return ($v === null || $v === '') ? null : (float)$v; }
+// Raw prescription values are stored using the optician shorthand
+// convention (×100, no decimal point — e.g. "+50" means +0.50 D,
+// "-100" means -1.00 D). Convert to the true decimal diopter value here
+// so every downstream calculation/display works with real numbers.
+function rx_float($v) { return ($v === null || $v === '') ? null : ((float)$v) / 100; }
 
 // Shorthand Rx notation used by the optician convention: -1.00 -> "-100",
 // -0.25 -> "-25", +0.75 -> "+75" (no decimal point, value x100).
@@ -421,6 +425,8 @@ $ai_history_payload = [
         .ch-id-name { font-size: 17px; font-weight: 700; color: var(--text-main); margin-bottom: 4px; }
         .ch-id-sub  { font-size: 12px; color: var(--text-muted); }
         .ch-id-sub span { color: var(--text-color); }
+        /* Customer number sits on its own line below the phone number. */
+        .ch-id-number { margin-top: 3px; }
         .ch-id-badges { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; margin-left: auto; }
         .ch-badge {
             display: inline-flex; align-items: center; gap: 5px;
@@ -625,8 +631,20 @@ $ai_history_payload = [
         }
 
         /* ── Chart cards ─────────────────────────────────────────────── */
-        /* Each prescription trend chart takes the full row width. */
-        .ch-chart-grid { display: grid; grid-template-columns: 1fr; gap: 14px; margin-bottom: 4px; }
+        /* Each component (SPH, CYL) gets a colored group heading; within a
+           group, the Right (OD) and Left (OS) eye charts sit side by side. */
+        .ch-chart-group { margin-bottom: 14px; }
+        .ch-chart-group-title {
+            font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: 1.2px;
+            margin-bottom: 10px; -webkit-background-clip: text; background-clip: text; color: transparent;
+        }
+        .ch-chart-group-title.sph { background-image: linear-gradient(90deg, #00d4ff, #a855f7); }
+        .ch-chart-group-title.cyl { background-image: linear-gradient(90deg, #fb923c, #f43f5e); }
+        .ch-chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 4px; }
+        @media(max-width:680px) { .ch-chart-grid { grid-template-columns: 1fr; } }
+        /* Per-eye SPH/CYL data tables sit two-up (OD next to OS). */
+        .ch-rx-table-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+        @media(max-width:680px) { .ch-rx-table-grid { grid-template-columns: 1fr; } }
         .ch-chart-card {
             background: var(--bg-color); border-radius: 18px; padding: 18px 20px;
             box-shadow: 8px 8px 16px var(--shadow-dark), -8px -8px 16px var(--shadow-light);
@@ -724,8 +742,7 @@ $ai_history_payload = [
         .ch-inv  { font-size: 12px; font-weight: 700; color: var(--text-color); font-family: monospace; }
 
         /* Rx table */
-        .ch-rx-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 14px; }
-        .ch-rx-table th {
+        .ch-rx-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 14px; }        .ch-rx-table th {
             font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px;
             color: var(--text-muted); padding: 7px 8px;
             background: var(--card-bg); border-bottom: 1px solid rgba(255,255,255,0.04); text-align: center;
@@ -1056,7 +1073,8 @@ $ai_history_payload = [
                 <div class="ch-avatar"><?= mb_substr($customer_data['name'], 0, 1) ?></div>
                 <div class="ch-id-info">
                     <div class="ch-id-name"><?= htmlspecialchars($customer_data['name']) ?></div>
-                    <div class="ch-id-sub">📞 <span><?= htmlspecialchars($customer_data['phone']) ?></span> &nbsp;·&nbsp; <span><?= htmlspecialchars($customer_data['number']) ?></span></div>
+                    <div class="ch-id-sub">📞 <span><?= htmlspecialchars($customer_data['phone']) ?></span></div>
+                    <div class="ch-id-sub ch-id-number"><span><?= htmlspecialchars($customer_data['number']) ?></span></div>
                 </div>
                 <div class="ch-id-badges">
                     <span class="ch-badge exam">👁 <?= $exam_count ?> examinations</span>
@@ -1283,14 +1301,97 @@ $ai_history_payload = [
                 <span class="ch-section-title">Prescription Trend</span>
                 <span class="ch-section-count">OD &amp; OS · New Rx</span>
             </div>
-            <div class="ch-chart-grid">
-                <div class="ch-chart-card">
-                    <div class="ch-chart-title">SPH — Right (OD) &amp; Left (OS)</div>
-                    <div class="ch-chart-wrap"><canvas id="chartSph"></canvas></div>
+            <div class="ch-chart-group">
+                <div class="ch-chart-group-title sph">Sphere (SPH)</div>
+                <div class="ch-chart-grid">
+                    <div class="ch-chart-card">
+                        <div class="ch-chart-title" style="color:#22c55e">Right Eye (OD)</div>
+                        <div class="ch-chart-wrap"><canvas id="chartSphOd"></canvas></div>
+                    </div>
+                    <div class="ch-chart-card">
+                        <div class="ch-chart-title" style="color:#eab308">Left Eye (OS)</div>
+                        <div class="ch-chart-wrap"><canvas id="chartSphOs"></canvas></div>
+                    </div>
                 </div>
-                <div class="ch-chart-card">
-                    <div class="ch-chart-title">CYL — Right (OD) &amp; Left (OS)</div>
-                    <div class="ch-chart-wrap"><canvas id="chartCyl"></canvas></div>
+            </div>
+            <div class="ch-chart-group">
+                <div class="ch-chart-group-title cyl">Cylinder (CYL)</div>
+                <div class="ch-chart-grid">
+                    <div class="ch-chart-card">
+                        <div class="ch-chart-title" style="color:#6366f1">Right Eye (OD)</div>
+                        <div class="ch-chart-wrap"><canvas id="chartCylOd"></canvas></div>
+                    </div>
+                    <div class="ch-chart-card">
+                        <div class="ch-chart-title" style="color:#14b8a6">Left Eye (OS)</div>
+                        <div class="ch-chart-wrap"><canvas id="chartCylOs"></canvas></div>
+                    </div>
+                </div>
+            </div>
+
+            <?php
+            // Per-eye data tables built from the same $rx_trend points used by
+            // the charts above, so the figures always match. Values use the
+            // same optician shorthand as fmt_rx_short() (×100, no decimal
+            // point — e.g. "+50" means +0.50 D).
+            function fmt_rx_short_cell($v) {
+                if ($v === null || $v === '') return '<td class="rx-z">—</td>';
+                $f = (float)$v;
+                if (abs($f) < 0.001) return '<td class="rx-z">0</td>';
+                $cls = $f > 0 ? 'rx-p' : 'rx-n';
+                return '<td class="' . $cls . '">' . fmt_rx_short($f) . '</td>';
+            }
+            function rx_trend_date_label($point) {
+                $d = date('d M y', strtotime($point['date']));
+                return $point['label'] === 'old' ? $d . ' (Lama)' : $d;
+            }
+            $rx_trend_desc = array_reverse($rx_trend); // newest first, like the exam list below
+            ?>
+            <div class="ch-rx-table-grid">
+                <div>
+                    <div class="ch-chart-title">SPH — Right (OD)</div>
+                    <table class="ch-rx-table">
+                        <thead><tr><th>Date</th><th>SPH</th></tr></thead>
+                        <tbody>
+                            <?php foreach ($rx_trend_desc as $point): ?>
+                            <tr><td><?= htmlspecialchars(rx_trend_date_label($point)) ?></td><?= fmt_rx_short_cell($point['r_sph']) ?></tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+                <div>
+                    <div class="ch-chart-title">SPH — Left (OS)</div>
+                    <table class="ch-rx-table">
+                        <thead><tr><th>Date</th><th>SPH</th></tr></thead>
+                        <tbody>
+                            <?php foreach ($rx_trend_desc as $point): ?>
+                            <tr><td><?= htmlspecialchars(rx_trend_date_label($point)) ?></td><?= fmt_rx_short_cell($point['l_sph']) ?></tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="ch-rx-table-grid">
+                <div>
+                    <div class="ch-chart-title">CYL — Right (OD)</div>
+                    <table class="ch-rx-table">
+                        <thead><tr><th>Date</th><th>CYL</th></tr></thead>
+                        <tbody>
+                            <?php foreach ($rx_trend_desc as $point): ?>
+                            <tr><td><?= htmlspecialchars(rx_trend_date_label($point)) ?></td><?= fmt_rx_short_cell($point['r_cyl']) ?></tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+                <div>
+                    <div class="ch-chart-title">CYL — Left (OS)</div>
+                    <table class="ch-rx-table">
+                        <thead><tr><th>Date</th><th>CYL</th></tr></thead>
+                        <tbody>
+                            <?php foreach ($rx_trend_desc as $point): ?>
+                            <tr><td><?= htmlspecialchars(rx_trend_date_label($point)) ?></td><?= fmt_rx_short_cell($point['l_cyl']) ?></tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
                 </div>
             </div>
             <?php endif; ?>
@@ -1332,8 +1433,8 @@ $ai_history_payload = [
                 <div class="ch-acc-body">
                     <div class="ch-rx-changes-grid">
                         <?php foreach ([
-                            ['OD (Right)', $e['old_r_sph'], $e['old_r_cyl'], $e['old_r_ax'], $e['new_r_sph'], $e['new_r_cyl'], $e['new_r_ax'], $e['new_r_add'], $e['new_r_visus']],
-                            ['OS (Left)',  $e['old_l_sph'], $e['old_l_cyl'], $e['old_l_ax'], $e['new_l_sph'], $e['new_l_cyl'], $e['new_l_ax'], $e['new_l_add'], $e['new_l_visus']],
+                            ['OD (Right)', rx_float($e['old_r_sph']), rx_float($e['old_r_cyl']), $e['old_r_ax'], rx_float($e['new_r_sph']), rx_float($e['new_r_cyl']), $e['new_r_ax'], rx_float($e['new_r_add']), $e['new_r_visus']],
+                            ['OS (Left)',  rx_float($e['old_l_sph']), rx_float($e['old_l_cyl']), $e['old_l_ax'], rx_float($e['new_l_sph']), rx_float($e['new_l_cyl']), $e['new_l_ax'], rx_float($e['new_l_add']), $e['new_l_visus']],
                         ] as [$eye_label, $osph, $ocyl, $oax, $nsph, $ncyl, $nax, $nadd, $nva]): ?>
                         <div class="ch-rx-eye-card">
                             <div class="ch-rx-eye-title"><?= $eye_label ?></div>
@@ -1459,10 +1560,14 @@ $ai_history_payload = [
     const grid  = 'rgba(255,255,255,0.05)';
     const ticks = '#666';
 
-    function rxShort(v) {
+    // Prescription power is plotted and labeled as the real diopter value
+    // (e.g. +0.50 D), not the optician shorthand used elsewhere in the app —
+    // this keeps the chart unambiguous at a glance.
+    function rxDiopter(v) {
         if (v === null || v === undefined) return '—';
-        const n = Math.round(v * 100);
-        return n > 0 ? '+' + n : String(n);
+        const n = Number(v);
+        if (Math.abs(n) < 0.005) return '0.00';
+        return (n > 0 ? '+' : '') + n.toFixed(2);
     }
     function gradientFill(ctx, color) {
         const g = ctx.createLinearGradient(0, 0, 0, 260);
@@ -1471,50 +1576,95 @@ $ai_history_payload = [
         return g;
     }
 
-    const tooltipDefaults = {
-        backgroundColor: '#1a1d21', borderColor: 'rgba(255,255,255,0.08)', borderWidth: 1,
-        titleColor: '#e2e8f0', bodyColor: '#a0aec0', padding: 10, cornerRadius: 10,
-        titleFont: { size: 11, weight: '700' }, bodyFont: { size: 11 },
-        callbacks: { label: (ctx) => ` ${ctx.dataset.label}: ${rxShort(ctx.raw)}` }
-    };
-    const defaults = {
-        responsive: true, maintainAspectRatio: false,
-        interaction: { mode: 'index', intersect: false },
-        plugins: {
-            legend: { labels: { color: '#a0aec0', font: {size:11}, usePointStyle: true, pointStyle: 'circle', padding: 14 } },
-            tooltip: tooltipDefaults
-        },
-        elements: {
-            point: { radius: 4, hoverRadius: 6, borderWidth: 2, backgroundColor: '#1a1d21' },
-            line: { borderJoinStyle: 'round', borderCapStyle: 'round' }
-        },
-        scales: {
-            x: { grid:{color:grid, drawTicks:false}, ticks:{color:ticks,font:{size:10}}, border:{color:grid} },
-            y: { grid:{color:grid, drawTicks:false}, ticks:{color:ticks,font:{size:11}, callback:(v)=>rxShort(v)}, border:{display:false} }
-        }
-    };
-    new Chart(document.getElementById('chartSph'), {
-        type: 'line',
-        data: {
-            labels,
-            datasets: [
-                { label:'OD SPH', data:trend.map(t=>t.r_sph), borderColor:'#00d4ff', backgroundColor:(c)=>gradientFill(c.chart.ctx,'#00d4ffCC'), pointBackgroundColor:'#00d4ff', pointBorderColor:'#00d4ff', fill:true, tension:.4, borderWidth:2.5 },
-                { label:'OS SPH', data:trend.map(t=>t.l_sph), borderColor:'#a855f7', backgroundColor:(c)=>gradientFill(c.chart.ctx,'#a855f7CC'), pointBackgroundColor:'#a855f7', pointBorderColor:'#a855f7', fill:true, tension:.4, borderWidth:2.5 }
-            ]
-        },
-        options: defaults
-    });
-    new Chart(document.getElementById('chartCyl'), {
-        type: 'line',
-        data: {
-            labels,
-            datasets: [
-                { label:'OD CYL', data:trend.map(t=>t.r_cyl), borderColor:'#00ffaa', backgroundColor:(c)=>gradientFill(c.chart.ctx,'#00ffaaCC'), pointBackgroundColor:'#00ffaa', pointBorderColor:'#00ffaa', fill:true, tension:.4, borderWidth:2.5 },
-                { label:'OS CYL', data:trend.map(t=>t.l_cyl), borderColor:'#f1c40f', backgroundColor:(c)=>gradientFill(c.chart.ctx,'#f1c40fCC'), pointBackgroundColor:'#f1c40f', pointBorderColor:'#f1c40f', fill:true, tension:.4, borderWidth:2.5 }
-            ]
-        },
-        options: defaults
-    });
+    function tooltipFor(color) {
+        return {
+            backgroundColor: '#1a1d21', borderColor: 'rgba(255,255,255,0.08)', borderWidth: 1,
+            titleColor: '#e2e8f0', bodyColor: color, padding: 10, cornerRadius: 10,
+            titleFont: { size: 11, weight: '700' }, bodyFont: { size: 11, weight: '700' },
+            callbacks: { label: (ctx) => ` ${ctx.dataset.label}: ${rxDiopter(ctx.raw)} D` }
+        };
+    }
+
+    // Builds the shared chart options for a single-line eye/component chart.
+    // Axis titles use their own fixed colors (distinct from the eye/line
+    // color) so "Power (D)" and "Examination Date" never blend into the
+    // card's OD/OS heading color.
+    const yAxisTitleColor = '#38bdf8'; // sky blue — "Power (D)"
+    const xAxisTitleColor = '#f472b6'; // pink — "Examination Date"
+
+    // Y axis range/step: quarter-diopter (0.25 D) gridlines for low-power
+    // prescriptions, coarser 1.00 D gridlines once the spread of values is
+    // large enough that quarter-diopter lines would be cramped. The axis
+    // min/max are snapped to that same step and padded by just one step
+    // above/below the data, so only the gridlines actually needed to read
+    // the chart are drawn — no empty gridlines far outside the plotted range.
+    function yAxisFor(data) {
+        const nums = data.filter(v => v !== null && v !== undefined).map(Number);
+        if (!nums.length) return { min: -0.25, max: 0.25, stepSize: 0.25 };
+        const dataMin = Math.min(...nums), dataMax = Math.max(...nums);
+        const stepSize = (dataMax - dataMin) > 3 ? 1.00 : 0.25;
+        const snap = (v, fn) => Number((fn(v / stepSize) * stepSize).toFixed(2));
+        return {
+            min: snap(dataMin - stepSize, Math.floor),
+            max: snap(dataMax + stepSize, Math.ceil),
+            stepSize
+        };
+    }
+
+    function optionsFor(color, yAxis) {
+        return {
+            responsive: true, maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { display: false },
+                tooltip: tooltipFor(color)
+            },
+            elements: {
+                point: { radius: 4, hoverRadius: 6, borderWidth: 2, backgroundColor: '#1a1d21' },
+                line: { borderJoinStyle: 'round', borderCapStyle: 'round' }
+            },
+            scales: {
+                x: {
+                    offset: true,
+                    grid:{color:grid, drawTicks:false}, ticks:{color:ticks,font:{size:10}}, border:{color:grid},
+                    title: { display:true, text:'Examination Date', color:xAxisTitleColor, font:{size:10,weight:'600'} }
+                },
+                y: {
+                    min: yAxis.min, max: yAxis.max,
+                    grid:{color:grid, drawTicks:false}, ticks:{color:ticks,font:{size:11}, stepSize:yAxis.stepSize, callback:(v)=>rxDiopter(v)}, border:{display:false},
+                    title: { display:true, text:'Power (D)', color:yAxisTitleColor, font:{size:11,weight:'700'} }
+                }
+            }
+        };
+    }
+
+    function makeChart(canvasId, label, data, color) {
+        const el = document.getElementById(canvasId);
+        if (!el) return;
+        new Chart(el, {
+            type: 'line',
+            data: {
+                labels,
+                datasets: [{
+                    label, data,
+                    borderColor: color,
+                    backgroundColor: (c) => gradientFill(c.chart.ctx, color + 'CC'),
+                    pointBackgroundColor: color, pointBorderColor: color,
+                    fill: true, tension: .4, borderWidth: 2.5
+                }]
+            },
+            options: optionsFor(color, yAxisFor(data))
+        });
+    }
+
+    // Each eye/component gets its own chart (not combined) and its own
+    // color. These are deliberately different from the SPH/CYL group
+    // heading gradient colors so a chart's line/title never matches its
+    // group title.
+    makeChart('chartSphOd', 'OD SPH', trend.map(t => t.r_sph), '#22c55e');
+    makeChart('chartSphOs', 'OS SPH', trend.map(t => t.l_sph), '#eab308');
+    makeChart('chartCylOd', 'OD CYL', trend.map(t => t.r_cyl), '#6366f1');
+    makeChart('chartCylOs', 'OS CYL', trend.map(t => t.l_cyl), '#14b8a6');
 })();
 </script>
 <?php endif; ?>
