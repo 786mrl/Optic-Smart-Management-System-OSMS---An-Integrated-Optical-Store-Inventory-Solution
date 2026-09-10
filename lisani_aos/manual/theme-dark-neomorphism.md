@@ -559,10 +559,54 @@ Body text (`14px`) **tidak berubah** di semua ukuran layar — hanya heading/ang
 
 ---
 
-## 8. Cara Memakai di Chat Baru
+## 8. Implementasi — Wajib PHP, Bukan HTML Statis
+
+Proyek ini adalah aplikasi PHP (selaras dengan cara kerja [[optic_pos]]: PHP + MySQL, dijalankan di XAMPP/localhost dan Termux). Semua output visual dari tema ini harus dibuatkan sebagai **file `.php`**, bukan `.html` statis. Aturan konkretnya:
+
+### 8.1 Struktur file
+- Ekstensi halaman selalu `.php`, walau untuk contoh tampilan/mockup sekalipun — bukan `.html`.
+- **CSS tema dipisah ke file sendiri**, di-include lewat `<link>`, bukan ditulis ulang inline di setiap halaman:
+  ```
+  /assets/css/theme.css       <- semua token (:root) + shadow utility + komponen dari bagian 2-6
+  /assets/css/responsive.css  <- semua media query dari bagian 7
+  /partials/header.php        <- <header class="app-header">...</header>
+  /partials/sidebar.php       <- <aside class="sidebar">...</aside> + <nav class="bottom-nav">
+  /partials/footer.php        <- penutup </body></html> + script bersama
+  ```
+- Setiap halaman modul (`dashboard.php`, `transaksi.php`, `invoice.php`, dll) cukup:
+  ```php
+  <?php include 'partials/header.php'; ?>
+  <div class="app">
+    <?php include 'partials/sidebar.php'; ?>
+    <div class="main">
+      <!-- konten halaman di sini -->
+    </div>
+  </div>
+  <?php include 'partials/footer.php'; ?>
+  ```
+- Tujuannya: kalau ada penyesuaian tema (warna, shadow, breakpoint), cukup ubah `theme.css`/`responsive.css` sekali, otomatis berlaku ke semua halaman — bukan copy-paste `<style>` ke tiap file.
+
+### 8.2 Data dinamis, bukan hardcode
+- Nilai yang tadinya contoh statis (nominal, status transaksi, badge, daftar menu sidebar) **wajib diisi dari PHP** (query ke `optic_pos_db` atau echo variabel), bukan ditulis tetap di markup:
+  ```php
+  <div class="stat-value">Rp <?= number_format($totalPemasukan, 0, ',', '.') ?></div>
+  <span class="badge badge-<?= $status === 'lunas' ? 'success' : 'warning' ?>">
+    <?= htmlspecialchars($labelStatus) ?>
+  </span>
+  ```
+- Baris tabel transaksi dirender lewat loop (`foreach`/`while` dari hasil query), bukan ditulis satu-satu di HTML.
+- Selalu `htmlspecialchars()` untuk data yang berasal dari database/input pengguna sebelum di-echo ke markup, agar aman dari XSS.
+
+### 8.3 Konsisten dengan konvensi kode yang sudah berjalan
+- Identifier PHP (nama variabel, fungsi, kolom/field) tetap **Bahasa Inggris**; teks yang tampil ke pengguna di UI tetap **Bahasa Indonesia** — sama seperti konvensi di [[optic_pos]].
+- Saat meminta Claude membuat halaman baru, sebutkan bahwa outputnya harus `.php` dan (jika sudah ada) sertakan `theme.css`/`responsive.css` yang sudah dibuat agar tidak digenerate ulang dari nol setiap kali.
+
+---
+
+## 9. Cara Memakai di Chat Baru
 
 Contoh prompt singkat untuk chat berikutnya:
 
-> "Buatkan halaman [nama modul] pakai tema dark neomorphism sesuai file `theme-dark-neomorphism.md` yang saya lampirkan. Ikuti token warna, shadow, radius, dan aturan komponen di file itu persis."
+> "Buatkan halaman [nama modul] dalam bentuk **file PHP** (bukan HTML) pakai tema dark neomorphism sesuai file `theme-dark-neomorphism.md` yang saya lampirkan. Gunakan `theme.css`/`responsive.css` yang sudah ada, ikuti token warna, shadow, radius, dan aturan komponen di file itu persis."
 
 Selama file ini dilampirkan/ditempel di awal chat, Claude bisa langsung mengikuti token & aturan yang sama tanpa perlu dijelaskan ulang dari nol.
