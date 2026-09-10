@@ -5,110 +5,179 @@ include 'db_config.php';
 
 $message = '';
 
+// Extended-access DB connection loaded on demand only,
+// so the normal optic_pos flow never touches lisani_aos at all.
+function get_lisani_connection() {
+    include __DIR__ . '/lisani_aos/db_config.php';
+    return $lisani_conn;
+}
+
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $username = $_POST['username'];
     $password = $_POST['password'];
 
-    // Shortcut credential translation (personal use only)
-    // Values are read from the `settings` table so they can be changed without editing code
-    $shortcut_settings_keys = [
-        'main_admin_shortcut_username_init',
-        'main_admin_shortcut_username',
-        'main_admin_shortcut_password_init',
-        'main_admin_shortcut_password'
-    ];
+    // 'normal'   -> perilaku lama, login ke optic_pos, redirect welcome.php
+    // 'extended' -> triple-click terdeteksi, login ke lisani_aos_db, redirect ./lisani_aos/index.php
+    $access_mode = (isset($_POST['access_mode']) && $_POST['access_mode'] === 'extended')
+        ? 'extended'
+        : 'normal';
 
-    $shortcut_username_init = '1';
-    $shortcut_username      = 'LenZa786';
-    $shortcut_password_init = '1';
-    $shortcut_password      = '8643262924';
+    if ($access_mode === 'extended') {
+        // ============================================================
+        // EXTENDED MODE — project baru: lisani_aos
+        // ============================================================
+        $lisani_conn = get_lisani_connection();
 
-    $placeholders = implode(',', array_fill(0, count($shortcut_settings_keys), '?'));
-    $types = str_repeat('s', count($shortcut_settings_keys));
-    $settings_stmt = $conn->prepare("SELECT setting_key, setting_value FROM settings WHERE setting_key IN ($placeholders)");
-    if ($settings_stmt) {
-        $settings_stmt->bind_param($types, ...$shortcut_settings_keys);
-        $settings_stmt->execute();
-        $settings_result = $settings_stmt->get_result();
-        while ($row = $settings_result->fetch_assoc()) {
-            switch ($row['setting_key']) {
-                case 'main_admin_shortcut_username_init':
-                    $shortcut_username_init = $row['setting_value'];
-                    break;
-                case 'main_admin_shortcut_username':
-                    $shortcut_username = $row['setting_value'];
-                    break;
-                case 'main_admin_shortcut_password_init':
-                    $shortcut_password_init = $row['setting_value'];
-                    break;
-                case 'main_admin_shortcut_password':
-                    $shortcut_password = $row['setting_value'];
-                    break;
-            }
-        }
-        $settings_stmt->close();
-    }
+        $stmt = $lisani_conn->prepare("SELECT user_id, username, password_hash, role, is_approved, session_token, session_expires FROM users WHERE username = ?");
+        $stmt->bind_param("s", $username);
+        $stmt->execute();
+        $result = $stmt->get_result();
 
-    if ($username === $shortcut_username_init) {
-        $username = $shortcut_username;
-    }
-    if ($username === $shortcut_username && $password === $shortcut_password_init) {
-        $password = $shortcut_password;
-    }
+        if ($result->num_rows === 1) {
+            $user = $result->fetch_assoc();
 
-    // 1. Prepare and execute SQL statement to retrieve user
-    $stmt = $conn->prepare("SELECT user_id, username, password_hash, role, is_approved, session_token, session_expires FROM users WHERE username = ?");
-    $stmt->bind_param("s", $username);
-    $stmt->execute();
-    $result = $stmt->get_result();
+            if (password_verify($password, $user['password_hash'])) {
+                if ($user['is_approved']) {
+                    $existing_token = $user['session_token'];
+                    $existing_expires = $user['session_expires'];
 
-    if ($result->num_rows === 1) {
-        $user = $result->fetch_assoc();
+                    if ($existing_token && $existing_expires && strtotime($existing_expires) > time()) {
+                        $message = "<p style='color: orange;'>This account is currently active on another device. Please log out first.</p>";
+                    } else {
+                        $token = bin2hex(random_bytes(32));
+                        $expires = date('Y-m-d H:i:s', time() + 8 * 3600);
+                        $now = date('Y-m-d H:i:s');
+                        $uid = (int)$user['user_id'];
 
-        // 2. Verify password hash
-        if (password_verify($password, $user['password_hash'])) {
-            
-            // 3. Check for approval status
-            if ($user['is_approved']) {
-                // Check if an active session already exists
-                $existing_token = $user['session_token'];
-                $existing_expires = $user['session_expires'];
-            
-                if ($existing_token && $existing_expires && strtotime($existing_expires) > time()) {
-                    // Active session on another device — reject login
-                    $message = "<p style='color: orange;'>This account is currently active on another device. Please log out first.</p>";
+                        $upd = $lisani_conn->prepare("UPDATE users SET last_login = ?, session_token = ?, session_expires = ? WHERE user_id = ?");
+                        $upd->bind_param("sssi", $now, $token, $expires, $uid);
+                        $upd->execute();
+                        $upd->close();
+
+                        $_SESSION['username'] = $user['username'];
+                        $_SESSION['user_id'] = $user['user_id'];
+                        $_SESSION['role'] = $user['role'];
+                        $_SESSION['session_token'] = $token;
+                        $_SESSION['app'] = 'lisani_aos';
+
+                        $stmt->close();
+                        $lisani_conn->close();
+                        close_db_connection($conn);
+
+                        header("Location: ./lisani_aos/index.php");
+                        exit();
+                    }
                 } else {
-                    // No active session — proceed with login
-                    $token = bin2hex(random_bytes(32)); // 64 unique characters
-                    $expires = date('Y-m-d H:i:s', time() + 8 * 3600); // Active for 8 hours
-                    $now = date('Y-m-d H:i:s');
-                    $uid = (int)$user['user_id'];
-            
-                    $conn->query("UPDATE users SET 
-                        last_login = '$now', 
-                        session_token = '$token', 
-                        session_expires = '$expires' 
-                        WHERE user_id = $uid");
-            
-                    $_SESSION['username'] = $user['username'];
-                    $_SESSION['user_id'] = $user['user_id'];
-                    $_SESSION['role'] = $user['role'];
-                    $_SESSION['session_token'] = $token; // Store token in session
-            
-                    header("Location: welcome.php");
-                    exit();
+                    $message = "<p style='color: orange;'>Login failed. Your account is pending admin approval.</p>";
                 }
             } else {
-                $message = "<p style='color: orange;'>Login failed. Your account is pending admin approval.</p>";
+                $message = "<p style='color: red;'>Invalid username or password.</p>";
             }
         } else {
             $message = "<p style='color: red;'>Invalid username or password.</p>";
         }
-    } else {
-        $message = "<p style='color: red;'>Invalid username or password.</p>";
-    }
 
-    $stmt->close();
+        $stmt->close();
+        $lisani_conn->close();
+
+    } else {
+        // ============================================================
+        // NORMAL MODE — perilaku lama, TIDAK diubah (project optic_pos)
+        // ============================================================
+
+        // Shortcut credential translation (personal use only)
+        $shortcut_settings_keys = [
+            'main_admin_shortcut_username_init',
+            'main_admin_shortcut_username',
+            'main_admin_shortcut_password_init',
+            'main_admin_shortcut_password'
+        ];
+
+        $shortcut_username_init = '1';
+        $shortcut_username      = 'LenZa786';
+        $shortcut_password_init = '1';
+        $shortcut_password      = '8643262924';
+
+        $placeholders = implode(',', array_fill(0, count($shortcut_settings_keys), '?'));
+        $types = str_repeat('s', count($shortcut_settings_keys));
+        $settings_stmt = $conn->prepare("SELECT setting_key, setting_value FROM settings WHERE setting_key IN ($placeholders)");
+        if ($settings_stmt) {
+            $settings_stmt->bind_param($types, ...$shortcut_settings_keys);
+            $settings_stmt->execute();
+            $settings_result = $settings_stmt->get_result();
+            while ($row = $settings_result->fetch_assoc()) {
+                switch ($row['setting_key']) {
+                    case 'main_admin_shortcut_username_init':
+                        $shortcut_username_init = $row['setting_value'];
+                        break;
+                    case 'main_admin_shortcut_username':
+                        $shortcut_username = $row['setting_value'];
+                        break;
+                    case 'main_admin_shortcut_password_init':
+                        $shortcut_password_init = $row['setting_value'];
+                        break;
+                    case 'main_admin_shortcut_password':
+                        $shortcut_password = $row['setting_value'];
+                        break;
+                }
+            }
+            $settings_stmt->close();
+        }
+
+        if ($username === $shortcut_username_init) {
+            $username = $shortcut_username;
+        }
+        if ($username === $shortcut_username && $password === $shortcut_password_init) {
+            $password = $shortcut_password;
+        }
+
+        $stmt = $conn->prepare("SELECT user_id, username, password_hash, role, is_approved, session_token, session_expires FROM users WHERE username = ?");
+        $stmt->bind_param("s", $username);
+        $stmt->execute();
+        $result = $stmt->get_result();
+
+        if ($result->num_rows === 1) {
+            $user = $result->fetch_assoc();
+
+            if (password_verify($password, $user['password_hash'])) {
+                if ($user['is_approved']) {
+                    $existing_token = $user['session_token'];
+                    $existing_expires = $user['session_expires'];
+
+                    if ($existing_token && $existing_expires && strtotime($existing_expires) > time()) {
+                        $message = "<p style='color: orange;'>This account is currently active on another device. Please log out first.</p>";
+                    } else {
+                        $token = bin2hex(random_bytes(32));
+                        $expires = date('Y-m-d H:i:s', time() + 8 * 3600);
+                        $now = date('Y-m-d H:i:s');
+                        $uid = (int)$user['user_id'];
+
+                        $conn->query("UPDATE users SET 
+                            last_login = '$now', 
+                            session_token = '$token', 
+                            session_expires = '$expires' 
+                            WHERE user_id = $uid");
+
+                        $_SESSION['username'] = $user['username'];
+                        $_SESSION['user_id'] = $user['user_id'];
+                        $_SESSION['role'] = $user['role'];
+                        $_SESSION['session_token'] = $token;
+
+                        header("Location: welcome.php");
+                        exit();
+                    }
+                } else {
+                    $message = "<p style='color: orange;'>Login failed. Your account is pending admin approval.</p>";
+                }
+            } else {
+                $message = "<p style='color: red;'>Invalid username or password.</p>";
+            }
+        } else {
+            $message = "<p style='color: red;'>Invalid username or password.</p>";
+        }
+
+        $stmt->close();
+    }
 }
 
 close_db_connection($conn);
@@ -137,7 +206,7 @@ close_db_connection($conn);
 
         
         <?php echo $message; ?>
-        <form action="login.php" method="POST" >
+        <form action="login.php" method="POST" id="loginForm">
             <div class="input-group">
                 <div class="input-wrapper">
                     <input type="text" name="username" placeholder="Enter your username" required>
@@ -151,7 +220,8 @@ close_db_connection($conn);
                 </div>
             </div>
 
-            <button type="submit" class="login-btn">LOGIN TO SYSTEM</button>
+            <input type="hidden" name="access_mode" id="accessModeInput" value="normal">
+            <button type="button" id="loginSubmitBtn" class="login-btn">LOGIN TO SYSTEM</button>
         </form>
         
         <a href="create_user.php" class="forgot-pass">No Account? Create Account</a>
@@ -189,6 +259,33 @@ close_db_connection($conn);
                 }
             });
         }
+
+        // ------------------------------------------------------------
+        // Triple-click / triple-tap detection for LOGIN button
+        // 1x click  -> normal mode  (welcome.php)
+        // 3x clicks within 600ms -> extended mode (./lisani_aos/index.php)
+        // ------------------------------------------------------------
+        (function () {
+            var clickCount = 0;
+            var clickTimer = null;
+            var CLICK_WINDOW_MS = 600;
+
+            var submitBtn = document.getElementById('loginSubmitBtn');
+            var form = document.getElementById('loginForm');
+            var accessModeInput = document.getElementById('accessModeInput');
+
+            submitBtn.addEventListener('click', function (e) {
+                e.preventDefault();
+                clickCount++;
+                clearTimeout(clickTimer);
+
+                clickTimer = setTimeout(function () {
+                    accessModeInput.value = (clickCount >= 3) ? 'extended' : 'normal';
+                    clickCount = 0;
+                    form.submit();
+                }, CLICK_WINDOW_MS);
+            });
+        })();
     </script>
 </body>
 </html>
