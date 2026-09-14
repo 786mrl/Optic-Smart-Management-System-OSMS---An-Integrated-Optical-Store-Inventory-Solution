@@ -323,6 +323,8 @@ tbody tr:hover { background: var(--bg-surface-alt); }
 }
 ```
 
+Untuk daftar dengan banyak field per baris di mana tabel lebar terasa berat dibaca (apalagi di layar sempit), pertimbangkan **Accordion (§5.12)** sebagai pengganti langsung — bukan hanya tampilan mobile dari tabel yang sama, tapi satu komponen yang dipakai di semua lebar layar.
+
 ### 5.8 Badge / Status (status pembayaran, jenis transaksi)
 ```css
 .badge {
@@ -375,6 +377,61 @@ Dipakai saat sebuah alur kerja (form, wizard step) ditampilkan **langsung di dal
 .panel-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-4); }
 .panel-title  { font-family: var(--font-display); font-size: var(--text-lg); font-weight: 700; color: var(--text-primary); }
 ```
+
+### 5.12 Accordion (expandable list)
+Dipakai untuk daftar record dengan banyak field per baris, sebagai alternatif dari tabel biasa saat detail per-baris lebih enak dibaca sebagai list "buka satu lihat detail" daripada tabel lebar dengan banyak kolom (mis. daftar Activity Code). **Tertutup semua di awal**, header tiap item hanya menampilkan satu field identitas (mis. nama), dan **membuka satu item otomatis menutup item lain yang sedang terbuka** — jadi paling banyak satu yang terbuka dalam satu waktu.
+
+```css
+.accordion-list { display: flex; flex-direction: column; gap: var(--space-3); }
+.accordion-item {
+  background: var(--bg-surface);
+  border-radius: var(--radius-lg);
+  box-shadow: 6px 6px 14px var(--shadow-dark), -5px -5px 12px var(--shadow-light);
+  overflow: hidden;
+}
+.accordion-header {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  cursor: pointer;
+  color: var(--text-primary);
+  font-weight: 600;
+  font-size: var(--text-base);
+  transition: background .15s ease;
+}
+.accordion-header:hover { background: var(--bg-surface-alt); }
+/* Open = header "tenggelam" ke dalam card (neo-pressed), arah kebalikan
+   dari .tab.active yang "terangkat" dari wadah inset — di sini dipakai
+   untuk menandai "ini yang sedang terbuka". */
+.accordion-item.open .accordion-header {
+  box-shadow: inset 3px 3px 6px var(--shadow-dark), inset -2px -2px 5px var(--shadow-light);
+}
+.accordion-chevron {
+  flex-shrink: 0; font-size: 18px; color: var(--text-muted);
+  transition: transform .18s ease, color .18s ease;
+}
+.accordion-item.open .accordion-chevron { transform: rotate(180deg); color: var(--accent); }
+.accordion-body { max-height: 0; overflow: hidden; transition: max-height .2s ease; }
+.accordion-body-inner {
+  padding: 0 var(--space-5) var(--space-4);
+  display: flex; flex-direction: column; gap: var(--space-1);
+}
+.accordion-row {
+  display: flex; justify-content: space-between; gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+  font-size: var(--text-sm);
+}
+.accordion-row:last-child { border-bottom: none; }
+.accordion-row-label { color: var(--text-muted); flex-shrink: 0; }
+.accordion-row-value { color: var(--text-primary); text-align: right; word-break: break-all; }
+```
+
+Perilaku wajib (JS):
+- Semua item **collapsed** saat pertama dirender / daftar di-refresh.
+- Klik `.accordion-header` → toggle item itu. Sebelum membuka, tutup dulu semua `.accordion-item.open` lain (jadi maksimal satu yang terbuka).
+- `.accordion-body` di-expand dengan `max-height` = `scrollHeight` elemen `.accordion-body-inner`-nya saat dibuka (bukan nilai `max-height` tetap), supaya animasinya pas untuk jumlah field berapa pun; di-set balik ke `0` saat ditutup.
+- Sama seperti tabel, komponen ini **tidak butuh media query khusus** — satu markup yang sama dipakai di semua lebar layar (mobile s.d. desktop), beda dari pendekatan tabel-lama yang collapse jadi kartu hanya di bawah `--bp-lg`.
 
 ### 5.10 Toggle / Checkbox
 ```css

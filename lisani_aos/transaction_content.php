@@ -72,21 +72,9 @@ $currentYear     = date('Y');
 
   <!-- Tab 1: Preview — list of activity codes already created -->
   <div id="acTabPanelPreview">
-    <div class="table-wrapper">
-      <table>
-        <thead>
-          <tr>
-            <th>Activity Code</th>
-            <th>Activity Name</th>
-            <th>Department</th>
-            <th>Cashflow</th>
-            <th>Relative Path</th>
-            <th>Created</th>
-          </tr>
-        </thead>
-        <tbody id="acPreviewTableBody"></tbody>
-      </table>
-    </div>
+    <!-- Closed by default; header shows Activity Name only. Opening one
+         collapses any other open item (see toggleAccordionItem() below). -->
+    <div class="accordion-list" id="acPreviewList"></div>
     <div class="empty-state" id="acPreviewEmpty" style="display:none;">
       <div class="empty-title">No activity codes yet</div>
       <div class="empty-sub">Switch to the Create Activity Code tab to add one.</div>
@@ -561,28 +549,88 @@ $currentYear     = date('Y');
     });
   });
 
-  // --- Preview tab: list of existing activity codes ---
-  var acPreviewTableBody = document.getElementById('acPreviewTableBody');
-  var acPreviewEmpty     = document.getElementById('acPreviewEmpty');
+  // --- Preview tab: list of existing activity codes, as an accordion ---
+  // (collapsed by default, header = Activity Name only, one item open at a
+  // time). Replaced the old table-that-collapses-into-cards-on-mobile
+  // approach entirely — this is now the only rendering, at every width.
+  var acPreviewList  = document.getElementById('acPreviewList');
+  var acPreviewEmpty = document.getElementById('acPreviewEmpty');
 
-  var acColumnLabels = ['Activity Code', 'Activity Name', 'Department', 'Cashflow', 'Relative Path', 'Created'];
+  function openAccordionItem(item) {
+    item.classList.add('open');
+    var body = item.querySelector('.accordion-body');
+    body.style.maxHeight = body.scrollHeight + 'px';
+  }
+
+  function closeAccordionItem(item) {
+    item.classList.remove('open');
+    var body = item.querySelector('.accordion-body');
+    body.style.maxHeight = '0px';
+  }
+
+  function toggleAccordionItem(item) {
+    var isOpen = item.classList.contains('open');
+    // Opening one always collapses whatever else is open — at most one
+    // item expanded at any time.
+    acPreviewList.querySelectorAll('.accordion-item.open').forEach(closeAccordionItem);
+    if (!isOpen) openAccordionItem(item);
+  }
 
   function renderActivityList(list) {
-    acPreviewTableBody.innerHTML = '';
+    acPreviewList.innerHTML = '';
     acPreviewEmpty.style.display = list.length ? 'none' : 'block';
+
     list.forEach(function (a) {
-      var tr = document.createElement('tr');
-      [a.activity_code, a.activity_name, a.department, a.cashflow, a.relative_path, a.created_at]
-        .forEach(function (val, i) {
-          var td = document.createElement('td');
-          td.textContent = val;
-          // Consumed by responsive.css (table -> stacked cards on <1024px):
-          // that rule hides <thead>, so each cell needs its own label to
-          // stay readable once the table collapses into cards on mobile.
-          td.setAttribute('data-label', acColumnLabels[i]);
-          tr.appendChild(td);
-        });
-      acPreviewTableBody.appendChild(tr);
+      var item = document.createElement('div');
+      item.className = 'accordion-item';
+
+      var header = document.createElement('div');
+      header.className = 'accordion-header';
+
+      var title = document.createElement('span');
+      title.className = 'accordion-title';
+      title.textContent = a.activity_name; // the only thing visible while collapsed
+
+      var chevron = document.createElement('i');
+      chevron.className = 'ti ti-chevron-down accordion-chevron';
+
+      header.appendChild(title);
+      header.appendChild(chevron);
+      header.addEventListener('click', function () { toggleAccordionItem(item); });
+
+      var body = document.createElement('div');
+      body.className = 'accordion-body';
+
+      var bodyInner = document.createElement('div');
+      bodyInner.className = 'accordion-body-inner';
+
+      [
+        ['Activity Code', a.activity_code],
+        ['Department', a.department],
+        ['Cashflow', a.cashflow],
+        ['Relative Path', a.relative_path],
+        ['Created', a.created_at]
+      ].forEach(function (pair) {
+        var row = document.createElement('div');
+        row.className = 'accordion-row';
+
+        var label = document.createElement('div');
+        label.className = 'accordion-row-label';
+        label.textContent = pair[0];
+
+        var value = document.createElement('div');
+        value.className = 'accordion-row-value';
+        value.textContent = pair[1];
+
+        row.appendChild(label);
+        row.appendChild(value);
+        bodyInner.appendChild(row);
+      });
+
+      body.appendChild(bodyInner);
+      item.appendChild(header);
+      item.appendChild(body);
+      acPreviewList.appendChild(item);
     });
   }
 

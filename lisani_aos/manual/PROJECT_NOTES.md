@@ -165,32 +165,42 @@ bisa dipakai ulang di menu lain juga.
     otomatis kembali ke **Preview** dan list di-refresh (`resetCreateCodeForm()`),
     supaya code yang baru dibuat langsung kelihatan di list.
 
-- **Fix — Tab Preview activity code hilang di layar <1024px**: bukan bug data/AJAX
-  (`list_activity_codes.php` & JS fetch-nya sudah benar, data memang sampai dan
-  ter-render ke DOM). Penyebabnya di `assets/css/responsive.css`, rule generic
-  `@media (max-width: 1023px) { table, thead { display:none } ... }` — dimaksudkan
-  untuk mengubah **semua** `<table>` di aplikasi jadi tampilan kartu di mobile/tablet,
-  tapi rule itu belum pernah benar-benar dipakai sebelumnya (tidak ada `<td>` di
-  aplikasi yang punya `data-label` + belum ada CSS `::before` pendukungnya). Tabel
-  Preview di `#acPreviewTableBody` adalah tabel pertama yang benar-benar kena dampak:
-  `<table>` mati total di bawah 1024px sehingga isinya raib meski datanya ada.
-  **Perbaikan**:
-  - `transaction_content.php` → `renderActivityList()` sekarang menambahkan
-    `data-label` ke tiap `<td>` (Activity Code / Activity Name / Department /
-    Cashflow / Relative Path / Created), lewat array `acColumnLabels`.
-  - `responsive.css` → ditambahkan `td[data-label] { display:flex; justify-content:
-    space-between }` + `td[data-label]::before { content: attr(data-label) }` di
-    dalam blok `@media (max-width:1023px)` yang sudah ada, supaya cell yang collapse
-    jadi card tetap menampilkan nama kolomnya.
-  - **Konvensi baru**: tabel manapun yang ditambahkan ke aplikasi ini ke depannya HARUS
-    ikut isi `data-label` di tiap `<td>` (lewat JS render atau langsung di PHP), kalau
-    tabelnya dirender di halaman yang bisa dibuka di layar <1024px — kalau tidak,
-    akan hilang lagi seperti kasus ini. Cell yang sengaja tidak butuh label (mis.
-    kolom aksi/tombol) boleh dibiarkan tanpa `data-label`, styling-nya tidak berubah.
-  - Tambahan kecil lain saat debugging: tab Preview sekarang refresh datanya setiap
-    kali diklik (bukan cuma sekali saat form pertama dibuka), dan `loadActivityList()`
-    log ke `console.warn`/`console.error` kalau request gagal, supaya lebih gampang
-    didiagnosis lain kali.
+- **Fix (sudah lewat, digantikan) — Tab Preview activity code hilang di layar <1024px**:
+  sempat diperbaiki dengan pendekatan tabel yang collapse jadi kartu di mobile/tablet
+  (`data-label` per `<td>` + CSS `::before` di `responsive.css`). Pendekatan tabel ini
+  **sudah tidak dipakai lagi** — lihat poin di bawah, tab Preview sekarang accordion,
+  bukan tabel. Catatan historisnya ditinggal di git history kalau perlu ditelusuri lagi.
+  Sempat juga ada bug lanjutan: rule `table, thead { display:none }` di `responsive.css`
+  ternyata mematikan `<table>`-nya sendiri (bukan cuma `thead`), jadi `tbody`/`tr`/`td`
+  ikut hilang total walau di-set `display:block` — ini juga sudah tidak relevan lagi
+  setelah tabelnya diganti accordion, tapi rule generic `table, thead` di
+  `responsive.css` **tetap dibiarkan ada** (sudah diperbaiki: `table { display:block }`
+  + `thead { display:none }` terpisah) untuk tabel lain yang mungkin ditambahkan ke
+  aplikasi ini nanti.
+- **Transactions — Tab Preview sekarang Accordion, bukan tabel** (`transaction_content.php`,
+  `theme.css` §Accordion, `theme-dark-neomorphism.md` §5.12):
+  - `#acPreviewList` (`.accordion-list`) menggantikan `.table-wrapper` > `<table>` yang
+    lama. Satu komponen yang sama dipakai di **semua lebar layar** — tidak ada lagi
+    perbedaan tampilan mobile vs desktop untuk list ini, jadi tidak butuh media query
+    khusus seperti pendekatan tabel-ke-kartu sebelumnya.
+  - **Semua item collapsed saat pertama dirender / list di-refresh.** Header tiap item
+    (`.accordion-header`) hanya menampilkan **Activity Name**. Field lain (Activity Code,
+    Department, Cashflow, Relative Path, Created) baru muncul di `.accordion-body` saat
+    item-nya dibuka.
+  - **Hanya satu item yang boleh terbuka dalam satu waktu** — `toggleAccordionItem()`
+    di `transaction_content.php` selalu menutup item lain yang sedang terbuka sebelum
+    membuka item yang baru diklik.
+  - `.accordion-body` di-expand pakai `max-height = scrollHeight` elemen dalamnya (dihitung
+    di JS saat toggle), bukan nilai tetap, supaya animasinya pas untuk jumlah field apa pun.
+  - `renderActivityList()` di-refactor total: tidak lagi bikin `<tr>`/`<td>` dengan
+    `data-label`, sekarang bikin `.accordion-item` per activity code lewat DOM API biasa
+    (bukan `innerHTML`, supaya `activity_name` dari data tidak perlu di-escape manual).
+  - **Konvensi baru untuk list serupa ke depan** (bukan tabel lebar dengan banyak kolom):
+    pertimbangkan Accordion (`theme-dark-neomorphism.md` §5.12) sejak awal, bukan bikin
+    tabel dulu lalu di-collapse-in-CSS belakangan seperti kasus Activity Code ini.
+  - Tambahan kecil yang masih relevan dari perbaikan sebelumnya: tab Preview tetap
+    refresh datanya setiap kali diklik (bukan cuma sekali saat form pertama dibuka), dan
+    `loadActivityList()` tetap log ke `console.warn`/`console.error` kalau request gagal.
 
 - Belum: isi konten menu Report/Settings, Input Transaction (baru placeholder alert),
   rancang tabel DB untuk Report/Settings.

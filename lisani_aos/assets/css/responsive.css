@@ -84,7 +84,11 @@
 
 /* ===== Table ===== */
 @media (max-width: 1023px) {
-  table, thead { display: none; }
+  /* Only hide the header row — the table itself must stay display:block
+     (not display:none), otherwise it hides tbody/tr/td as well no matter
+     what display value they're given, and the "cards" never render. */
+  table { display: block; width: 100%; }
+  thead { display: none; }
   tbody, tr, td { display: block; width: 100%; }
   tr {
     background: var(--bg-surface-alt);
