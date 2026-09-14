@@ -1,0 +1,8 @@
+# Cegah orang mengintip isi folder ini lewat browser (tanpa file index)
+Options -Indexes
+
+# Cegah akses langsung ke file konfigurasi/db dari luar
+<FilesMatch "^db_config\.php$">
+    Order allow,deny
+    Deny from all
+</FilesMatch>

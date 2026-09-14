@@ -146,8 +146,9 @@ Aturan wajib:
   /* tidak pakai border-bottom, cukup shadow tipis ke bawah */
 }
 ```
-- Logo/nama app di kiri, search (neo-inset) di tengah/kiri-tengah, notifikasi + avatar user (neo-soft, bulat) di kanan.
-- Avatar & icon button: `border-radius: var(--radius-full)`.
+- App logo/name on the left, search (neo-inset) center-left, user avatar on the right.
+- Avatar is a `.user-menu` dropdown trigger (not a static icon) — clicking it opens a `.user-menu-dropdown` with account-level actions (Settings, Exit/logout). Don't add a separate standalone notification bell button unless there's an actual notification feature behind it — an icon with no function shouldn't ship.
+- Avatar: `border-radius: 50%`; dropdown panel: `.card`-style raised shadow (`--radius-md`, same shadow pair as `.neo-raised`), items use `.user-menu-item` (same visual language as `.sidebar-item`: transparent bg, hover → `--bg-surface-alt`, danger item hovers to `--danger`).
 
 ### 5.2 Sidebar / Navigasi
 ```css
@@ -340,15 +341,39 @@ tbody tr:hover { background: var(--bg-surface-alt); }
 ### 5.9 Modal / Dialog
 ```css
 .modal-overlay {
+  position: fixed;
+  inset: 0;
   background: rgba(10, 11, 14, 0.65);
   backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  z-index: 200;
 }
 .modal {
   background: var(--bg-surface);
   border-radius: var(--radius-lg);
   padding: var(--space-6);
   box-shadow: 10px 10px 24px var(--shadow-dark), -6px -6px 16px var(--shadow-light);
+  width: min(480px, 90vw);
 }
+```
+`.modal-overlay` **wajib** `position: fixed` + `inset: 0` + `display: flex` centering — tanpa ini `.modal` ikut alur dokumen normal (bukan fly window yang mengambang di tengah layar). `.modal` sendiri tidak butuh `position` apa pun, cukup diposisikan oleh parent flex-nya.
+
+Struktur internal modal (opsional tapi disarankan untuk modal dengan judul + area aksi):
+```css
+.modal-header  { margin-bottom: var(--space-4); }
+.modal-title   { font-family: var(--font-display); font-size: var(--text-xl); font-weight: 700; color: var(--text-primary); }
+.modal-body    { display: flex; flex-direction: column; gap: var(--space-4); }
+.modal-footer  { display: flex; gap: var(--space-3); justify-content: flex-end; margin-top: var(--space-5); }
+```
+
+### 5.11 Panel Header (untuk view yang di-embed langsung di halaman)
+Dipakai saat sebuah alur kerja (form, wizard step) ditampilkan **langsung di dalam `.card` pada konten section**, bukan di dalam modal — mis. form yang tadinya modal tapi harus tetap terlihat sambil ada konteks section di sekitarnya. Visualnya senada dengan `.modal-header`/`.modal-title`, tapi berupa baris dengan aksi (mis. tombol Back) di kanan:
+```css
+.panel-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--space-4); }
+.panel-title  { font-family: var(--font-display); font-size: var(--text-lg); font-weight: 700; color: var(--text-primary); }
 ```
 
 ### 5.10 Toggle / Checkbox
@@ -598,7 +623,8 @@ Proyek ini adalah aplikasi PHP (selaras dengan cara kerja [[optic_pos]]: PHP + M
 - Selalu `htmlspecialchars()` untuk data yang berasal dari database/input pengguna sebelum di-echo ke markup, agar aman dari XSS.
 
 ### 8.3 Konsisten dengan konvensi kode yang sudah berjalan
-- Identifier PHP (nama variabel, fungsi, kolom/field) tetap **Bahasa Inggris**; teks yang tampil ke pengguna di UI tetap **Bahasa Indonesia** — sama seperti konvensi di [[optic_pos]].
+- Identifier PHP (nama variabel, fungsi, kolom/field) tetap **Bahasa Inggris**.
+- **Update (per lisani_aos):** semua teks yang tampil ke pengguna di UI (label, placeholder, empty-state, komentar CSS/JS) juga **Bahasa Inggris** — ini beda dari konvensi [[optic_pos]] yang UI-nya Bahasa Indonesia. Jangan campur; untuk file-file di dalam `lisani_aos/`, default-nya Inggris kecuali diminta lain.
 - Saat meminta Claude membuat halaman baru, sebutkan bahwa outputnya harus `.php` dan (jika sudah ada) sertakan `theme.css`/`responsive.css` yang sudah dibuat agar tidak digenerate ulang dari nol setiap kali.
 
 ---

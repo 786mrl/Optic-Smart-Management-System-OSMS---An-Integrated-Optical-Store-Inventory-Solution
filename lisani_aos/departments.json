@@ -1,0 +1,16 @@
+{
+    "departments": [
+        {
+            "key": "date",
+            "label": "DATES"
+        },
+        {
+            "key": "tax",
+            "label": "TAX"
+        },
+        {
+            "key": "adm",
+            "label": "ADM"
+        }
+    ]
+}

@@ -3,10 +3,29 @@
 session_start();
 include 'db_config.php';
 
-// 1. Delete session
-if (isset($_SESSION['user_id'])) {
-    $uid = (int)$_SESSION['user_id'];
-    $conn->query("UPDATE users SET session_token = NULL, session_expires = NULL WHERE user_id = $uid");
+$is_lisani_session = isset($_SESSION['app']) && $_SESSION['app'] === 'lisani_aos';
+
+if ($is_lisani_session) {
+    // ============================================================
+    // EXTENDED MODE — token disimpan di lisani_aos_db, bukan optic_pos
+    // ============================================================
+    if (isset($_SESSION['user_id'])) {
+        include __DIR__ . '/lisani_aos/db_config.php'; // menyediakan $lisani_conn
+        $uid = (int)$_SESSION['user_id'];
+        $stmt = $lisani_conn->prepare("UPDATE users SET session_token = NULL, session_expires = NULL WHERE user_id = ?");
+        $stmt->bind_param("i", $uid);
+        $stmt->execute();
+        $stmt->close();
+        close_lisani_db_connection($lisani_conn);
+    }
+} else {
+    // ============================================================
+    // NORMAL MODE — perilaku lama (optic_pos), TIDAK diubah
+    // ============================================================
+    if (isset($_SESSION['user_id'])) {
+        $uid = (int)$_SESSION['user_id'];
+        $conn->query("UPDATE users SET session_token = NULL, session_expires = NULL WHERE user_id = $uid");
+    }
 }
 
 // 2. Clear all session data on the server
