@@ -56,6 +56,18 @@ if (!in_array($departement, $validDeptKeys, true)) {
     exit;
 }
 
+// --- Activity name harus unik (dicek juga di client, ini jaring pengaman server) ---
+$dupStmt = $lisani_conn->prepare('SELECT id FROM activities WHERE activity_name = ? LIMIT 1');
+$dupStmt->bind_param('s', $activityName);
+$dupStmt->execute();
+$dupStmt->store_result();
+if ($dupStmt->num_rows > 0) {
+    $dupStmt->close();
+    echo json_encode(['ok' => false, 'message' => 'Activity name sudah dipakai, gunakan nama lain.']);
+    exit;
+}
+$dupStmt->close();
+
 // --- Hitung nomor kode berikutnya, reset per departemen + tahun ---
 $basePath = "input/{$year}/{$departement}/";
 

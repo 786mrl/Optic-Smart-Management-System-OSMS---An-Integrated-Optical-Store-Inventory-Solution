@@ -94,6 +94,16 @@
   }
   td { border-bottom: none; padding: var(--space-1) 0; }
   td.cell-amount { text-align: left; font-size: var(--text-lg); font-weight: 600; }
+  /* Cards built from a collapsed <table> lose their column headers (thead
+     is hidden above), so each <td> carries its own label via data-label
+     and shows it here. Cells that don't set data-label render unchanged. */
+  td[data-label] { display: flex; justify-content: space-between; gap: var(--space-3); }
+  td[data-label]::before {
+    content: attr(data-label);
+    font-weight: 600;
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
 }
 
 /* ===== Modal / Dialog ===== */

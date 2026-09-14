@@ -27,62 +27,125 @@ $currentYear     = date('Y');
   </div>
 </div>
 
-<!-- Create Activity Code — the actual form lives on the page, not in a modal -->
+<!-- Create Activity Code — tabbed: Preview (existing codes) + Create Activity Code (form). Nothing here is a modal. -->
 <div class="card" id="viewCreateActivityCode" style="width:100%; display:none;">
   <div class="panel-header">
-    <div class="panel-title">Create Activity Code</div>
+    <div class="panel-title">Activity Code</div>
     <button type="button" class="btn btn-secondary" id="btnBackToEntryFromForm">
       Back
     </button>
   </div>
 
-  <div class="form-group">
-    <div class="label">Year</div>
-    <input type="number" class="input" id="acYear" value="<?= htmlspecialchars($currentYear) ?>" min="2000" max="2100">
+  <style>
+    #acTabGroup {
+      display: flex;
+      width: 100%;
+      gap: var(--space-2);
+      margin-bottom: var(--space-4);
+      background: none;
+      padding: 0;
+    }
+    #acTabGroup .tab {
+      flex: 1 1 0;
+      text-align: center;
+      padding: var(--space-3) var(--space-4);
+      border-radius: var(--radius-md);
+      background: var(--bg-recessed);
+      box-shadow: inset 3px 3px 6px var(--shadow-dark), inset -2px -2px 5px var(--shadow-light);
+      color: var(--text-secondary);
+      font-size: var(--text-sm);
+      font-weight: 600;
+      cursor: pointer;
+      transition: color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+    }
+    #acTabGroup .tab:hover { color: var(--text-primary); }
+    #acTabGroup .tab.active {
+      background: var(--bg-surface);
+      color: var(--accent);
+      box-shadow: 5px 5px 10px var(--shadow-dark), -4px -4px 8px var(--shadow-light);
+    }
+  </style>
+  <div class="tab-group" id="acTabGroup">
+    <div class="tab active" data-ac-tab="preview">Preview</div>
+    <div class="tab" data-ac-tab="create">Create Activity Code</div>
   </div>
 
-  <div class="form-group">
-    <div class="label">Department</div>
-    <div style="display:flex; gap:var(--space-2);">
-      <select class="select" id="acDepartment" style="flex:1;">
-        <?php foreach ($departments as $dept): ?>
-          <option value="<?= htmlspecialchars($dept['key']) ?>"><?= htmlspecialchars($dept['label']) ?></option>
-        <?php endforeach; ?>
-      </select>
-      <button type="button" class="btn btn-secondary" id="btnManageDepartments">
-        Edit
-      </button>
+  <!-- Tab 1: Preview — list of activity codes already created -->
+  <div id="acTabPanelPreview">
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Activity Code</th>
+            <th>Activity Name</th>
+            <th>Department</th>
+            <th>Cashflow</th>
+            <th>Relative Path</th>
+            <th>Created</th>
+          </tr>
+        </thead>
+        <tbody id="acPreviewTableBody"></tbody>
+      </table>
+    </div>
+    <div class="empty-state" id="acPreviewEmpty" style="display:none;">
+      <div class="empty-title">No activity codes yet</div>
+      <div class="empty-sub">Switch to the Create Activity Code tab to add one.</div>
     </div>
   </div>
 
-  <div class="form-group">
-    <div class="label">Activity Name</div>
-    <input type="text" class="input" id="acActivityName" maxlength="150" placeholder="e.g. MAZAFATI I" style="text-transform:uppercase;">
-  </div>
+  <!-- Tab 2: Create Activity Code — the form itself -->
+  <div id="acTabPanelCreate" style="display:none;">
+    <div class="form-group">
+      <div class="label">Year</div>
+      <input type="number" class="input" id="acYear" value="<?= htmlspecialchars($currentYear) ?>" min="2000" max="2100">
+    </div>
 
-  <div class="form-group">
-    <div class="label">Activity Code</div>
-    <input type="text" class="input" value="Auto-generated" disabled>
-  </div>
+    <div class="form-group">
+      <div class="label">Department</div>
+      <div style="display:flex; gap:var(--space-2);">
+        <select class="select" id="acDepartment" style="flex:1;">
+          <?php foreach ($departments as $dept): ?>
+            <option value="<?= htmlspecialchars($dept['key']) ?>"><?= htmlspecialchars($dept['label']) ?></option>
+          <?php endforeach; ?>
+        </select>
+        <button type="button" class="btn btn-secondary" id="btnManageDepartments">
+          Edit
+        </button>
+      </div>
+    </div>
 
-  <div class="form-group">
-    <div class="label">Cashflow</div>
-    <select class="select" id="acCashflow">
-      <option value="inflow">Cash Inflows</option>
-      <option value="outflow">Cash Outflows</option>
-      <option value="in-out">Cash In-Out</option>
-    </select>
-  </div>
+    <div class="form-group">
+      <div class="label">Activity Name</div>
+      <input type="text" class="input" id="acActivityName" maxlength="150" placeholder="e.g. MAZAFATI I" style="text-transform:uppercase;">
+      <div class="empty-sub" id="acActivityNameError" style="display:none; color:var(--danger);">
+        This activity name is already used.
+      </div>
+    </div>
 
-  <div class="form-group">
-    <div class="label">Relative Path (preview)</div>
-    <input type="text" class="input" id="acPathPreview" disabled>
-  </div>
+    <div class="form-group">
+      <div class="label">Activity Code</div>
+      <input type="text" class="input" id="acCodePreview" value="…" disabled>
+    </div>
 
-  <div class="empty-sub" id="txnCreateCodeError" style="display:none; color:var(--danger);"></div>
+    <div class="form-group">
+      <div class="label">Cashflow</div>
+      <select class="select" id="acCashflow">
+        <option value="inflow">Cash Inflows</option>
+        <option value="outflow">Cash Outflows</option>
+        <option value="in-out">Cash In-Out</option>
+      </select>
+    </div>
 
-  <div style="display:flex; gap:var(--space-3); justify-content:flex-end; margin-top:var(--space-5);">
-    <button type="button" class="btn btn-primary" id="btnCreateCodeSubmit">Save</button>
+    <div class="form-group">
+      <div class="label">Relative Path (preview)</div>
+      <input type="text" class="input" id="acPathPreview" disabled>
+    </div>
+
+    <div class="empty-sub" id="txnCreateCodeError" style="display:none; color:var(--danger);"></div>
+
+    <div style="display:flex; gap:var(--space-3); justify-content:flex-end; margin-top:var(--space-5);">
+      <button type="button" class="btn btn-primary" id="btnCreateCodeSubmit">Save</button>
+    </div>
   </div>
 </div>
 
@@ -283,22 +346,71 @@ $currentYear     = date('Y');
   var acYear        = document.getElementById('acYear');
   var acDepartment  = document.getElementById('acDepartment');
   var acPathPreview = document.getElementById('acPathPreview');
+  var acCodePreview = document.getElementById('acCodePreview');
 
+  // Live preview of the actual next code/path, fetched from the server so
+  // it always matches what create_activity_code.php would generate.
+  // Debounced so typing/changing Year doesn't spam requests.
+  var previewDebounceTimer = null;
   function updatePathPreview() {
-    var y = acYear.value || 'YYYY';
-    var d = acDepartment.value || 'dept';
-    acPathPreview.value = 'input/' + y + '/' + d + '/???/';
+    var y = acYear.value;
+    var d = acDepartment.value;
+
+    if (!/^\d{4}$/.test(y) || !d) {
+      acCodePreview.value = '…';
+      acPathPreview.value = '';
+      return;
+    }
+
+    clearTimeout(previewDebounceTimer);
+    previewDebounceTimer = setTimeout(function () {
+      var params = new URLSearchParams({ year: y, departement: d });
+      fetch('ajax/preview_activity_code.php?' + params.toString(), { cache: 'no-store' })
+        .then(function (r) { return r.json(); })
+        .then(function (res) {
+          if (res.ok) {
+            acCodePreview.value = res.data.activity_code;
+            acPathPreview.value = res.data.relative_path;
+          } else {
+            acCodePreview.value = '…';
+            acPathPreview.value = '';
+          }
+        })
+        .catch(function () {
+          acCodePreview.value = '…';
+          acPathPreview.value = '';
+        });
+    }, 250);
   }
   acYear.addEventListener('input', updatePathPreview);
   acDepartment.addEventListener('change', updatePathPreview);
 
-  var acActivityName = document.getElementById('acActivityName');
+  var acActivityName      = document.getElementById('acActivityName');
+  var acActivityNameError = document.getElementById('acActivityNameError');
+  var btnCreateCodeSubmit = document.getElementById('btnCreateCodeSubmit');
+
+  // Existing activity codes, loaded from ajax/list_activity_codes.php.
+  // Reused both for the Preview tab table and for the client-side
+  // duplicate-name check below (no extra request per keystroke).
+  var activityListCache = [];
+
+  function checkDuplicateName() {
+    var name = acActivityName.value.trim();
+    var isDuplicate = name !== '' && activityListCache.some(function (a) {
+      return a.activity_name === name;
+    });
+    acActivityNameError.style.display = isDuplicate ? 'block' : 'none';
+    btnCreateCodeSubmit.disabled = isDuplicate;
+    return isDuplicate;
+  }
+
   acActivityName.addEventListener('input', function () {
     // text-transform:uppercase is visual only — force the actual value too,
     // since that's what gets sent to the server.
     var pos = this.selectionStart;
     this.value = this.value.toUpperCase();
     this.setSelectionRange(pos, pos);
+    checkDuplicateName();
   });
 
   // Rebuilds the <select> options in place, keeping the current selection
@@ -449,10 +561,100 @@ $currentYear     = date('Y');
     });
   });
 
+  // --- Preview tab: list of existing activity codes ---
+  var acPreviewTableBody = document.getElementById('acPreviewTableBody');
+  var acPreviewEmpty     = document.getElementById('acPreviewEmpty');
+
+  var acColumnLabels = ['Activity Code', 'Activity Name', 'Department', 'Cashflow', 'Relative Path', 'Created'];
+
+  function renderActivityList(list) {
+    acPreviewTableBody.innerHTML = '';
+    acPreviewEmpty.style.display = list.length ? 'none' : 'block';
+    list.forEach(function (a) {
+      var tr = document.createElement('tr');
+      [a.activity_code, a.activity_name, a.department, a.cashflow, a.relative_path, a.created_at]
+        .forEach(function (val, i) {
+          var td = document.createElement('td');
+          td.textContent = val;
+          // Consumed by responsive.css (table -> stacked cards on <1024px):
+          // that rule hides <thead>, so each cell needs its own label to
+          // stay readable once the table collapses into cards on mobile.
+          td.setAttribute('data-label', acColumnLabels[i]);
+          tr.appendChild(td);
+        });
+      acPreviewTableBody.appendChild(tr);
+    });
+  }
+
+  function loadActivityList() {
+    return fetch('ajax/list_activity_codes.php', { cache: 'no-store' })
+      .then(function (r) {
+        if (!r.ok) {
+          // e.g. 401 (session invalid) -> r.json() below would still parse
+          // fine since list_activity_codes.php always emits JSON, but log
+          // the HTTP status too so this is easy to diagnose from DevTools.
+          console.warn('list_activity_codes.php responded with status', r.status);
+        }
+        return r.json();
+      })
+      .then(function (res) {
+        if (res.ok) {
+          activityListCache = res.data;
+          acPreviewEmpty.querySelector('.empty-title').textContent = 'No activity codes yet';
+          acPreviewEmpty.querySelector('.empty-sub').textContent = 'Switch to the Create Activity Code tab to add one.';
+          renderActivityList(activityListCache);
+        } else {
+          activityListCache = [];
+          renderActivityList([]);
+          acPreviewEmpty.querySelector('.empty-title').textContent = 'Failed to load';
+          acPreviewEmpty.querySelector('.empty-sub').textContent = res.message || 'Could not load activity codes.';
+        }
+      })
+      .catch(function (err) {
+        console.error('loadActivityList failed:', err);
+        activityListCache = [];
+        renderActivityList([]);
+        acPreviewEmpty.querySelector('.empty-title').textContent = 'Failed to load';
+        acPreviewEmpty.querySelector('.empty-sub').textContent = 'Connection error.';
+      });
+  }
+
+  // --- Tabs: Preview <-> Create Activity Code ---
+  var acTabs         = document.querySelectorAll('#acTabGroup .tab');
+  var acTabPanelMap   = {
+    preview: document.getElementById('acTabPanelPreview'),
+    create:  document.getElementById('acTabPanelCreate')
+  };
+
+  function setActiveAcTab(name) {
+    acTabs.forEach(function (t) {
+      t.classList.toggle('active', t.getAttribute('data-ac-tab') === name);
+    });
+    Object.keys(acTabPanelMap).forEach(function (key) {
+      acTabPanelMap[key].style.display = (key === name) ? 'block' : 'none';
+    });
+  }
+
+  acTabs.forEach(function (t) {
+    t.addEventListener('click', function () {
+      var name = t.getAttribute('data-ac-tab');
+      setActiveAcTab(name);
+      if (name === 'preview') {
+        // Refresh on every visit to Preview, not just the first time the
+        // form is opened, so newly created / edited codes always show up.
+        loadActivityList();
+      }
+    });
+  });
+
   function resetCreateCodeForm() {
     document.getElementById('acActivityName').value = '';
     document.getElementById('acCashflow').value = 'inflow';
     document.getElementById('txnCreateCodeError').style.display = 'none';
+    acActivityNameError.style.display = 'none';
+    btnCreateCodeSubmit.disabled = false;
+    setActiveAcTab('preview'); // land on Preview first, per spec
+    loadActivityList();
     updatePathPreview();
   }
 
@@ -464,6 +666,8 @@ $currentYear     = date('Y');
   document.getElementById('btnCreateCodeSubmit').addEventListener('click', function () {
     var errBox = document.getElementById('txnCreateCodeError');
     errBox.style.display = 'none';
+
+    if (checkDuplicateName()) return; // don't even hit the server on a known duplicate
 
     var payload = new URLSearchParams({
       year: acYear.value,

@@ -1,7 +1,7 @@
 {
     "departments": [
         {
-            "key": "date",
+            "key": "dates",
             "label": "DATES"
         },
         {
@@ -11,6 +11,10 @@
         {
             "key": "adm",
             "label": "ADM"
+        },
+        {
+            "key": "selling",
+            "label": "SELLING"
         }
     ]
 }

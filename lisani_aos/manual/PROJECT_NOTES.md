@@ -25,6 +25,9 @@ optic_pos/
 ```
 
 ## Konvensi penting
+- **Bahasa saat kerja**: komunikasi dengan user (chat) pakai **Bahasa Indonesia**. Semua
+  **kode** (identifier, komentar, nama kolom/field, nama file) tetap **Bahasa Inggris** —
+  sama seperti aturan [[lenza-optic-pos]], berlaku juga untuk lisani_aos.
 - **Tema**: dark neomorphism (soft shadow ganda terang+gelap), sesuai spec MD yang sudah
   diberikan user sebelumnya. `theme.css` = tokens & komponen, `responsive.css` = breakpoint.
   Jangan digabung jadi satu file — ikuti aturan section 8.1 di spec asli.
@@ -130,6 +133,65 @@ bisa dipakai ulang di menu lain juga.
     departemen ditolak server** kalau `key`-nya sudah dipakai activity code manapun (dicek
     lewat `relative_path LIKE 'input/%/{key}/%'` di tabel `activities`). Menambah
     departemen baru men-generate `key` otomatis dari label (slug huruf kecil), unik.
+- **Transactions — Activity Code sekarang punya 2 tab** di dalam card
+  `#viewCreateActivityCode` (`transaction_content.php`), diatur lewat `.tab-group`
+  `#acTabGroup` + `[data-ac-tab]`:
+  - **Tab 1 "Preview"** (default saat form dibuka) — tabel list activity code yang
+    sudah ada (`#acTabPanelPreview`, tabel `#acPreviewTableBody`), datanya dari AJAX
+    baru `ajax/list_activity_codes.php` (kolom: Activity Code, Activity Name,
+    Department, Cashflow, Relative Path, Created — department & code number di-parse
+    dari `relative_path` karena tidak ada kolom terpisah di tabel `activities`).
+    **Asumsi skema**: tabel `activities` punya kolom `id` (PK auto-increment) dan
+    `created_at` (TIMESTAMP DEFAULT CURRENT_TIMESTAMP) selain kolom yang sudah dipakai
+    `create_activity_code.php` — cek `lisani_aos_activities.sql` asli, sesuaikan query
+    di `list_activity_codes.php` kalau beda.
+  - **Tab 2 "Create Activity Code"** — form yang sudah ada sebelumnya (Year,
+    Department, Activity Name, Cashflow, Save), sekarang dengan 2 tambahan:
+    - Field **Activity Code** tidak lagi teks statis "Auto-generated" — sekarang
+      `#acCodePreview` menampilkan nomor **asli** yang akan dibuat, dan field
+      **Relative Path (preview)** menampilkan path asli (bukan `???` lagi). Keduanya
+      di-fetch live dari AJAX baru `ajax/preview_activity_code.php` (debounce 250ms)
+      setiap Year/Department berubah — logika penomorannya sengaja **disalin persis**
+      dari `create_activity_code.php` (query + padding yang sama) supaya preview selalu
+      cocok dengan hasil final. Endpoint ini read-only, tidak `mkdir` dan tidak
+      INSERT ke DB.
+    - Validasi **Activity Name tidak boleh duplikat**: dicek real-time di browser
+      (`checkDuplicateName()`) terhadap data yang sudah dimuat dari
+      `list_activity_codes.php` (tanpa request tambahan tiap ketik) — kalau duplikat,
+      pesan error muncul dan tombol Save disable. Sebagai jaring pengaman, pengecekan
+      yang sama juga ditambahkan di server `create_activity_code.php` (query
+      `SELECT id FROM activities WHERE activity_name = ?` sebelum INSERT).
+  - Saat form dibuka (baik dari alur password-confirm maupun "Create Another"), tab
+    otomatis kembali ke **Preview** dan list di-refresh (`resetCreateCodeForm()`),
+    supaya code yang baru dibuat langsung kelihatan di list.
+
+- **Fix — Tab Preview activity code hilang di layar <1024px**: bukan bug data/AJAX
+  (`list_activity_codes.php` & JS fetch-nya sudah benar, data memang sampai dan
+  ter-render ke DOM). Penyebabnya di `assets/css/responsive.css`, rule generic
+  `@media (max-width: 1023px) { table, thead { display:none } ... }` — dimaksudkan
+  untuk mengubah **semua** `<table>` di aplikasi jadi tampilan kartu di mobile/tablet,
+  tapi rule itu belum pernah benar-benar dipakai sebelumnya (tidak ada `<td>` di
+  aplikasi yang punya `data-label` + belum ada CSS `::before` pendukungnya). Tabel
+  Preview di `#acPreviewTableBody` adalah tabel pertama yang benar-benar kena dampak:
+  `<table>` mati total di bawah 1024px sehingga isinya raib meski datanya ada.
+  **Perbaikan**:
+  - `transaction_content.php` → `renderActivityList()` sekarang menambahkan
+    `data-label` ke tiap `<td>` (Activity Code / Activity Name / Department /
+    Cashflow / Relative Path / Created), lewat array `acColumnLabels`.
+  - `responsive.css` → ditambahkan `td[data-label] { display:flex; justify-content:
+    space-between }` + `td[data-label]::before { content: attr(data-label) }` di
+    dalam blok `@media (max-width:1023px)` yang sudah ada, supaya cell yang collapse
+    jadi card tetap menampilkan nama kolomnya.
+  - **Konvensi baru**: tabel manapun yang ditambahkan ke aplikasi ini ke depannya HARUS
+    ikut isi `data-label` di tiap `<td>` (lewat JS render atau langsung di PHP), kalau
+    tabelnya dirender di halaman yang bisa dibuka di layar <1024px — kalau tidak,
+    akan hilang lagi seperti kasus ini. Cell yang sengaja tidak butuh label (mis.
+    kolom aksi/tombol) boleh dibiarkan tanpa `data-label`, styling-nya tidak berubah.
+  - Tambahan kecil lain saat debugging: tab Preview sekarang refresh datanya setiap
+    kali diklik (bukan cuma sekali saat form pertama dibuka), dan `loadActivityList()`
+    log ke `console.warn`/`console.error` kalau request gagal, supaya lebih gampang
+    didiagnosis lain kali.
+
 - Belum: isi konten menu Report/Settings, Input Transaction (baru placeholder alert),
   rancang tabel DB untuk Report/Settings.
 
