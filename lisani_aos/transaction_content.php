@@ -156,6 +156,86 @@ $currentYear     = date('Y');
   </div>
 </div>
 
+<!-- Customer List — tabbed: Customer List (preview) + New Customer (form). Nothing here is a modal. -->
+<div class="card" id="viewCustomerList" style="width:100%; display:none;">
+  <div class="panel-header">
+    <div class="panel-title">Customer List</div>
+    <button type="button" class="btn btn-secondary" id="btnBackToEntryFromCustomer">
+      Back
+    </button>
+  </div>
+
+  <style>
+    #clTabGroup {
+      display: flex;
+      width: 100%;
+      gap: var(--space-2);
+      margin-bottom: var(--space-4);
+      background: none;
+      padding: 0;
+    }
+    #clTabGroup .tab {
+      flex: 1 1 0;
+      text-align: center;
+      padding: var(--space-3) var(--space-4);
+      border-radius: var(--radius-md);
+      background: var(--bg-recessed);
+      box-shadow: inset 3px 3px 6px var(--shadow-dark), inset -2px -2px 5px var(--shadow-light);
+      color: var(--text-secondary);
+      font-size: var(--text-sm);
+      font-weight: 600;
+      cursor: pointer;
+      transition: color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+    }
+    #clTabGroup .tab:hover { color: var(--text-primary); }
+    #clTabGroup .tab.active {
+      background: var(--bg-surface);
+      color: var(--accent);
+      box-shadow: 5px 5px 10px var(--shadow-dark), -4px -4px 8px var(--shadow-light);
+    }
+  </style>
+  <div class="tab-group" id="clTabGroup">
+    <div class="tab active" data-cl-tab="preview">Customer List</div>
+    <div class="tab" data-cl-tab="create">New Customer</div>
+  </div>
+
+  <!-- Tab 1: Customer List — list of customers already created -->
+  <div id="clTabPanelPreview">
+    <div class="accordion-list" id="clPreviewList"></div>
+    <div class="empty-state" id="clPreviewEmpty" style="display:none;">
+      <div class="empty-title">No customers yet</div>
+      <div class="empty-sub">Switch to the New Customer tab to add one.</div>
+    </div>
+  </div>
+
+  <!-- Tab 2: New Customer — the form itself -->
+  <div id="clTabPanelCreate" style="display:none;">
+    <div class="form-group">
+      <div class="label">Year</div>
+      <input type="number" class="input" id="clYear" value="<?= htmlspecialchars($currentYear) ?>" min="2000" max="2100">
+    </div>
+
+    <div class="form-group">
+      <div class="label">Customer Name</div>
+      <input type="text" class="input" id="clCustomerName" maxlength="150" placeholder="e.g. JOHN DOE" style="text-transform:uppercase;">
+      <div class="empty-sub" id="clCustomerNameError" style="display:none; color:var(--danger);">
+        This customer already exists for the selected year.
+      </div>
+    </div>
+
+    <div class="form-group">
+      <div class="label">Phone Number (WA)</div>
+      <input type="text" class="input" id="clPhoneNumber" maxlength="24" inputmode="numeric" autocomplete="off">
+    </div>
+
+    <div class="empty-sub" id="clCreateError" style="display:none; color:var(--danger);"></div>
+
+    <div style="display:flex; gap:var(--space-3); justify-content:flex-end; margin-top:var(--space-5);">
+      <button type="button" class="btn btn-primary" id="btnCreateCustomerSubmit">Save</button>
+    </div>
+  </div>
+</div>
+
 </div> <!-- /.menu-section[data-section="transactions"] -->
 
 <!-- ============================================================
@@ -179,6 +259,9 @@ $currentYear     = date('Y');
       </button>
       <button type="button" class="btn btn-secondary" id="btnOpenInputTransaction">
         Input Transaction
+      </button>
+      <button type="button" class="btn btn-secondary" id="btnOpenCustomerList">
+        Customer List
       </button>
     </div>
   </div>
@@ -238,17 +321,23 @@ $currentYear     = date('Y');
   var passwordOverlay   = document.getElementById('txnPasswordOverlay');
   var manageDeptOverlay = document.getElementById('txnManageDeptOverlay');
 
-  var viewEmpty  = document.getElementById('viewTransactionsEmpty');
-  var viewForm   = document.getElementById('viewCreateActivityCode');
-  var viewResult = document.getElementById('viewActivityCodeResult');
+  var viewEmpty        = document.getElementById('viewTransactionsEmpty');
+  var viewForm         = document.getElementById('viewCreateActivityCode');
+  var viewResult       = document.getElementById('viewActivityCodeResult');
+  var viewCustomerList = document.getElementById('viewCustomerList');
 
   function show(el) { el.style.display = (el === entryOverlay || el === passwordOverlay || el === manageDeptOverlay) ? 'flex' : 'block'; }
   function hide(el) { el.style.display = 'none'; }
 
   function showOnlyView(target) {
-    [viewEmpty, viewForm, viewResult].forEach(hide);
+    [viewEmpty, viewForm, viewResult, viewCustomerList].forEach(hide);
     show(target);
   }
+
+  // Which flow the password overlay was opened for, so btnPasswordConfirm
+  // knows where to land afterwards. Both Create Activity Code and Customer
+  // List share the same password overlay/endpoint.
+  var pendingPasswordTarget = 'activity_code'; // 'activity_code' | 'customer_list'
 
   // Only the entry fly window should ever appear unprompted, and only when
   // the Transactions section itself is actually opened (not on initial
@@ -278,6 +367,7 @@ $currentYear     = date('Y');
 
   // --- Entry fly window ---
   document.getElementById('btnOpenCreateActivityCode').addEventListener('click', function () {
+    pendingPasswordTarget = 'activity_code';
     hide(entryOverlay);
     document.getElementById('txnPasswordInput').value = '';
     document.getElementById('txnPasswordError').style.display = 'none';
@@ -286,6 +376,14 @@ $currentYear     = date('Y');
 
   document.getElementById('btnOpenInputTransaction').addEventListener('click', function () {
     alert('Input Transaction: coming soon.');
+  });
+
+  document.getElementById('btnOpenCustomerList').addEventListener('click', function () {
+    pendingPasswordTarget = 'customer_list';
+    hide(entryOverlay);
+    document.getElementById('txnPasswordInput').value = '';
+    document.getElementById('txnPasswordError').style.display = 'none';
+    show(passwordOverlay);
   });
 
   // X on the entry fly window -> back to Dashboard. We reuse footer.php's
@@ -317,8 +415,13 @@ $currentYear     = date('Y');
       .then(function (res) {
         if (res.ok) {
           hide(passwordOverlay);
-          resetCreateCodeForm();
-          showOnlyView(viewForm);
+          if (pendingPasswordTarget === 'customer_list') {
+            resetCreateCustomerForm();
+            showOnlyView(viewCustomerList);
+          } else {
+            resetCreateCodeForm();
+            showOnlyView(viewForm);
+          }
         } else {
           errBox.textContent = res.message || 'Wrong password.';
           errBox.style.display = 'block';
@@ -570,9 +673,15 @@ $currentYear     = date('Y');
 
   function toggleAccordionItem(item) {
     var isOpen = item.classList.contains('open');
-    // Opening one always collapses whatever else is open — at most one
-    // item expanded at any time.
-    acPreviewList.querySelectorAll('.accordion-item.open').forEach(closeAccordionItem);
+    // Opening one always collapses whatever else is open, but only within
+    // the SAME list as the clicked item (Activity Code Preview and Customer
+    // List each have their own .accordion-list) — otherwise closing was
+    // hardcoded to acPreviewList, so items inside clPreviewList could never
+    // be closed at all.
+    var ownList = item.closest('.accordion-list');
+    if (ownList) {
+      ownList.querySelectorAll('.accordion-item.open').forEach(closeAccordionItem);
+    }
     if (!isOpen) openAccordionItem(item);
   }
 
@@ -750,6 +859,7 @@ $currentYear     = date('Y');
   document.getElementById('btnResultCreateAnother').addEventListener('click', function () {
     // The password re-verify token is single-use server-side, so creating
     // another code needs a fresh confirmation.
+    pendingPasswordTarget = 'activity_code';
     showOnlyView(viewEmpty);
     document.getElementById('txnPasswordInput').value = '';
     document.getElementById('txnPasswordError').style.display = 'none';
@@ -759,6 +869,264 @@ $currentYear     = date('Y');
   document.getElementById('btnResultDone').addEventListener('click', function () {
     showOnlyView(viewEmpty);
     show(entryOverlay);
+  });
+
+  // ================================================================
+  // Customer List — same accordion pattern as the Activity Code
+  // Preview tab (collapsed by default, one item open at a time).
+  // ================================================================
+  var clPreviewList  = document.getElementById('clPreviewList');
+  var clPreviewEmpty = document.getElementById('clPreviewEmpty');
+  var customerListCache = [];
+
+  document.getElementById('btnBackToEntryFromCustomer').addEventListener('click', function () {
+    showOnlyView(viewEmpty);
+    show(entryOverlay);
+  });
+
+  function renderCustomerList(list) {
+    clPreviewList.innerHTML = '';
+    clPreviewEmpty.style.display = list.length ? 'none' : 'block';
+
+    list.forEach(function (c) {
+      var item = document.createElement('div');
+      item.className = 'accordion-item';
+
+      var header = document.createElement('div');
+      header.className = 'accordion-header';
+
+      var title = document.createElement('span');
+      title.className = 'accordion-title';
+      title.textContent = c.customer_name; // only thing visible while collapsed
+
+      var chevron = document.createElement('i');
+      chevron.className = 'ti ti-chevron-down accordion-chevron';
+
+      header.appendChild(title);
+      header.appendChild(chevron);
+      header.addEventListener('click', function () { toggleAccordionItem(item); });
+
+      var body = document.createElement('div');
+      body.className = 'accordion-body';
+
+      var bodyInner = document.createElement('div');
+      bodyInner.className = 'accordion-body-inner';
+
+      [
+        ['Year', c.year],
+        ['Phone Number', c.phone_number],
+        ['Total Inflow', c.total_inflow],
+        ['Total Outflow', c.total_outflow],
+        ['Profit', c.profit],
+        ['Created', c.created_at]
+      ].forEach(function (pair) {
+        var row = document.createElement('div');
+        row.className = 'accordion-row';
+
+        var label = document.createElement('div');
+        label.className = 'accordion-row-label';
+        label.textContent = pair[0];
+
+        var value = document.createElement('div');
+        value.className = 'accordion-row-value';
+        value.textContent = pair[1];
+
+        row.appendChild(label);
+        row.appendChild(value);
+        bodyInner.appendChild(row);
+      });
+
+      body.appendChild(bodyInner);
+      item.appendChild(header);
+      item.appendChild(body);
+      clPreviewList.appendChild(item);
+    });
+  }
+
+  // toggleAccordionItem()/openAccordionItem()/closeAccordionItem() are
+  // shared with the Activity Code Preview tab (defined above) — they only
+  // touch whatever .accordion-item is passed in, so they work unchanged
+  // for this list too.
+
+  function loadCustomerList() {
+    return fetch('ajax/list_customers.php', { cache: 'no-store' })
+      .then(function (r) {
+        if (!r.ok) console.warn('list_customers.php responded with status', r.status);
+        return r.json();
+      })
+      .then(function (res) {
+        if (res.ok) {
+          customerListCache = res.data;
+          clPreviewEmpty.querySelector('.empty-title').textContent = 'No customers yet';
+          clPreviewEmpty.querySelector('.empty-sub').textContent = 'Switch to the New Customer tab to add one.';
+          renderCustomerList(customerListCache);
+        } else {
+          customerListCache = [];
+          renderCustomerList([]);
+          clPreviewEmpty.querySelector('.empty-title').textContent = 'Failed to load';
+          clPreviewEmpty.querySelector('.empty-sub').textContent = res.message || 'Could not load customers.';
+        }
+      })
+      .catch(function (err) {
+        console.error('loadCustomerList failed:', err);
+        customerListCache = [];
+        renderCustomerList([]);
+        clPreviewEmpty.querySelector('.empty-title').textContent = 'Failed to load';
+        clPreviewEmpty.querySelector('.empty-sub').textContent = 'Connection error.';
+      });
+  }
+
+  // --- Tabs: Customer List <-> New Customer ---
+  var clTabs        = document.querySelectorAll('#clTabGroup .tab');
+  var clTabPanelMap  = {
+    preview: document.getElementById('clTabPanelPreview'),
+    create:  document.getElementById('clTabPanelCreate')
+  };
+
+  function setActiveClTab(name) {
+    clTabs.forEach(function (t) {
+      t.classList.toggle('active', t.getAttribute('data-cl-tab') === name);
+    });
+    Object.keys(clTabPanelMap).forEach(function (key) {
+      clTabPanelMap[key].style.display = (key === name) ? 'block' : 'none';
+    });
+  }
+
+  clTabs.forEach(function (t) {
+    t.addEventListener('click', function () {
+      var name = t.getAttribute('data-cl-tab');
+      setActiveClTab(name);
+      if (name === 'preview') {
+        // Refresh every visit, so newly added customers always show up.
+        loadCustomerList();
+      }
+    });
+  });
+
+  var clYear            = document.getElementById('clYear');
+  var clCustomerName     = document.getElementById('clCustomerName');
+  var clCustomerNameError = document.getElementById('clCustomerNameError');
+  var clPhoneNumber      = document.getElementById('clPhoneNumber');
+  var btnCreateCustomerSubmit = document.getElementById('btnCreateCustomerSubmit');
+
+  function checkDuplicateCustomer() {
+    var name = clCustomerName.value.trim();
+    var year = clYear.value;
+    var isDuplicate = name !== '' && customerListCache.some(function (c) {
+      return c.customer_name === name && String(c.year) === String(year);
+    });
+    clCustomerNameError.style.display = isDuplicate ? 'block' : 'none';
+    btnCreateCustomerSubmit.disabled = isDuplicate;
+    return isDuplicate;
+  }
+
+  clCustomerName.addEventListener('input', function () {
+    // text-transform:uppercase is visual only — force the actual value too,
+    // since that's what gets sent to the server.
+    var pos = this.selectionStart;
+    this.value = this.value.toUpperCase();
+    this.setSelectionRange(pos, pos);
+    checkDuplicateCustomer();
+  });
+  clYear.addEventListener('input', checkDuplicateCustomer);
+
+  // --- Phone Number: fixed "+62 8" prefix, rest grouped 4-4 realtime ---
+  var PHONE_PREFIX = '+62 8';
+  var phoneDigits = ''; // raw digits typed AFTER the fixed "8", max 11 (total incl. 8 = 12)
+
+  function formatPhoneGroups(digits) {
+    var groups = [];
+    for (var i = 0; i < digits.length; i += 4) {
+      groups.push(digits.substr(i, 4));
+    }
+    return groups.join(' ');
+  }
+
+  function renderPhoneValue() {
+    var groups = formatPhoneGroups(phoneDigits);
+    clPhoneNumber.value = groups ? (PHONE_PREFIX + ' ' + groups) : PHONE_PREFIX;
+  }
+
+  function placeCaretAtEnd() {
+    var len = clPhoneNumber.value.length;
+    clPhoneNumber.setSelectionRange(len, len);
+  }
+
+  clPhoneNumber.addEventListener('focus', function () {
+    if (this.value === '') renderPhoneValue();
+    placeCaretAtEnd();
+  });
+
+  clPhoneNumber.addEventListener('click', function () {
+    // Never let the caret land inside the fixed "+62 8" prefix.
+    if (this.selectionStart < PHONE_PREFIX.length) placeCaretAtEnd();
+  });
+
+  clPhoneNumber.addEventListener('input', function () {
+    // Re-derive digits from whatever the user ended up typing: strip
+    // everything, drop the fixed "628" if it's still leading, cap length.
+    var digitsOnly = this.value.replace(/\D/g, '');
+    if (digitsOnly.indexOf('628') === 0) {
+      digitsOnly = digitsOnly.substring(3);
+    } else if (digitsOnly.indexOf('62') === 0) {
+      digitsOnly = digitsOnly.substring(2).replace(/^8/, '');
+    } else if (digitsOnly.indexOf('8') === 0 && digitsOnly.length && phoneDigits.length === 0) {
+      digitsOnly = digitsOnly.substring(1);
+    }
+    phoneDigits = digitsOnly.substring(0, 11); // 8 + 11 digits = 12 total, typical ID mobile length
+    renderPhoneValue();
+    placeCaretAtEnd();
+  });
+
+  function resetPhoneField() {
+    phoneDigits = '';
+    renderPhoneValue();
+  }
+  renderPhoneValue(); // show "+62 8" immediately on load
+
+  function resetCreateCustomerForm() {
+    clCustomerName.value = '';
+    resetPhoneField();
+    clYear.value = '<?= htmlspecialchars($currentYear) ?>';
+    document.getElementById('clCreateError').style.display = 'none';
+    clCustomerNameError.style.display = 'none';
+    btnCreateCustomerSubmit.disabled = false;
+    setActiveClTab('preview'); // land on Customer List first, per spec
+    loadCustomerList();
+  }
+
+  btnCreateCustomerSubmit.addEventListener('click', function () {
+    var errBox = document.getElementById('clCreateError');
+    errBox.style.display = 'none';
+
+    if (checkDuplicateCustomer()) return; // don't hit the server on a known duplicate
+
+    var payload = new URLSearchParams({
+      year: clYear.value,
+      customer_name: clCustomerName.value,
+      phone_number: clPhoneNumber.value
+    });
+
+    fetch('ajax/create_customer.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: payload.toString()
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (res.ok) {
+          // No generated artifact to show (unlike Activity Code), so just
+          // land back on the refreshed Customer List.
+          resetCreateCustomerForm();
+        } else {
+          errBox.textContent = res.message || 'Failed to save customer.';
+          errBox.style.display = 'block';
+        }
+      })
+      .catch(function () {
+        errBox.textContent = 'Connection error.';
+        errBox.style.display = 'block';
+      });
   });
 })();
 </script>

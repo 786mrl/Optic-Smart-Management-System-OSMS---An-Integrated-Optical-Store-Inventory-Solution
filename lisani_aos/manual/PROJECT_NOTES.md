@@ -202,8 +202,86 @@ bisa dipakai ulang di menu lain juga.
     refresh datanya setiap kali diklik (bukan cuma sekali saat form pertama dibuka), dan
     `loadActivityList()` tetap log ke `console.warn`/`console.error` kalau request gagal.
 
+- **Transactions — Customer List sudah jalan** (`transaction_content.php`,
+  `ajax/create_customer.php`, `ajax/list_customers.php`, tabel `customers` —
+  lihat `lisani_aos_customers.sql`):
+  - Tombol **Customer List** ditambahkan di fly window pemilihan aksi
+    (`#txnEntryOverlay`), sejajar dengan Create Activity Code / Input Transaction.
+  - Sama seperti Create Activity Code, membuka Customer List **wajib verifikasi
+    password dulu** — fly window password (`#txnPasswordOverlay`) dan endpoint
+    `ajax/verify_password.php` dipakai bersama untuk kedua flow, dibedakan lewat
+    variabel JS `pendingPasswordTarget` (`'activity_code'` / `'customer_list'`)
+    yang di-set saat tombol pembuka masing-masing diklik.
+  - View `#viewCustomerList` punya 2 tab (`.tab-group` `#clTabGroup`,
+    `[data-cl-tab]`), pola identik dengan Activity Code:
+    - **Tab 1 "Customer List"** (default) — accordion (`#clPreviewList`,
+      collapsed by default, header = Customer Name saja, satu item terbuka
+      dalam satu waktu) dari `ajax/list_customers.php`. Body accordion
+      menampilkan Year, Phone Number, Total Inflow, Total Outflow, Profit,
+      Created. Fungsi toggle/open/close accordion **dipakai bersama** dengan
+      Activity Code Preview (didefinisikan sekali, dipanggil dari kedua list).
+    - **Tab 2 "New Customer"** — form input **hanya 3 field**: Year (default
+      current year, bisa diubah), Customer Name (dipaksa uppercase, sama
+      seperti Activity Name), Phone Number (WA, bebas format). Total Inflow/
+      Outflow/Profit **tidak diinput di sini** — kolomnya di DB default 0,
+      diisi program lain nanti.
+    - **Validasi duplikat**: customer name + year yang sama tidak boleh
+      diinput dua kali. Dicek real-time di browser (`checkDuplicateCustomer()`)
+      terhadap data dari `list_customers.php`, dan sebagai jaring pengaman
+      juga dicek di server `create_customer.php` (`SELECT id FROM customers
+      WHERE year = ? AND customer_name = ?` sebelum INSERT) + `UNIQUE KEY
+      (year, customer_name)` di skema tabel.
+    - Setelah Save sukses, **tidak ada view hasil terpisah** (beda dari
+      Activity Code yang generate code/path) — form langsung direset dan tab
+      kembali ke Customer List yang sudah di-refresh, supaya customer baru
+      langsung kelihatan.
+  - Tombol **Back** di `#viewCustomerList` kembali ke fly window pemilihan aksi
+    (`#txnEntryOverlay`), sama seperti pola `btnBackToEntryFromForm` di
+    Activity Code.
+
+- **Customer List — perbaikan tampilan & format phone number** (`transaction_content.php`,
+  `ajax/create_customer.php`):
+  - **Tab styling disamakan dengan Activity Code**: `#clTabGroup` sebelumnya tidak
+    punya `<style>` scoped (beda dari `#acTabGroup`), jadi tampilan tab-nya polos/tidak
+    konsisten. Sudah ditambahkan style block yang identik dengan `#acTabGroup` (inset
+    shadow saat idle, elevated shadow + warna accent saat `.active`).
+  - **Tab Customer List (preview) tetap Accordion**, konsisten di semua ukuran layar —
+    sama seperti Activity Code sekarang. Pendekatan table (desktop) / card (mobile)
+    **sengaja tidak dipakai** untuk Customer List (dikonfirmasi user, lihat catatan di
+    poin Activity Code Accordion di atas soal kenapa pendekatan tabel-collapse sudah
+    ditinggalkan).
+  - **Field Phone Number (WA) sekarang auto-format**: prefix `+62 8` selalu tampil
+    dan tidak bisa dihapus/diedit user (klik/backspace ke area prefix otomatis
+    melempar caret ke akhir). Sisa digit yang diketik user di-*group* 4-4 secara
+    realtime, mis. `+62 8 1234 5678 901`. Dibatasi maks 11 digit setelah `8` (total
+    12 digit setelah `+62`, panjang wajar nomor HP Indonesia). Logic ada di
+    `transaction_content.php` (`PHONE_PREFIX`, `phoneDigits`, `renderPhoneValue()`,
+    `resetPhoneField()` — dipanggil dari `resetCreateCustomerForm()`).
+  - **Normalisasi di server** (`create_customer.php`): nilai `phone_number` yang
+    dikirim client (`+62 8 xxxx xxxx xxx`, dengan spasi) di-strip jadi digit saja lalu
+    disimpan ke DB dalam bentuk bersih `+628xxxxxxxxxx` (tanpa spasi) — supaya format
+    di database konsisten terlepas dari spacing/grouping yang dikirim client. Ada
+    juga jaring pengaman untuk format lama/mentah (`081234567890` atau
+    `81234567890`) kalau endpoint ini suatu saat diakses tanpa lewat form yang
+    sekarang. Validasi format: harus match `+628` diikuti 7–11 digit (total 10–14
+    digit setelah `+`), kalau tidak endpoint menolak dengan `'Invalid phone number
+    format.'`.
+
+  - **Bugfix: card Customer List tidak bisa ditutup / tidak menutup card lain**:
+    `toggleAccordionItem()` sebelumnya hardcode menutup item lain di
+    `acPreviewList` (list Activity Code) untuk SEMUA pemanggil, padahal fungsi
+    ini dipakai bersama oleh dua accordion (`acPreviewList` & `clPreviewList`).
+    Akibatnya item di `clPreviewList` tidak pernah ikut ditutup lewat baris itu
+    — sekali dibuka jadi tidak bisa ditutup lagi, dan membuka item lain tidak
+    menutup item yang sudah terbuka. Sudah diperbaiki: fungsi sekarang cari
+    `.accordion-list` terdekat dari item yang diklik (`item.closest(...)`)
+    sebelum menutup item `.open` lainnya, jadi otomatis scoped ke list
+    masing-masing (Activity Code & Customer List sama-sama benar, dan
+    accordion-list lain di masa depan otomatis ikut benar juga).
+
 - Belum: isi konten menu Report/Settings, Input Transaction (baru placeholder alert),
-  rancang tabel DB untuk Report/Settings.
+  rancang tabel DB untuk Report/Settings, dan program terpisah untuk mengisi
+  Total Inflow/Outflow/Profit di tabel `customers`.
 
 ## Cara lanjut kerja di chat/akun baru
 1. Upload file ini + `index.php` (atau zip `lisani_aos/` lengkap).
