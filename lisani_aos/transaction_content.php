@@ -81,8 +81,10 @@ $currentYear     = date('Y');
     </div>
   </div>
 
-  <!-- Tab 2: Create Activity Code — the form itself -->
+  <!-- Tab 2: Create Activity Code / Edit Activity Code — same form, reused
+       for both via editingActivityId (null = creating, set = editing). -->
   <div id="acTabPanelCreate" style="display:none;">
+    <div class="empty-sub" id="acFormModeLabel" style="display:none; color:var(--accent); margin-bottom:var(--space-3);"></div>
     <div class="form-group">
       <div class="label">Year</div>
       <input type="number" class="input" id="acYear" value="<?= htmlspecialchars($currentYear) ?>" min="2000" max="2100">
@@ -316,6 +318,31 @@ $currentYear     = date('Y');
   </div>
 </div>
 
+<!-- Delete Activity Code — confirmation + data-loss warning + password
+     re-check. Same pattern as txnDeleteCustomerOverlay above. -->
+<div class="modal-overlay" id="txnDeleteActivityCodeOverlay" style="display:none;">
+  <div class="modal" style="max-width:380px;">
+    <div class="modal-header">
+      <div class="modal-title">Delete Activity Code</div>
+    </div>
+    <div class="modal-body">
+      <div class="empty-sub" style="color:var(--danger); margin-bottom:var(--space-3);">
+        You're about to permanently delete <strong id="delActivityName">this activity code</strong>.
+        This cannot be undone and all associated data will be lost.
+      </div>
+      <div class="form-group">
+        <div class="label">Enter your password to confirm</div>
+        <input type="password" class="input" id="delActivityPasswordInput" autocomplete="current-password">
+      </div>
+      <div class="empty-sub" id="delActivityError" style="display:none; color:var(--danger);"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" id="btnDeleteActivityCancel">Cancel</button>
+      <button type="button" class="btn btn-danger" id="btnDeleteActivityConfirm">Delete</button>
+    </div>
+  </div>
+</div>
+
 <!-- Manage Departments — add / edit / delete department options -->
 <div class="modal-overlay" id="txnManageDeptOverlay" style="display:none;">
   <div class="modal" style="max-width:420px;">
@@ -347,10 +374,11 @@ $currentYear     = date('Y');
 (function () {
   var section = document.querySelector('.menu-section[data-section="transactions"]');
 
-  var entryOverlay          = document.getElementById('txnEntryOverlay');
-  var passwordOverlay       = document.getElementById('txnPasswordOverlay');
-  var manageDeptOverlay     = document.getElementById('txnManageDeptOverlay');
-  var deleteCustomerOverlay = document.getElementById('txnDeleteCustomerOverlay');
+  var entryOverlay             = document.getElementById('txnEntryOverlay');
+  var passwordOverlay          = document.getElementById('txnPasswordOverlay');
+  var manageDeptOverlay        = document.getElementById('txnManageDeptOverlay');
+  var deleteCustomerOverlay    = document.getElementById('txnDeleteCustomerOverlay');
+  var deleteActivityCodeOverlay = document.getElementById('txnDeleteActivityCodeOverlay');
 
   var viewEmpty        = document.getElementById('viewTransactionsEmpty');
   var viewForm         = document.getElementById('viewCreateActivityCode');
@@ -358,7 +386,7 @@ $currentYear     = date('Y');
   var viewCustomerList = document.getElementById('viewCustomerList');
 
   function show(el) {
-    el.style.display = (el === entryOverlay || el === passwordOverlay || el === manageDeptOverlay || el === deleteCustomerOverlay) ? 'flex' : 'block';
+    el.style.display = (el === entryOverlay || el === passwordOverlay || el === manageDeptOverlay || el === deleteCustomerOverlay || el === deleteActivityCodeOverlay) ? 'flex' : 'block';
   }
   function hide(el) { el.style.display = 'none'; }
 
@@ -393,6 +421,7 @@ $currentYear     = date('Y');
         hide(passwordOverlay);
         hide(manageDeptOverlay);
         hide(deleteCustomerOverlay);
+        hide(deleteActivityCodeOverlay);
       }
       wasVisible = isVisible;
     });
@@ -522,12 +551,20 @@ $currentYear     = date('Y');
   function checkDuplicateName() {
     var name = acActivityName.value.trim();
     var isDuplicate = name !== '' && activityListCache.some(function (a) {
+      if (editingActivityId !== null && a.id === editingActivityId) return false; // ignore self while editing
       return a.activity_name === name;
     });
     acActivityNameError.style.display = isDuplicate ? 'block' : 'none';
     btnCreateCodeSubmit.disabled = isDuplicate;
     return isDuplicate;
   }
+
+  // null = Create Activity Code form is in "create" mode. Set to an
+  // activity code's id while editing that row (see openEditActivityForm /
+  // btnCreateCodeSubmit). Activity object currently pending deletion, set
+  // by openDeleteActivityConfirm.
+  var editingActivityId = null;
+  var pendingDeleteActivity = null;
 
   acActivityName.addEventListener('input', function () {
     // text-transform:uppercase is visual only — force the actual value too,
@@ -751,8 +788,7 @@ $currentYear     = date('Y');
         ['Activity Code', a.activity_code],
         ['Department', a.department],
         ['Cashflow', a.cashflow],
-        ['Relative Path', a.relative_path],
-        ['Created', a.created_at]
+        ['Relative Path', a.relative_path]
       ].forEach(function (pair) {
         var row = document.createElement('div');
         row.className = 'accordion-row';
@@ -769,6 +805,36 @@ $currentYear     = date('Y');
         row.appendChild(value);
         bodyInner.appendChild(row);
       });
+
+      // Edit / Delete actions — clicks here must not bubble to the header
+      // (which toggles open/close), so each handler stops propagation.
+      var actions = document.createElement('div');
+      actions.className = 'accordion-row';
+      actions.style.justifyContent = 'flex-end';
+      actions.style.gap = 'var(--space-2)';
+      actions.style.marginTop = 'var(--space-2)';
+
+      var editBtn = document.createElement('button');
+      editBtn.type = 'button';
+      editBtn.className = 'btn btn-secondary';
+      editBtn.textContent = 'Edit';
+      editBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        openEditActivityForm(a);
+      });
+
+      var deleteBtn = document.createElement('button');
+      deleteBtn.type = 'button';
+      deleteBtn.className = 'btn btn-danger';
+      deleteBtn.textContent = 'Delete';
+      deleteBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        openDeleteActivityConfirm(a);
+      });
+
+      actions.appendChild(editBtn);
+      actions.appendChild(deleteBtn);
+      bodyInner.appendChild(actions);
 
       body.appendChild(bodyInner);
       item.appendChild(header);
@@ -834,11 +900,23 @@ $currentYear     = date('Y');
         // Refresh on every visit to Preview, not just the first time the
         // form is opened, so newly created / edited codes always show up.
         loadActivityList();
+      } else if (name === 'create' && editingActivityId === null) {
+        // Clicked the tab directly (not via an Edit button, which sets
+        // editingActivityId itself before switching tabs) -> make sure the
+        // form is in blank "new code" state, not leftover edit data.
+        acFormModeLabel.style.display = 'none';
+        btnCreateCodeSubmit.textContent = 'Save';
       }
     });
   });
 
+  var acFormModeLabel = document.getElementById('acFormModeLabel');
+
   function resetCreateCodeForm() {
+    editingActivityId = null;
+    acFormModeLabel.style.display = 'none';
+    btnCreateCodeSubmit.textContent = 'Save';
+    acYear.value = '<?= htmlspecialchars($currentYear) ?>';
     document.getElementById('acActivityName').value = '';
     document.getElementById('acCashflow').value = 'inflow';
     document.getElementById('txnCreateCodeError').style.display = 'none';
@@ -847,6 +925,32 @@ $currentYear     = date('Y');
     setActiveAcTab('preview'); // land on Preview first, per spec
     loadActivityList();
     updatePathPreview();
+  }
+
+  // Switches the Create Activity Code tab into "editing" mode, pre-filled
+  // with an existing activity code's data. Save (btnCreateCodeSubmit) then
+  // routes to update_activity_code.php instead of create_activity_code.php
+  // while this is set.
+  function openEditActivityForm(a) {
+    editingActivityId = a.id;
+    acFormModeLabel.textContent = 'Editing ' + a.activity_name;
+    acFormModeLabel.style.display = 'block';
+    btnCreateCodeSubmit.textContent = 'Update';
+    document.getElementById('txnCreateCodeError').style.display = 'none';
+    acActivityNameError.style.display = 'none';
+    btnCreateCodeSubmit.disabled = false;
+
+    acYear.value = a.year;
+    acDepartment.value = a.department_key;
+    document.getElementById('acActivityName').value = a.activity_name;
+    document.getElementById('acCashflow').value = a.cashflow;
+    // Editing keeps the SAME code number — show the real (non-regenerated)
+    // code/path here instead of calling updatePathPreview(), which would
+    // hit preview_activity_code.php and compute the NEXT free number.
+    acCodePreview.value = a.activity_code;
+    acPathPreview.value = a.relative_path;
+
+    setActiveAcTab('create');
   }
 
   document.getElementById('btnBackToEntryFromForm').addEventListener('click', function () {
@@ -860,14 +964,17 @@ $currentYear     = date('Y');
 
     if (checkDuplicateName()) return; // don't even hit the server on a known duplicate
 
-    var payload = new URLSearchParams({
+    var isEditing = editingActivityId !== null;
+    var payloadFields = {
       year: acYear.value,
       departement: acDepartment.value,
       activity_name: document.getElementById('acActivityName').value,
       cashflow: document.getElementById('acCashflow').value
-    });
+    };
+    if (isEditing) payloadFields.id = editingActivityId;
+    var payload = new URLSearchParams(payloadFields);
 
-    fetch('ajax/create_activity_code.php', {
+    fetch(isEditing ? 'ajax/update_activity_code.php' : 'ajax/create_activity_code.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: payload.toString()
@@ -875,11 +982,17 @@ $currentYear     = date('Y');
       .then(function (r) { return r.json(); })
       .then(function (res) {
         if (res.ok) {
-          document.getElementById('resActivityCode').value = res.data.activity_code;
-          document.getElementById('resRelativePath').value = res.data.relative_path;
-          showOnlyView(viewResult);
+          if (isEditing) {
+            // No generated-result view for edits (unlike a fresh create) —
+            // just land back on the refreshed Preview tab.
+            resetCreateCodeForm();
+          } else {
+            document.getElementById('resActivityCode').value = res.data.activity_code;
+            document.getElementById('resRelativePath').value = res.data.relative_path;
+            showOnlyView(viewResult);
+          }
         } else {
-          errBox.textContent = res.message || 'Failed to create activity code.';
+          errBox.textContent = res.message || (isEditing ? 'Failed to update activity code.' : 'Failed to create activity code.');
           errBox.style.display = 'block';
         }
       })
@@ -1300,6 +1413,65 @@ $currentYear     = date('Y');
       .catch(function () {
         delCustomerError.textContent = 'Connection error.';
         delCustomerError.style.display = 'block';
+      });
+  });
+
+  // --- Delete Activity Code: confirmation + data-loss warning + password ---
+  var delActivityName          = document.getElementById('delActivityName');
+  var delActivityPasswordInput = document.getElementById('delActivityPasswordInput');
+  var delActivityError         = document.getElementById('delActivityError');
+  var btnDeleteActivityConfirm = document.getElementById('btnDeleteActivityConfirm');
+
+  function openDeleteActivityConfirm(a) {
+    pendingDeleteActivity = a;
+    delActivityName.textContent = a.activity_name;
+    delActivityPasswordInput.value = '';
+    delActivityError.style.display = 'none';
+    show(deleteActivityCodeOverlay);
+  }
+
+  document.getElementById('btnDeleteActivityCancel').addEventListener('click', function () {
+    pendingDeleteActivity = null;
+    hide(deleteActivityCodeOverlay);
+  });
+
+  btnDeleteActivityConfirm.addEventListener('click', function () {
+    if (!pendingDeleteActivity) return;
+    var pwd = delActivityPasswordInput.value;
+    delActivityError.style.display = 'none';
+
+    if (pwd === '') {
+      delActivityError.textContent = 'Password is required.';
+      delActivityError.style.display = 'block';
+      return;
+    }
+
+    var payload = new URLSearchParams({
+      id: pendingDeleteActivity.id,
+      password: pwd
+    });
+
+    fetch('ajax/delete_activity_code.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: payload.toString()
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (res.ok) {
+          // If the deleted row was mid-edit, drop back to create mode.
+          if (editingActivityId === pendingDeleteActivity.id) resetCreateCodeForm();
+          pendingDeleteActivity = null;
+          hide(deleteActivityCodeOverlay);
+          loadActivityList();
+        } else {
+          delActivityError.textContent = res.message || 'Failed to delete activity code.';
+          delActivityError.style.display = 'block';
+        }
+      })
+      .catch(function () {
+        delActivityError.textContent = 'Connection error.';
+        delActivityError.style.display = 'block';
       });
   });
 })();

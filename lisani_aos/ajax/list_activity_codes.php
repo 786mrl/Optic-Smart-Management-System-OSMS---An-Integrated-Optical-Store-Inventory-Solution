@@ -49,13 +49,20 @@ while ($r = $result->fetch_assoc()) {
         $code    = $m[2];
     }
 
+    $year = null;
+    if (preg_match('#^input/(\d{4})/#', $r['relative_path'], $ym)) {
+        $year = $ym[1];
+    }
+
     $rows[] = [
+        'id'              => (int) $r['id'],
         'activity_code'   => $code ?? '-',
         'activity_name'   => $r['activity_name'],
         'department'      => $deptLabelByKey[$deptKey] ?? ($deptKey ?? '-'),
+        'department_key'  => $deptKey ?? '',
         'cashflow'        => $r['cashflow'],
         'relative_path'   => $r['relative_path'],
-        'created_at'      => $r['created_at'],
+        'year'            => $year ?? '',
     ];
 }
 

@@ -202,6 +202,88 @@ bisa dipakai ulang di menu lain juga.
     refresh datanya setiap kali diklik (bukan cuma sekali saat form pertama dibuka), dan
     `loadActivityList()` tetap log ke `console.warn`/`console.error` kalau request gagal.
 
+- **Activity Code — kolom Created dihapus dari Preview, ditambah Edit & Delete**
+  (`transaction_content.php`, `ajax/list_activity_codes.php`,
+  `ajax/update_activity_code.php`, `ajax/delete_activity_code.php`):
+  - **`created_at` tidak lagi ditampilkan** di `.accordion-body` tab Preview — field
+    `created_at` juga dihapus dari response `list_activity_codes.php` sekalian (tidak
+    dikirim ke client sama sekali, bukan cuma disembunyikan di UI). Field yang tersisa
+    di body: Activity Code, Department, Cashflow, Relative Path.
+  - **Skema tabel `activities` dikonfirmasi via `DESCRIBE`** (lihat `id` int unsigned PK
+    auto_increment, `activity_name` varchar(150), `cashflow`
+    enum('inflow','outflow','in-out'), `relative_path` varchar(255) UNIQUE, `created_by`
+    int unsigned, `created_at` datetime default current_timestamp()) — cocok dengan
+    asumsi yang sudah dipakai `create_activity_code.php`/`list_activity_codes.php`
+    sebelumnya, jadi tidak ada penyesuaian query yang diperlukan. `list_activity_codes.php`
+    sekarang juga ikut mengirim `id`, `department_key` (key mentah dari
+    `departments.json`, bukan cuma label), dan `year` (di-parse dari `relative_path`)
+    — dipakai untuk mengisi ulang form Edit dan sebagai payload Delete.
+  - **Pola Edit/Delete disamakan persis dengan Customer List** (lihat poin di bawah
+    untuk detail pola aslinya) — tiap item `#acPreviewList` (accordion body) sekarang
+    punya tombol **Edit** (`.btn-secondary`) dan **Delete** (`.btn-danger`) di baris
+    terakhir, sejajar kanan, keduanya `e.stopPropagation()`.
+  - **Edit** (`openEditActivityForm()`): mengisi ulang form di tab "Create Activity
+    Code" (Year, Department — dari `department_key`, Activity Name, Cashflow) lalu
+    pindah ke tab itu. Field Activity Code & Relative Path (preview) diisi langsung dari
+    data row yang diklik (bukan lewat `updatePathPreview()`/`preview_activity_code.php`,
+    yang menghitung nomor kode *berikutnya* — saat edit, nomor kode yang sudah ada
+    sengaja dipertahankan, lihat poin `update_activity_code.php` di bawah). Variabel JS
+    `editingActivityId` menandai mode edit; selama variabel ini terisi:
+    - Label kecil `#acFormModeLabel` ("Editing <NAMA>") muncul di atas form,
+      tombol Save berubah jadi **"Update"**.
+    - `checkDuplicateName()` mengecualikan row yang sedang diedit dari pengecekan
+      duplikat.
+    - Klik Save mengirim ke **`ajax/update_activity_code.php`** (bukan
+      `create_activity_code.php`), menyertakan `id`. Sukses **tidak** menampilkan
+      `#viewActivityCodeResult` (itu cuma untuk create baru) — langsung kembali ke
+      Preview yang sudah di-refresh, sama seperti alur Customer.
+    - Klik tab "Preview" secara manual **atau** hasil Save yang sukses keduanya
+      memanggil `resetCreateCodeForm()`, yang juga mereset `editingActivityId` ke
+      `null`. Klik tab "Create Activity Code" **secara manual** (bukan lewat tombol
+      Edit) saat `editingActivityId` masih `null` akan reset label/tombol ke mode
+      create biasa — pola identik `clTabs` di Customer List.
+  - **`ajax/update_activity_code.php`**: update `activity_name`, `cashflow`, `year`,
+    `departement`. **Nomor kode (`001`, `002`, dst di dalam `relative_path`) TIDAK
+    pernah di-generate ulang saat edit** — diambil dari `relative_path` lama lewat
+    regex lalu dipakai apa adanya di `relative_path` baru. Ini sengaja beda dari
+    `create_activity_code.php` (yang menghitung nomor berikutnya per departemen+tahun)
+    supaya edit tidak pernah berebut/tabrakan nomor dengan activity code lain. Validasi
+    duplikat nama (`activity_name`) dicek ulang, mengecualikan id row sendiri — sama
+    seperti `update_customer.php`. Karena `relative_path` UNIQUE di skema DB, ditambah
+    juga pengecekan manual sebelum UPDATE kalau `year`/`departement` baru menghasilkan
+    path yang sudah dipakai row lain (harusnya jarang terjadi karena numbering per
+    departemen+tahun, tapi tetap dijaga karena ini jalur tulis manual). Kalau
+    `year`/`departement` berubah (yang berarti `relative_path` berubah), folder fisik
+    lama di-`rename()` ke lokasi baru (best-effort, status balik lewat
+    `folder_synced`); kalau folder tujuan sudah ada duluan, keduanya **dibiarkan apa
+    adanya** dan `folder_synced` di-set `false` — pola sama persis dengan
+    `update_customer.php`.
+  - **`ajax/delete_activity_code.php`**: **wajib verifikasi password** user yang
+    sedang login (`password_verify()` ke `password_hash` tabel `users`), sama seperti
+    `delete_customer.php` — tidak lewat `verify_password.php` yang lama. Setelah row
+    `activities` terhapus, folder fisik (`AOS_STORAGE_BASE/input/[year]/[dept]/[code]/`)
+    ditangani best-effort:
+    - **Kosong (atau tidak ada)** → langsung `rmdir()`.
+    - **Ada isinya** → **dipindah** (bukan dihapus) ke
+      `AOS_STORAGE_BASE/recycle/input/[year]/[dept]/[code]/` — segmen `input`
+      dipertahankan (sama alasannya dengan segmen `selling` di recycle Customer:
+      supaya struktur recycle-nya kelihatan asalnya dari section mana). Tabrakan nama
+      folder tujuan ditambah suffix timestamp (`-YmdHis`).
+    - Status aksi folder (`deleted` / `moved_to_recycle` / `none` / `failed`) dikirim
+      balik lewat field `folder_action` — sama seperti Customer, belum ditampilkan ke
+      UI, baru dikirim ke response saja.
+  - **Delete** (`openDeleteActivityConfirm()`): membuka fly window baru
+    **`#txnDeleteActivityCodeOverlay`** — terpisah dari `#txnDeleteCustomerOverlay`
+    (satu overlay per jenis aksi destruktif, pola sama). Isinya: teks warning data
+    loss, nama activity yang akan dihapus, field password, tombol Cancel/Delete. Klik
+    **Delete** langsung POST `id` + `password` ke `ajax/delete_activity_code.php`.
+    Kalau salah password, error tampil di dalam modal, modal tetap terbuka. Kalau row
+    yang dihapus kebetulan sedang dalam mode edit, form ikut direset balik ke mode
+    create (`resetCreateCodeForm()`).
+  - Modal baru ini didaftarkan ke helper `show()`/`hide()` yang sudah ada dan ikut
+    ditutup otomatis oleh `MutationObserver` saat section Transactions ditinggalkan —
+    sama seperti `#txnDeleteCustomerOverlay`.
+
 - **Transactions — Customer List sudah jalan** (`transaction_content.php`,
   `ajax/create_customer.php`, `ajax/list_customers.php`, tabel `customers` —
   lihat `lisani_aos_customers.sql`):
