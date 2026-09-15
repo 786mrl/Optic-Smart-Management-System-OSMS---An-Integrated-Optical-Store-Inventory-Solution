@@ -267,6 +267,98 @@ bisa dipakai ulang di menu lain juga.
     digit setelah `+`), kalau tidak endpoint menolak dengan `'Invalid phone number
     format.'`.
 
+- **Customer List — folder fisik otomatis per customer** (`ajax/create_customer.php`,
+  `ajax/update_customer.php`):
+  - Setelah INSERT customer baru berhasil, folder fisik dibuat otomatis dengan pola:
+    ```
+    [AOS_STORAGE_BASE]/selling/[year]/[customer_name, huruf kecil]/
+    ```
+    **Satu root yang sama dengan folder activity code** — `AOS_STORAGE_BASE`
+    (`dirname(__DIR__) . '/storage'`, konstanta di-redefine dengan guard
+    `!defined()` di `create_customer.php`/`update_customer.php` karena masing-
+    masing endpoint berdiri sendiri, bukan saling include). Activity code
+    pakai subfolder `input/...`, Customer List pakai subfolder `selling/...`
+    di bawah root yang sama.
+  - `customer_name` (sudah uppercase di DB) di-lowercase-kan + disanitasi
+    (`sanitize_folder_name()`) sebelum dipakai jadi nama folder — strip `/`, `\`,
+    `..`, dan karakter di luar huruf/angka/spasi/dash/underscore, supaya aman dari
+    path traversal dan konsisten sebagai nama folder OS.
+  - Pembuatan folder **best-effort**: kalau `mkdir` gagal, insert customer tetap
+    dianggap sukses (tidak di-rollback) — statusnya dikirim balik lewat field
+    `folder_created` di response JSON.
+  - `ajax/update_customer.php` (lihat poin Edit/Delete di bawah) melakukan hal yang
+    sama tapi berupa **rename/move folder** kalau `year` dan/atau `customer_name`
+    berubah saat edit, pakai konstanta `AOS_STORAGE_BASE` yang sama.
+
+- **Customer List — Edit & Delete** (`ajax/update_customer.php`, `ajax/delete_customer.php`):
+  - **Edit** (`update_customer.php`): update `year`, `customer_name` (dipaksa
+    uppercase), `phone_number` (normalisasi sama seperti create). `total_inflow` /
+    `total_outflow` / `profit` **tetap tidak bisa diedit di sini** — konsisten
+    dengan aturan create. Validasi duplikat (`year` + `customer_name`) dicek ulang,
+    kali ini **mengecualikan id row yang sedang diedit sendiri**. Kalau `year`
+    dan/atau `customer_name` berubah, folder fisik lama di-`rename()` ke lokasi
+    baru (best-effort, status balik lewat `folder_synced`); kalau folder tujuan
+    sudah ada duluan (tabrakan), keduanya **dibiarkan apa adanya** (tidak
+    dihapus/digabung otomatis) dan `folder_synced` di-set `false` supaya bisa
+    dicek manual.
+  - **Delete** (`delete_customer.php`): **wajib verifikasi password** user yang
+    sedang login (`password_verify()` terhadap `password_hash` di tabel `users`,
+    dicocokkan ke `$_SESSION['user_id']`) sebelum baris `customers` dihapus —
+    tanpa password yang benar, DELETE ditolak. Setelah row terhapus, folder
+    fisik customer (`AOS_STORAGE_BASE/selling/[year]/[nama]/`) ditangani
+    best-effort:
+    - **Kosong (atau tidak ada)** → langsung `rmdir()`.
+    - **Ada isinya** → **dipindah** (bukan dihapus) ke
+      `AOS_STORAGE_BASE/recycle/selling/[year]/[nama]/` — segmen `selling`
+      sengaja dipertahankan supaya dari struktur recycle-nya kelihatan folder
+      itu asalnya dari section mana (bukan cuma tumpukan `[year]/[nama]` yang
+      ambigu kalau nanti ada section lain yang juga masuk recycle). Kalau
+      folder tujuan sudah ada duluan (nama+tahun sama pernah dihapus
+      sebelumnya), ditambah suffix timestamp (`-YmdHis`) supaya tidak
+      tertimpa.
+    - Status aksi folder (`deleted` / `moved_to_recycle` / `none` / `failed`)
+      dikirim balik lewat field `folder_action` di response JSON — belum
+      ditampilkan ke UI, baru dikirim ke response saja.
+    - **Struktur/retention/cleanup untuk `storage/recycle/` belum dirancang**
+      — sengaja ditunda, akan diatur terpisah nanti.
+  - **Sudah diintegrasikan ke UI** (`transaction_content.php`):
+    - Tiap item `#clPreviewList` (accordion body) sekarang punya tombol
+      **Edit** (`.btn-secondary`) dan **Delete** (`.btn-danger`) di baris
+      terakhir, sejajar kanan. Keduanya `e.stopPropagation()` supaya klik
+      tombol tidak ikut toggle buka/tutup accordion item.
+    - **Edit** (`openEditCustomerForm()`): mengisi ulang form di tab
+      "New Customer" (Year, Customer Name, Phone Number — termasuk parse
+      ulang `phoneDigits` dari `+628xxxxxxxxxx` tersimpan lewat
+      `digitsFromStoredPhone()`) lalu pindah ke tab itu. Variabel JS
+      `editingCustomerId` menandai mode edit; selama variabel ini terisi:
+      - Label kecil `#clFormModeLabel` ("Editing <NAMA>") muncul di atas form,
+        tombol Save berubah jadi **"Update"**.
+      - `checkDuplicateCustomer()` mengecualikan row yang sedang diedit dari
+        pengecekan duplikat.
+      - Klik Save mengirim ke **`ajax/update_customer.php`** (bukan
+        `create_customer.php`), menyertakan `id`.
+      - Klik tab "New Customer" **secara manual** (bukan lewat tombol Edit)
+        saat `editingCustomerId` masih `null` akan reset label/tombol ke mode
+        create biasa. Tombol **Back** (`btnBackToEntryFromCustomer`) dan
+        `resetCreateCustomerForm()` juga mereset `editingCustomerId` ke
+        `null`, supaya state edit tidak "nyangkut" ke sesi berikutnya.
+    - **Delete** (`openDeleteCustomerConfirm()`): membuka fly window baru
+      **`#txnDeleteCustomerOverlay`** — terpisah dari `#txnPasswordOverlay`
+      yang sudah ada (itu untuk gate MASUK ke suatu alur; ini untuk satu aksi
+      destruktif saja). Isinya: teks **warning data loss** eksplisit ("cannot
+      be undone and all associated data will be lost"), nama customer yang
+      akan dihapus, field password, tombol Cancel/Delete. Klik **Delete**
+      langsung POST `id` + `password` ke **`ajax/delete_customer.php`**
+      (verifikasi password terjadi di endpoint itu sendiri via
+      `password_verify()` — **tidak** lewat `verify_password.php` yang lama,
+      supaya cuma perlu 1x input password, bukan 2x). Kalau salah password,
+      error tampil di dalam modal, modal tetap terbuka. Kalau row yang
+      dihapus kebetulan sedang dalam mode edit, form ikut direset balik ke
+      mode create.
+    - Modal baru ini didaftarkan ke helper `show()`/`hide()` yang sudah ada
+      (supaya pakai `display:flex` seperti modal lain) dan ikut ditutup
+      otomatis oleh `MutationObserver` saat section Transactions ditinggalkan.
+
   - **Bugfix: card Customer List tidak bisa ditutup / tidak menutup card lain**:
     `toggleAccordionItem()` sebelumnya hardcode menutup item lain di
     `acPreviewList` (list Activity Code) untuk SEMUA pemanggil, padahal fungsi
@@ -280,8 +372,11 @@ bisa dipakai ulang di menu lain juga.
     accordion-list lain di masa depan otomatis ikut benar juga).
 
 - Belum: isi konten menu Report/Settings, Input Transaction (baru placeholder alert),
-  rancang tabel DB untuk Report/Settings, dan program terpisah untuk mengisi
-  Total Inflow/Outflow/Profit di tabel `customers`.
+  rancang tabel DB untuk Report/Settings, program terpisah untuk mengisi
+  Total Inflow/Outflow/Profit di tabel `customers`, dan pengaturan
+  `storage/recycle/` (retention/cleanup/siapa yang boleh lihat isinya) —
+  sengaja ditunda sesuai keputusan user, folder-nya sudah dibuat otomatis
+  oleh `delete_customer.php` tapi belum ada pengelolaan lanjutannya.
 
 ## Cara lanjut kerja di chat/akun baru
 1. Upload file ini + `index.php` (atau zip `lisani_aos/` lengkap).

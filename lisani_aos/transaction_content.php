@@ -208,8 +208,10 @@ $currentYear     = date('Y');
     </div>
   </div>
 
-  <!-- Tab 2: New Customer — the form itself -->
+  <!-- Tab 2: New Customer / Edit Customer — same form, reused for both via
+       editingCustomerId (null = creating, set = editing that row). -->
   <div id="clTabPanelCreate" style="display:none;">
+    <div class="empty-sub" id="clFormModeLabel" style="display:none; color:var(--accent); margin-bottom:var(--space-3);"></div>
     <div class="form-group">
       <div class="label">Year</div>
       <input type="number" class="input" id="clYear" value="<?= htmlspecialchars($currentYear) ?>" min="2000" max="2100">
@@ -286,6 +288,34 @@ $currentYear     = date('Y');
   </div>
 </div>
 
+<!-- Delete Customer — confirmation + data-loss warning + password re-check.
+     Separate from txnPasswordOverlay on purpose: that one gates ENTRY into a
+     flow (password checked once, then the whole form is usable), this one
+     gates a single destructive action, so the password is checked directly
+     against ajax/delete_customer.php at the moment of deletion. -->
+<div class="modal-overlay" id="txnDeleteCustomerOverlay" style="display:none;">
+  <div class="modal" style="max-width:380px;">
+    <div class="modal-header">
+      <div class="modal-title">Delete Customer</div>
+    </div>
+    <div class="modal-body">
+      <div class="empty-sub" style="color:var(--danger); margin-bottom:var(--space-3);">
+        You're about to permanently delete <strong id="delCustomerName">this customer</strong>.
+        This cannot be undone and all associated data will be lost.
+      </div>
+      <div class="form-group">
+        <div class="label">Enter your password to confirm</div>
+        <input type="password" class="input" id="delCustomerPasswordInput" autocomplete="current-password">
+      </div>
+      <div class="empty-sub" id="delCustomerError" style="display:none; color:var(--danger);"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" id="btnDeleteCustomerCancel">Cancel</button>
+      <button type="button" class="btn btn-danger" id="btnDeleteCustomerConfirm">Delete</button>
+    </div>
+  </div>
+</div>
+
 <!-- Manage Departments — add / edit / delete department options -->
 <div class="modal-overlay" id="txnManageDeptOverlay" style="display:none;">
   <div class="modal" style="max-width:420px;">
@@ -317,16 +347,19 @@ $currentYear     = date('Y');
 (function () {
   var section = document.querySelector('.menu-section[data-section="transactions"]');
 
-  var entryOverlay      = document.getElementById('txnEntryOverlay');
-  var passwordOverlay   = document.getElementById('txnPasswordOverlay');
-  var manageDeptOverlay = document.getElementById('txnManageDeptOverlay');
+  var entryOverlay          = document.getElementById('txnEntryOverlay');
+  var passwordOverlay       = document.getElementById('txnPasswordOverlay');
+  var manageDeptOverlay     = document.getElementById('txnManageDeptOverlay');
+  var deleteCustomerOverlay = document.getElementById('txnDeleteCustomerOverlay');
 
   var viewEmpty        = document.getElementById('viewTransactionsEmpty');
   var viewForm         = document.getElementById('viewCreateActivityCode');
   var viewResult       = document.getElementById('viewActivityCodeResult');
   var viewCustomerList = document.getElementById('viewCustomerList');
 
-  function show(el) { el.style.display = (el === entryOverlay || el === passwordOverlay || el === manageDeptOverlay) ? 'flex' : 'block'; }
+  function show(el) {
+    el.style.display = (el === entryOverlay || el === passwordOverlay || el === manageDeptOverlay || el === deleteCustomerOverlay) ? 'flex' : 'block';
+  }
   function hide(el) { el.style.display = 'none'; }
 
   function showOnlyView(target) {
@@ -359,6 +392,7 @@ $currentYear     = date('Y');
         hide(entryOverlay);
         hide(passwordOverlay);
         hide(manageDeptOverlay);
+        hide(deleteCustomerOverlay);
       }
       wasVisible = isVisible;
     });
@@ -879,7 +913,14 @@ $currentYear     = date('Y');
   var clPreviewEmpty = document.getElementById('clPreviewEmpty');
   var customerListCache = [];
 
+  // null = New Customer form is in "create" mode. Set to a customer's id
+  // while editing that row (see openEditCustomerForm / btnCreateCustomerSubmit).
+  var editingCustomerId = null;
+  // Customer object currently pending deletion, set by openDeleteCustomerConfirm.
+  var pendingDeleteCustomer = null;
+
   document.getElementById('btnBackToEntryFromCustomer').addEventListener('click', function () {
+    editingCustomerId = null; // don't carry edit state into the next visit
     showOnlyView(viewEmpty);
     show(entryOverlay);
   });
@@ -935,6 +976,36 @@ $currentYear     = date('Y');
         row.appendChild(value);
         bodyInner.appendChild(row);
       });
+
+      // Edit / Delete actions — clicks here must not bubble to the header
+      // (which toggles open/close), so each handler stops propagation.
+      var actions = document.createElement('div');
+      actions.className = 'accordion-row';
+      actions.style.justifyContent = 'flex-end';
+      actions.style.gap = 'var(--space-2)';
+      actions.style.marginTop = 'var(--space-2)';
+
+      var editBtn = document.createElement('button');
+      editBtn.type = 'button';
+      editBtn.className = 'btn btn-secondary';
+      editBtn.textContent = 'Edit';
+      editBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        openEditCustomerForm(c);
+      });
+
+      var deleteBtn = document.createElement('button');
+      deleteBtn.type = 'button';
+      deleteBtn.className = 'btn btn-danger';
+      deleteBtn.textContent = 'Delete';
+      deleteBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        openDeleteCustomerConfirm(c);
+      });
+
+      actions.appendChild(editBtn);
+      actions.appendChild(deleteBtn);
+      bodyInner.appendChild(actions);
 
       body.appendChild(bodyInner);
       item.appendChild(header);
@@ -999,6 +1070,12 @@ $currentYear     = date('Y');
       if (name === 'preview') {
         // Refresh every visit, so newly added customers always show up.
         loadCustomerList();
+      } else if (name === 'create' && editingCustomerId === null) {
+        // Clicked the tab directly (not via an Edit button, which sets
+        // editingCustomerId itself before switching tabs) -> make sure the
+        // form is in blank "new customer" state, not leftover edit data.
+        clFormModeLabel.style.display = 'none';
+        btnCreateCustomerSubmit.textContent = 'Save';
       }
     });
   });
@@ -1013,6 +1090,7 @@ $currentYear     = date('Y');
     var name = clCustomerName.value.trim();
     var year = clYear.value;
     var isDuplicate = name !== '' && customerListCache.some(function (c) {
+      if (editingCustomerId !== null && c.id === editingCustomerId) return false; // ignore self while editing
       return c.customer_name === name && String(c.year) === String(year);
     });
     clCustomerNameError.style.display = isDuplicate ? 'block' : 'none';
@@ -1084,7 +1162,21 @@ $currentYear     = date('Y');
   }
   renderPhoneValue(); // show "+62 8" immediately on load
 
+  // "+628xxxxxxxxxx" (as stored/returned by the server) -> the digits
+  // that go after the fixed "+62 8" prefix, same thing phoneDigits holds
+  // while the user is typing.
+  function digitsFromStoredPhone(stored) {
+    var digits = String(stored || '').replace(/\D/g, '');
+    if (digits.indexOf('628') === 0) digits = digits.substring(3);
+    return digits.substring(0, 11);
+  }
+
+  var clFormModeLabel = document.getElementById('clFormModeLabel');
+
   function resetCreateCustomerForm() {
+    editingCustomerId = null;
+    clFormModeLabel.style.display = 'none';
+    btnCreateCustomerSubmit.textContent = 'Save';
     clCustomerName.value = '';
     resetPhoneField();
     clYear.value = '<?= htmlspecialchars($currentYear) ?>';
@@ -1095,19 +1187,42 @@ $currentYear     = date('Y');
     loadCustomerList();
   }
 
+  // Switches the New Customer tab into "editing" mode, pre-filled with an
+  // existing customer's data. Save (btnCreateCustomerSubmit) then routes to
+  // update_customer.php instead of create_customer.php while this is set.
+  function openEditCustomerForm(c) {
+    editingCustomerId = c.id;
+    clFormModeLabel.textContent = 'Editing ' + c.customer_name;
+    clFormModeLabel.style.display = 'block';
+    btnCreateCustomerSubmit.textContent = 'Update';
+    document.getElementById('clCreateError').style.display = 'none';
+    clCustomerNameError.style.display = 'none';
+    btnCreateCustomerSubmit.disabled = false;
+
+    clYear.value = c.year;
+    clCustomerName.value = c.customer_name;
+    phoneDigits = digitsFromStoredPhone(c.phone_number);
+    renderPhoneValue();
+
+    setActiveClTab('create');
+  }
+
   btnCreateCustomerSubmit.addEventListener('click', function () {
     var errBox = document.getElementById('clCreateError');
     errBox.style.display = 'none';
 
     if (checkDuplicateCustomer()) return; // don't hit the server on a known duplicate
 
-    var payload = new URLSearchParams({
+    var isEditing = editingCustomerId !== null;
+    var payloadFields = {
       year: clYear.value,
       customer_name: clCustomerName.value,
       phone_number: clPhoneNumber.value
-    });
+    };
+    if (isEditing) payloadFields.id = editingCustomerId;
+    var payload = new URLSearchParams(payloadFields);
 
-    fetch('ajax/create_customer.php', {
+    fetch(isEditing ? 'ajax/update_customer.php' : 'ajax/create_customer.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: payload.toString()
@@ -1119,13 +1234,72 @@ $currentYear     = date('Y');
           // land back on the refreshed Customer List.
           resetCreateCustomerForm();
         } else {
-          errBox.textContent = res.message || 'Failed to save customer.';
+          errBox.textContent = res.message || (isEditing ? 'Failed to update customer.' : 'Failed to save customer.');
           errBox.style.display = 'block';
         }
       })
       .catch(function () {
         errBox.textContent = 'Connection error.';
         errBox.style.display = 'block';
+      });
+  });
+
+  // --- Delete Customer: confirmation + data-loss warning + password ---
+  var delCustomerName            = document.getElementById('delCustomerName');
+  var delCustomerPasswordInput   = document.getElementById('delCustomerPasswordInput');
+  var delCustomerError           = document.getElementById('delCustomerError');
+  var btnDeleteCustomerConfirm   = document.getElementById('btnDeleteCustomerConfirm');
+
+  function openDeleteCustomerConfirm(c) {
+    pendingDeleteCustomer = c;
+    delCustomerName.textContent = c.customer_name;
+    delCustomerPasswordInput.value = '';
+    delCustomerError.style.display = 'none';
+    show(deleteCustomerOverlay);
+  }
+
+  document.getElementById('btnDeleteCustomerCancel').addEventListener('click', function () {
+    pendingDeleteCustomer = null;
+    hide(deleteCustomerOverlay);
+  });
+
+  btnDeleteCustomerConfirm.addEventListener('click', function () {
+    if (!pendingDeleteCustomer) return;
+    var pwd = delCustomerPasswordInput.value;
+    delCustomerError.style.display = 'none';
+
+    if (pwd === '') {
+      delCustomerError.textContent = 'Password is required.';
+      delCustomerError.style.display = 'block';
+      return;
+    }
+
+    var payload = new URLSearchParams({
+      id: pendingDeleteCustomer.id,
+      password: pwd
+    });
+
+    fetch('ajax/delete_customer.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: payload.toString()
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (res.ok) {
+          // If the deleted row was mid-edit, drop back to create mode.
+          if (editingCustomerId === pendingDeleteCustomer.id) resetCreateCustomerForm();
+          pendingDeleteCustomer = null;
+          hide(deleteCustomerOverlay);
+          loadCustomerList();
+        } else {
+          delCustomerError.textContent = res.message || 'Failed to delete customer.';
+          delCustomerError.style.display = 'block';
+        }
+      })
+      .catch(function () {
+        delCustomerError.textContent = 'Connection error.';
+        delCustomerError.style.display = 'block';
       });
   });
 })();

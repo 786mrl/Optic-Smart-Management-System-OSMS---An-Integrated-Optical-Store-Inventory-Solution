@@ -16,6 +16,28 @@ require_once __DIR__ . '/../db_config.php'; // provides $lisani_conn (mysqli)
 
 header('Content-Type: application/json');
 
+// Base folder for all physical storage in this app — the SAME root used by
+// create_activity_code.php (lisani_aos/storage), just a different subfolder
+// ("selling" instead of "input"). Physical layout:
+//   [AOS_STORAGE_BASE]/selling/[year]/[customer_name, lowercase]/
+if (!defined('AOS_STORAGE_BASE')) {
+    define('AOS_STORAGE_BASE', dirname(__DIR__) . '/storage');
+}
+
+/**
+ * Turn a customer name into a filesystem-safe folder name.
+ * Strips path separators, ".." traversal, and anything outside
+ * letters/digits/space/dash/underscore, then collapses whitespace.
+ */
+function sanitize_folder_name(string $name): string
+{
+    $clean = str_replace(['/', '\\'], ' ', $name);
+    $clean = preg_replace('/\.\.+/', '', $clean);
+    $clean = preg_replace('/[^A-Za-z0-9 _-]/', '', $clean);
+    $clean = trim(preg_replace('/\s+/', ' ', $clean));
+    return $clean;
+}
+
 $year         = isset($_POST['year']) ? trim($_POST['year']) : '';
 $customerName = isset($_POST['customer_name']) ? strtoupper(trim($_POST['customer_name'])) : '';
 $phoneNumberRaw = isset($_POST['phone_number']) ? trim($_POST['phone_number']) : '';
@@ -75,13 +97,31 @@ $stmt = $lisani_conn->prepare('INSERT INTO customers (year, customer_name, phone
 $stmt->bind_param('iss', $year, $customerName, $phoneNumber);
 
 if ($stmt->execute()) {
+    // Auto-create the physical folder for this customer:
+    // SELLING_STORAGE_BASE/[year]/[customer_name]
+    // Folder creation is best-effort — insert already succeeded, so a
+    // mkdir failure is reported via 'folder_created' instead of failing
+    // the whole request.
+    $folderCreated = false;
+    $folderName    = strtolower(sanitize_folder_name($customerName));
+    $customerDir   = rtrim(AOS_STORAGE_BASE, '/') . '/selling/' . $year . '/' . $folderName;
+
+    if ($folderName !== '') {
+        if (is_dir($customerDir)) {
+            $folderCreated = true;
+        } else {
+            $folderCreated = @mkdir($customerDir, 0775, true);
+        }
+    }
+
     echo json_encode([
         'ok'   => true,
         'data' => [
-            'id'            => $stmt->insert_id,
-            'year'          => $year,
-            'customer_name' => $customerName,
-            'phone_number'  => $phoneNumber
+            'id'             => $stmt->insert_id,
+            'year'           => $year,
+            'customer_name'  => $customerName,
+            'phone_number'   => $phoneNumber,
+            'folder_created' => $folderCreated
         ]
     ]);
 } else {
