@@ -453,12 +453,161 @@ bisa dipakai ulang di menu lain juga.
     masing-masing (Activity Code & Customer List sama-sama benar, dan
     accordion-list lain di masa depan otomatis ikut benar juga).
 
-- Belum: isi konten menu Report/Settings, Input Transaction (baru placeholder alert),
-  rancang tabel DB untuk Report/Settings, program terpisah untuk mengisi
-  Total Inflow/Outflow/Profit di tabel `customers`, dan pengaturan
+- Belum: isi konten menu Report, Input Transaction (baru placeholder alert),
+  rancang tabel DB untuk Report, program terpisah untuk mengisi Total
+  Inflow/Outflow/Profit di tabel `customers`, dan pengaturan
   `storage/recycle/` (retention/cleanup/siapa yang boleh lihat isinya) —
   sengaja ditunda sesuai keputusan user, folder-nya sudah dibuat otomatis
   oleh `delete_customer.php` tapi belum ada pengelolaan lanjutannya.
+  Settings sudah ada isi (Company Documents & Company Bank Accounts, lihat
+  poin di atas) — bagian Settings lain (kalau ada) masih bisa ditambah nanti.
+
+- **Settings — Company Documents & Company Bank Accounts sudah jalan**
+  (`settings_content.php`, `ajax/upload_document.php`, `ajax/update_document.php`,
+  `ajax/delete_document.php`, `ajax/download_document.php`, `ajax/share_documents.php`,
+  `ajax/list_documents.php`, `ajax/list_bank_accounts.php`, `ajax/save_bank_account.php`,
+  `ajax/delete_bank_account.php`, `ajax/share_bank_accounts.php`,
+  `ajax/manage_currencies.php`, tabel `company_documents` — lihat
+  `sql/lisani_aos_company_documents.sql`):
+  - **Sama seperti `transaction_content.php`**: `settings_content.php` membungkus
+    isinya sendiri dengan `<div class="menu-section" data-section="settings"
+    style="display:none;">` — di `index.php`, include-nya **menggantikan** div
+    section Settings sepenuhnya (bukan diletakkan di dalamnya). Modal-modalnya
+    (`#settingsConfirmOverlay`, `#settingsAddCurrencyOverlay`) ditaruh sebagai
+    sibling di luar wrapper itu, sama alasannya seperti modal Transactions.
+  - **Dua card collapsible baru** (`.settings-collapsible`, class ditambahkan
+    lewat `<style>` scoped di dalam `settings_content.php` sendiri, belum
+    dipindah ke `theme.css` — kalau ada card collapsible serupa di menu lain
+    nanti, baru layak diangkat jadi komponen umum): default collapsed, buka
+    salah satu otomatis menutup yang lain (`openCollapsible()` /
+    `closeCollapsible()`, animasi lewat `max-height`). Data list masing-masing
+    card (`loadDocuments()` / `loadBankAccounts()`) baru di-fetch pertama kali
+    card itu dibuka, bukan saat halaman load.
+  - **Company Documents**: form upload di atas (Document Name, Document Date,
+    File). Field **Final File Name** auto-generate pola `[nama]_[tahun]` dari
+    Document Name + tahun Document Date (`updateFinalNamePreview()`), tapi bisa
+    diedit manual sebelum submit — begitu user ngetik di field itu langsung,
+    auto-generate berhenti (`finalNameManuallyEdited`). Nama itu juga dipakai
+    sebagai nama file fisik (disanitasi di `upload_document.php`). File
+    disimpan di `[AOS_STORAGE_BASE]/company/legal_document/` (root sama dengan
+    folder Activity Code & Customer List, subfolder baru `company/...`),
+    metadata di tabel `company_documents`. List tampil sebagai table biasa
+    (bukan accordion) dengan checkbox per baris + tombol Download/Edit/Delete.
+    Edit hanya untuk `document_name`/`document_date`, tidak bisa ganti file
+    (kalau perlu ganti file, hapus lalu upload ulang).
+  - **Company Bank Accounts**: form di atas (Account Number, Account Name,
+    Currency, SWIFT Code + Address — dua field terakhir cuma muncul &
+    `required` kalau currency-nya bukan `IDR`, lihat `toggleBankIntlFields()`).
+    Disimpan di **JSON**, bukan DB — `json_file/bank_accounts.json` (array of
+    object, tiap object punya `id` unik dari `uniqid()`). List ditampilkan
+    **dikelompokkan per currency** (`renderBankGroups()`, satu `<table>` per
+    grup). Kolom SWIFT/Address ikut disembunyikan di tabel kalau grupnya
+    `IDR`. Currency dropdown-nya sendiri juga JSON (`json_file/currencies.json`,
+    default `["IDR", "USD"]`), bisa ditambah lewat tombol `+` di sebelah
+    dropdown (`ajax/manage_currencies.php?action=add`, tanpa password — sama
+    seperti `departments.json` di fitur Activity Code) tanpa perlu deploy ulang
+    kode.
+  - **Multi-select + Share via WhatsApp** (dokumen & rekening, masing-masing
+    checkbox sendiri + tombol "Select All" per tabel/grup): karena `wa.me`
+    cuma bisa kirim teks/link (tidak bisa attach file dari browser), alurnya
+    untuk **dokumen** adalah: setelah password diverifikasi, semua file
+    terpilih **otomatis ke-download** ke device user (loop bikin `<a
+    download>` lalu `.click()`), lalu tab baru `wa.me/?text=...` kebuka berisi
+    daftar nama dokumen — file-nya di-attach manual oleh user sendiri di
+    WhatsApp (keputusan user, bukan kirim link publik). Untuk **rekening**,
+    tidak ada file — teksnya langsung berisi **detail lengkap** tiap rekening
+    terpilih (account number, name, currency, dan SWIFT/address kalau bukan
+    IDR).
+  - **Verifikasi password untuk Edit/Delete/Share — PENTING, beda dari pola
+    `delete_customer.php`**: alih-alih tiap endpoint terima field `password`
+    dan `password_verify()` sendiri-sendiri, sekarang **dipusatkan** lewat
+    `ajax/verify_password.php` yang sudah ada (dipakai lebih dulu oleh
+    Create Activity Code). Alurnya:
+    1. Klik Edit/Delete/Share (dokumen atau rekening) → selalu buka satu modal
+       generik yang sama, `#settingsConfirmOverlay` (title + pesan warning +
+       field password, di-set dinamis lewat `openConfirmModal(title, message,
+       onConfirm)`).
+    2. Klik Confirm di modal → JS POST password ke `ajax/verify_password.php`
+       (bukan ke endpoint aksinya). Kalau `ok:false`, error tampil di dalam
+       modal, modal tetap terbuka (`confirmModalError()`).
+    3. Kalau `ok:true`, `verify_password.php` set
+       `$_SESSION['aos_reverify_at'] = time()` (flag baru, generik — beda dari
+       `$_SESSION['aos_reverify_activity_code']` yang lama, keduanya sekarang
+       di-set bareng, yang lama **tidak dihapus** supaya
+       `create_activity_code.php` tidak perlu diubah). JS baru lanjut manggil
+       `pendingConfirmAction()` **tanpa** kirim password lagi.
+    4. Endpoint aksinya sendiri (`update_document.php`, `delete_document.php`,
+       `share_documents.php`, `save_bank_account.php` mode update,
+       `delete_bank_account.php`, `share_bank_accounts.php`) tidak lagi terima
+       `password`/`password_verify()` — cukup
+       `require_once 'ajax/_require_reverify.php'; aos_require_recent_reverify();`
+       yang cek flag itu masih ada dan belum lewat **120 detik**
+       (`AOS_REVERIFY_WINDOW_SECONDS`, di `ajax/_require_reverify.php`). Kalau
+       basi/tidak ada, endpoint balikin `success:false` dengan pesan expired,
+       modal-nya sudah kebuka duluan jadi user tinggal isi password lagi.
+    - **Kenapa beda dari `delete_customer.php`** (yang verifikasi
+      `password_verify()` langsung di endpoint aksi, bukan lewat
+      `verify_password.php`, biar cuma 1x input password): user secara
+      eksplisit minta pakai `verify_password.php` yang sudah ada untuk fitur
+      Settings ini. Jadi sekarang ada **2 pola berbeda** yang hidup
+      berdampingan di project ini — kalau bikin fitur destructive baru,
+      **tanya dulu ke user** mau pola yang mana sebelum nulis endpoint-nya,
+      jangan asumsi salah satu.
+    - Create baru (dokumen: upload; rekening: tambah akun baru) **tidak**
+      perlu verifikasi password sama sekali — hanya Edit/Delete/Share yang
+      digate.
+  - Currency create (`manage_currencies.php?action=add`) juga tidak digate
+    password, sama seperti create department di fitur Activity Code.
+  - **List dokumen di-refactor dari table jadi accordion card**
+    (`renderDocumentList()`, ganti dari `renderDocumentTable()` yang lama —
+    `docTableBody`/`<table>` untuk list dokumen **sudah dihapus total**, jangan
+    dicari lagi kalau baca history sebelumnya):
+    - Tiap dokumen = 1 card (`.doc-accordion-item`), default **collapsed**,
+      cuma satu yang boleh terbuka dalam satu waktu (`openDocItem()` otomatis
+      nutup item lain lewat `closeDocItem()` — pola sama seperti dua card
+      besar Settings di level atas, animasi juga sama-sama `max-height`).
+    - **Header** (`.doc-accordion-header`) = checkbox select + nama dokumen +
+      chevron, dan header ini **selalu tampil** baik saat collapsed maupun
+      expanded (bukan cuma judul yang hilang-muncul) — jadi checkbox selalu
+      di kiri nama dokumen di kedua state, sesuai yang diminta user. Klik di
+      checkbox sendiri (`e.stopPropagation()`) tidak ikut toggle buka/tutup
+      card.
+    - **Body** (`.doc-accordion-body`, cuma kebuka kalau card expanded) berisi
+      Date + Original File (`.doc-meta-row`) lalu baris tombol Download/
+      Edit/Delete (`.doc-accordion-actions`) — ketiganya sekarang icon **+
+      teks label** (sebelumnya cuma icon, `title` doang buat tooltip), dan
+      **sejajar horizontal** (`display:flex; flex-direction:row`, bukan
+      block/stack) — soalnya sebelumnya 3 tombol itu numpuk ke bawah gara-gara
+      dulu ditaruh langsung di dalam `<td>` yang di-collapse jadi block oleh
+      `responsive.css` (lihat catatan di bawah).
+    - Card ini **tidak lagi pakai `.table-wrapper`/`<table>`** sama sekali,
+      jadi tidak lagi kena aturan collapse mobile (`td[data-label]`) dari
+      `responsive.css` untuk list dokumen — tapi table Bank Accounts (yang
+      masih dikelompokkan per currency) **tetap** pakai `<table>` seperti
+      semula, jadi tetap kena aturan itu.
+  - **theme.css / responsive.css — TIDAK perlu diubah untuk fitur Settings
+    ini, dan sengaja dihindari**: semua styling baru (dua card collapsible,
+    accordion dokumen, override label vertikal utk mobile, dsb) ditaruh di
+    `<style>` scoped di dalam `settings_content.php` sendiri, class-nya semua
+    prefix `.settings-*`/`.doc-accordion-*` biar tidak tabrakan/tidak
+    mempengaruhi menu lain. Alasannya:
+    - `theme.css`/`responsive.css` itu **global**, dipakai semua menu
+      (Transactions, Report, dst) — komponen accordion dokumen ini masih
+      spesifik punya Settings, belum tentu bakal dipakai ulang di tempat lain.
+    - Kalaupun ternyata pola accordion-card serupa dibutuhkan lagi di menu
+      lain nanti, **baru saat itu** layak diangkat jadi class umum di
+      `theme.css` (sama seperti keputusan yang sama untuk komponen lain di
+      project ini — baca kalimat "baru buka `theme-dark-neomorphism.md`...
+      kalau butuh komponen yang belum ada" di bagian atas notes ini).
+    - Satu-satunya override yang **sengaja** menyasar `td[data-label]` bawaan
+      `responsive.css` (supaya label di atas, value di bawah, bukan
+      kiri-kanan) juga ditulis **scoped** lewat selector
+      `.menu-section[data-section="settings"] td[data-label]` di dalam
+      `settings_content.php` — bukan edit langsung ke `responsive.css` —
+      justru supaya perubahan itu **tidak** ikut mempengaruhi tabel di
+      Transactions/Report yang masih mengandalkan perilaku default
+      (horizontal) dari `responsive.css`. File `responsive.css` sendiri
+      sampai sekarang **belum disentuh sama sekali** oleh fitur Settings.
 
 ## Cara lanjut kerja di chat/akun baru
 1. Upload file ini + `index.php` (atau zip `lisani_aos/` lengkap).

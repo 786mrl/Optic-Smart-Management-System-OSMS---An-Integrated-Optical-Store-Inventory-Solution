@@ -35,4 +35,12 @@ if (!$row || !password_verify($password, $row['password_hash'])) {
 // guard tambahan (berlaku singkat, bukan pengganti session login).
 $_SESSION['aos_reverify_activity_code'] = time();
 
+// Flag generik (tidak spesifik ke satu fitur) supaya endpoint lain yang perlu
+// gate "user baru saja masukkan password lagi" tinggal cek ini, tanpa harus
+// terima ulang field password + password_verify() sendiri-sendiri. Dipakai
+// pertama kali oleh fitur Settings (Company Documents & Bank Accounts) —
+// lihat ajax/_require_reverify.php. Key lama di atas TETAP dipertahankan
+// supaya create_activity_code.php tidak perlu diubah.
+$_SESSION['aos_reverify_at'] = time();
+
 echo json_encode(['ok' => true]);

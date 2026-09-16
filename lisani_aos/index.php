@@ -77,15 +77,7 @@ include 'partials/header.php';
       </div>
 
       <!-- Settings -->
-      <div class="menu-section" data-section="settings" style="display:none;">
-        <div class="card" style="width:100%;">
-          <div class="empty-state">
-            <i class="ti ti-settings"></i>
-            <div class="empty-title">Settings</div>
-            <div class="empty-sub">No content yet.</div>
-          </div>
-        </div>
-      </div>
+      <?php include 'settings_content.php'; ?>
 
     </div>
   </div>
