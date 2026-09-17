@@ -754,6 +754,100 @@ bisa dipakai ulang di menu lain juga.
       Bank Accounts (masih relevan kalau suatu saat ada tabel lain di
       Settings).
 
+  - **Menu Logistic ditambahkan**, sejajar Dashboard/Transactions/Report di
+    sidebar & bottom-nav (`logistic_content.php`, di-include dari `index.php`
+    antara Transactions dan Report — pola wrap-`<div class="menu-section"
+    data-section="logistic">` sendiri, sama seperti Transactions).
+    - **Dua tab**: `Logistic List` (preview, **default aktif** saat menu
+      dibuka — sengaja dinamai begini, bukan "Preview Logistic", supaya
+      konsisten dengan pola "List" di tempat lain) dan `Create New
+      Logistic`.
+    - **Saat ini logistic cuma didukung untuk departemen `dates`** (key JSON
+      di `departments.json` memang `dates`, jamak, bukan `date`) —
+      departemen lain tampil di dropdown tapi ditandai "(not available
+      yet)" dan Activity Code-nya tidak bisa dipilih. Kalau nanti departemen
+      lain mau diaktifkan, cari `LOG_SUPPORTED_DEPARTMENT` di
+      `logistic_content.php` dan validasi department di
+      `ajax/create_logistic.php`.
+    - **Activity Code dipilih dari list klik (bukan `<select>`)** —
+      `ajax/list_logistic_activities.php` mengembalikan semua activity code
+      departemen terpilih dengan flag `has_logistic`; yang sudah punya
+      logistic tampil redup/disabled dengan label "(logistic already
+      exists)" (class `.log-code-option.disabled`), yang belum tampil
+      normal dan bisa diklik untuk pilih.
+    - **Import Document**: bagian collapsible (default collapsed, toggle
+      manual lewat `#logDocToggle`/`#logDocChevron`/`#logDocBody`, BUKAN
+      pakai fungsi accordion item yang sama dengan Logistic List — beda
+      mekanisme karena ini cuma satu section, bukan list banyak item).
+      Ada 3 grup dokumen (Shipper/Custom/Consignee), upload lewat
+      `ajax/upload_logistic_document.php` yang otomatis bikin folder
+      `{relative_path activity}/import_documents/{type}/` kalau belum ada,
+      lalu simpan baris ke `logistic_documents` (key `activity_id`, BUKAN
+      `logistic_id` — sengaja, supaya dokumen bisa diupload sebelum tombol
+      Save utama logistic ditekan).
+    - **Primary/Secondary Packaging**: qty Primary diinput manual, qty
+      Secondary **selalu auto-hitung** dari `primary_qty × ratio_per_primary`
+      punya unit yang dipilih — user tidak pernah input qty secondary
+      manual. Berat total kedua-duanya juga auto-hitung di client
+      (`recalcPackaging()`) untuk preview real-time, tapi **field weight
+      total TIDAK dikirim ke server** — server cuma menyimpan rate
+      (`primary_qty`, `primary_unit_weight_kg`, `secondary_ratio_per_primary`,
+      `secondary_unit_weight_kg`) dan totalnya dihitung ulang tiap kali
+      `ajax/list_logistics.php` dipanggil, supaya tidak ada data
+      kalkulasi yang tersimpan.
+    - **Satuan Primary/Secondary dikelola lewat program**, BUKAN edit
+      manual `json_file/primary_packaging_units.json` /
+      `secondary_packaging_units.json` — kedua file itu sekarang cuma
+      storage, satu-satunya cara mengubah isinya adalah tombol **Edit** di
+      sebelah masing-masing dropdown satuan, yang membuka fly window
+      (`.modal-overlay`, reuse class yang sudah ada) untuk
+      Add/Edit/Delete via `ajax/manage_packaging_units.php?kind=primary|
+      secondary`. Tiap unit punya `id` stabil di JSON (bukan index array)
+      supaya edit/delete tidak salah sasaran kalau ada unit lain
+      dihapus duluan.
+    - **DB: 3 tabel tetap** di `lisani_aos_db` (`sql/lisani_aos_logistics.sql`),
+      **jumlahnya TIDAK bertambah** seiring bertambahnya activity code —
+      dibedakan lewat kolom relasi, bukan tabel per activity code:
+      - `logistics` — 1 baris per activity code yang sudah dibuatkan
+        logistic (`UNIQUE(activity_id)`). Cuma simpan rate/snapshot:
+        `primary_qty`, `primary_unit_label`, `primary_unit_weight_kg`,
+        `remaining_primary_qty`, `secondary_unit_label`,
+        `secondary_unit_weight_kg`, `secondary_ratio_per_primary`.
+        **Tidak ada** kolom `primary_total_weight_kg` / `secondary_qty` /
+        `secondary_total_weight_kg` — itu semua dihitung program, bukan
+        kolom DB (versi awal sempat ada, sudah dihapus di v2 SQL).
+      - `remaining_primary_qty` — nilai awal = `primary_qty` saat
+        create, nantinya berkurang/bertambah tiap ada baris baru di
+        `logistic_movements` (out mengurangi, in menambah). **UI untuk
+        menambah movement belum dibuat** — baru kolomnya saja yang
+        disiapkan & di-set awal di `ajax/create_logistic.php`.
+      - `logistic_documents` — many-to-one ke `activities` lewat
+        `activity_id` (bukan ke `logistics`), simpan lokasi file saja
+        (`file_path`), bukan isi filenya.
+      - `logistic_movements` — many-to-one ke `logistics` lewat
+        `logistic_id`. Satu activity code (via satu baris `logistics`)
+        bisa punya banyak baris movement seiring waktu (tiap barang
+        masuk/keluar = 1 baris baru, BUKAN update baris yang sama).
+        Kolom sudah siap (`movement_type` in/out, `movement_date`,
+        `customer_name`, `driver_name`, `police_number`,
+        `qty_primary_package`) tapi **belum ada UI/endpoint** untuk
+        insert — itu rencananya jadi tab ketiga di menu Logistic nanti,
+        dan setiap insert baru wajib juga update
+        `logistics.remaining_primary_qty` (in: `+qty`, out: `-qty`) dalam
+        satu transaksi DB biar tidak pernah out-of-sync.
+      - Kalau `logistics`/dkk sudah pernah dibuat dari SQL versi pertama
+        (yang masih ada `primary_total_weight_kg` dkk, belum ada
+        `remaining_primary_qty`), jalankan bagian **MIGRATION** (blok
+        `ALTER TABLE ... IF EXISTS/IF NOT EXISTS`) di
+        `sql/lisani_aos_logistics.sql`, bukan jalankan ulang `CREATE
+        TABLE`-nya.
+    - **Icon sidebar/bottom-nav Logistic**: `ti-truck` juga tofu (kotak
+      kosong) seperti `ti-brand-whatsapp`/`ti-plus` sebelumnya — sudah
+      diganti SVG inline langsung di `partials/sidebar.php`. Kalau nanti
+      nambah icon baru dan tofu lagi, langsung asumsikan itu class yang
+      tidak ke-bundle, jangan coba nama class Tabler lain dulu — langsung
+      SVG inline saja.
+
 ## Cara lanjut kerja di chat/akun baru
 1. Upload file ini + `index.php` (atau zip `lisani_aos/` lengkap).
 2. Sebutkan menu mana yang mau diisi dan alur kerjanya (proses bisnis).

@@ -65,6 +65,9 @@ include 'partials/header.php';
       <!-- Transactions -->
       <?php include 'transaction_content.php'; ?>
 
+      <!-- Logistic -->
+      <?php include 'logistic_content.php'; ?>
+
       <!-- Report -->
       <div class="menu-section" data-section="report" style="display:none;">
         <div class="card" style="width:100%;">
