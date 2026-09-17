@@ -458,7 +458,9 @@ bisa dipakai ulang di menu lain juga.
   Inflow/Outflow/Profit di tabel `customers`, dan pengaturan
   `storage/recycle/` (retention/cleanup/siapa yang boleh lihat isinya) —
   sengaja ditunda sesuai keputusan user, folder-nya sudah dibuat otomatis
-  oleh `delete_customer.php` tapi belum ada pengelolaan lanjutannya.
+  oleh `delete_customer.php` (dan sekarang juga oleh
+  `ajax/delete_document.php` di fitur Settings, subfolder
+  `recycle/company/legal_document/`) tapi belum ada pengelolaan lanjutannya.
   Settings sudah ada isi (Company Documents & Company Bank Accounts, lihat
   poin di atas) — bagian Settings lain (kalau ada) masih bisa ditambah nanti.
 
@@ -608,6 +610,149 @@ bisa dipakai ulang di menu lain juga.
       Transactions/Report yang masih mengandalkan perilaku default
       (horizontal) dari `responsive.css`. File `responsive.css` sendiri
       sampai sekarang **belum disentuh sama sekali** oleh fitur Settings.
+  - **Tombol Share via WhatsApp (dokumen & rekening) diubah jadi icon-only,
+    dan cuma muncul kalau ada item yang diselect**:
+    - Sebelumnya tombolnya selalu ada tapi `disabled` + ada teks "Share via
+      WhatsApp". Sekarang class `.btn-wa-icon` (bulat, cuma ikon
+      `ti-brand-whatsapp`, background hijau WA `#25d366`) dan **disembunyikan
+      total** (`style.display = 'none'`) selama belum ada checkbox yang
+      dicentang — bukan cuma di-`disabled`. Logic toggle-nya ada di
+      `updateDocSelectionUI()` / `updateBankSelectionUI()`
+      (`docShareBtn.style.display` / `bankShareBtn.style.display`, jadi
+      `'inline-flex'` kalau `selected.length > 0`, `'none'` kalau tidak).
+    - **Khusus dokumen**: toolbar "Select All" + tombol share digabung jadi
+      satu baris (`.doc-list-toolbar`, `display:flex; justify-content:
+      space-between`) — label "Select All" di kiri, "N selected" + tombol WA
+      icon di kanan (`.doc-list-toolbar-right`). Div terpisah
+      `.doc-accordion-toolbar-select` yang lama **sudah dihapus**, jangan
+      dicari lagi.
+    - **Bank Accounts**: karena tidak ada satu checkbox "Select All" tunggal
+      (tiap grup currency punya select-all sendiri di header tabelnya
+      masing-masing), toolbar-nya tetap terpisah di atas daftar grup
+      (`.settings-list-toolbar`, cuma isinya sekarang "N selected" + tombol
+      ikon WA yang sama, bukan lagi tombol teks).
+  - **Company Bank Accounts — 3 penyesuaian form**:
+    1. **Semua input teks di form ini dipaksa UPPERCASE** (Bank Name, Account
+       Number, Account Name, SWIFT Code, Address) — bukan cuma visual lewat
+       CSS (`.input-uppercase { text-transform: uppercase; }`), tapi
+       benar-benar diubah value-nya lewat listener `input` (`el.value =
+       el.value.toUpperCase()`, jaga posisi caret pakai `setSelectionRange`).
+       Saat submit, payload juga di-`.toUpperCase()` lagi sebelum dikirim
+       (jaga-jaga), dan **server-side** (`save_bank_account.php`) juga
+       `mb_strtoupper()` semua field itu sebelum disimpan ke JSON — jadi
+       uppercase-nya digaransi di 3 lapis (input, submit, server), bukan
+       cuma titip ke JS di browser.
+    2. **Account Number di-grouping tiap 4 karakter** pakai spasi
+       (`1234 5678 9012 3456`) via `formatAccountNumberGroups()` — dipanggil
+       baik saat user ngetik (listener `input` di `bankAccountNumber`,
+       reformat ulang tiap keystroke + jaga posisi caret di akhir) maupun
+       saat buka form Edit (`openEditBankForm()` format ulang value lama).
+       Karakter non-alfanumerik dibuang dulu sebelum di-grouping ulang, jadi
+       aman walau user paste nomor dengan format lain. Nilai yang **disimpan
+       ke JSON juga sudah dalam bentuk grouped ini** (bukan di-strip lagi di
+       backend) — jadi tampil konsisten grouped di form maupun di list/teks
+       WA share, sesuai tujuan "mudah dicek & dibaca".
+    3. **Field baru: Bank Name** (`bankName`, wajib diisi, disimpan sebagai
+       `bank_name` di `json_file/bank_accounts.json`). Muncul di: form input
+       (field pertama, sebelum Account Number), kolom baru paling kiri di
+       tiap tabel grup currency (`renderBankGroups()`), dan baris baru di
+       teks share WhatsApp rekening (`share_bank_accounts.php` otomatis ikut
+       balikin field ini karena cuma nge-filter object JSON apa adanya, tidak
+       perlu diubah). Data lama di `bank_accounts.json` yang belum punya
+       `bank_name` (dibuat sebelum perubahan ini) akan tampil `-` di kolom
+       itu sampai di-edit ulang — tidak ada migrasi otomatis.
+  - **Bank Name & Account Name punya "memori" (autocomplete)**: pakai
+    `<datalist>` HTML native (`#bankNameSuggestions`,
+    `#bankAccountNameSuggestions`), diisi dari nilai unik yang sudah pernah
+    tersimpan (`refreshBankSuggestions()`, dipanggil tiap habis
+    `loadBankAccounts()` — jadi otomatis update begitu ada akun baru
+    disimpan). Ini murni bawaan browser (muncul dropdown saran setelah user
+    ngetik beberapa huruf), tidak butuh library tambahan atau endpoint baru.
+  - **Account Number tidak boleh duplikat UNTUK BANK YANG SAMA** — dicek di
+    server (`save_bank_account.php`), kombinasi **Bank Name + Account
+    Number** (bukan Account Number sendirian — awalnya sempat cuma cek
+    Account Number saja, itu salah dan sudah diperbaiki, karena dua bank
+    berbeda bisa saja punya nomor rekening yang sama persis, itu normal).
+    Account Number dibandingkan **setelah dinormalisasi** (buang semua
+    karakter selain A-Z0-9, jadi `"1234 5678"` dan `"12345678"` dianggap
+    sama), Bank Name dibandingkan uppercase. Saat mode edit, record yang
+    sedang diedit sendiri di-skip dari pengecekan (supaya save ulang tanpa
+    ubah nomor tidak dianggap duplikat). Kalau ketahuan sama persis (bank +
+    nomor), balikin `success:false` dengan pesan "This account number
+    already exists for this bank." — muncul di `bankFormMessage` (create)
+    atau di modal password (`confirmModalError`, kalau ketahuan saat proses
+    edit setelah password diverifikasi).
+  - **Tombol Edit & Delete rekening**: sudah ada sejak awal fitur ini dibuat
+    (lihat `renderBankGroups()`), bukan penambahan baru — sempat ditanyakan
+    ulang oleh user dan dikonfirmasi sudah ada.
+  - **Company Documents — hapus sekarang pindah ke recycle, bukan hapus
+    permanen** (`ajax/delete_document.php`): mengikuti pola yang sama
+    seperti `delete_customer.php` (lihat bagian atas notes ini — folder
+    `storage/recycle/` sudah ada duluan untuk fitur Customer). Saat dokumen
+    dihapus, record di tabel `company_documents` tetap **dihapus dari DB**
+    (sama seperti sebelumnya), tapi file fisiknya **tidak lagi di-`unlink()`**
+    — sekarang di-`rename()` (pindah) ke
+    `storage/recycle/company/legal_document/`, dengan nama file diprefix
+    `{document_id}_{timestamp}_` supaya tidak tabrakan kalau ada nama file
+    yang sama pernah dihapus lebih dari sekali. Folder recycle ini otomatis
+    dibuat kalau belum ada (`mkdir` rekursif), sama seperti pola di
+    `delete_customer.php`.
+    - **Belum ada** (sengaja ditunda, sama seperti catatan recycle Customer
+      di atas): fitur restore dari recycle, retention/cleanup otomatis
+      (auto-hapus setelah X hari), atau UI untuk lihat isi recycle. File yang
+      sudah masuk situ murni "aman dari kehapus" untuk sementara, harus
+      ditangani manual lewat filesystem kalau perlu dikembalikan atau
+      dibersihkan.
+  - **Icon font Tabler ternyata tidak lengkap untuk beberapa class** — sudah
+    ketauan 2x: `ti-brand-whatsapp` (tombol share) dan `ti-plus` (tombol Add
+    Currency) sama-sama tampil kotak kosong (tofu glyph) di browser. Kedua
+    tombol itu sekarang pakai **SVG inline** langsung di `settings_content.php`
+    (bukan `<i class="ti ...">` lagi), jadi tidak bergantung sama sekali ke
+    ketersediaan icon font. **Catatan untuk ke depan**: kalau nanti nambah
+    tombol dengan icon baru dan ternyata muncul kotak kosong juga, kemungkinan
+    besar itu class `ti-*` yang tidak ada di versi font yang di-load project
+    ini — solusinya sama, ganti ke SVG inline, jangan asumsikan semua class
+    Tabler Icons otomatis tersedia (icon non-brand yang dipakai sejauh ini —
+    `ti-search`, `ti-settings`, `ti-pencil`, `ti-trash`, `ti-download`,
+    `ti-chevron-down`, dll — semuanya aman/terbukti render, tapi belum tentu
+    seluruh katalog Tabler Icons ikut ter-bundle).
+  - **List Bank Accounts diubah dari table jadi accordion card, PERSIS
+    seperti Company Documents** (atas permintaan user eksplisit "sama
+    persis"): `renderBankGroups()` sekarang membangun elemen dengan class
+    yang **sama persis dipakai ulang** dari accordion dokumen
+    (`.doc-accordion`, `.doc-accordion-item`, `.doc-accordion-header`,
+    `.doc-accordion-name`, `.doc-accordion-chevron`, `.doc-accordion-body`,
+    `.doc-accordion-body-inner`, `.doc-meta-row`, `.doc-accordion-actions`)
+    — bukan bikin CSS/class baru yang mirip-mirip, tapi betul-betul class
+    yang sama, supaya tampilannya identik tanpa duplikasi style.
+    - **Pengelompokan per currency tetap ada** (`.settings-bank-group`),
+      tapi sekarang tiap grup currency = judul + `.doc-accordion` list
+      sendiri, bukan `<table>` lagi.
+    - **Header tiap grup** (`.settings-bank-group-header`, flex
+      `justify-content:space-between`) isinya nama currency di kiri + label
+      "Select All" (checkbox) di kanan — select-all ini **scoped per grup**
+      (cuma centang semua checkbox item di dalam grup currency itu saja,
+      bukan lintas grup) — mempertahankan perilaku select-all per grup yang
+      sudah ada sejak versi table sebelumnya.
+    - **Collapsed**: header card = checkbox + label `"{Bank Name} —
+      {Account Number}"` (mis. `"BCA — 1234 5678 9012"`) + chevron — dipilih
+      supaya langsung kelihatan bank & nomornya tanpa perlu expand, karena
+      itu yang paling sering dicari user secara sekilas.
+    - **Expanded**: body berisi Account Name, Currency, dan SWIFT/Address
+      (cuma muncul kalau bukan IDR) sebagai `.doc-meta-row`, lalu tombol
+      Edit/Delete sejajar horizontal dengan label teks (`.doc-accordion-
+      actions`), sama seperti dokumen.
+    - **Hanya satu card yang boleh terbuka dalam satu waktu** — tapi
+      cakupannya **lintas semua grup currency sekaligus** (`openBankItem()`
+      / `closeBankItem()` query ke `bankGroupsWrapper` secara keseluruhan,
+      bukan per grup), konsisten dengan aturan accordion dokumen &
+      dua card besar Settings di level atas.
+    - Card ini juga sudah tidak pakai `<table>`/`.table-wrapper` sama
+      sekali, jadi (sama seperti dokumen) sudah lepas dari aturan collapse
+      mobile `td[data-label]` milik `responsive.css` — override khusus yang
+      sebelumnya ditulis untuk itu jadi otomatis tidak lagi relevan buat
+      Bank Accounts (masih relevan kalau suatu saat ada tabel lain di
+      Settings).
 
 ## Cara lanjut kerja di chat/akun baru
 1. Upload file ini + `index.php` (atau zip `lisani_aos/` lengkap).

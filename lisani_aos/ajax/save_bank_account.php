@@ -16,14 +16,15 @@ $jsonPath = dirname(__DIR__) . '/json_file/bank_accounts.json';
 $id = trim($_POST['id'] ?? '');
 $isUpdate = $id !== '';
 
-$accountNumber = trim($_POST['account_number'] ?? '');
-$accountName = trim($_POST['account_name'] ?? '');
+$accountNumber = mb_strtoupper(trim($_POST['account_number'] ?? ''));
+$accountName = mb_strtoupper(trim($_POST['account_name'] ?? ''));
+$bankName = mb_strtoupper(trim($_POST['bank_name'] ?? ''));
 $currency = trim($_POST['currency'] ?? '');
-$swiftCode = trim($_POST['swift_code'] ?? '');
-$address = trim($_POST['address'] ?? '');
+$swiftCode = mb_strtoupper(trim($_POST['swift_code'] ?? ''));
+$address = mb_strtoupper(trim($_POST['address'] ?? ''));
 
-if ($accountNumber === '' || $accountName === '' || $currency === '') {
-    echo json_encode(['success' => false, 'message' => 'Account number, name, and currency are required.']);
+if ($bankName === '' || $accountNumber === '' || $accountName === '' || $currency === '') {
+    echo json_encode(['success' => false, 'message' => 'Bank name, account number, account name, and currency are required.']);
     exit;
 }
 
@@ -50,10 +51,35 @@ if (!is_array($accounts)) {
     $accounts = [];
 }
 
+// Prevent saving an account number that already exists FOR THE SAME BANK
+// (two different banks can legitimately share the same account number).
+// Account number is compared with spaces/formatting stripped, so
+// "1234 5678" and "12345678" are treated as the same number. Bank name is
+// already uppercased above. Skip the record being edited when updating.
+$normalizedNumber = preg_replace('/[^A-Z0-9]/', '', $accountNumber);
+foreach ($accounts as $existing) {
+    if ($isUpdate && (string) ($existing['id'] ?? '') === $id) {
+        continue;
+    }
+    $existingBankName = mb_strtoupper(trim($existing['bank_name'] ?? ''));
+    $existingNormalized = preg_replace('/[^A-Z0-9]/', '', mb_strtoupper($existing['account_number'] ?? ''));
+    if (
+        $normalizedNumber !== ''
+        && $existingNormalized === $normalizedNumber
+        && $existingBankName === $bankName
+    ) {
+        flock($fp, LOCK_UN);
+        fclose($fp);
+        echo json_encode(['success' => false, 'message' => 'This account number already exists for this bank.']);
+        exit;
+    }
+}
+
 if ($isUpdate) {
     $found = false;
     foreach ($accounts as &$acc) {
         if ((string) ($acc['id'] ?? '') === $id) {
+            $acc['bank_name'] = $bankName;
             $acc['account_number'] = $accountNumber;
             $acc['account_name'] = $accountName;
             $acc['currency'] = $currency;
@@ -76,6 +102,7 @@ if ($isUpdate) {
     $newId = uniqid('bank_', true);
     $accounts[] = [
         'id' => $newId,
+        'bank_name' => $bankName,
         'account_number' => $accountNumber,
         'account_name' => $accountName,
         'currency' => $currency,

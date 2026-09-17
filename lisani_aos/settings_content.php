@@ -50,17 +50,16 @@
           </div>
         </form>
 
-        <div class="settings-list-toolbar">
-          <div class="header-sub" id="docSelectedCount">0 selected</div>
-          <button type="button" class="btn btn-secondary" id="docShareBtn" disabled>
-            <i class="ti ti-brand-whatsapp"></i> Share via WhatsApp
-          </button>
-        </div>
-
-        <div class="doc-accordion-toolbar-select">
+        <div class="doc-list-toolbar">
           <label class="doc-select-all-label">
             <input type="checkbox" id="docSelectAll"> Select All
           </label>
+          <div class="doc-list-toolbar-right">
+            <span class="header-sub" id="docSelectedCount">0 selected</span>
+            <button type="button" class="btn-wa-icon" id="docShareBtn" title="Share via WhatsApp" style="display:none;">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.39 1.26 4.83L2 22l5.42-1.42c1.38.75 2.96 1.18 4.62 1.18h.01c5.46 0 9.91-4.45 9.91-9.91C21.96 6.45 17.5 2 12.04 2zm5.83 14.02c-.25.7-1.29 1.32-1.78 1.4-.46.07-.99.1-1.6-.1-.37-.12-.85-.28-1.45-.55-2.56-1.11-4.23-3.68-4.36-3.85-.13-.17-1.04-1.38-1.04-2.63 0-1.25.66-1.87.89-2.12.23-.25.5-.31.67-.31.17 0 .33 0 .48.01.15.01.36-.06.56.43.21.51.71 1.76.77 1.89.06.13.1.28.02.45-.08.17-.13.28-.25.43-.13.15-.27.34-.38.46-.13.13-.26.27-.11.53.15.26.67 1.1 1.43 1.78.98.87 1.81 1.14 2.07 1.27.26.13.41.11.56-.07.15-.18.63-.74.8-.99.17-.25.34-.21.56-.13.23.08 1.46.69 1.71.82.25.13.41.19.47.3.06.11.06.63-.19 1.33z"/></svg>
+            </button>
+          </div>
         </div>
 
         <div class="doc-accordion" id="docAccordionList">
@@ -88,19 +87,25 @@
           <input type="hidden" id="bankEditingId" value="">
           <div class="settings-form-grid">
             <div class="form-group">
+              <label class="label">Bank Name</label>
+              <input type="text" class="input input-uppercase" id="bankName" list="bankNameSuggestions" placeholder="e.g. BANK CENTRAL ASIA" required>
+              <datalist id="bankNameSuggestions"></datalist>
+            </div>
+            <div class="form-group">
               <label class="label">Account Number</label>
-              <input type="text" class="input" id="bankAccountNumber" required>
+              <input type="text" class="input input-uppercase" id="bankAccountNumber" inputmode="numeric" autocomplete="off" placeholder="0000 0000 0000" required>
             </div>
             <div class="form-group">
               <label class="label">Account Name</label>
-              <input type="text" class="input" id="bankAccountName" required>
+              <input type="text" class="input input-uppercase" id="bankAccountName" list="bankAccountNameSuggestions" required>
+              <datalist id="bankAccountNameSuggestions"></datalist>
             </div>
             <div class="form-group">
               <label class="label">Currency</label>
               <div style="display:flex; gap:8px;">
                 <select class="select" id="bankCurrencySelect" style="flex:1;"></select>
                 <button type="button" class="btn btn-secondary" id="bankAddCurrencyBtn" title="Add currency">
-                  <i class="ti ti-plus"></i>
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
                 </button>
               </div>
             </div>
@@ -109,11 +114,11 @@
           <div class="settings-form-grid" id="bankIntlFields" style="display:none;">
             <div class="form-group">
               <label class="label">SWIFT Code</label>
-              <input type="text" class="input" id="bankSwiftCode">
+              <input type="text" class="input input-uppercase" id="bankSwiftCode">
             </div>
             <div class="form-group">
               <label class="label">Bank Address</label>
-              <input type="text" class="input" id="bankAddress">
+              <input type="text" class="input input-uppercase" id="bankAddress">
             </div>
           </div>
 
@@ -127,8 +132,8 @@
 
         <div class="settings-list-toolbar">
           <div class="header-sub" id="bankSelectedCount">0 selected</div>
-          <button type="button" class="btn btn-secondary" id="bankShareBtn" disabled>
-            <i class="ti ti-brand-whatsapp"></i> Share via WhatsApp
+          <button type="button" class="btn-wa-icon" id="bankShareBtn" title="Share via WhatsApp" style="display:none;">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.39 1.26 4.83L2 22l5.42-1.42c1.38.75 2.96 1.18 4.62 1.18h.01c5.46 0 9.91-4.45 9.91-9.91C21.96 6.45 17.5 2 12.04 2zm5.83 14.02c-.25.7-1.29 1.32-1.78 1.4-.46.07-.99.1-1.6-.1-.37-.12-.85-.28-1.45-.55-2.56-1.11-4.23-3.68-4.36-3.85-.13-.17-1.04-1.38-1.04-2.63 0-1.25.66-1.87.89-2.12.23-.25.5-.31.67-.31.17 0 .33 0 .48.01.15.01.36-.06.56.43.21.51.71 1.76.77 1.89.06.13.1.28.02.45-.08.17-.13.28-.25.43-.13.15-.27.34-.38.46-.13.13-.26.27-.11.53.15.26.67 1.1 1.43 1.78.98.87 1.81 1.14 2.07 1.27.26.13.41.11.56-.07.15-.18.63-.74.8-.99.17-.25.34-.21.56-.13.23.08 1.46.69 1.71.82.25.13.41.19.47.3.06.11.06.63-.19 1.33z"/></svg>
           </button>
         </div>
 
@@ -221,6 +226,7 @@
     gap: 14px;
   }
   .settings-form { margin-bottom: 20px; }
+  .input-uppercase { text-transform: uppercase; }
   .settings-form-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 10px; }
   .settings-message { margin-top: 8px; font-size: 13px; }
   .settings-message-error { color: var(--danger, #e5484d); }
@@ -232,13 +238,27 @@
     margin: 16px 0 10px 0;
   }
   .settings-confirm-message { margin: 4px 0 14px 0; font-size: 14px; line-height: 1.5; }
-  .settings-bank-group { margin-bottom: 18px; }
-  .settings-bank-group-title { font-weight: 600; margin-bottom: 8px; }
+  .settings-bank-group { margin-bottom: 20px; }
+  .settings-bank-group-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+  }
+  .settings-bank-group-title { font-weight: 600; }
 
   /* Uploaded documents: accordion card list (default collapsed, one open
      at a time). Header (checkbox + name) stays visible in both collapsed
      and expanded state - checkbox always sits to the left of the name. */
-  .doc-accordion-toolbar-select { margin-bottom: 10px; }
+  .doc-list-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 16px 0 10px 0;
+  }
+  .doc-list-toolbar-right { display: flex; align-items: center; gap: 10px; }
   .doc-select-all-label {
     display: inline-flex;
     align-items: center;
@@ -247,6 +267,24 @@
     color: var(--text-muted, #9a9a9a);
     cursor: pointer;
   }
+  /* Icon-only WhatsApp share button - only rendered (display set via JS)
+     once at least one item is selected. */
+  .btn-wa-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: none;
+    background: #25d366;
+    color: #ffffff;
+    font-size: 18px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .btn-wa-icon:hover { filter: brightness(1.05); }
+
   .doc-accordion { display: flex; flex-direction: column; gap: 10px; }
   .doc-accordion-item {
     border-radius: var(--radius-md, 10px);
@@ -632,7 +670,7 @@
   function updateDocSelectionUI() {
     var selected = getSelectedDocIds();
     docSelectedCount.textContent = selected.length + ' selected';
-    docShareBtn.disabled = selected.length === 0;
+    docShareBtn.style.display = selected.length > 0 ? 'inline-flex' : 'none';
   }
 
   docSelectAll.addEventListener('change', function () {
@@ -789,6 +827,7 @@
      ===================================================================== */
   var bankForm = document.getElementById('bankForm');
   var bankEditingId = document.getElementById('bankEditingId');
+  var bankName = document.getElementById('bankName');
   var bankAccountNumber = document.getElementById('bankAccountNumber');
   var bankAccountName = document.getElementById('bankAccountName');
   var bankCurrencySelect = document.getElementById('bankCurrencySelect');
@@ -804,6 +843,33 @@
   var bankAddCurrencyBtn = document.getElementById('bankAddCurrencyBtn');
 
   var bankAccountsCache = [];
+
+  // Force every bank-form text field to uppercase as the user types (not
+  // just visually via CSS) so what's stored/submitted is already uppercase.
+  [bankName, bankAccountName, bankSwiftCode, bankAddress].forEach(function (el) {
+    el.addEventListener('input', function () {
+      var pos = el.selectionStart;
+      el.value = el.value.toUpperCase();
+      if (pos !== null && el.setSelectionRange) el.setSelectionRange(pos, pos);
+    });
+  });
+
+  // Account Number: uppercase (in case of letters) AND grouped every 4
+  // characters with a space (e.g. "1234 5678 9012") so it's easier to
+  // proofread while typing and to read back later in the list/WA text.
+  function formatAccountNumberGroups(raw) {
+    var clean = raw.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    var groups = clean.match(/.{1,4}/g);
+    return groups ? groups.join(' ') : '';
+  }
+  bankAccountNumber.addEventListener('input', function () {
+    var caretWasAtEnd = bankAccountNumber.selectionStart === bankAccountNumber.value.length;
+    bankAccountNumber.value = formatAccountNumberGroups(bankAccountNumber.value);
+    if (caretWasAtEnd) {
+      var len = bankAccountNumber.value.length;
+      bankAccountNumber.setSelectionRange(len, len);
+    }
+  });
 
   function toggleBankIntlFields() {
     var isIdr = bankCurrencySelect.value === 'IDR';
@@ -892,11 +958,52 @@
         }
         bankAccountsCache = data.accounts;
         renderBankGroups(data.grouped);
+        refreshBankSuggestions();
         refreshOpenHeight(document.getElementById('cardBankAccounts'));
       })
       .catch(function () {
         bankGroupsWrapper.innerHTML = '<div class="empty-sub">Failed to load bank accounts.</div>';
       });
+  }
+
+  // Native browser autocomplete ("memory") for Bank Name / Account Name,
+  // suggested from whatever has been saved before - so after typing a few
+  // letters the browser shows a dropdown of matching previous entries.
+  function refreshBankSuggestions() {
+    var bankNameList = document.getElementById('bankNameSuggestions');
+    var accountNameList = document.getElementById('bankAccountNameSuggestions');
+    var bankNames = [];
+    var accountNames = [];
+
+    bankAccountsCache.forEach(function (acc) {
+      if (acc.bank_name && bankNames.indexOf(acc.bank_name) === -1) bankNames.push(acc.bank_name);
+      if (acc.account_name && accountNames.indexOf(acc.account_name) === -1) accountNames.push(acc.account_name);
+    });
+
+    bankNameList.innerHTML = bankNames.map(function (v) {
+      return '<option value="' + escapeHtml(v) + '">';
+    }).join('');
+    accountNameList.innerHTML = accountNames.map(function (v) {
+      return '<option value="' + escapeHtml(v) + '">';
+    }).join('');
+  }
+
+  // Closes every other bank-account accordion item across ALL currency
+  // groups, so only one is ever expanded at a time (same rule as the
+  // document list and the two top-level Settings cards).
+  function closeBankItem(item) {
+    item.classList.remove('open');
+    var body = item.querySelector('.doc-accordion-body');
+    body.style.maxHeight = null;
+  }
+
+  function openBankItem(item) {
+    bankGroupsWrapper.querySelectorAll('.doc-accordion-item').forEach(function (other) {
+      if (other !== item) closeBankItem(other);
+    });
+    item.classList.add('open');
+    var body = item.querySelector('.doc-accordion-body');
+    body.style.maxHeight = body.scrollHeight + 'px';
   }
 
   function renderBankGroups(grouped) {
@@ -909,89 +1016,137 @@
     }
 
     currencies.forEach(function (currency) {
+      var isIdr = currency === 'IDR';
+
       var groupDiv = document.createElement('div');
       groupDiv.className = 'settings-bank-group';
+
+      var titleRow = document.createElement('div');
+      titleRow.className = 'settings-bank-group-header';
 
       var title = document.createElement('div');
       title.className = 'settings-bank-group-title';
       title.textContent = currency;
-      groupDiv.appendChild(title);
 
-      var wrapper = document.createElement('div');
-      wrapper.className = 'table-wrapper';
+      var selectAllLabel = document.createElement('label');
+      selectAllLabel.className = 'doc-select-all-label';
+      var selectAllGroup = document.createElement('input');
+      selectAllGroup.type = 'checkbox';
+      selectAllLabel.appendChild(selectAllGroup);
+      selectAllLabel.appendChild(document.createTextNode(' Select All'));
 
-      var table = document.createElement('table');
-      var isIdr = currency === 'IDR';
-      table.innerHTML =
-        '<thead><tr>' +
-        '<th style="width:36px;"><input type="checkbox" class="bank-select-all-group"></th>' +
-        '<th>Account Number</th><th>Account Name</th>' +
-        (isIdr ? '' : '<th>SWIFT</th><th>Address</th>') +
-        '<th style="width:140px;">Actions</th>' +
-        '</tr></thead>';
-      var tbody = document.createElement('tbody');
+      titleRow.appendChild(title);
+      titleRow.appendChild(selectAllLabel);
+      groupDiv.appendChild(titleRow);
+
+      // Reuses the exact same accordion-card classes as the document list
+      // (.doc-accordion / .doc-accordion-item / ...) so it looks identical.
+      var list = document.createElement('div');
+      list.className = 'doc-accordion';
 
       grouped[currency].forEach(function (acc) {
-        var tr = document.createElement('tr');
+        var item = document.createElement('div');
+        item.className = 'doc-accordion-item';
 
-        var tdCheck = document.createElement('td');
+        var header = document.createElement('div');
+        header.className = 'doc-accordion-header';
+
         var cb = document.createElement('input');
         cb.type = 'checkbox';
         cb.className = 'bank-row-checkbox';
         cb.value = acc.id;
+        cb.addEventListener('click', function (e) { e.stopPropagation(); });
         cb.addEventListener('change', updateBankSelectionUI);
-        tdCheck.appendChild(cb);
 
-        var tdNumber = document.createElement('td');
-        tdNumber.setAttribute('data-label', 'Account Number');
-        tdNumber.textContent = acc.account_number;
-        var tdName = document.createElement('td');
-        tdName.setAttribute('data-label', 'Account Name');
-        tdName.textContent = acc.account_name;
+        var name = document.createElement('div');
+        name.className = 'doc-accordion-name';
+        name.textContent = (acc.bank_name || '-') + ' — ' + (acc.account_number || '-');
 
-        var tdActions = document.createElement('td');
-        tdActions.setAttribute('data-label', 'Actions');
+        var chevron = document.createElement('i');
+        chevron.className = 'ti ti-chevron-down doc-accordion-chevron';
+
+        header.appendChild(cb);
+        header.appendChild(name);
+        header.appendChild(chevron);
+        header.addEventListener('click', function () {
+          if (item.classList.contains('open')) {
+            closeBankItem(item);
+          } else {
+            openBankItem(item);
+          }
+          refreshOpenHeight(document.getElementById('cardBankAccounts'));
+        });
+
+        var body = document.createElement('div');
+        body.className = 'doc-accordion-body';
+
+        var bodyInner = document.createElement('div');
+        bodyInner.className = 'doc-accordion-body-inner';
+
+        var rowAccName = document.createElement('div');
+        rowAccName.className = 'doc-meta-row';
+        rowAccName.innerHTML = '<span class="doc-meta-label">Account Name</span><span>' +
+          escapeHtml(acc.account_name) + '</span>';
+
+        var rowCurrency = document.createElement('div');
+        rowCurrency.className = 'doc-meta-row';
+        rowCurrency.innerHTML = '<span class="doc-meta-label">Currency</span><span>' +
+          escapeHtml(acc.currency) + '</span>';
+
+        bodyInner.appendChild(rowAccName);
+        bodyInner.appendChild(rowCurrency);
+
+        if (!isIdr) {
+          var rowSwift = document.createElement('div');
+          rowSwift.className = 'doc-meta-row';
+          rowSwift.innerHTML = '<span class="doc-meta-label">SWIFT</span><span>' +
+            escapeHtml(acc.swift_code || '-') + '</span>';
+
+          var rowAddress = document.createElement('div');
+          rowAddress.className = 'doc-meta-row';
+          rowAddress.innerHTML = '<span class="doc-meta-label">Address</span><span>' +
+            escapeHtml(acc.address || '-') + '</span>';
+
+          bodyInner.appendChild(rowSwift);
+          bodyInner.appendChild(rowAddress);
+        }
+
+        var actions = document.createElement('div');
+        actions.className = 'doc-accordion-actions';
+
         var btnEdit = document.createElement('button');
         btnEdit.type = 'button';
         btnEdit.className = 'btn btn-secondary';
-        btnEdit.style.marginRight = '6px';
-        btnEdit.innerHTML = '<i class="ti ti-pencil"></i>';
-        btnEdit.addEventListener('click', function () { openEditBankForm(acc); });
+        btnEdit.innerHTML = '<i class="ti ti-pencil"></i> Edit';
+        btnEdit.addEventListener('click', function (e) {
+          e.stopPropagation();
+          openEditBankForm(acc);
+        });
 
         var btnDelete = document.createElement('button');
         btnDelete.type = 'button';
         btnDelete.className = 'btn btn-danger';
-        btnDelete.innerHTML = '<i class="ti ti-trash"></i>';
-        btnDelete.addEventListener('click', function () { confirmDeleteBankAccount(acc); });
+        btnDelete.innerHTML = '<i class="ti ti-trash"></i> Delete';
+        btnDelete.addEventListener('click', function (e) {
+          e.stopPropagation();
+          confirmDeleteBankAccount(acc);
+        });
 
-        tdActions.appendChild(btnEdit);
-        tdActions.appendChild(btnDelete);
+        actions.appendChild(btnEdit);
+        actions.appendChild(btnDelete);
+        bodyInner.appendChild(actions);
+        body.appendChild(bodyInner);
 
-        tr.appendChild(tdCheck);
-        tr.appendChild(tdNumber);
-        tr.appendChild(tdName);
-        if (!isIdr) {
-          var tdSwift = document.createElement('td');
-          tdSwift.setAttribute('data-label', 'SWIFT');
-          tdSwift.textContent = acc.swift_code || '-';
-          var tdAddress = document.createElement('td');
-          tdAddress.setAttribute('data-label', 'Address');
-          tdAddress.textContent = acc.address || '-';
-          tr.appendChild(tdSwift);
-          tr.appendChild(tdAddress);
-        }
-        tr.appendChild(tdActions);
-        tbody.appendChild(tr);
+        item.appendChild(header);
+        item.appendChild(body);
+        list.appendChild(item);
       });
 
-      table.appendChild(tbody);
-      wrapper.appendChild(table);
-      groupDiv.appendChild(wrapper);
+      groupDiv.appendChild(list);
       bankGroupsWrapper.appendChild(groupDiv);
 
-      var selectAllGroup = table.querySelector('.bank-select-all-group');
       selectAllGroup.addEventListener('change', function () {
-        tbody.querySelectorAll('.bank-row-checkbox').forEach(function (cb) {
+        list.querySelectorAll('.bank-row-checkbox').forEach(function (cb) {
           cb.checked = selectAllGroup.checked;
         });
         updateBankSelectionUI();
@@ -1010,12 +1165,13 @@
   function updateBankSelectionUI() {
     var selected = getSelectedBankIds();
     bankSelectedCount.textContent = selected.length + ' selected';
-    bankShareBtn.disabled = selected.length === 0;
+    bankShareBtn.style.display = selected.length > 0 ? 'inline-flex' : 'none';
   }
 
   function openEditBankForm(acc) {
     bankEditingId.value = acc.id;
-    bankAccountNumber.value = acc.account_number;
+    bankName.value = acc.bank_name || '';
+    bankAccountNumber.value = formatAccountNumberGroups(acc.account_number || '');
     bankAccountName.value = acc.account_name;
     loadCurrencies(acc.currency).then(function () {
       bankSwiftCode.value = acc.swift_code || '';
@@ -1033,11 +1189,12 @@
     bankFormMessage.className = 'settings-message';
 
     var payload = {
-      account_number: bankAccountNumber.value.trim(),
-      account_name: bankAccountName.value.trim(),
+      bank_name: bankName.value.trim().toUpperCase(),
+      account_number: bankAccountNumber.value.trim().toUpperCase(),
+      account_name: bankAccountName.value.trim().toUpperCase(),
       currency: bankCurrencySelect.value,
-      swift_code: bankSwiftCode.value.trim(),
-      address: bankAddress.value.trim(),
+      swift_code: bankSwiftCode.value.trim().toUpperCase(),
+      address: bankAddress.value.trim().toUpperCase(),
     };
 
     if (bankEditingId.value) {
@@ -1134,6 +1291,7 @@
             var lines = ['Company Bank Accounts:'];
             data.accounts.forEach(function (acc) {
               lines.push('');
+              lines.push('Bank Name: ' + (acc.bank_name || '-'));
               lines.push('Account Number: ' + acc.account_number);
               lines.push('Account Name: ' + acc.account_name);
               lines.push('Currency: ' + acc.currency);

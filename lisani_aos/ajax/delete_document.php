@@ -43,7 +43,16 @@ if (!$delStmt->execute()) {
 
 $fullPath = AOS_STORAGE_BASE . '/' . $doc['file_path'];
 if (is_file($fullPath)) {
-    @unlink($fullPath);
+    // Same convention as delete_customer.php: deleted files are moved into
+    // storage/recycle/... (mirroring their original subpath) instead of
+    // being permanently removed. No retention/cleanup policy exists yet for
+    // this folder - see PROJECT_NOTES.md.
+    $recycleDir = AOS_STORAGE_BASE . '/recycle/company/legal_document';
+    if (!is_dir($recycleDir)) {
+        @mkdir($recycleDir, 0755, true);
+    }
+    $recycleName = $id . '_' . time() . '_' . basename($fullPath);
+    @rename($fullPath, $recycleDir . '/' . $recycleName);
 }
 
 echo json_encode(['success' => true]);
