@@ -1054,13 +1054,55 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
   var managePrimaryUnitsOverlay   = document.getElementById('managePrimaryUnitsOverlay');
   var manageSecondaryUnitsOverlay = document.getElementById('manageSecondaryUnitsOverlay');
 
+  // The response is read as TEXT first and parsed by hand. r.json() throws
+  // on anything that isn't valid JSON (a PHP notice/warning printed before
+  // the payload, an HTML error page, a truncated response), and since the
+  // callers below had no .catch() that rejection was swallowed silently —
+  // the unit really was saved/deleted server-side, but the list never
+  // re-rendered and no message appeared, so it looked like the button did
+  // nothing at all. Now every outcome resolves to an {ok, message} object,
+  // so there is always visible feedback.
   function unitRequest(kind, action, extra) {
     var payload = Object.assign({ kind: kind, action: action }, extra || {});
     return fetch('ajax/manage_packaging_units.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams(payload).toString()
-    }).then(function (r) { return r.json(); });
+    })
+      .then(function (r) { return r.text(); })
+      .then(function (text) {
+        try {
+          return JSON.parse(text);
+        } catch (e) {
+          console.error('manage_packaging_units.php returned non-JSON:', text);
+          return { ok: false, message: 'Unexpected server response. Check the browser console.' };
+        }
+      })
+      .catch(function (err) {
+        console.error('unitRequest failed:', err);
+        return { ok: false, message: 'Could not reach the server.' };
+      });
+  }
+
+  // Single place that renders Manage Units feedback, so success and failure
+  // always look the same and always end up on screen (the message element
+  // sits under the unit list, which can be pushed out of view once the list
+  // gets long — hence the scrollIntoView).
+  var unitFeedbackTimer = { primary: null, secondary: null };
+  function showUnitFeedback(kind, message, isSuccess) {
+    var errEl = document.getElementById(kind + 'UnitError');
+    if (!errEl) return;
+    if (unitFeedbackTimer[kind]) clearTimeout(unitFeedbackTimer[kind]);
+    errEl.textContent = message;
+    errEl.style.color = isSuccess ? 'var(--success)' : 'var(--danger)';
+    errEl.style.display = 'block';
+    errEl.scrollIntoView({ block: 'nearest' });
+    if (isSuccess) {
+      unitFeedbackTimer[kind] = setTimeout(function () {
+        errEl.style.display = 'none';
+        errEl.style.color = 'var(--danger)';
+      }, 2000);
+    }
   }
 
   function renderUnitManageList(kind, listEl, units) {
@@ -1138,21 +1180,14 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
       var payload = { id: u.id, label: labelInput.value.trim(), weight_kg: String(parseNumberInput(weightInput.value)) };
       if (kind === 'secondary') payload.ratio_per_primary = String(parseNumberInput(ratioInput.value));
 
+      var listEl = row.parentElement;
       unitRequest(kind, 'edit', payload).then(function (res) {
         if (res.ok) {
-          renderUnitManageList(kind, row.parentElement, res.units);
+          renderUnitManageList(kind, listEl || document.getElementById(kind + 'UnitList'), res.units);
           refreshUnitSelects();
-          errEl.textContent = 'Unit updated.';
-          errEl.style.color = 'var(--success)';
-          errEl.style.display = 'block';
-          setTimeout(function () {
-            errEl.style.display = 'none';
-            errEl.style.color = 'var(--danger)';
-          }, 2000);
+          showUnitFeedback(kind, 'Unit updated.', true);
         } else {
-          errEl.textContent = res.message || 'Failed to save.';
-          errEl.style.color = 'var(--danger)';
-          errEl.style.display = 'block';
+          showUnitFeedback(kind, res.message || 'Failed to save.', false);
         }
       });
     });
@@ -1174,17 +1209,9 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
       if (res.ok) {
         renderUnitManageList(kind, document.getElementById(kind + 'UnitList'), res.units);
         refreshUnitSelects();
-        errEl.textContent = 'Unit deleted.';
-        errEl.style.color = 'var(--success)';
-        errEl.style.display = 'block';
-        setTimeout(function () {
-          errEl.style.display = 'none';
-          errEl.style.color = 'var(--danger)';
-        }, 2000);
+        showUnitFeedback(kind, 'Unit deleted.', true);
       } else {
-        errEl.textContent = res.message || 'Failed to delete.';
-        errEl.style.color = 'var(--danger)';
-        errEl.style.display = 'block';
+        showUnitFeedback(kind, res.message || 'Failed to delete.', false);
       }
     });
   }
@@ -1193,7 +1220,11 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
     var errEl = document.getElementById(kind + 'UnitError');
     errEl.style.display = 'none';
     unitRequest(kind, 'list').then(function (res) {
-      if (res.ok) renderUnitManageList(kind, document.getElementById(kind + 'UnitList'), res.units);
+      if (res.ok) {
+        renderUnitManageList(kind, document.getElementById(kind + 'UnitList'), res.units);
+      } else {
+        showUnitFeedback(kind, res.message || 'Failed to load units.', false);
+      }
     });
   }
 
@@ -1515,9 +1546,9 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
         document.getElementById('primaryUnitNewWeight').value = '';
         renderUnitManageList('primary', document.getElementById('primaryUnitList'), res.units);
         refreshUnitSelects();
+        showUnitFeedback('primary', 'Unit added.', true);
       } else {
-        errEl.textContent = res.message || 'Failed to add.';
-        errEl.style.display = 'block';
+        showUnitFeedback('primary', res.message || 'Failed to add.', false);
       }
     });
   });
@@ -1549,9 +1580,9 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
         document.getElementById('secondaryUnitNewWeight').value = '';
         renderUnitManageList('secondary', document.getElementById('secondaryUnitList'), res.units);
         refreshUnitSelects();
+        showUnitFeedback('secondary', 'Unit added.', true);
       } else {
-        errEl.textContent = res.message || 'Failed to add.';
-        errEl.style.display = 'block';
+        showUnitFeedback('secondary', res.message || 'Failed to add.', false);
       }
     });
   });

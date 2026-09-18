@@ -500,6 +500,14 @@ tbody tr:hover { background: var(--bg-surface-alt); }
   padding: var(--space-6);
   box-shadow: 10px 10px 24px var(--shadow-dark), -6px -6px 16px var(--shadow-light);
   width: min(480px, 90vw);
+  /* Modals with a growing list inside (Manage Primary/Secondary Units) can
+     get taller than the viewport. The overlay centers its child, so without
+     this the top and bottom of the modal — including the feedback message
+     under the unit list and the Close button — end up off-screen with no
+     way to scroll to them. */
+  max-height: 88vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 /* ===== Toggle / Checkbox ===== */

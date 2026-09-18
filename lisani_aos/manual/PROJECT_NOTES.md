@@ -1342,6 +1342,57 @@ bisa dipakai ulang di menu lain juga.
     dokumen — beda dari Logistic/Customer yang punya folder recycle,
     karena Itemized Pricing tidak punya file fisik untuk dipindah).
 
+- **Fix round 2025-09-18 (Manage Units feedback, Itemized Pricing display &
+  nested accordion clipping)** — belum dites di environment user:
+  - **`logistic_content.php` — `unitRequest()` sekarang baca `r.text()` lalu
+    `JSON.parse` manual + `.catch()`.** Root cause "Edit/Delete unit tidak
+    terjadi apa-apa padahal datanya berubah": `r.json()` **reject** kalau
+    respons bukan JSON valid (notice/warning PHP yang keprint duluan, HTML
+    error page, respons kepotong), dan tidak ada satupun `.catch()` di
+    pemanggilnya — jadi rejection-nya ditelan diam-diam: server sudah
+    menyimpan, tapi list tidak di-render ulang dan tidak ada pesan apa pun.
+    Sekarang semua jalur selalu resolve ke objek `{ok, message}`, jadi
+    selalu ada feedback. Kalau respons aneh, isi mentahnya di-`console.error`.
+  - Feedback Manage Units dipusatkan ke helper baru **`showUnitFeedback(kind,
+    message, isSuccess)`** (gantiin blok inline yang di-copy-paste di
+    Edit/Delete) — dipakai juga oleh **Add Unit** (sebelumnya sukses Add juga
+    tanpa pesan) dan `loadUnitManageList()`. Ada `scrollIntoView({block:
+    'nearest'})` karena elemen pesannya ada di bawah list unit.
+  - **`theme.css` — `.modal` dikasih `max-height: 88vh; overflow-y: auto;
+    overscroll-behavior: contain`.** Sebelumnya modal dengan list panjang
+    (Manage Units) bisa lebih tinggi dari viewport, dan karena
+    `.modal-overlay` pakai `align-items:center`, bagian atas+bawah modal
+    (termasuk pesan feedback dan tombol Close) keluar layar tanpa bisa
+    di-scroll.
+  - **`transaction_content.php` — accordion bersarang tidak lagi terpotong.**
+    Ditambah `ownAccordionBody(item)` (`:scope > .accordion-body`, bukan
+    descendant pertama — penting sekarang karena nesting-nya 3 level),
+    `measureAccordionItem(item)`, dan **`refreshAncestorHeights(item)`** yang
+    naik ke semua `.accordion-item.open` di atasnya lalu ukur ulang
+    `max-height`-nya. Dipanggil dari `openAccordionItem` /
+    `closeAccordionItem` / `refreshOpenHeight`. Pengukuran diulang di
+    `60/160/260ms` karena `max-height` dianimasikan `.2s` — baca langsung
+    hasilnya tinggi setengah jalan.
+  - **Itemized Pricing — list di-group per produk.** `renderItemPriceList()`
+    dipecah jadi `groupItemPrices()` + `buildPriceEntryItem()` +
+    `renderItemPriceList()`. Struktur barunya: nested list customer berisi
+    satu accordion item **per produk** (`logistic_id`), header-nya
+    `activity_name — IDR <harga terbaru> / <unit>`; di dalam body-nya ada
+    nested list lagi berisi histori harga produk itu, tiap entry header-nya
+    `<date> — IDR <harga> / <unit>` (date sengaja ditampilkan saat card
+    tertutup). Urutan group = yang punya `price_date` terbaru di paling atas;
+    di dalam group juga `price_date DESC`, tie-break `created_at DESC`.
+  - Helper display baru: **`formatIDR()`** (`145000.00` → `IDR 145,000`,
+    `145000.50` → `IDR 145,000.50` — desimal cuma muncul kalau ada sen) dan
+    **`formatPriceDate()`** (`2026-09-18` → `18 Sep 2026`). Dipakai juga di
+    warning konfirmasi Delete.
+  - **`todayISO()`** — Date di modal Add Price sekarang default ke hari ini.
+    Sengaja **tidak** pakai `toISOString()` karena itu konversi ke UTC dulu,
+    yang bikin tanggalnya mundur sehari untuk WIB.
+  - Handler Edit/Delete tiap entry tetap dikasih **`listEl` milik customer**
+    (bukan nested list per produk), karena itu yang di-render ulang
+    `loadItemPrices()` setelah save/delete.
+
 ## Cara lanjut kerja di chat/akun baru
 1. Upload file ini + `index.php` (atau zip `lisani_aos/` lengkap).
 2. Sebutkan menu mana yang mau diisi dan alur kerjanya (proses bisnis).

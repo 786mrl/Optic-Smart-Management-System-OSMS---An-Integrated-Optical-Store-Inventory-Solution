@@ -888,16 +888,51 @@ $currentYear     = date('Y');
   var acPreviewList  = document.getElementById('acPreviewList');
   var acPreviewEmpty = document.getElementById('acPreviewEmpty');
 
+  // An item's OWN body — must be a direct child, not just the first
+  // descendant, now that accordions are nested (customer row > price group
+  // > price entry). A plain querySelector('.accordion-body') would still
+  // find the right one today, but only by accident of DOM order.
+  function ownAccordionBody(item) {
+    return item.querySelector(':scope > .accordion-body');
+  }
+
+  function measureAccordionItem(item) {
+    var body = ownAccordionBody(item);
+    if (body) body.style.maxHeight = body.scrollHeight + 'px';
+  }
+
+  // Every open ancestor gets re-measured whenever a nested item opens,
+  // closes or has content injected into it. Without this the parent keeps
+  // the max-height it had when IT was opened, so anything the child adds
+  // below that line is clipped — which is what made expanded price cards
+  // look cut off. The measurement is repeated a few times because
+  // max-height is animated (.2s): an immediate read returns a mid-transition
+  // height, so the last pass is the one that lands on the final value.
+  function refreshAncestorHeights(item) {
+    function pass() {
+      var node = item.parentElement;
+      while (node) {
+        var anc = node.closest('.accordion-item');
+        if (!anc) break;
+        if (anc.classList.contains('open')) measureAccordionItem(anc);
+        node = anc.parentElement;
+      }
+    }
+    pass();
+    [60, 160, 260].forEach(function (ms) { setTimeout(pass, ms); });
+  }
+
   function openAccordionItem(item) {
     item.classList.add('open');
-    var body = item.querySelector('.accordion-body');
-    body.style.maxHeight = body.scrollHeight + 'px';
+    measureAccordionItem(item);
+    refreshAncestorHeights(item);
   }
 
   function closeAccordionItem(item) {
     item.classList.remove('open');
-    var body = item.querySelector('.accordion-body');
-    body.style.maxHeight = '0px';
+    var body = ownAccordionBody(item);
+    if (body) body.style.maxHeight = '0px';
+    refreshAncestorHeights(item);
   }
 
   // Re-measure an already-open item's max-height. Needed after content is
@@ -906,8 +941,8 @@ $currentYear     = date('Y');
   // measures scrollHeight once, at the moment it's called.
   function refreshOpenHeight(item) {
     if (!item.classList.contains('open')) return;
-    var body = item.querySelector('.accordion-body');
-    body.style.maxHeight = body.scrollHeight + 'px';
+    measureAccordionItem(item);
+    refreshAncestorHeights(item);
   }
 
   function toggleAccordionItem(item) {
@@ -1744,7 +1779,8 @@ $currentYear     = date('Y');
 
     itemPriceAddCustomerLabel.value = customer.customer_name;
     itemPriceAddPrice.value = '';
-    itemPriceAddDate.value = '';
+    itemPriceAddDate.value = todayISO(); // defaults to the day it's being entered
+
     itemPriceAddUnit.value = '';
     itemPriceAddUnit.placeholder = '-- select a product first --';
     itemPriceAddError.style.display = 'none';
@@ -1842,84 +1878,188 @@ $currentYear     = date('Y');
       });
   }
 
+  // Display helpers. The DB stores price as DECIMAL(15,2), so it arrives as
+  // a string like "145000.00" — shown as "IDR 145,000" when there are no
+  // cents and "IDR 145,000.50" when there are.
+  function formatIDR(value) {
+    var n = parseFloat(value);
+    if (isNaN(n)) return String(value);
+    var hasCents = Math.round(n * 100) % 100 !== 0;
+    return 'IDR ' + n.toLocaleString('en-US', {
+      minimumFractionDigits: hasCents ? 2 : 0,
+      maximumFractionDigits: 2
+    });
+  }
+
+  var MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  function formatPriceDate(iso) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ''));
+    if (!m) return String(iso || '');
+    return m[3] + ' ' + MONTH_SHORT[parseInt(m[2], 10) - 1] + ' ' + m[1];
+  }
+
+  // Today in the browser's local timezone, as YYYY-MM-DD for <input type=date>.
+  // toISOString() is deliberately NOT used — it converts to UTC first, which
+  // rolls the date back a day for anyone east of Greenwich (WIB included).
+  function todayISO() {
+    var d = new Date();
+    return d.getFullYear() + '-'
+      + String(d.getMonth() + 1).padStart(2, '0') + '-'
+      + String(d.getDate()).padStart(2, '0');
+  }
+
+  // Rows arrive already sorted newest-first by the endpoint. They are folded
+  // into one group per product (logistic_id), each group keeping that order
+  // internally, and the groups themselves ordered by their newest price —
+  // so whatever was updated most recently sits on top.
+  function groupItemPrices(list) {
+    var groups = [];
+    var byLogistic = {};
+    list.forEach(function (p) {
+      var key = String(p.logistic_id);
+      if (!byLogistic[key]) {
+        byLogistic[key] = { logistic_id: p.logistic_id, activity_name: p.activity_name, entries: [] };
+        groups.push(byLogistic[key]);
+      }
+      byLogistic[key].entries.push(p);
+    });
+    groups.forEach(function (g) {
+      g.entries.sort(function (a, b) {
+        if (a.price_date !== b.price_date) return a.price_date < b.price_date ? 1 : -1;
+        return String(b.created_at).localeCompare(String(a.created_at));
+      });
+      g.latest = g.entries[0];
+    });
+    groups.sort(function (a, b) {
+      if (a.latest.price_date !== b.latest.price_date) return a.latest.price_date < b.latest.price_date ? 1 : -1;
+      return String(b.latest.created_at).localeCompare(String(a.latest.created_at));
+    });
+    return groups;
+  }
+
+  function buildPriceEntryItem(p, listEl) {
+    var pItem = document.createElement('div');
+    pItem.className = 'accordion-item';
+
+    var pHeader = document.createElement('div');
+    pHeader.className = 'accordion-header';
+
+    var pTitle = document.createElement('span');
+    pTitle.className = 'accordion-title';
+    // Collapsed state shows the date too, so a group's history can be read
+    // without opening every entry.
+    pTitle.textContent = formatPriceDate(p.price_date) + ' — ' + formatIDR(p.price) + ' / ' + p.unit_label;
+
+    var pChevron = document.createElement('i');
+    pChevron.className = 'ti ti-chevron-down accordion-chevron';
+
+    pHeader.appendChild(pTitle);
+    pHeader.appendChild(pChevron);
+    pHeader.addEventListener('click', function () { toggleAccordionItem(pItem); });
+
+    var pBody = document.createElement('div');
+    pBody.className = 'accordion-body';
+    var pBodyInner = document.createElement('div');
+    pBodyInner.className = 'accordion-body-inner';
+
+    [
+      ['Product', p.activity_name],
+      ['Price', formatIDR(p.price)],
+      ['Date', formatPriceDate(p.price_date)],
+      ['Unit', p.unit_label]
+    ].forEach(function (pair) {
+      var row = document.createElement('div');
+      row.className = 'accordion-row';
+      var label = document.createElement('div');
+      label.className = 'accordion-row-label';
+      label.textContent = pair[0];
+      var value = document.createElement('div');
+      value.className = 'accordion-row-value';
+      value.textContent = pair[1];
+      row.appendChild(label);
+      row.appendChild(value);
+      pBodyInner.appendChild(row);
+    });
+
+    var pActions = document.createElement('div');
+    pActions.className = 'accordion-row';
+    pActions.style.justifyContent = 'flex-end';
+    pActions.style.gap = 'var(--space-2)';
+    pActions.style.marginTop = 'var(--space-2)';
+
+    var pEditBtn = document.createElement('button');
+    pEditBtn.type = 'button';
+    pEditBtn.className = 'btn btn-secondary';
+    pEditBtn.textContent = 'Edit';
+    pEditBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      openItemPriceReverify('edit', p, listEl);
+    });
+
+    var pDeleteBtn = document.createElement('button');
+    pDeleteBtn.type = 'button';
+    pDeleteBtn.className = 'btn btn-danger';
+    pDeleteBtn.textContent = 'Delete';
+    pDeleteBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      openItemPriceReverify('delete', p, listEl);
+    });
+
+    pActions.appendChild(pEditBtn);
+    pActions.appendChild(pDeleteBtn);
+    pBodyInner.appendChild(pActions);
+
+    pBody.appendChild(pBodyInner);
+    pItem.appendChild(pHeader);
+    pItem.appendChild(pBody);
+    return pItem;
+  }
+
+  // listEl = the customer row's nested .accordion-list. It now holds one
+  // accordion item per PRODUCT; each product's own body holds a further
+  // nested list with that product's price history.
   function renderItemPriceList(list, listEl) {
     listEl.innerHTML = '';
     var emptyEl = listEl.itemPriceEmptyEl;
     if (emptyEl) emptyEl.style.display = list.length ? 'none' : 'block';
 
-    list.forEach(function (p) {
-      var pItem = document.createElement('div');
-      pItem.className = 'accordion-item';
+    groupItemPrices(list).forEach(function (g) {
+      var gItem = document.createElement('div');
+      gItem.className = 'accordion-item';
 
-      var pHeader = document.createElement('div');
-      pHeader.className = 'accordion-header';
+      var gHeader = document.createElement('div');
+      gHeader.className = 'accordion-header';
 
-      var pTitle = document.createElement('span');
-      pTitle.className = 'accordion-title';
-      pTitle.textContent = p.activity_name + ' — ' + p.price + ' / ' + p.unit_label;
+      var gTitle = document.createElement('span');
+      gTitle.className = 'accordion-title';
+      gTitle.textContent = g.activity_name + ' — ' + formatIDR(g.latest.price) + ' / ' + g.latest.unit_label;
 
-      var pChevron = document.createElement('i');
-      pChevron.className = 'ti ti-chevron-down accordion-chevron';
+      var gChevron = document.createElement('i');
+      gChevron.className = 'ti ti-chevron-down accordion-chevron';
 
-      pHeader.appendChild(pTitle);
-      pHeader.appendChild(pChevron);
-      pHeader.addEventListener('click', function () { toggleAccordionItem(pItem); });
+      gHeader.appendChild(gTitle);
+      gHeader.appendChild(gChevron);
+      gHeader.addEventListener('click', function () { toggleAccordionItem(gItem); });
 
-      var pBody = document.createElement('div');
-      pBody.className = 'accordion-body';
-      var pBodyInner = document.createElement('div');
-      pBodyInner.className = 'accordion-body-inner';
+      var gBody = document.createElement('div');
+      gBody.className = 'accordion-body';
+      var gBodyInner = document.createElement('div');
+      gBodyInner.className = 'accordion-body-inner';
 
-      [
-        ['Price', p.price],
-        ['Date', p.price_date],
-        ['Unit', p.unit_label]
-      ].forEach(function (pair) {
-        var row = document.createElement('div');
-        row.className = 'accordion-row';
-        var label = document.createElement('div');
-        label.className = 'accordion-row-label';
-        label.textContent = pair[0];
-        var value = document.createElement('div');
-        value.className = 'accordion-row-value';
-        value.textContent = pair[1];
-        row.appendChild(label);
-        row.appendChild(value);
-        pBodyInner.appendChild(row);
+      var entryList = document.createElement('div');
+      entryList.className = 'accordion-list';
+      entryList.style.marginTop = 'var(--space-2)';
+      g.entries.forEach(function (p) {
+        // The Edit/Delete handlers still get the CUSTOMER's list element, not
+        // this inner one — that's what loadItemPrices() re-renders afterwards.
+        entryList.appendChild(buildPriceEntryItem(p, listEl));
       });
 
-      var pActions = document.createElement('div');
-      pActions.className = 'accordion-row';
-      pActions.style.justifyContent = 'flex-end';
-      pActions.style.gap = 'var(--space-2)';
-      pActions.style.marginTop = 'var(--space-2)';
-
-      var pEditBtn = document.createElement('button');
-      pEditBtn.type = 'button';
-      pEditBtn.className = 'btn btn-secondary';
-      pEditBtn.textContent = 'Edit';
-      pEditBtn.addEventListener('click', function (e) {
-        e.stopPropagation();
-        openItemPriceReverify('edit', p, listEl);
-      });
-
-      var pDeleteBtn = document.createElement('button');
-      pDeleteBtn.type = 'button';
-      pDeleteBtn.className = 'btn btn-danger';
-      pDeleteBtn.textContent = 'Delete';
-      pDeleteBtn.addEventListener('click', function (e) {
-        e.stopPropagation();
-        openItemPriceReverify('delete', p, listEl);
-      });
-
-      pActions.appendChild(pEditBtn);
-      pActions.appendChild(pDeleteBtn);
-      pBodyInner.appendChild(pActions);
-
-      pBody.appendChild(pBodyInner);
-      pItem.appendChild(pHeader);
-      pItem.appendChild(pBody);
-      listEl.appendChild(pItem);
+      gBodyInner.appendChild(entryList);
+      gBody.appendChild(gBodyInner);
+      gItem.appendChild(gHeader);
+      gItem.appendChild(gBody);
+      listEl.appendChild(gItem);
     });
   }
 
@@ -2055,7 +2195,7 @@ $currentYear     = date('Y');
   function openDeleteItemPrice(row) {
     itemPriceDeleteError.style.display = 'none';
     itemPriceDeleteWarning.textContent = 'Delete the price entry for "' + row.activity_name + '" ('
-      + row.price + ' / ' + row.unit_label + ', ' + row.price_date + ')? This cannot be undone.';
+      + formatIDR(row.price) + ' / ' + row.unit_label + ', ' + formatPriceDate(row.price_date) + ')? This cannot be undone.';
     show(itemPriceDeleteOverlay);
   }
 
