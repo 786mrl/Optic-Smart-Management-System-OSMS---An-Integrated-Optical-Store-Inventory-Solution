@@ -44,12 +44,20 @@ function log_units_next_id($units)
     return $max + 1;
 }
 
-// Duplicate label check (case-insensitive), optionally excluding one id (edit).
-function log_units_label_taken($units, $label, $excludeId = null)
+// Duplicate check: a unit is only considered a duplicate of another when
+// EVERY relevant field matches — label (case-insensitive) AND weight_kg
+// for primary, plus ratio_per_primary for secondary. Same label with a
+// different weight (or, for secondary, a different ratio) is a distinct
+// unit and is allowed — e.g. "Master Carton @ 12 kg" and "Master Carton
+// @ 10 kg" can coexist.
+function log_units_taken($units, $label, $weightKg, $ratioPerPrimary, $kind, $excludeId = null)
 {
     foreach ($units as $u) {
         if ($excludeId !== null && (int) $u['id'] === (int) $excludeId) continue;
-        if (mb_strtolower($u['label']) === mb_strtolower($label)) return true;
+        if (mb_strtolower($u['label']) !== mb_strtolower($label)) continue;
+        if ((float) $u['weight_kg'] !== (float) $weightKg) continue;
+        if ($kind === 'secondary' && (float) ($u['ratio_per_primary'] ?? 0) !== (float) $ratioPerPrimary) continue;
+        return true;
     }
     return false;
 }
@@ -73,21 +81,23 @@ if ($action === 'add') {
         echo json_encode(['ok' => false, 'message' => 'Berat (kg) tidak valid.']);
         exit;
     }
-    if (log_units_label_taken($data['units'], $label)) {
-        echo json_encode(['ok' => false, 'message' => 'Nama satuan sudah dipakai.']);
-        exit;
-    }
 
-    $newUnit = ['id' => log_units_next_id($data['units']), 'label' => $label];
-
+    $ratio = null;
     if ($kind === 'secondary') {
         $ratio = $_POST['ratio_per_primary'] ?? '';
         if (!is_numeric($ratio) || (float) $ratio <= 0) {
             echo json_encode(['ok' => false, 'message' => 'Rasio ke primary tidak valid.']);
             exit;
         }
-        $newUnit['ratio_per_primary'] = (float) $ratio;
     }
+
+    if (log_units_taken($data['units'], $label, $weight, $ratio, $kind)) {
+        echo json_encode(['ok' => false, 'message' => 'Satuan dengan nama, berat' . ($kind === 'secondary' ? ', dan rasio' : '') . ' yang sama sudah ada.']);
+        exit;
+    }
+
+    $newUnit = ['id' => log_units_next_id($data['units']), 'label' => $label];
+    if ($kind === 'secondary') $newUnit['ratio_per_primary'] = (float) $ratio;
     $newUnit['weight_kg'] = (float) $weight;
 
     $data['units'][] = $newUnit;
@@ -120,8 +130,8 @@ if ($action === 'edit') {
             exit;
         }
     }
-    if (log_units_label_taken($data['units'], $label, $id)) {
-        echo json_encode(['ok' => false, 'message' => 'Nama satuan sudah dipakai.']);
+    if (log_units_taken($data['units'], $label, $weight, $ratio, $kind, $id)) {
+        echo json_encode(['ok' => false, 'message' => 'Satuan dengan nama, berat' . ($kind === 'secondary' ? ', dan rasio' : '') . ' yang sama sudah ada.']);
         exit;
     }
 

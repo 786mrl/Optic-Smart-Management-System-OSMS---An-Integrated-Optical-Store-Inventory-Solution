@@ -5,6 +5,12 @@
             "label": "BABY CARTON",
             "ratio_per_primary": 4,
             "weight_kg": 3
+        },
+        {
+            "id": 2,
+            "label": "NO PRIMARY CARTON",
+            "ratio_per_primary": 1,
+            "weight_kg": 10
         }
     ]
 }

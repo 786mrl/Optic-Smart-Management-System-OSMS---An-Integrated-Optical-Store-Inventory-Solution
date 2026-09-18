@@ -355,6 +355,47 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
   </div>
 </div>
 
+<!-- Add Document: opens straight from a Logistic List row's "Add Document"
+     button, no password reverify needed (same as Import Document on the
+     Create tab). This exists because the Activity Code dropdown on the
+     Create tab disables activity codes that already have a logistic
+     (has_logistic), so once a logistic is saved there was previously no
+     way back into the upload form for that activity — this modal targets
+     the row's activity_id directly instead of going through that select. -->
+<div class="modal-overlay" id="logAddDocOverlay" style="display:none;">
+  <div class="modal">
+    <div class="modal-header"><div class="modal-title" id="logAddDocTitle">Add Document</div></div>
+    <div class="modal-body">
+      <div class="form-group">
+        <div class="label">Document Group</div>
+        <select class="select" id="logAddDocType">
+          <option value="shipper">Shipper</option>
+          <option value="custom">Custom</option>
+          <option value="consignee">Consignee</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <div class="label">Document Name</div>
+        <input type="text" class="input input-uppercase" id="logAddDocName" placeholder="e.g. Invoice, Packing List">
+      </div>
+      <div class="form-group">
+        <div class="label">Document Date</div>
+        <input type="date" class="input" id="logAddDocDate">
+      </div>
+      <div class="form-group">
+        <div class="label">File</div>
+        <input type="file" class="input" id="logAddDocFile">
+      </div>
+      <div class="empty-sub" id="logAddDocMsg" style="display:none;"></div>
+      <div id="logAddDocUploadedList" style="margin-top:var(--space-3); display:flex; flex-direction:column; gap:var(--space-2);"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" id="btnLogAddDocClose">Close</button>
+      <button type="button" class="btn btn-primary" id="btnLogAddDocUpload">Upload Document</button>
+    </div>
+  </div>
+</div>
+
 <!-- Delete Logistic confirmation: opens only after logReverifyOverlay
      succeeds. All uploaded import documents for this activity code are
      moved to storage/recycle/ (not deleted outright) — see
@@ -557,6 +598,16 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
       var actionsRow = document.createElement('div');
       actionsRow.style.cssText = 'display:flex; gap:var(--space-2); margin-top:var(--space-3);';
 
+      var addDocBtn = document.createElement('button');
+      addDocBtn.type = 'button';
+      addDocBtn.className = 'btn btn-secondary';
+      addDocBtn.textContent = 'Add Document';
+      addDocBtn.style.cssText = 'flex:1; padding:var(--space-2) var(--space-3); font-size:var(--text-sm); justify-content:center;';
+      addDocBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        openAddDocument(l);
+      });
+
       var editBtn = document.createElement('button');
       editBtn.type = 'button';
       editBtn.className = 'btn btn-secondary';
@@ -577,6 +628,7 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
         openLogisticReverify('delete', l);
       });
 
+      actionsRow.appendChild(addDocBtn);
       actionsRow.appendChild(editBtn);
       actionsRow.appendChild(deleteBtn);
       bodyInner.appendChild(actionsRow);
@@ -763,6 +815,114 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
         logDocMsg.textContent = 'Connection error.';
         logDocMsg.style.color = 'var(--danger)';
         logDocMsg.style.display = 'block';
+      });
+  });
+
+  // ---------- Add Document (from Logistic List row) ----------
+  var logAddDocOverlay      = document.getElementById('logAddDocOverlay');
+  var logAddDocTitle        = document.getElementById('logAddDocTitle');
+  var logAddDocType         = document.getElementById('logAddDocType');
+  var logAddDocName         = document.getElementById('logAddDocName');
+  var logAddDocDate         = document.getElementById('logAddDocDate');
+  var logAddDocFile         = document.getElementById('logAddDocFile');
+  var logAddDocMsg          = document.getElementById('logAddDocMsg');
+  var logAddDocUploadedList = document.getElementById('logAddDocUploadedList');
+  var addDocActivityId      = null; // activity_id of the logistic row currently open in this modal
+
+  function renderAddDocUploadedList(docs) {
+    logAddDocUploadedList.innerHTML = '';
+    docs.forEach(function (d) {
+      var row = document.createElement('div');
+      row.className = 'accordion-row';
+      row.style.cssText = 'background:var(--bg-surface); border-radius:var(--radius-sm); padding:var(--space-2) var(--space-3); display:flex; justify-content:space-between; gap:var(--space-2);';
+
+      var left = document.createElement('span');
+      left.textContent = '[' + d.document_type + '] ' + d.document_name;
+
+      var right = document.createElement('span');
+      right.style.color = 'var(--text-muted)';
+      right.textContent = d.document_date || '';
+
+      row.appendChild(left);
+      row.appendChild(right);
+      logAddDocUploadedList.appendChild(row);
+    });
+  }
+
+  function loadAddDocUploadedList() {
+    if (!addDocActivityId) { logAddDocUploadedList.innerHTML = ''; return; }
+    fetch('ajax/list_logistic_documents.php?activity_id=' + addDocActivityId)
+      .then(function (r) { return r.json(); })
+      .then(function (res) { if (res.ok) renderAddDocUploadedList(res.data); })
+      .catch(function (e) { console.error(e); });
+  }
+
+  function openAddDocument(row) {
+    addDocActivityId = row.activity_id;
+    logAddDocTitle.textContent = 'Add Document — ' + row.activity_name + ' (' + row.activity_code + ')';
+    logAddDocType.value = 'shipper';
+    logAddDocName.value = '';
+    logAddDocDate.value = '';
+    logAddDocFile.value = '';
+    logAddDocMsg.style.display = 'none';
+    loadAddDocUploadedList();
+    show(logAddDocOverlay);
+  }
+
+  document.getElementById('btnLogAddDocClose').addEventListener('click', function () {
+    hide(logAddDocOverlay);
+    addDocActivityId = null;
+    loadLogisticList(); // refresh document counts shown on the row
+  });
+
+  document.getElementById('btnLogAddDocUpload').addEventListener('click', function () {
+    logAddDocMsg.style.display = 'none';
+
+    if (!addDocActivityId) return;
+    if (!logAddDocName.value.trim()) {
+      logAddDocMsg.textContent = 'Document name is required.';
+      logAddDocMsg.style.color = 'var(--danger)';
+      logAddDocMsg.style.display = 'block';
+      return;
+    }
+    if (!logAddDocFile.files.length) {
+      logAddDocMsg.textContent = 'Choose a file to upload.';
+      logAddDocMsg.style.color = 'var(--danger)';
+      logAddDocMsg.style.display = 'block';
+      return;
+    }
+
+    var fd = new FormData();
+    fd.append('activity_id', addDocActivityId);
+    fd.append('document_type', logAddDocType.value);
+    fd.append('document_name', logAddDocName.value.trim());
+    fd.append('document_date', logAddDocDate.value);
+    fd.append('file', logAddDocFile.files[0]);
+
+    fetch('ajax/upload_logistic_document.php', { method: 'POST', body: fd })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (res.ok) {
+          logAddDocMsg.textContent = 'Document uploaded.';
+          logAddDocMsg.style.color = 'var(--success)';
+          logAddDocMsg.style.display = 'block';
+
+          loadAddDocUploadedList();
+
+          logAddDocType.value = 'shipper';
+          logAddDocName.value = '';
+          logAddDocDate.value = '';
+          logAddDocFile.value = '';
+        } else {
+          logAddDocMsg.textContent = res.message || 'Failed to upload document.';
+          logAddDocMsg.style.color = 'var(--danger)';
+          logAddDocMsg.style.display = 'block';
+        }
+      })
+      .catch(function () {
+        logAddDocMsg.textContent = 'Connection error.';
+        logAddDocMsg.style.color = 'var(--danger)';
+        logAddDocMsg.style.display = 'block';
       });
   });
 
