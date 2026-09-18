@@ -1,0 +1,22 @@
+Logistic deleted
+==================
+Deleted at   : 2026-09-18 10:09:15
+Deleted by   : user_id 1
+
+Activity code : input/2025/dates/001/
+Activity name : SUKKARI LISANI
+Logistic ID   : 1
+Incoming date : 2025-10-31
+
+Primary qty          : 1500.00 MASTER CARTON
+Primary unit weight   : 12.000 KG
+Remaining primary qty : 1500.00
+Secondary unit        : BABY CARTON
+Secondary unit weight : 3.000 KG
+Secondary ratio       : 4.000 per primary unit
+
+Documents (3):
+  - [shipper] ARRIVAL NOTICE (2025-10-28) -> input/2025/dates/001/import_documents/shipper/20260918043950_arrival_notice.pdf
+  - [shipper] COO (2025-10-28) -> input/2025/dates/001/import_documents/shipper/20260918044417_coo.pdf
+  - [custom] DO (2025-10-31) -> input/2025/dates/001/import_documents/custom/20260918044457_do.pdf
+

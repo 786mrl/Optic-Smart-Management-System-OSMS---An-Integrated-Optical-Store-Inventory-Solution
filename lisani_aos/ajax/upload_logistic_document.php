@@ -23,6 +23,10 @@ if (!defined('AOS_STORAGE_BASE')) {
 $activityId   = (int) ($_POST['activity_id'] ?? 0);
 $documentType = trim($_POST['document_type'] ?? '');
 $documentName = trim($_POST['document_name'] ?? '');
+// Uppercased server-side as a safety net — client already forces uppercase
+// on input, but this keeps stored document_name consistent even if the
+// request bypasses the browser (e.g. direct API call, disabled JS).
+$documentName = strtoupper($documentName);
 $documentDate = trim($_POST['document_date'] ?? '');
 
 $validTypes = ['shipper', 'custom', 'consignee'];
@@ -60,6 +64,20 @@ if (!$stmt->fetch()) {
 }
 $stmt->close();
 
+// Document name must be unique within this activity code (case-insensitive).
+$dupStmt = $lisani_conn->prepare(
+    'SELECT id FROM logistic_documents WHERE activity_id = ? AND LOWER(document_name) = LOWER(?) LIMIT 1'
+);
+$dupStmt->bind_param('is', $activityId, $documentName);
+$dupStmt->execute();
+$dupStmt->store_result();
+if ($dupStmt->num_rows > 0) {
+    $dupStmt->close();
+    echo json_encode(['ok' => false, 'message' => 'Nama dokumen sudah pernah dipakai untuk activity code ini, gunakan nama lain.']);
+    exit;
+}
+$dupStmt->close();
+
 // Build target folder: {relative_path}import_documents/{type}/
 $folderRelative = rtrim($relativePath, '/') . '/import_documents/' . $documentType . '/';
 $folderFull     = rtrim(AOS_STORAGE_BASE, '/') . '/' . $folderRelative;
@@ -71,15 +89,18 @@ if (!is_dir($folderFull)) {
     }
 }
 
-// Sanitize original filename, prefix with timestamp so re-uploads with the
-// same filename never overwrite each other.
+// Stored filename follows the user-provided document_name (lowercased),
+// NOT the original uploaded filename — keeps files on disk human-readable
+// and consistent with what's shown in the UI. Extension still comes from
+// the original upload. Prefix with timestamp so re-uploads (e.g. after a
+// document_name gets reused following a delete) never overwrite each other.
 $originalName = $_FILES['file']['name'];
 $ext          = pathinfo($originalName, PATHINFO_EXTENSION);
-$baseName     = pathinfo($originalName, PATHINFO_FILENAME);
-$safeBase     = preg_replace('/[^A-Za-z0-9_\-]+/', '_', $baseName);
+$safeBase     = preg_replace('/[^A-Za-z0-9_\-]+/', '_', $documentName);
 $safeBase     = trim($safeBase, '_');
+$safeBase     = strtolower($safeBase);
 if ($safeBase === '') $safeBase = 'document';
-$safeExt      = preg_replace('/[^A-Za-z0-9]+/', '', $ext);
+$safeExt      = strtolower(preg_replace('/[^A-Za-z0-9]+/', '', $ext));
 $storedName   = date('YmdHis') . '_' . $safeBase . ($safeExt !== '' ? '.' . $safeExt : '');
 
 $destFull     = $folderFull . $storedName;

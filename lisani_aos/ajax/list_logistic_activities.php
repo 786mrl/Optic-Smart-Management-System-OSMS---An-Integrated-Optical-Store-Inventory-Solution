@@ -42,14 +42,17 @@ $result = $stmt->get_result();
 $rows = [];
 while ($r = $result->fetch_assoc()) {
     $code = null;
-    if (preg_match('#^input/\d{4}/' . preg_quote($department, '#') . '/(\d+)/$#', $r['relative_path'], $m)) {
-        $code = $m[1];
+    $year = null;
+    if (preg_match('#^input/(\d{4})/' . preg_quote($department, '#') . '/(\d+)/$#', $r['relative_path'], $m)) {
+        $year = $m[1];
+        $code = $m[2];
     }
     $rows[] = [
         'id'            => (int) $r['id'],
         'activity_code' => $code ?? '-',
         'activity_name' => $r['activity_name'],
         'relative_path' => $r['relative_path'],
+        'year'          => $year ?? '-',
         'has_logistic'  => (bool) $r['has_logistic'],
     ];
 }

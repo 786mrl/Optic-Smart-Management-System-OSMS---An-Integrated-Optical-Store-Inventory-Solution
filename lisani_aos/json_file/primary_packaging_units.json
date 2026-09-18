@@ -1,5 +1,8 @@
 {
     "units": [
-        { "label": "Master Carton", "weight_kg": 10 }
+        {
+            "label": "Master Carton",
+            "weight_kg": 12
+        }
     ]
 }

@@ -1,5 +1,10 @@
 {
     "units": [
-        { "label": "Baby Carton", "ratio_per_primary": 4, "weight_kg": 2 }
+        {
+            "id": 1,
+            "label": "BABY CARTON",
+            "ratio_per_primary": 4,
+            "weight_kg": 3
+        }
     ]
 }

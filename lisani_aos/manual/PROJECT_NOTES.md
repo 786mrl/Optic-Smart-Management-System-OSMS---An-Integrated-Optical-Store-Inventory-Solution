@@ -847,6 +847,352 @@ bisa dipakai ulang di menu lain juga.
       nambah icon baru dan tofu lagi, langsung asumsikan itu class yang
       tidak ke-bundle, jangan coba nama class Tabler lain dulu — langsung
       SVG inline saja.
+    - **Activity Code picker diganti jadi `<select>` biasa, sama seperti
+      Department** — sebelumnya `#logActivityCodeList` (div `.log-code-option`
+      yang diklik satu-satu, dengan class `.selected`/`.disabled`). Sekarang
+      `<select id="logActivityCode">` polos di `logistic_content.php`, opsi
+      di-generate dari response `list_logistic_activities.php` (label
+      `"{year} — {activity_code} — {activity_name}"`), code yang sudah
+      punya logistic (`has_logistic`) di-set `disabled` di level `<option>`
+      (bukan lagi class CSS terpisah). CSS `.log-code-option` (beserta
+      turunannya `.selected`/`.disabled`/`:hover`) sudah dihapus, tidak
+      dipakai lagi.
+      - `selectedActivity` sekarang di-set lewat event `change` pada
+        `<select>`-nya (bukan `click` per-item), diambil dari map
+        `activityById[id]` yang diisi ulang tiap kali `loadActivityCodes()`
+        jalan — supaya kode-kode lain yang bergantung pada bentuk object
+        `selectedActivity` (submit create logistic, load/upload dokumen)
+        tidak perlu berubah sama sekali.
+      - `resetCreateLogisticForm()` disesuaikan: reset `logActivityCode.value
+        = ''` (bukan lagi hapus class `.selected` dari elemen div).
+      - Saat department dipilih yang belum didukung Logistic, select-nya
+        ikut di-`disabled` (sebelumnya cuma pesan empty-state yang tampil,
+        list div-nya otomatis kosong karena belum di-render).
+    - **Semua input teks bebas di form Logistic dipaksa uppercase saat
+      diketik, kecuali yang berkaitan dengan folder/path fisik** (aturan
+      global baru, ikuti konvensi `departments.json` `key` yang sengaja
+      tetap huruf kecil karena jadi nama folder):
+      - Field yang di-uppercase: `logDocName` (Document Name), 
+        `primaryUnitNewLabel`, `secondaryUnitNewLabel` — ditandai class CSS
+        `.input-uppercase` di `logistic_content.php`, dipaksa uppercase via
+        satu listener `input` global (`querySelectorAll('.input-uppercase')`,
+        di awal `<script>`) yang me-replace `el.value` dan menjaga posisi
+        kursor (`selectionStart`/`setSelectionRange`), plus CSS
+        `text-transform: uppercase` untuk tampilan. Pola ini jadi standar
+        untuk field free-text baru ke depan: cukup tambah class
+        `input-uppercase`, tidak perlu listener baru per field.
+      - **`logDocName` sengaja tetap termasuk yang di-uppercase** meskipun
+        nilainya dipakai server untuk membangun nama file fisik di storage
+        — karena `upload_logistic_document.php` sudah **`strtolower()`**
+        nama file fisiknya secara terpisah (lihat entri sebelumnya di atas),
+        uppercase di form ini tidak konflik dengan aturan "kecuali yang
+        berkaitan dengan folder".
+      - **Server-side juga ikut di-uppercase sebagai safety net** (client
+        JS bisa saja dilewati — request langsung/JS disabled):
+        `upload_logistic_document.php` sekarang `strtoupper()` 
+        `$documentName` sebelum dipakai untuk cek duplikat & disimpan ke
+        kolom `document_name` (nama file fisik tetap lowercase, tidak
+        terpengaruh — itu proses terpisah setelahnya). `create_logistic.php`
+        sekarang `strtoupper()` `primary_unit_label` dan
+        `secondary_unit_label` sebelum di-INSERT.
+      - **Belum sempat disentuh** (file-nya belum ada/di-upload ke chat
+        ini): `ajax/manage_packaging_units.php` — endpoint yang benar-benar
+        menyimpan unit label baru (dipanggil dari `primaryUnitNewLabel`/
+        `secondaryUnitNewLabel` submit) belum diperiksa/di-uppercase-kan di
+        sisi server-nya. Kalau nanti diminta lanjutkan aturan uppercase ini
+        secara konsisten, mulai dari situ.
+    - **Fix: list "sudah diupload" di card Import Document tidak kelihatan
+      setelah upload sukses, padahal sudah ter-render** — `logDocUploadedList`
+      (list collapsible dokumen yang sudah diupload untuk activity code
+      terpilih) ada **di dalam** `logDocBody`, panel collapsible yang sama
+      dengan form upload-nya. `logDocBody` pakai pola `max-height =
+      scrollHeight` yang **cuma dihitung ulang saat toggle diklik**
+      (`logDocToggle` click handler) — jadi kalau panel sudah terbuka lalu
+      user upload dokumen baru, `renderUploadedDocuments()` berhasil
+      menambah baris ke DOM, tapi `max-height` lama (dihitung sebelum ada
+      baris itu) tetap kepakai → baris barunya ada tapi terpotong/ketutup
+      `overflow:hidden`, kelihatan seperti "tidak muncul". Fix-nya:
+      `renderUploadedDocuments()` sekarang recalculate
+      `logDocBody.style.maxHeight = logDocBody.scrollHeight + 'px'` di
+      akhir fungsi, tapi **hanya kalau `logDocOpen` true** (panel sedang
+      terbuka) — supaya tidak korupsi state collapsed (`max-height:0px`)
+      kalau `loadUploadedDocuments()`/`renderUploadedDocuments()` dipanggil
+      saat panel masih tertutup (misal langsung setelah pilih Activity
+      Code, sebelum user buka card Import Document sama sekali).
+      **Pola ini perlu diingat untuk collapsible lain ke depan**: kalau ada
+      collapsible yang isinya bisa berubah (bukan cuma dibuka/ditutup),
+      apa pun yang mengubah kontennya harus ikut resync `max-height`
+      (dengan syarat panel-nya sedang terbuka), bukan cuma toggle click
+      handler-nya saja.
+    - **Primary/Secondary Qty sekarang dua arah, bukan cuma Primary →
+      Secondary** — sebelumnya `logSecondaryQty` selalu `disabled`
+      (`placeholder="Qty (auto)"`), cuma bisa dihitung dari Primary Qty ×
+      rasio unit. Sekarang `logSecondaryQty` jadi input teks biasa
+      (`placeholder="Qty"`, tidak lagi `disabled` secara statis di HTML).
+      Arahnya ditentukan **otomatis dari field mana yang mulai diisi
+      duluan** (pola yang sama dipakai lagi seperti kasus lain di project
+      ini — konsisten dengan prinsip "yang diisi duluan jadi sumber"):
+      - Variabel state baru `qtySource` (`'primary'` / `'secondary'` /
+        `null`) di-set di listener `input` masing-masing qty field —
+        kalau field itu ditulisi jadi sumbernya, kalau dikosongkan lagi
+        `qtySource` balik `null` (unlock kedua field).
+      - `updateQtySourceLock()`: men-disable field qty yang BUKAN sumber
+        selama `qtySource` bukan `null`; kalau `null`, dua-duanya
+        enabled/disabled ikut `selectedActivity` seperti biasa (dipanggil
+        juga dari `updatePackagingAvailability()` supaya lock-nya
+        ter-reapply kalau Activity Code diganti).
+      - `recalcPackaging()` ditulis ulang jadi dua cabang: kalau
+        `qtySource === 'secondary'`, Primary Qty dihitung mundur
+        (`secondaryQty / ratio`) dan ditulis ke `logPrimaryQty.value`;
+        selain itu (termasuk `null`, default) tetap seperti sebelumnya,
+        Primary → Secondary. Primary Weight & Secondary Weight tetap
+        selalu dihitung dari qty efektif masing-masing × `weight_kg`
+        unitnya — logikanya sendiri tidak berubah, cuma qty sumbernya
+        yang bisa dari dua arah sekarang.
+      - **Bug kecil yang ikut kebenerin saat nulis arah baru ini**: hasil
+        hitung-mundur Primary Qty sempat ditulis pakai
+        `toLocaleString('en-US')` (ada pemisah ribuan seperti `1,234.5`)
+        — ini akan lolos ke `create_logistic.php` sebagai `primary_qty`
+        (dikirim apa adanya dari `logPrimaryQty.value`, lihat payload
+        submit) dan gagal validasi `is_numeric()` di server untuk angka
+        besar. Sudah diganti `toFixed(3)` + strip trailing zero
+        (`.replace(/\.?0+$/, '')`), tanpa pemisah ribuan. **Field lain
+        yang masih pakai `toLocaleString('en-US')`
+        (`logSecondaryQty`/`logPrimaryWeight`/`logSecondaryWeight`) aman
+        dibiarkan** karena field-field itu tidak pernah dikirim ke server
+        apa adanya (lihat komentar di payload submit: "Only rates are
+        sent — totals ... calculated by the server").
+      - `resetCreateLogisticForm()` ikut di-update: reset `qtySource =
+        null` dan panggil `updateQtySourceLock()` supaya kedua qty field
+        ter-unlock lagi untuk entry berikutnya.
+    - **Fix: Edit unit (Manage Primary/Secondary Units) tidak kasih feedback
+      apa pun setelah Save berhasil** — Save handler di `startEditUnitRow()`
+      (dipanggil dari tombol Edit tiap baris unit) sebenarnya **sudah**
+      berhasil menyimpan dan me-refresh list (`renderUnitManageList()` +
+      `refreshUnitSelects()`), cuma tidak ada indikasi visual apa pun kalau
+      request-nya sukses — jadi kelihatan seperti tidak terjadi apa-apa.
+      Sekarang di-tambah pesan sukses singkat ("Unit updated."), reuse
+      elemen `primaryUnitError`/`secondaryUnitError` yang sudah ada (dipakai
+      dual-purpose: hijau + "Unit updated." selama 2 detik lalu
+      auto-hide via `setTimeout`, atau merah + pesan error seperti
+      sebelumnya kalau gagal).
+    - **Fix: Delete unit sama persis kasusnya dengan Edit unit di atas** —
+      `deleteUnit()` juga sudah berhasil menghapus dan me-refresh list
+      (`renderUnitManageList()` + `refreshUnitSelects()`) dari dulu, cuma
+      tanpa feedback visual apa pun, jadi row yang terhapus kelihatan
+      "masih ada" sampai modal ditutup baru ketahuan sudah hilang. Dicek
+      juga tidak ada `max-height`/`overflow` di `.modal-body` atau
+      `.log-unit-row` yang bisa nyebabin clipping seperti kasus
+      `logDocBody` sebelumnya — murni tidak ada feedback saja. Fix-nya
+      sama seperti Edit: tambah pesan sukses "Unit deleted." (hijau, reuse
+      `primaryUnitError`/`secondaryUnitError`, auto-hide 2 detik).
+    - **Helper text packaging diganti jadi ikon info "!" bulat, klik untuk
+      buka** — sebelumnya kalimat "Fill in either Primary or Secondary
+      Qty — the other one is calculated automatically..." nampil permanen
+      di bawah form Secondary Packaging (`.empty-sub` statis). Sekarang
+      dihapus dari situ, diganti `<span class="info-icon">!</span>`
+      (CSS baru, class `.info-icon`) di sebelah label **Primary Packaging**
+      dan **Secondary Packaging** masing-masing (dua icon terpisah, isi
+      tooltip-nya sama persis). Klik/tap (atau Enter/Space kalau fokus
+      keyboard, ada `tabindex="0"`) toggle class `.open` di
+      `.info-tooltip` yang berhubungan (`logPrimaryInfoTooltip` /
+      `logSecondaryInfoTooltip`) — collapsed by default (`display:none`
+      dari CSS `.info-tooltip`, baru `display:block` saat `.open`).
+      **Konvensi baru untuk helper text serupa ke depan**: kalau helper
+      text-nya cuma relevan untuk sebagian user / bisa bikin form berasa
+      penuh, pertimbangkan pola icon info "!" + tooltip klik ini
+      (`.info-icon` + `.info-tooltip`), bukan `.empty-sub` statis yang
+      selalu tampil.
+    - **Semua input angka di form Logistic sekarang auto-format koma ribuan
+      saat mengetik** (`logPrimaryQty`, `logSecondaryQty`,
+      `primaryUnitNewWeight`, `secondaryUnitNewRatio`,
+      `secondaryUnitNewWeight`, plus `weightInput`/`ratioInput` dinamis di
+      `startEditUnitRow()`):
+      - Field-field ini diubah dari `type="number"` (yang **tidak bisa**
+        menampilkan koma sama sekali — browser menolak karakter non-digit)
+        jadi `type="text" inputmode="decimal"` + class baru
+        `.input-number-comma` (`inputmode` supaya keyboard numerik tetap
+        muncul di HP meski `type` bukan `number`).
+      - Helper baru di awal `<script>`: `formatNumberInput(raw)` (susun
+        ulang jadi string dengan koma ribuan, cursor-safe),
+        `parseNumberInput(raw)` (strip koma balik jadi angka polos untuk
+        dipakai di kalkulasi/dikirim ke server — **selalu dipakai ganti
+        `parseFloat(el.value)` untuk field ber-class ini**, jangan baca
+        `.value` mentah), dan `initNumberCommaInput(el)` (pasang listener
+        `input` yang format on-the-fly, jaga posisi kursor dengan hitung
+        mundur jumlah digit sebelum kursor — pola sama dengan listener
+        `.input-uppercase` yang sudah ada). Semua elemen `.input-number-comma`
+        yang ada di HTML saat load di-`querySelectorAll` otomatis; elemen
+        yang dibuat dinamis (`startEditUnitRow()`) manggil
+        `initNumberCommaInput()` sendiri saat dibuat.
+      - **Semua pemakai field-field ini disesuaikan** supaya baca lewat
+        `parseNumberInput()` dan tulis hasil kalkulasi lewat
+        `formatNumberInput()`: `recalcPackaging()` (dua arah, Primary↔
+        Secondary), payload submit `btnLogCreateSubmit` (`primary_qty`
+        di-`parseNumberInput()` dulu sebelum masuk `URLSearchParams`, biar
+        tidak kekirim ke server dengan koma), Add Unit handler primary &
+        secondary, Save handler `startEditUnitRow()`.
+      - **Server-side**: `create_logistic.php` sekarang
+        `str_replace(',', '', ...)` di `primary_qty`,
+        `primary_unit_weight_kg`, `secondary_unit_weight_kg`,
+        `secondary_ratio_per_primary` sebelum validasi `is_numeric()` —
+        safety net kalau request bypass client JS (klien sebenarnya sudah
+        kirim angka bersih via `parseNumberInput()`, tapi tidak ada
+        salahnya jaga-jaga di server juga, sama pola dengan
+        `strtoupper()` sebelumnya).
+      - **Belum sempat disentuh**: `ajax/manage_packaging_units.php` (yang
+        terima `weight_kg`/`ratio_per_primary` dari Add/Edit Unit) belum
+        ada strip-koma server-side-nya — file-nya belum di-upload ke chat
+        ini. Kalau nanti diminta lanjutkan safety net ini secara
+        konsisten, mulai dari situ (sama seperti catatan uppercase
+        sebelumnya untuk file yang sama).
+    - **Sempat dicurigai ada bug "activity code cuma satu yang muncul"**
+      di picker Create New Logistic — sudah ditelusuri sampai ke query
+      `list_logistic_activities.php` (tidak ada `LIMIT`, `LEFT JOIN` ke
+      `logistics` tidak mengurangi baris) dan loop render di
+      `logistic_content.php` (`res.data.forEach()`, tidak ada slice/filter)
+      — **tidak ditemukan bug di kedua file itu**. Kemungkinan penyebabnya
+      saat itu memang baru ada satu activity code untuk departemen `dates`
+      di database, bukan bug software. Kalau muncul lagi dengan activity
+      code `dates` yang jumlahnya sudah lebih dari satu di DB, curigai
+      dulu `relative_path` yang ke-generate salah dari
+      `create_activity_code.php` (typo atau format beda dari
+      `input/[year]/[dept]/[code]/`), bukan file-file yang sudah dicek
+      di atas.
+    - **Import Document — nama file di server sekarang ikut Document
+      Name (huruf kecil), bukan nama file asli** —
+      `ajax/upload_logistic_document.php`: `$storedName` (yang jadi
+      `file_path` di kolom `logistic_documents`) sebelumnya dibangun dari
+      `pathinfo($_FILES['file']['name'], PATHINFO_FILENAME)` (nama file
+      upload asli). Sekarang dibangun dari `$documentName` (input user di
+      field Document Name), disanitasi (`[^A-Za-z0-9_\-]` jadi `_`) lalu
+      di-`strtolower()`. Ekstensi tetap dari file asli, juga di-lowercase.
+      Prefix timestamp (`date('YmdHis')`) tetap dipertahankan supaya
+      re-upload/nama dokumen yang dipakai ulang tidak saling menimpa file
+      fisiknya. Kolom `document_name` di DB (yang dipakai untuk cek
+      duplikat & ditampilkan di UI) **tidak berubah** — tetap simpan versi
+      asli dari input user (termasuk huruf besar/kecilnya), cuma nama
+      file fisik di storage yang di-lowercase.
+    - **Logistic List: tombol Edit & Delete ditambahkan, keduanya gated
+      password reverify** — dua file baru: `ajax/update_logistic.php` dan
+      `ajax/delete_logistic.php`, plus perubahan besar di
+      `logistic_content.php`.
+      - **Pola verifikasi yang dipakai**: `verify_password.php` +
+        `aos_require_recent_reverify()` (window 120 detik,
+        `ajax/_require_reverify.php`) — **bukan** pola
+        `delete_activity_code.php`/`delete_customer.php` (`password_verify()`
+        langsung di endpoint aksi). Ini pilihan sadar user, dikonfirmasi
+        eksplisit saat fitur ini diminta — dicatat di sini supaya kalau ada
+        fitur destructive baru lagi ke depan dan user tidak menyebutkan
+        pola mana, **tanya dulu**, jangan asumsikan salah satu (ini fitur
+        ketiga yang butuh delete-with-password setelah Activity Code dan
+        Company Documents, dan sekarang makin jelas keduanya
+        hidup berdampingan sebagai pilihan sadar per-fitur, bukan salah
+        satu yang "benar").
+      - **Response contract endpoint baru berbeda dari
+        `create_logistic.php`/dkk yang sudah ada**: kalau reverify
+        expired/belum pernah, `aos_require_recent_reverify()` langsung
+        `echo` + `exit` dengan bentuk `{success:false, message:...}`
+        (bukan `{ok:false,...}` seperti pola endpoint lain di app ini) —
+        ini API kontrak dari `_require_reverify.php` yang sudah ada
+        duluan, tidak diubah. Endpoint sendiri (setelah lolos reverify)
+        tetap balikin `{ok:true/false,...}` seperti biasa. **Client-side
+        HARUS cek `res.success === false` DULU sebelum cek `res.ok`** —
+        kalau lupa, response reverify-expired akan salah diparse sebagai
+        error endpoint biasa. Pola ini dipakai di kedua handler Save/Delete
+        di `logistic_content.php`.
+      - **`update_logistic.php`**: update rate-columns yang sama dengan
+        `create_logistic.php` (`incoming_date`, `primary_qty`,
+        `primary_unit_label`, `primary_unit_weight_kg`,
+        `secondary_unit_label`, `secondary_unit_weight_kg`,
+        `secondary_ratio_per_primary`), **kecuali Activity Code sendiri
+        tidak bisa diubah** (`UNIQUE(activity_id)` di tabel `logistics`,
+        ganti activity code berarti pindah row ke code lain sama sekali,
+        bukan makna "edit"). `remaining_primary_qty` dihitung ulang kalau
+        `primary_qty` berubah, **dengan offset tetap, bukan rasio**:
+        `used = primary_qty_lama - remaining_qty_lama`, lalu
+        `remaining_baru = primary_qty_baru - used`. Kalau hasilnya negatif
+        (primary_qty baru lebih kecil dari yang sudah "keluar"), ditolak
+        dengan pesan error, tidak dipaksa jadi 0 atau negatif. Contoh dari
+        diskusi: qty lama 1000, remaining lama 900 (sudah keluar 100) →
+        edit qty jadi 1100 → remaining baru = 1100 - 100 = 1000.
+      - **`delete_logistic.php`**: **tidak menghapus activity code**, cuma
+        row `logistics` + semua row `logistic_documents` untuk activity_id
+        itu. Urutan: DELETE dari DB dulu (dalam transaction,
+        `begin_transaction()`/`commit()`/`rollback()`) — baru kalau DB
+        berhasil, folder fisik `import_documents/` di bawah activity code
+        itu **dipindah** (bukan dihapus) ke
+        `AOS_STORAGE_BASE/recycle/{relative_path}import_documents/` —
+        pola sama persis dengan `delete_activity_code.php` (pertahankan
+        segmen `input/[year]/[dept]/[code]/` di path recycle, tabrakan
+        nama folder tujuan ditambah suffix `-YmdHis`). Kalau folder tidak
+        ada sama sekali (logistic tanpa dokumen ter-upload), `folder_action`
+        balik `'none'`, tidak dianggap error.
+      - **`notes.txt` di dalam folder recycle** — sesuai diskusi eksplisit
+        saat fitur ini diminta: file teks polos ditulis **di dalam folder
+        yang baru dipindah ke recycle** (jadi ikut folder itu, bukan
+        entry DB terpisah — file INI yang jadi satu-satunya "audit trail"
+        untuk penghapusan logistic, tidak ada tabel log di database).
+        Isinya: waktu hapus, `user_id` yang menghapus, activity
+        code/name, semua rate-column logistic yang dihapus, dan daftar
+        semua dokumen yang ikut dipindah (type, name, date, path aslinya)
+        — snapshot data logistic-nya **diambil dari DB SEBELUM DELETE
+        dijalankan**, bukan dari file fisik (jadi tetap akurat meskipun
+        foldernya kosong/gagal dipindah).
+      - **UI baru di `logistic_content.php`**:
+        - Setiap baris di accordion Logistic List sekarang punya baris
+          tombol Edit + Delete di bagian bawah body-nya (`actionsRow`,
+          `e.stopPropagation()` supaya klik tombol tidak ikut
+          toggle/collapse accordion row-nya).
+        - Tombol Delete **sekarang pakai `.btn-danger` asli** — sempat pakai
+          `.btn-secondary` + inline `color` sebagai workaround karena
+          `theme.css` belum di-upload ke chat ini untuk dicek. Setelah
+          `theme.css` di-upload, terkonfirmasi `.btn-danger` memang ada
+          (`background: var(--danger); color: #fff;`), jadi workaround-nya
+          dicabut. Sekaligus tombol Edit/Delete di tiap baris Logistic
+          List, dan tombol Delete di modal konfirmasi (`btnLogDeleteConfirm`,
+          sempat override `background`/`border-color` inline, sekarang
+          cukup `class="btn btn-danger"`), dikecilkan ukurannya
+          (`padding:var(--space-2) var(--space-3); font-size:var(--text-sm)`)
+          — default `.btn` cukup besar untuk tombol utama, kekecilan untuk
+          sepasang tombol berdampingan di dalam accordion row — dan
+          ditambah `justify-content:center` karena `.btn` di `theme.css`
+          cuma set `align-items:center` (vertical), bukan
+          `justify-content:center` (horizontal), jadi teksnya rata kiri
+          kalau lebar tombolnya dipaksa (`flex:1`) melebihi lebar teksnya
+          sendiri.
+        - 3 modal baru, pola sama (`.modal-overlay`/`.modal`/
+          `.modal-header`/`.modal-body`/`.modal-footer`) dengan Manage
+          Units yang sudah ada duluan:
+          `#logReverifyOverlay` (satu modal password, dipakai bareng
+          untuk Edit maupun Delete — `pendingLogisticAction` +
+          `pendingLogisticRow` nyimpen aksi mana & baris mana yang lagi
+          diproses, di-set di `openLogisticReverify()`), `#logEditOverlay`
+          (form edit, field & kalkulasi qty dua-arahnya **duplikat
+          terpisah** dari form Create — `logEditPrimaryQty`/
+          `logEditSecondaryQty`/dst, `editQtySource` state sendiri,
+          `recalcEditPackaging()` fungsi sendiri — sengaja tidak reuse
+          elemen form Create karena keduanya modal berbeda yang bisa
+          saja perlu tampil grafik yang berbeda ke depan; kalau dirasa
+          duplikasinya mengganggu, bisa direfactor jadi satu form
+          reusable nanti), `#logDeleteOverlay` (cuma teks konfirmasi +
+          hitungan jumlah dokumen yang akan pindah, dibangun on-the-fly
+          di `openDeleteLogistic()` dari `row.documents.{shipper,custom,
+          consignee}`).
+        - **Unit select di form Edit** (`logEditPrimaryUnit`/
+          `logEditSecondaryUnit`) diisi ulang tiap kali modal dibuka
+          (`Promise.all` dua fetch ke `manage_packaging_units.php`), lalu
+          unit yang sudah tersimpan di row (`row.primary_unit_label`,
+          string label) dicocokkan ke `<option>` yang match via
+          **`selectUnitByLabel()`** — helper baru yang bandingkan
+          `data-label` tiap option (bukan langsung `select.value = label`,
+          karena `<option value>` di form ini isinya **unit ID**, bukan
+          label — lihat `fillUnitSelect()`).
+      - **Belum ada** (di luar scope yang diminta): fitur restore dari
+        recycle untuk logistic yang terhapus (sama seperti catatan recycle
+        Activity Code/Customer/Company Documents sebelumnya — retention/
+        cleanup/restore semuanya masih tertunda, bukan cuma untuk
+        Logistic).
 
 ## Cara lanjut kerja di chat/akun baru
 1. Upload file ini + `index.php` (atau zip `lisani_aos/` lengkap).

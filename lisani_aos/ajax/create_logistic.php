@@ -14,13 +14,13 @@ require_once __DIR__ . '/../db_config.php'; // -> $lisani_conn
 $activityId   = (int) ($_POST['activity_id'] ?? 0);
 $incomingDate = trim($_POST['incoming_date'] ?? '');
 
-$primaryQty    = trim($_POST['primary_qty'] ?? '');
-$primaryUnit   = trim($_POST['primary_unit_label'] ?? '');
-$primaryUnitKg = trim($_POST['primary_unit_weight_kg'] ?? '');
+$primaryQty    = trim(str_replace(',', '', $_POST['primary_qty'] ?? ''));
+$primaryUnit   = strtoupper(trim($_POST['primary_unit_label'] ?? ''));
+$primaryUnitKg = trim(str_replace(',', '', $_POST['primary_unit_weight_kg'] ?? ''));
 
-$secondaryUnit      = trim($_POST['secondary_unit_label'] ?? '');
-$secondaryUnitKg     = trim($_POST['secondary_unit_weight_kg'] ?? '');
-$secondaryRatio      = trim($_POST['secondary_ratio_per_primary'] ?? '');
+$secondaryUnit      = strtoupper(trim($_POST['secondary_unit_label'] ?? ''));
+$secondaryUnitKg     = trim(str_replace(',', '', $_POST['secondary_unit_weight_kg'] ?? ''));
+$secondaryRatio      = trim(str_replace(',', '', $_POST['secondary_ratio_per_primary'] ?? ''));
 
 if ($activityId <= 0) {
     echo json_encode(['ok' => false, 'message' => 'Activity code belum dipilih.']);
