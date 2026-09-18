@@ -1353,6 +1353,16 @@ bisa dipakai ulang di menu lain juga.
     menyimpan, tapi list tidak di-render ulang dan tidak ada pesan apa pun.
     Sekarang semua jalur selalu resolve ke objek `{ok, message}`, jadi
     selalu ada feedback. Kalau respons aneh, isi mentahnya di-`console.error`.
+  - **Lanjutan: ternyata respons endpoint-nya memang kotor.** Setelah fix di
+    atas dipasang, Edit/Delete unit memunculkan "Unexpected server response"
+    — konfirmasi bahwa `manage_packaging_units.php` mengirim sesuatu selain
+    JSON murni (kemungkinan besar notice/warning PHP yang keprint duluan).
+    Endpoint-nya sekarang: `ini_set('display_errors','0')` + `ob_start()` di
+    atas, dan semua `echo json_encode(...); exit;` diganti helper
+    **`aos_units_json($payload)`** yang membuang isi buffer (dan mencatatnya
+    ke `error_log()` supaya penyebabnya bisa dilacak) tepat sebelum JSON
+    ditulis. `json_encode()` juga dikasih `JSON_INVALID_UTF8_SUBSTITUTE` +
+    fallback kalau encoding-nya gagal.
   - Feedback Manage Units dipusatkan ke helper baru **`showUnitFeedback(kind,
     message, isSuccess)`** (gantiin blok inline yang di-copy-paste di
     Edit/Delete) — dipakai juga oleh **Add Unit** (sebelumnya sukses Add juga

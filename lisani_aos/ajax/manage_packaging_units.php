@@ -13,16 +13,44 @@
 session_start();
 header('Content-Type: application/json');
 
+// Any stray output — a PHP notice/warning/deprecation printed by the
+// runtime, a stray newline outside the PHP tags of an included file — gets
+// prepended to the response and makes it invalid JSON, which the client
+// then can't parse (the unit really does get saved, but the UI sees a
+// broken response). So: warnings never go to the browser, everything is
+// buffered, and the buffer is discarded right before the JSON is written.
+ini_set('display_errors', '0');
+ob_start();
+
+function aos_units_json($payload)
+{
+    if (ob_get_level() > 0) {
+        $stray = ob_get_clean();
+        if ($stray !== '' && $stray !== false) {
+            // Not shown to the user, but visible in the PHP error log if
+            // something upstream is polluting the output.
+            error_log('manage_packaging_units.php stray output: ' . $stray);
+        }
+    }
+    $json = json_encode($payload, JSON_INVALID_UTF8_SUBSTITUTE);
+    if ($json === false) {
+        // json_encode itself failed (e.g. a non-UTF8 byte in a unit label
+        // read back from the JSON file) — still answer with valid JSON.
+        error_log('manage_packaging_units.php json_encode failed: ' . json_last_error_msg());
+        $json = json_encode(['ok' => false, 'message' => 'Data satuan tidak bisa dibaca (encoding).']);
+    }
+    echo $json;
+    exit;
+}
+
 if (!isset($_SESSION['app']) || $_SESSION['app'] !== 'lisani_aos' || !isset($_SESSION['user_id'])) {
     http_response_code(401);
-    echo json_encode(['ok' => false, 'message' => 'Session tidak valid.']);
-    exit;
+    aos_units_json(['ok' => false, 'message' => 'Session tidak valid.']);
 }
 
 $kind = $_POST['kind'] ?? $_GET['kind'] ?? '';
 if (!in_array($kind, ['primary', 'secondary'], true)) {
-    echo json_encode(['ok' => false, 'message' => 'Kind tidak valid.']);
-    exit;
+    aos_units_json(['ok' => false, 'message' => 'Kind tidak valid.']);
 }
 
 $file = __DIR__ . '/../json_file/' . ($kind === 'primary' ? 'primary_packaging_units.json' : 'secondary_packaging_units.json');
@@ -65,8 +93,7 @@ function log_units_taken($units, $label, $weightKg, $ratioPerPrimary, $kind, $ex
 $action = $_POST['action'] ?? $_GET['action'] ?? 'list';
 
 if ($action === 'list') {
-    echo json_encode(['ok' => true, 'units' => $data['units']]);
-    exit;
+    aos_units_json(['ok' => true, 'units' => $data['units']]);
 }
 
 if ($action === 'add') {
@@ -74,26 +101,22 @@ if ($action === 'add') {
     $weight = $_POST['weight_kg'] ?? '';
 
     if ($label === '' || mb_strlen($label) > 100) {
-        echo json_encode(['ok' => false, 'message' => 'Nama satuan tidak valid.']);
-        exit;
+        aos_units_json(['ok' => false, 'message' => 'Nama satuan tidak valid.']);
     }
     if (!is_numeric($weight) || (float) $weight <= 0) {
-        echo json_encode(['ok' => false, 'message' => 'Berat (kg) tidak valid.']);
-        exit;
+        aos_units_json(['ok' => false, 'message' => 'Berat (kg) tidak valid.']);
     }
 
     $ratio = null;
     if ($kind === 'secondary') {
         $ratio = $_POST['ratio_per_primary'] ?? '';
         if (!is_numeric($ratio) || (float) $ratio <= 0) {
-            echo json_encode(['ok' => false, 'message' => 'Rasio ke primary tidak valid.']);
-            exit;
+            aos_units_json(['ok' => false, 'message' => 'Rasio ke primary tidak valid.']);
         }
     }
 
     if (log_units_taken($data['units'], $label, $weight, $ratio, $kind)) {
-        echo json_encode(['ok' => false, 'message' => 'Satuan dengan nama, berat' . ($kind === 'secondary' ? ', dan rasio' : '') . ' yang sama sudah ada.']);
-        exit;
+        aos_units_json(['ok' => false, 'message' => 'Satuan dengan nama, berat' . ($kind === 'secondary' ? ', dan rasio' : '') . ' yang sama sudah ada.']);
     }
 
     $newUnit = ['id' => log_units_next_id($data['units']), 'label' => $label];
@@ -102,11 +125,9 @@ if ($action === 'add') {
 
     $data['units'][] = $newUnit;
     if (!log_units_save($file, $data)) {
-        echo json_encode(['ok' => false, 'message' => 'Gagal menyimpan file.']);
-        exit;
+        aos_units_json(['ok' => false, 'message' => 'Gagal menyimpan file.']);
     }
-    echo json_encode(['ok' => true, 'units' => $data['units']]);
-    exit;
+    aos_units_json(['ok' => true, 'units' => $data['units']]);
 }
 
 if ($action === 'edit') {
@@ -115,24 +136,20 @@ if ($action === 'edit') {
     $weight = $_POST['weight_kg'] ?? '';
 
     if ($label === '' || mb_strlen($label) > 100) {
-        echo json_encode(['ok' => false, 'message' => 'Nama satuan tidak valid.']);
-        exit;
+        aos_units_json(['ok' => false, 'message' => 'Nama satuan tidak valid.']);
     }
     if (!is_numeric($weight) || (float) $weight <= 0) {
-        echo json_encode(['ok' => false, 'message' => 'Berat (kg) tidak valid.']);
-        exit;
+        aos_units_json(['ok' => false, 'message' => 'Berat (kg) tidak valid.']);
     }
     $ratio = null;
     if ($kind === 'secondary') {
         $ratio = $_POST['ratio_per_primary'] ?? '';
         if (!is_numeric($ratio) || (float) $ratio <= 0) {
-            echo json_encode(['ok' => false, 'message' => 'Rasio ke primary tidak valid.']);
-            exit;
+            aos_units_json(['ok' => false, 'message' => 'Rasio ke primary tidak valid.']);
         }
     }
     if (log_units_taken($data['units'], $label, $weight, $ratio, $kind, $id)) {
-        echo json_encode(['ok' => false, 'message' => 'Satuan dengan nama, berat' . ($kind === 'secondary' ? ', dan rasio' : '') . ' yang sama sudah ada.']);
-        exit;
+        aos_units_json(['ok' => false, 'message' => 'Satuan dengan nama, berat' . ($kind === 'secondary' ? ', dan rasio' : '') . ' yang sama sudah ada.']);
     }
 
     $found = false;
@@ -146,15 +163,12 @@ if ($action === 'edit') {
         }
     }
     if (!$found) {
-        echo json_encode(['ok' => false, 'message' => 'Satuan tidak ditemukan.']);
-        exit;
+        aos_units_json(['ok' => false, 'message' => 'Satuan tidak ditemukan.']);
     }
     if (!log_units_save($file, $data)) {
-        echo json_encode(['ok' => false, 'message' => 'Gagal menyimpan file.']);
-        exit;
+        aos_units_json(['ok' => false, 'message' => 'Gagal menyimpan file.']);
     }
-    echo json_encode(['ok' => true, 'units' => $data['units']]);
-    exit;
+    aos_units_json(['ok' => true, 'units' => $data['units']]);
 }
 
 if ($action === 'delete') {
@@ -164,15 +178,12 @@ if ($action === 'delete') {
         return (int) $u['id'] !== $id;
     }));
     if (count($data['units']) === $before) {
-        echo json_encode(['ok' => false, 'message' => 'Satuan tidak ditemukan.']);
-        exit;
+        aos_units_json(['ok' => false, 'message' => 'Satuan tidak ditemukan.']);
     }
     if (!log_units_save($file, $data)) {
-        echo json_encode(['ok' => false, 'message' => 'Gagal menyimpan file.']);
-        exit;
+        aos_units_json(['ok' => false, 'message' => 'Gagal menyimpan file.']);
     }
-    echo json_encode(['ok' => true, 'units' => $data['units']]);
-    exit;
+    aos_units_json(['ok' => true, 'units' => $data['units']]);
 }
 
-echo json_encode(['ok' => false, 'message' => 'Action tidak dikenali.']);
+aos_units_json(['ok' => false, 'message' => 'Action tidak dikenali.']);
