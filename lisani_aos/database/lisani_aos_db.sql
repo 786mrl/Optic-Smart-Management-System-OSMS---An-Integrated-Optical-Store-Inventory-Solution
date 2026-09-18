@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Sep 18, 2026 at 02:51 PM
+-- Generation Time: Sep 18, 2026 at 06:01 PM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -42,7 +42,7 @@ CREATE TABLE `activities` (
 
 INSERT INTO `activities` (`id`, `activity_name`, `cashflow`, `relative_path`, `created_by`, `created_at`) VALUES
 (1, 'SAYYER I', 'outflow', 'input/2026/dates/001/', 1, '2026-09-14 17:49:48'),
-(3, 'SUKKARI LISANI', 'outflow', 'input/2025/dates/001/', 1, '2026-09-17 19:52:08');
+(4, 'SUKKARI LISANI', 'outflow', 'input/2026/dates/002/', 1, '2026-09-18 20:03:48');
 
 -- --------------------------------------------------------
 
@@ -112,6 +112,36 @@ CREATE TABLE `customer_item_prices` (
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+--
+-- Dumping data for table `customer_item_prices`
+--
+
+INSERT INTO `customer_item_prices` (`id`, `customer_id`, `logistic_id`, `price`, `price_date`, `unit_label`, `created_at`, `updated_at`) VALUES
+(1, 1, 2, 136000.00, '2026-09-18', 'MASTER CARTON', '2026-09-18 13:26:04', '2026-09-18 13:26:04'),
+(2, 1, 3, 345000.00, '2026-09-18', 'MASTER CARTON', '2026-09-18 13:26:21', '2026-09-18 13:26:21'),
+(3, 1, 2, 145000.00, '2026-09-18', 'MASTER CARTON', '2026-09-18 13:26:42', '2026-09-18 13:26:42');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `invoices`
+--
+
+CREATE TABLE `invoices` (
+  `id` int(10) UNSIGNED NOT NULL,
+  `customer_id` int(10) UNSIGNED NOT NULL,
+  `invoice_number` varchar(60) NOT NULL,
+  `sequence_number` smallint(5) UNSIGNED NOT NULL,
+  `period_month` tinyint(3) UNSIGNED NOT NULL,
+  `period_year` smallint(5) UNSIGNED NOT NULL,
+  `status` enum('open','paid') NOT NULL DEFAULT 'open',
+  `total_amount` decimal(18,2) NOT NULL DEFAULT 0.00,
+  `paid_amount` decimal(18,2) NOT NULL DEFAULT 0.00,
+  `paid_at` datetime DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
 -- --------------------------------------------------------
 
 --
@@ -126,6 +156,7 @@ CREATE TABLE `logistics` (
   `primary_unit_label` varchar(100) DEFAULT NULL,
   `primary_unit_weight_kg` decimal(12,3) DEFAULT NULL,
   `remaining_primary_qty` decimal(12,2) DEFAULT NULL,
+  `total_taken_qty` decimal(12,2) NOT NULL DEFAULT 0.00,
   `secondary_unit_label` varchar(100) DEFAULT NULL,
   `secondary_unit_weight_kg` decimal(12,3) DEFAULT NULL,
   `secondary_ratio_per_primary` decimal(12,3) DEFAULT NULL,
@@ -133,6 +164,14 @@ CREATE TABLE `logistics` (
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `logistics`
+--
+
+INSERT INTO `logistics` (`id`, `activity_id`, `incoming_date`, `primary_qty`, `primary_unit_label`, `primary_unit_weight_kg`, `remaining_primary_qty`, `total_taken_qty`, `secondary_unit_label`, `secondary_unit_weight_kg`, `secondary_ratio_per_primary`, `created_by`, `created_at`, `updated_at`) VALUES
+(2, 4, NULL, 1500.00, 'MASTER CARTON', 12.000, 1500.00, 0.00, 'BABY CARTON', 3.000, 4.000, 1, '2026-09-18 20:06:51', '2026-09-18 20:06:51'),
+(3, 1, NULL, 2500.00, 'MASTER CARTON', 10.000, 2500.00, 0.00, 'NO PRIMARY CARTON', 10.000, 1.000, 1, '2026-09-18 20:25:26', '2026-09-18 20:25:26');
 
 -- --------------------------------------------------------
 
@@ -151,6 +190,13 @@ CREATE TABLE `logistic_documents` (
   `uploaded_at` datetime NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+--
+-- Dumping data for table `logistic_documents`
+--
+
+INSERT INTO `logistic_documents` (`id`, `activity_id`, `document_type`, `document_name`, `document_date`, `file_path`, `uploaded_by`, `uploaded_at`) VALUES
+(4, 4, 'shipper', 'DO', '2026-09-14', 'input/2026/dates/002/import_documents/shipper/20260918152311_do.pdf', 1, '2026-09-18 20:23:11');
+
 -- --------------------------------------------------------
 
 --
@@ -160,6 +206,7 @@ CREATE TABLE `logistic_documents` (
 CREATE TABLE `logistic_movements` (
   `id` int(10) UNSIGNED NOT NULL,
   `logistic_id` int(10) UNSIGNED NOT NULL,
+  `customer_id` int(10) UNSIGNED DEFAULT NULL,
   `movement_type` enum('in','out') NOT NULL,
   `movement_date` date NOT NULL,
   `customer_name` varchar(150) DEFAULT NULL,
@@ -168,6 +215,7 @@ CREATE TABLE `logistic_movements` (
   `qty_primary_package` decimal(12,2) NOT NULL,
   `price` decimal(15,2) DEFAULT NULL COMMENT 'Harga satuan per unit primary package',
   `total_price` decimal(15,2) DEFAULT NULL COMMENT 'qty_primary_package x price',
+  `invoice_id` int(10) UNSIGNED DEFAULT NULL,
   `created_by` int(10) UNSIGNED DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
@@ -195,7 +243,7 @@ CREATE TABLE `users` (
 --
 
 INSERT INTO `users` (`user_id`, `username`, `password_hash`, `role`, `is_approved`, `created_at`, `last_login`, `session_token`, `session_expires`) VALUES
-(1, 'Rais786', '$2y$10$QciWVGPK9aGHjy05rBoXgOWfCAesfocowc0vt4QCMHVeVzsVuGDS6', 'admin', 1, '2026-09-10 21:34:57', '2026-09-18 12:54:00', '44b9f302a2e01e8bc9de45d055d4784182a79f9534263d1f7db706f9133b5785', '2026-09-18 20:54:00');
+(1, 'Rais786', '$2y$10$QciWVGPK9aGHjy05rBoXgOWfCAesfocowc0vt4QCMHVeVzsVuGDS6', 'admin', 1, '2026-09-10 21:34:57', '2026-09-18 16:29:28', '976f924ee0dc74015e751a152c3a4f1ff98e55b148719f8ba9160c669cd66c5c', '2026-09-19 00:29:28');
 
 --
 -- Indexes for dumped tables
@@ -232,6 +280,15 @@ ALTER TABLE `customer_item_prices`
   ADD KEY `idx_logistic` (`logistic_id`);
 
 --
+-- Indexes for table `invoices`
+--
+ALTER TABLE `invoices`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uniq_invoice_number` (`invoice_number`),
+  ADD UNIQUE KEY `uniq_customer_period_seq` (`customer_id`,`period_year`,`period_month`,`sequence_number`),
+  ADD KEY `idx_customer_status` (`customer_id`,`status`);
+
+--
 -- Indexes for table `logistics`
 --
 ALTER TABLE `logistics`
@@ -250,7 +307,9 @@ ALTER TABLE `logistic_documents`
 --
 ALTER TABLE `logistic_movements`
   ADD PRIMARY KEY (`id`),
-  ADD KEY `idx_logistic` (`logistic_id`);
+  ADD KEY `idx_logistic` (`logistic_id`),
+  ADD KEY `idx_customer` (`customer_id`),
+  ADD KEY `idx_invoice` (`invoice_id`);
 
 --
 -- Indexes for table `users`
@@ -267,7 +326,7 @@ ALTER TABLE `users`
 -- AUTO_INCREMENT for table `activities`
 --
 ALTER TABLE `activities`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
 
 --
 -- AUTO_INCREMENT for table `company_documents`
@@ -285,19 +344,25 @@ ALTER TABLE `customers`
 -- AUTO_INCREMENT for table `customer_item_prices`
 --
 ALTER TABLE `customer_item_prices`
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+
+--
+-- AUTO_INCREMENT for table `invoices`
+--
+ALTER TABLE `invoices`
   MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT for table `logistics`
 --
 ALTER TABLE `logistics`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
 
 --
 -- AUTO_INCREMENT for table `logistic_documents`
 --
 ALTER TABLE `logistic_documents`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
 
 --
 -- AUTO_INCREMENT for table `logistic_movements`
