@@ -1194,6 +1194,114 @@ bisa dipakai ulang di menu lain juga.
         cleanup/restore semuanya masih tertunda, bukan cuma untuk
         Logistic).
 
+- **Transactions — Customer Itemized Pricing (SUDAH DIBUAT: tabel DB + 4
+  endpoint + UI di `transaction_content.php`, BELUM di-upload/dites di
+  environment nyata user)**:
+  - Tujuan: tiap customer di Customer List bisa punya daftar harga jual per
+    produk (produk = yang sudah terdaftar lewat Activity Code + `logistics`,
+    sama sumbernya dengan picker `#logActivityCode` di menu Logistic).
+  - **UI** (`transaction_content.php`):
+    - Tombol **Itemized Pricing** di-drop dari rencana awal (sejajar Edit/
+      Delete) — implementasi final malah: setiap item accordion
+      `#clPreviewList`, di bawah baris Edit/Delete, ada baris baru "Itemized
+      Pricing" + tombol **Add Price**, lalu nested `.accordion-list` kosong
+      di bawahnya (accordion-dalam-accordion, sama style dengan
+      `clPreviewList`/`acPreviewList`).
+    - **Lazy-load**: histori harga customer itu **baru di-fetch saat row
+      customer-nya pertama kali dibuka** (`item.dataset.pricesLoaded` sebagai
+      flag, di dalam header click handler `clPreviewList`) — bukan sekaligus
+      saat render list customer, supaya tidak N+1 request tiap kali
+      `renderCustomerList()` jalan.
+    - **`refreshOpenHeight(item)`** — helper baru di samping
+      `openAccordionItem`/`closeAccordionItem`/`toggleAccordionItem` yang
+      sudah ada, untuk re-measure `max-height` accordion parent setelah
+      konten nested list-nya berubah async (fetch prices selesai setelah
+      row sudah kebuka, animasi max-height lama jadi tidak akurat kalau
+      tidak di-refresh).
+    - **Add Price** (`#itemPriceAddOverlay`): dropdown Product (isi dari
+      `ajax/list_priceable_products.php`, **bukan** dari
+      `list_logistic_activities.php` yang scoped per department — Itemized
+      Pricing lintas department), Price (`.input-number-comma`, pola sama
+      dengan qty di Logistic), Date, Unit (readonly, auto dari
+      `data-unit` attribute produk terpilih). **Tidak butuh reverify**
+      (sama seperti Create New Logistic) — hanya Edit/Delete di bawah yang
+      digerbang password.
+    - Tiap entry harga (nested accordion item) header-nya nampilin
+      `activity_name — price / unit_label`, body-nya Price/Date/Unit +
+      tombol **Edit**/**Delete**.
+    - Edit & Delete **wajib password re-verify** — pola
+      `aos_require_recent_reverify()` (`ajax/_require_reverify.php`) +
+      `ajax/verify_password.php`, **client-side cek `res.success === false`
+      dulu sebelum cek `res.ok`** (kontrak sama dengan pola Logistic
+      Edit/Delete — lihat catatan "Pola verifikasi yang dipakai" di poin
+      Logistic). 3 modal baru: `#itemPriceReverifyOverlay` (satu untuk
+      Edit maupun Delete, `pendingItemPriceAction`/`pendingItemPriceRow`
+      nyimpen state, persis pola `pendingLogisticAction`/`pendingLogisticRow`
+      di Logistic), `#itemPriceEditOverlay` (cuma Price & Date yang bisa
+      diubah — Product/Unit dikunci, ditampilkan readonly), dan
+      `#itemPriceDeleteOverlay`.
+    - Ke-4 modal baru didaftarkan ke `flexOverlays` (array baru, gantiin
+      kondisi hardcoded panjang di `show()`) dan ke daftar `hide()` di
+      `MutationObserver` supaya ikut tertutup otomatis saat section
+      Transactions ditinggalkan — sama seperti modal lain di file ini.
+    - `formatNumberInput()`/`parseNumberInput()`/`initNumberCommaInput()`
+      **di-duplikasi** ke `transaction_content.php` (sebelumnya cuma ada
+      di `logistic_content.php`) — tiap `*_content.php` file-nya
+      self-contained (IIFE sendiri-sendiri), jadi tidak saling share
+      function.
+  - **DB: tabel baru `customer_item_prices`** (sudah dibuat SQL-nya,
+    `sql/customer_item_prices.sql` — **belum dijalankan** di
+    `lisani_aos_db` user, masih menunggu dieksekusi manual):
+    ```sql
+    CREATE TABLE IF NOT EXISTS customer_item_prices (
+      id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+      customer_id INT UNSIGNED NOT NULL,     -- relasi ke customers.id
+      logistic_id INT UNSIGNED NOT NULL,     -- relasi ke logistics.id
+      price DECIMAL(15,2) NOT NULL,
+      price_date DATE NOT NULL,
+      unit_label VARCHAR(50) NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      KEY idx_customer (customer_id),
+      KEY idx_logistic (logistic_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    ```
+    - **`unit_label` sengaja disimpan sebagai snapshot** (bukan live-lookup ke
+      `logistics.primary_unit_label`) — supaya kalau satuan produk diubah lewat
+      Manage Units di kemudian hari, histori harga lama tetap menampilkan
+      satuan yang berlaku saat harga itu disimpan.
+    - **Tidak ada `UNIQUE(customer_id, logistic_id)`** — sengaja, tabel ini
+      histori (banyak baris per pasangan customer+produk seiring waktu harga
+      berubah), bukan snapshot satu baris terbaru.
+    - **Tidak pakai `FOREIGN KEY ... REFERENCES`** eksplisit, cuma index biasa
+      — mengikuti pola tabel lain di project ini (`logistic_movements`, dkk)
+      yang relasinya dijaga di level PHP/transaction, bukan constraint DB.
+    - `created_by`/`updated_by` (user_id) **belum ditambahkan** — belum
+      dikonfirmasi perlu atau tidak.
+  - **4 endpoint baru** (`ajax/`):
+    - `list_priceable_products.php` — semua `logistics` JOIN `activities`,
+      **tanpa filter department** (beda dari `list_logistic_activities.php`),
+      untuk isi dropdown Product di Add/Edit Price.
+    - `list_customer_item_prices.php` — histori harga 1 customer
+      (`?customer_id=`), JOIN ke `activities` lewat `logistics` supaya ada
+      `activity_name`, urut `price_date DESC, created_at DESC`.
+    - `create_customer_item_price.php` — insert baris baru, **snapshot
+      `primary_unit_label` dari `logistics` saat itu** ke kolom
+      `unit_label`. Tidak reverify.
+    - `update_customer_item_price.php` / `delete_customer_item_price.php` —
+      **wajib `aos_require_recent_reverify()`** sebelum eksekusi (persis
+      pola `update_logistic.php`/`delete_logistic.php`), update cuma
+      `price`+`price_date` (product/unit dikunci by design).
+  - **Belum ada / belum dites**: file-file di atas belum pernah dijalankan
+    di server user (localhost/Termux) — `sql/customer_item_prices.sql`
+    belum dieksekusi, endpoint & UI baru murni hasil edit surgical di chat,
+    belum di-upload ulang & dicoba. Juga belum ada: fitur restore/histori
+    perubahan (kalau Delete kepencet salah, tidak ada recycle seperti
+    dokumen — beda dari Logistic/Customer yang punya folder recycle,
+    karena Itemized Pricing tidak punya file fisik untuk dipindah).
+
 ## Cara lanjut kerja di chat/akun baru
 1. Upload file ini + `index.php` (atau zip `lisani_aos/` lengkap).
 2. Sebutkan menu mana yang mau diisi dan alur kerjanya (proses bisnis).

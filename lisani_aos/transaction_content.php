@@ -318,6 +318,110 @@ $currentYear     = date('Y');
   </div>
 </div>
 
+<!-- Itemized Pricing — Add Price form. No reverify needed here (same as
+     Create New Logistic): only Edit/Delete of an existing entry below are
+     reverify-gated. Product dropdown lists every registered logistic
+     (ajax/list_priceable_products.php), Unit auto-fills from the selected
+     product and is NOT user-editable (snapshotted server-side too). -->
+<div class="modal-overlay" id="itemPriceAddOverlay" style="display:none;">
+  <div class="modal">
+    <div class="modal-header"><div class="modal-title">Add Itemized Price</div></div>
+    <div class="modal-body">
+      <div class="form-group">
+        <div class="label">Customer</div>
+        <input type="text" class="input" id="itemPriceAddCustomerLabel" disabled>
+      </div>
+      <div class="form-group">
+        <div class="label">Product</div>
+        <select class="select" id="itemPriceAddProduct">
+          <option value="">-- select product --</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <div class="label">Price</div>
+        <input type="text" inputmode="decimal" class="input input-number-comma" id="itemPriceAddPrice" placeholder="Price">
+      </div>
+      <div class="form-group">
+        <div class="label">Date</div>
+        <input type="date" class="input" id="itemPriceAddDate">
+      </div>
+      <div class="form-group">
+        <div class="label">Unit</div>
+        <input type="text" class="input" id="itemPriceAddUnit" disabled placeholder="-- select a product first --">
+      </div>
+      <div class="empty-sub" id="itemPriceAddError" style="display:none; color:var(--danger);"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" id="btnItemPriceAddCancel">Cancel</button>
+      <button type="button" class="btn btn-primary" id="btnItemPriceAddSave">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Itemized Pricing — re-verify password: shared gate before Edit or
+     Delete on a price entry, mirrors logReverifyOverlay in
+     logistic_content.php (aos_require_recent_reverify(), 120s window). -->
+<div class="modal-overlay" id="itemPriceReverifyOverlay" style="display:none;">
+  <div class="modal">
+    <div class="modal-header"><div class="modal-title">Confirm Password</div></div>
+    <div class="modal-body">
+      <div class="form-group">
+        <div class="label">Enter your password to continue</div>
+        <input type="password" class="input" id="itemPriceReverifyPassword" placeholder="Password">
+      </div>
+      <div class="empty-sub" id="itemPriceReverifyError" style="display:none; color:var(--danger);"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" id="btnItemPriceReverifyCancel">Cancel</button>
+      <button type="button" class="btn btn-primary" id="btnItemPriceReverifyConfirm">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<!-- Itemized Pricing — Edit: opens only after itemPriceReverifyOverlay
+     succeeds. Product/Unit are fixed (see update_customer_item_price.php),
+     only Price and Date can change. -->
+<div class="modal-overlay" id="itemPriceEditOverlay" style="display:none;">
+  <div class="modal">
+    <div class="modal-header"><div class="modal-title">Edit Itemized Price</div></div>
+    <div class="modal-body">
+      <div class="form-group">
+        <div class="label">Product</div>
+        <input type="text" class="input" id="itemPriceEditProductLabel" disabled>
+      </div>
+      <div class="form-group">
+        <div class="label">Price</div>
+        <input type="text" inputmode="decimal" class="input input-number-comma" id="itemPriceEditPrice" placeholder="Price">
+      </div>
+      <div class="form-group">
+        <div class="label">Date</div>
+        <input type="date" class="input" id="itemPriceEditDate">
+      </div>
+      <div class="empty-sub" id="itemPriceEditError" style="display:none; color:var(--danger);"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" id="btnItemPriceEditCancel">Cancel</button>
+      <button type="button" class="btn btn-primary" id="btnItemPriceEditSave">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Itemized Pricing — Delete confirmation: opens only after
+     itemPriceReverifyOverlay succeeds. -->
+<div class="modal-overlay" id="itemPriceDeleteOverlay" style="display:none;">
+  <div class="modal">
+    <div class="modal-header"><div class="modal-title">Delete Itemized Price</div></div>
+    <div class="modal-body">
+      <div class="empty-sub" id="itemPriceDeleteWarning" style="color:var(--danger);"></div>
+      <div class="empty-sub" id="itemPriceDeleteError" style="display:none; color:var(--danger);"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" id="btnItemPriceDeleteCancel">Cancel</button>
+      <button type="button" class="btn btn-danger" id="btnItemPriceDeleteConfirm">Delete</button>
+    </div>
+  </div>
+</div>
+
 <!-- Delete Activity Code — confirmation + data-loss warning + password
      re-check. Same pattern as txnDeleteCustomerOverlay above. -->
 <div class="modal-overlay" id="txnDeleteActivityCodeOverlay" style="display:none;">
@@ -379,16 +483,66 @@ $currentYear     = date('Y');
   var manageDeptOverlay        = document.getElementById('txnManageDeptOverlay');
   var deleteCustomerOverlay    = document.getElementById('txnDeleteCustomerOverlay');
   var deleteActivityCodeOverlay = document.getElementById('txnDeleteActivityCodeOverlay');
+  var itemPriceAddOverlay       = document.getElementById('itemPriceAddOverlay');
+  var itemPriceReverifyOverlay  = document.getElementById('itemPriceReverifyOverlay');
+  var itemPriceEditOverlay      = document.getElementById('itemPriceEditOverlay');
+  var itemPriceDeleteOverlay    = document.getElementById('itemPriceDeleteOverlay');
 
   var viewEmpty        = document.getElementById('viewTransactionsEmpty');
   var viewForm         = document.getElementById('viewCreateActivityCode');
   var viewResult       = document.getElementById('viewActivityCodeResult');
   var viewCustomerList = document.getElementById('viewCustomerList');
 
+  var flexOverlays = [entryOverlay, passwordOverlay, manageDeptOverlay, deleteCustomerOverlay,
+    deleteActivityCodeOverlay, itemPriceAddOverlay, itemPriceReverifyOverlay,
+    itemPriceEditOverlay, itemPriceDeleteOverlay];
+
   function show(el) {
-    el.style.display = (el === entryOverlay || el === passwordOverlay || el === manageDeptOverlay || el === deleteCustomerOverlay || el === deleteActivityCodeOverlay) ? 'flex' : 'block';
+    el.style.display = (flexOverlays.indexOf(el) !== -1) ? 'flex' : 'block';
   }
   function hide(el) { el.style.display = 'none'; }
+
+  // ---------- Number inputs: thousand-comma formatting while typing ----------
+  // Same helper as logistic_content.php (Price field in Itemized Pricing
+  // reuses the .input-number-comma pattern) — duplicated here rather than
+  // shared, since each *_content.php is its own self-contained IIFE.
+  function formatNumberInput(raw) {
+    if (raw === '') return '';
+    var neg = raw.trim().charAt(0) === '-';
+    var cleaned = raw.replace(/[^0-9.]/g, '');
+    var firstDot = cleaned.indexOf('.');
+    var intPart = firstDot === -1 ? cleaned : cleaned.slice(0, firstDot);
+    var decPart = firstDot === -1 ? '' : cleaned.slice(firstDot + 1).replace(/\./g, '');
+    intPart = intPart.replace(/^0+(?=\d)/, '');
+    var grouped = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    var result = (neg ? '-' : '') + grouped + (firstDot === -1 ? '' : '.' + decPart);
+    return result;
+  }
+
+  function parseNumberInput(raw) {
+    if (raw === null || raw === undefined) return NaN;
+    var cleaned = String(raw).replace(/,/g, '').trim();
+    if (cleaned === '') return NaN;
+    return parseFloat(cleaned);
+  }
+
+  function initNumberCommaInput(el) {
+    el.addEventListener('input', function () {
+      var before = el.value;
+      var pos = el.selectionStart;
+      var digitsBeforeCursor = before.slice(0, pos).replace(/[^0-9]/g, '').length;
+      el.value = formatNumberInput(before);
+      var count = 0, newPos = el.value.length;
+      for (var i = 0; i < el.value.length; i++) {
+        if (/[0-9]/.test(el.value.charAt(i))) count++;
+        if (count === digitsBeforeCursor) { newPos = i + 1; break; }
+      }
+      if (digitsBeforeCursor === 0) newPos = 0;
+      el.setSelectionRange(newPos, newPos);
+    });
+  }
+
+  document.querySelectorAll('.input-number-comma').forEach(initNumberCommaInput);
 
   function showOnlyView(target) {
     [viewEmpty, viewForm, viewResult, viewCustomerList].forEach(hide);
@@ -422,6 +576,10 @@ $currentYear     = date('Y');
         hide(manageDeptOverlay);
         hide(deleteCustomerOverlay);
         hide(deleteActivityCodeOverlay);
+        hide(itemPriceAddOverlay);
+        hide(itemPriceReverifyOverlay);
+        hide(itemPriceEditOverlay);
+        hide(itemPriceDeleteOverlay);
       }
       wasVisible = isVisible;
     });
@@ -742,6 +900,16 @@ $currentYear     = date('Y');
     body.style.maxHeight = '0px';
   }
 
+  // Re-measure an already-open item's max-height. Needed after content is
+  // added into it asynchronously (e.g. the Itemized Pricing list loading
+  // after the customer row was already opened) — openAccordionItem() only
+  // measures scrollHeight once, at the moment it's called.
+  function refreshOpenHeight(item) {
+    if (!item.classList.contains('open')) return;
+    var body = item.querySelector('.accordion-body');
+    body.style.maxHeight = body.scrollHeight + 'px';
+  }
+
   function toggleAccordionItem(item) {
     var isOpen = item.classList.contains('open');
     // Opening one always collapses whatever else is open, but only within
@@ -1058,7 +1226,21 @@ $currentYear     = date('Y');
 
       header.appendChild(title);
       header.appendChild(chevron);
-      header.addEventListener('click', function () { toggleAccordionItem(item); });
+      header.addEventListener('click', function () {
+        toggleAccordionItem(item);
+        // Lazy-load this customer's price history the first time their
+        // row is opened (not on every render of clPreviewList), then just
+        // recalculate the open max-height on subsequent opens since the
+        // list content is already there.
+        if (item.classList.contains('open')) {
+          if (!item.dataset.pricesLoaded) {
+            item.dataset.pricesLoaded = '1';
+            loadItemPrices(c.id, itemPriceList, item);
+          } else {
+            refreshOpenHeight(item);
+          }
+        }
+      });
 
       var body = document.createElement('div');
       body.className = 'accordion-body';
@@ -1119,6 +1301,46 @@ $currentYear     = date('Y');
       actions.appendChild(editBtn);
       actions.appendChild(deleteBtn);
       bodyInner.appendChild(actions);
+
+      // --- Itemized Pricing: nested collapsible price list, still inside
+      // this same customer card (not a separate tab/section). Loaded lazily
+      // the first time this row is opened (see header click handler above).
+      var pricingHeaderRow = document.createElement('div');
+      pricingHeaderRow.className = 'accordion-row';
+      pricingHeaderRow.style.marginTop = 'var(--space-3)';
+      pricingHeaderRow.style.paddingTop = 'var(--space-3)';
+      pricingHeaderRow.style.borderTop = '1px solid var(--border, rgba(255,255,255,0.08))';
+      pricingHeaderRow.style.justifyContent = 'space-between';
+      pricingHeaderRow.style.alignItems = 'center';
+
+      var pricingLabel = document.createElement('div');
+      pricingLabel.className = 'accordion-row-label';
+      pricingLabel.textContent = 'Itemized Pricing';
+
+      var addPriceBtn = document.createElement('button');
+      addPriceBtn.type = 'button';
+      addPriceBtn.className = 'btn btn-secondary';
+      addPriceBtn.textContent = 'Add Price';
+      addPriceBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        openAddItemPrice(c, item);
+      });
+
+      pricingHeaderRow.appendChild(pricingLabel);
+      pricingHeaderRow.appendChild(addPriceBtn);
+      bodyInner.appendChild(pricingHeaderRow);
+
+      var itemPriceList = document.createElement('div');
+      itemPriceList.className = 'accordion-list';
+      itemPriceList.style.marginTop = 'var(--space-2)';
+      bodyInner.appendChild(itemPriceList);
+
+      var itemPriceEmpty = document.createElement('div');
+      itemPriceEmpty.className = 'empty-sub';
+      itemPriceEmpty.textContent = 'No prices yet.';
+      itemPriceEmpty.style.display = 'none';
+      bodyInner.appendChild(itemPriceEmpty);
+      itemPriceList.itemPriceEmptyEl = itemPriceEmpty; // stash for loadItemPrices()
 
       body.appendChild(bodyInner);
       item.appendChild(header);
@@ -1472,6 +1694,407 @@ $currentYear     = date('Y');
       .catch(function () {
         delActivityError.textContent = 'Connection error.';
         delActivityError.style.display = 'block';
+      });
+  });
+
+  // ---------- Itemized Pricing (nested inside each Customer List row) ----------
+  var itemPriceAddCustomerLabel = document.getElementById('itemPriceAddCustomerLabel');
+  var itemPriceAddProduct   = document.getElementById('itemPriceAddProduct');
+  var itemPriceAddPrice     = document.getElementById('itemPriceAddPrice');
+  var itemPriceAddDate      = document.getElementById('itemPriceAddDate');
+  var itemPriceAddUnit      = document.getElementById('itemPriceAddUnit');
+  var itemPriceAddError     = document.getElementById('itemPriceAddError');
+
+  var itemPriceReverifyPassword = document.getElementById('itemPriceReverifyPassword');
+  var itemPriceReverifyError    = document.getElementById('itemPriceReverifyError');
+
+  var itemPriceEditProductLabel = document.getElementById('itemPriceEditProductLabel');
+  var itemPriceEditPrice    = document.getElementById('itemPriceEditPrice');
+  var itemPriceEditDate     = document.getElementById('itemPriceEditDate');
+  var itemPriceEditError    = document.getElementById('itemPriceEditError');
+
+  var itemPriceDeleteWarning = document.getElementById('itemPriceDeleteWarning');
+  var itemPriceDeleteError   = document.getElementById('itemPriceDeleteError');
+
+  initNumberCommaInput(itemPriceAddPrice);
+  initNumberCommaInput(itemPriceEditPrice);
+
+  var priceableProductsCache = null; // fetched once, reused for every Add Price open
+
+  function loadPriceableProducts(callback) {
+    if (priceableProductsCache) { callback(priceableProductsCache); return; }
+    fetch('ajax/list_priceable_products.php')
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        priceableProductsCache = res.ok ? res.data : [];
+        callback(priceableProductsCache);
+      })
+      .catch(function () { callback([]); });
+  }
+
+  // --- Add Price ---
+  var pendingAddPriceCustomer = null; // {id, customer_name, ...}
+  var pendingAddPriceItem     = null; // the .accordion-item DOM node, to refresh after save
+  var pendingAddPriceListEl   = null; // that item's nested .accordion-list
+
+  function openAddItemPrice(customer, item) {
+    pendingAddPriceCustomer = customer;
+    pendingAddPriceItem = item;
+    pendingAddPriceListEl = item.querySelector('.accordion-list');
+
+    itemPriceAddCustomerLabel.value = customer.customer_name;
+    itemPriceAddPrice.value = '';
+    itemPriceAddDate.value = '';
+    itemPriceAddUnit.value = '';
+    itemPriceAddUnit.placeholder = '-- select a product first --';
+    itemPriceAddError.style.display = 'none';
+
+    loadPriceableProducts(function (products) {
+      itemPriceAddProduct.innerHTML = '<option value="">-- select product --</option>';
+      products.forEach(function (p) {
+        var opt = document.createElement('option');
+        opt.value = p.logistic_id;
+        opt.textContent = p.activity_name;
+        opt.setAttribute('data-unit', p.primary_unit_label || '');
+        itemPriceAddProduct.appendChild(opt);
+      });
+      show(itemPriceAddOverlay);
+    });
+  }
+
+  itemPriceAddProduct.addEventListener('change', function () {
+    var opt = itemPriceAddProduct.selectedOptions[0];
+    itemPriceAddUnit.value = opt ? (opt.getAttribute('data-unit') || '') : '';
+  });
+
+  document.getElementById('btnItemPriceAddCancel').addEventListener('click', function () {
+    hide(itemPriceAddOverlay);
+    pendingAddPriceCustomer = null;
+    pendingAddPriceItem = null;
+  });
+
+  document.getElementById('btnItemPriceAddSave').addEventListener('click', function () {
+    itemPriceAddError.style.display = 'none';
+    if (!pendingAddPriceCustomer) return;
+
+    var priceClean = parseNumberInput(itemPriceAddPrice.value);
+    if (!itemPriceAddProduct.value) {
+      itemPriceAddError.textContent = 'Product wajib dipilih.';
+      itemPriceAddError.style.display = 'block';
+      return;
+    }
+    if (isNaN(priceClean) || priceClean < 0) {
+      itemPriceAddError.textContent = 'Price tidak valid.';
+      itemPriceAddError.style.display = 'block';
+      return;
+    }
+    if (!itemPriceAddDate.value) {
+      itemPriceAddError.textContent = 'Date wajib diisi.';
+      itemPriceAddError.style.display = 'block';
+      return;
+    }
+
+    var payload = new URLSearchParams({
+      customer_id: pendingAddPriceCustomer.id,
+      logistic_id: itemPriceAddProduct.value,
+      price: String(priceClean),
+      price_date: itemPriceAddDate.value
+    });
+
+    fetch('ajax/create_customer_item_price.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: payload.toString()
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (!res.ok) {
+          itemPriceAddError.textContent = res.message || 'Gagal menyimpan price.';
+          itemPriceAddError.style.display = 'block';
+          return;
+        }
+        hide(itemPriceAddOverlay);
+        var item = pendingAddPriceItem;
+        var listEl = pendingAddPriceListEl;
+        var customerId = pendingAddPriceCustomer.id;
+        pendingAddPriceCustomer = null;
+        pendingAddPriceItem = null;
+        pendingAddPriceListEl = null;
+        if (item && listEl) loadItemPrices(customerId, listEl, item); // re-fetch + re-render this row's list
+      })
+      .catch(function () {
+        itemPriceAddError.textContent = 'Gagal menghubungi server.';
+        itemPriceAddError.style.display = 'block';
+      });
+  });
+
+  // --- Load + render the nested price list for one customer row ---
+  function loadItemPrices(customerId, listEl, item) {
+    fetch('ajax/list_customer_item_prices.php?customer_id=' + encodeURIComponent(customerId))
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        renderItemPriceList(res.ok ? res.data : [], listEl);
+        refreshOpenHeight(item);
+      })
+      .catch(function () {
+        renderItemPriceList([], listEl);
+        refreshOpenHeight(item);
+      });
+  }
+
+  function renderItemPriceList(list, listEl) {
+    listEl.innerHTML = '';
+    var emptyEl = listEl.itemPriceEmptyEl;
+    if (emptyEl) emptyEl.style.display = list.length ? 'none' : 'block';
+
+    list.forEach(function (p) {
+      var pItem = document.createElement('div');
+      pItem.className = 'accordion-item';
+
+      var pHeader = document.createElement('div');
+      pHeader.className = 'accordion-header';
+
+      var pTitle = document.createElement('span');
+      pTitle.className = 'accordion-title';
+      pTitle.textContent = p.activity_name + ' — ' + p.price + ' / ' + p.unit_label;
+
+      var pChevron = document.createElement('i');
+      pChevron.className = 'ti ti-chevron-down accordion-chevron';
+
+      pHeader.appendChild(pTitle);
+      pHeader.appendChild(pChevron);
+      pHeader.addEventListener('click', function () { toggleAccordionItem(pItem); });
+
+      var pBody = document.createElement('div');
+      pBody.className = 'accordion-body';
+      var pBodyInner = document.createElement('div');
+      pBodyInner.className = 'accordion-body-inner';
+
+      [
+        ['Price', p.price],
+        ['Date', p.price_date],
+        ['Unit', p.unit_label]
+      ].forEach(function (pair) {
+        var row = document.createElement('div');
+        row.className = 'accordion-row';
+        var label = document.createElement('div');
+        label.className = 'accordion-row-label';
+        label.textContent = pair[0];
+        var value = document.createElement('div');
+        value.className = 'accordion-row-value';
+        value.textContent = pair[1];
+        row.appendChild(label);
+        row.appendChild(value);
+        pBodyInner.appendChild(row);
+      });
+
+      var pActions = document.createElement('div');
+      pActions.className = 'accordion-row';
+      pActions.style.justifyContent = 'flex-end';
+      pActions.style.gap = 'var(--space-2)';
+      pActions.style.marginTop = 'var(--space-2)';
+
+      var pEditBtn = document.createElement('button');
+      pEditBtn.type = 'button';
+      pEditBtn.className = 'btn btn-secondary';
+      pEditBtn.textContent = 'Edit';
+      pEditBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        openItemPriceReverify('edit', p, listEl);
+      });
+
+      var pDeleteBtn = document.createElement('button');
+      pDeleteBtn.type = 'button';
+      pDeleteBtn.className = 'btn btn-danger';
+      pDeleteBtn.textContent = 'Delete';
+      pDeleteBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        openItemPriceReverify('delete', p, listEl);
+      });
+
+      pActions.appendChild(pEditBtn);
+      pActions.appendChild(pDeleteBtn);
+      pBodyInner.appendChild(pActions);
+
+      pBody.appendChild(pBodyInner);
+      pItem.appendChild(pHeader);
+      pItem.appendChild(pBody);
+      listEl.appendChild(pItem);
+    });
+  }
+
+  // --- Re-verify password: shared gate before Edit or Delete on a price
+  // entry, same pattern as logReverifyOverlay in logistic_content.php. ---
+  var pendingItemPriceAction = null; // 'edit' | 'delete'
+  var pendingItemPriceRow    = null; // row object from list_customer_item_prices.php
+  var pendingItemPriceListEl = null; // that row's parent .accordion-list, to refresh after save/delete
+
+  function openItemPriceReverify(action, row, listEl) {
+    pendingItemPriceAction = action;
+    pendingItemPriceRow = row;
+    pendingItemPriceListEl = listEl;
+    itemPriceReverifyPassword.value = '';
+    itemPriceReverifyError.style.display = 'none';
+    show(itemPriceReverifyOverlay);
+    itemPriceReverifyPassword.focus();
+  }
+
+  document.getElementById('btnItemPriceReverifyCancel').addEventListener('click', function () {
+    hide(itemPriceReverifyOverlay);
+    pendingItemPriceAction = null;
+    pendingItemPriceRow = null;
+  });
+
+  function submitItemPriceReverify() {
+    var pwd = itemPriceReverifyPassword.value;
+    itemPriceReverifyError.style.display = 'none';
+    if (!pwd) {
+      itemPriceReverifyError.textContent = 'Password wajib diisi.';
+      itemPriceReverifyError.style.display = 'block';
+      return;
+    }
+    fetch('ajax/verify_password.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ password: pwd }).toString()
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (!res.ok) {
+          itemPriceReverifyError.textContent = res.message || 'Password salah.';
+          itemPriceReverifyError.style.display = 'block';
+          return;
+        }
+        hide(itemPriceReverifyOverlay);
+        if (pendingItemPriceAction === 'edit') {
+          openEditItemPrice(pendingItemPriceRow);
+        } else if (pendingItemPriceAction === 'delete') {
+          openDeleteItemPrice(pendingItemPriceRow);
+        }
+      })
+      .catch(function () {
+        itemPriceReverifyError.textContent = 'Gagal menghubungi server.';
+        itemPriceReverifyError.style.display = 'block';
+      });
+  }
+
+  document.getElementById('btnItemPriceReverifyConfirm').addEventListener('click', submitItemPriceReverify);
+  itemPriceReverifyPassword.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); submitItemPriceReverify(); }
+  });
+
+  // --- Edit Itemized Price ---
+  function openEditItemPrice(row) {
+    itemPriceEditError.style.display = 'none';
+    itemPriceEditProductLabel.value = row.activity_name + ' (' + row.unit_label + ')';
+    itemPriceEditPrice.value = formatNumberInput(String(row.price));
+    itemPriceEditDate.value = row.price_date;
+    show(itemPriceEditOverlay);
+  }
+
+  document.getElementById('btnItemPriceEditCancel').addEventListener('click', function () {
+    hide(itemPriceEditOverlay);
+    pendingItemPriceRow = null;
+  });
+
+  document.getElementById('btnItemPriceEditSave').addEventListener('click', function () {
+    itemPriceEditError.style.display = 'none';
+    if (!pendingItemPriceRow) return;
+
+    var priceClean = parseNumberInput(itemPriceEditPrice.value);
+    if (isNaN(priceClean) || priceClean < 0) {
+      itemPriceEditError.textContent = 'Price tidak valid.';
+      itemPriceEditError.style.display = 'block';
+      return;
+    }
+    if (!itemPriceEditDate.value) {
+      itemPriceEditError.textContent = 'Date wajib diisi.';
+      itemPriceEditError.style.display = 'block';
+      return;
+    }
+
+    var payload = new URLSearchParams({
+      id: pendingItemPriceRow.id,
+      price: String(priceClean),
+      price_date: itemPriceEditDate.value
+    });
+
+    fetch('ajax/update_customer_item_price.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: payload.toString()
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (res.success === false) {
+          // Reverify window expired server-side between opening this modal
+          // and hitting Save — send the user back through the password gate.
+          hide(itemPriceEditOverlay);
+          openItemPriceReverify('edit', pendingItemPriceRow, pendingItemPriceListEl);
+          return;
+        }
+        if (!res.ok) {
+          itemPriceEditError.textContent = res.message || 'Gagal menyimpan perubahan.';
+          itemPriceEditError.style.display = 'block';
+          return;
+        }
+        hide(itemPriceEditOverlay);
+        var listEl = pendingItemPriceListEl;
+        var customerId = pendingItemPriceRow.customer_id;
+        var item = listEl ? listEl.closest('.accordion-item') : null;
+        pendingItemPriceRow = null;
+        if (listEl && item) loadItemPrices(customerId, listEl, item);
+      })
+      .catch(function () {
+        itemPriceEditError.textContent = 'Gagal menghubungi server.';
+        itemPriceEditError.style.display = 'block';
+      });
+  });
+
+  // --- Delete Itemized Price ---
+  function openDeleteItemPrice(row) {
+    itemPriceDeleteError.style.display = 'none';
+    itemPriceDeleteWarning.textContent = 'Delete the price entry for "' + row.activity_name + '" ('
+      + row.price + ' / ' + row.unit_label + ', ' + row.price_date + ')? This cannot be undone.';
+    show(itemPriceDeleteOverlay);
+  }
+
+  document.getElementById('btnItemPriceDeleteCancel').addEventListener('click', function () {
+    hide(itemPriceDeleteOverlay);
+    pendingItemPriceRow = null;
+  });
+
+  document.getElementById('btnItemPriceDeleteConfirm').addEventListener('click', function () {
+    itemPriceDeleteError.style.display = 'none';
+    if (!pendingItemPriceRow) return;
+
+    fetch('ajax/delete_customer_item_price.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ id: pendingItemPriceRow.id }).toString()
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (res.success === false) {
+          hide(itemPriceDeleteOverlay);
+          openItemPriceReverify('delete', pendingItemPriceRow, pendingItemPriceListEl);
+          return;
+        }
+        if (!res.ok) {
+          itemPriceDeleteError.textContent = res.message || 'Gagal menghapus entry.';
+          itemPriceDeleteError.style.display = 'block';
+          return;
+        }
+        hide(itemPriceDeleteOverlay);
+        var listEl = pendingItemPriceListEl;
+        var customerId = pendingItemPriceRow.customer_id;
+        var item = listEl ? listEl.closest('.accordion-item') : null;
+        pendingItemPriceRow = null;
+        if (listEl && item) loadItemPrices(customerId, listEl, item);
+      })
+      .catch(function () {
+        itemPriceDeleteError.textContent = 'Gagal menghubungi server.';
+        itemPriceDeleteError.style.display = 'block';
       });
   });
 })();
