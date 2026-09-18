@@ -1193,6 +1193,46 @@ bisa dipakai ulang di menu lain juga.
         Activity Code/Customer/Company Documents sebelumnya — retention/
         cleanup/restore semuanya masih tertunda, bukan cuma untuk
         Logistic).
+  - **Fix — Primary/Secondary unit duplicate check jadi field-aware**
+    (`ajax/manage_packaging_units.php`): sebelumnya `log_units_label_taken()`
+    cuma bandingin `label` (case-insensitive) doang, jadi "Master Carton
+    @ 12 kg" dan "Master Carton @ 10 kg" ketolak sebagai duplikat padahal
+    beratnya beda. Diganti jadi `log_units_taken()` — duplikat cuma
+    kalau **label DAN weight_kg** sama persis (primary), atau **label DAN
+    weight_kg DAN ratio_per_primary** sama persis (secondary). Berlaku di
+    action `add` maupun `edit`. Pesan error juga disesuaikan
+    ("Satuan dengan nama, berat[, dan rasio] yang sama sudah ada.").
+  - **Fix — tombol "Add Document" baru, sejajar Edit/Delete di tiap row
+    Logistic List** (`logistic_content.php`): sebelumnya upload Import
+    Document cuma bisa lewat tab **Create New Logistic**, dan begitu
+    logistic activity code itu sudah tersimpan, opsinya di-disable di
+    dropdown Activity Code (`has_logistic` → `opt.disabled = true`) — jadi
+    tidak ada jalan lagi buat nambah dokumen impor susulan untuk logistic
+    yang sudah ada.
+    - Modal baru **`#logAddDocOverlay`** (field sama persis dengan panel
+      Import Document di tab Create: Document Group/Name/Date/File),
+      dibuka langsung dari tombol **Add Document** di action row
+      accordion `logPreviewList` (sejajar dengan Edit/Delete, bukan
+      menggantikan), target ke `activity_id` row itu langsung (dari
+      `list_logistics.php`, field `activity_id` sudah ada di tiap row) —
+      tidak lewat dropdown Activity Code sama sekali, jadi tidak
+      kena-block oleh `has_logistic`.
+    - **Tidak pakai password reverify** — sama seperti Import Document di
+      tab Create (`upload_logistic_document.php` yang dipanggil juga
+      persis sama), beda dari Edit/Delete logistic yang wajib
+      `aos_require_recent_reverify()`. Ini keputusan eksplisit dari user,
+      bukan default kebiasaan project.
+    - Modal nampilin histori dokumen yang sudah ada juga (fetch
+      `list_logistic_documents.php?activity_id=`), reuse pola row yang
+      sama dengan `logDocUploadedList` di tab Create tapi elemen/variabel
+      terpisah (`logAddDocUploadedList`, dst) — supaya tidak bentrok state
+      kalau kedua form (tab Create & modal row) kebetulan kebuka
+      bersamaan.
+    - Saat modal ditutup (**Close**), `loadLogisticList()` dipanggil ulang
+      supaya angka "Documents: Shipper: x · Custom: x · Consignee: x" di
+      accordion row langsung ke-refresh tanpa perlu pindah tab.
+    - **Belum diupload/dites** di environment user — sama seperti fix unit
+      duplicate di atas, murni hasil edit surgical di chat.
 
 - **Transactions — Customer Itemized Pricing (SUDAH DIBUAT: tabel DB + 4
   endpoint + UI di `transaction_content.php`, BELUM di-upload/dites di
