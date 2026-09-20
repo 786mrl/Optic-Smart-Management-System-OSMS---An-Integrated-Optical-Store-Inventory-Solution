@@ -240,6 +240,158 @@ $currentYear     = date('Y');
   </div>
 </div>
 
+<!-- Disbursement — Document capture. Same placement pattern as
+     viewCreateActivityCode/viewCustomerList: a plain .card, shown/hidden
+     via showOnlyView(), not a modal. -->
+<div class="card" id="viewDisbursementCapture" style="width:100%; display:none;">
+  <div class="panel-header">
+    <div class="panel-title">Disbursement — Document &amp; Details</div>
+    <button type="button" class="btn btn-secondary" id="btnDisbCaptureBack">Back</button>
+  </div>
+
+  <style>
+    /* Distinct from .btn-secondary on purpose — that one blends into the
+       card background (neomorphic, same bg-surface). This is an outlined
+       accent button, small, and hidden until its field actually has a
+       value (only useful once there's something to re-block). */
+    .btn-cap-scan {
+      display: none;
+      flex-shrink: 0;
+      padding: var(--space-2) var(--space-3);
+      border-radius: var(--radius-md);
+      background: transparent;
+      border: 1.5px solid var(--accent);
+      color: var(--accent);
+      font-weight: 600;
+      font-size: var(--text-sm);
+      cursor: pointer;
+      transition: all .15s ease;
+    }
+    .btn-cap-scan:hover { background: var(--accent-soft); }
+    .btn-cap-scan.visible { display: inline-flex; align-items: center; justify-content: center; }
+  </style>
+
+  <div class="form-group">
+    <div class="label">Bank Slip (PDF or Image)</div>
+    <input type="file" class="input" id="capFileInput" accept="application/pdf,image/*">
+  </div>
+
+  <div id="capViewerWrap" style="display:none; margin-bottom:var(--space-4);">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:var(--space-2);">
+      <div class="empty-sub" id="capPageInfo"></div>
+      <div style="display:flex; gap:var(--space-2);">
+        <button type="button" class="btn btn-secondary" id="btnCapPrevPage" style="display:none;">Prev Page</button>
+        <button type="button" class="btn btn-secondary" id="btnCapNextPage" style="display:none;">Next Page</button>
+      </div>
+    </div>
+    <div style="position:relative; overflow:auto; max-height:480px; border-radius:var(--radius-md); background:var(--bg-recessed);">
+      <canvas id="capCanvas" style="display:block; max-width:100%; cursor:crosshair;"></canvas>
+    </div>
+    <div class="empty-sub" id="capBlockHint" style="display:none; color:var(--accent); margin-top:var(--space-2);"></div>
+    <div class="empty-sub" id="capOcrBusy" style="display:none; margin-top:var(--space-2);">Reading selection…</div>
+  </div>
+
+  <div class="form-group">
+    <div class="label">Date</div>
+    <div style="display:flex; gap:var(--space-2);">
+      <input type="date" class="input" id="capDate" style="flex:1;">
+      <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="capDate" data-scan-label="Date">Scan</button>
+    </div>
+  </div>
+
+  <div class="form-group">
+    <div class="label">Source Bank</div>
+    <div style="display:flex; gap:var(--space-2);">
+      <input type="text" class="input input-uppercase" id="capSourceBank" style="flex:1;">
+      <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="capSourceBank" data-scan-label="Source Bank">Scan</button>
+    </div>
+  </div>
+
+  <div class="form-group">
+    <div class="label">Destination Bank</div>
+    <div style="display:flex; gap:var(--space-2);">
+      <input type="text" class="input input-uppercase" id="capDestBank" style="flex:1;">
+      <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="capDestBank" data-scan-label="Destination Bank">Scan</button>
+    </div>
+  </div>
+
+  <div class="form-group">
+    <div class="label">Source Account Number</div>
+    <div style="display:flex; gap:var(--space-2);">
+      <input type="text" class="input" id="capSourceAccountNumber" style="flex:1;">
+      <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="capSourceAccountNumber" data-scan-label="Source Account Number">Scan</button>
+    </div>
+  </div>
+
+  <div class="form-group">
+    <div class="label">Source Account Name</div>
+    <div style="display:flex; gap:var(--space-2);">
+      <input type="text" class="input input-uppercase" id="capSourceAccountName" style="flex:1;">
+      <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="capSourceAccountName" data-scan-label="Source Account Name">Scan</button>
+    </div>
+  </div>
+
+  <div class="form-group">
+    <div class="label">Destination Account Number</div>
+    <div style="display:flex; gap:var(--space-2);">
+      <input type="text" class="input" id="capDestAccountNumber" style="flex:1;">
+      <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="capDestAccountNumber" data-scan-label="Destination Account Number">Scan</button>
+    </div>
+  </div>
+
+  <div class="form-group">
+    <div class="label">Destination Account Name</div>
+    <div style="display:flex; gap:var(--space-2);">
+      <input type="text" class="input input-uppercase" id="capDestAccountName" style="flex:1;">
+      <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="capDestAccountName" data-scan-label="Destination Account Name">Scan</button>
+    </div>
+  </div>
+
+  <div class="form-group">
+    <div class="label">Notes (as written on the slip)</div>
+    <div style="display:flex; gap:var(--space-2);">
+      <input type="text" class="input" id="capNotes" style="flex:1;">
+      <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="capNotes" data-scan-label="Notes">Scan</button>
+    </div>
+  </div>
+
+  <div class="form-group">
+    <div class="label">Currency</div>
+    <div style="display:flex; gap:var(--space-2);">
+      <input type="text" class="input input-uppercase" id="capCurrency" value="IDR" maxlength="10" style="flex:1;">
+      <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="capCurrency" data-scan-label="Currency">Scan</button>
+    </div>
+  </div>
+
+  <div class="form-group">
+    <div class="label">Transaction Amount</div>
+    <div style="display:flex; gap:var(--space-2);">
+      <input type="text" inputmode="decimal" class="input input-number-comma" id="capAmount" style="flex:1;">
+      <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="capAmount" data-scan-label="Transaction Amount">Scan</button>
+    </div>
+  </div>
+
+  <div class="form-group" id="capExchangeRateGroup" style="display:none;">
+    <div class="label">Exchange Rate</div>
+    <div style="display:flex; gap:var(--space-2);">
+      <input type="text" inputmode="decimal" class="input input-number-comma" id="capExchangeRate" style="flex:1;">
+      <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="capExchangeRate" data-scan-label="Exchange Rate">Scan</button>
+    </div>
+  </div>
+
+  <div class="form-group">
+    <div class="label">Final Amount (IDR)</div>
+    <input type="text" inputmode="decimal" class="input input-number-comma" id="capFinalAmountIdr">
+    <div class="empty-sub">Auto-calculated from Amount &times; Exchange Rate when Currency isn't IDR — still editable.</div>
+  </div>
+
+  <div class="empty-sub" id="capError" style="display:none; color:var(--danger);"></div>
+
+  <div style="display:flex; gap:var(--space-3); justify-content:flex-end; margin-top:var(--space-5);">
+    <button type="button" class="btn btn-primary" id="btnCapSave">Save Transaction</button>
+  </div>
+</div>
+
 </div> <!-- /.menu-section[data-section="transactions"] -->
 
 <!-- ============================================================
@@ -474,6 +626,129 @@ $currentYear     = date('Y');
   </div>
 </div>
 
+<!-- ============================================================
+     Transaction Logging — category chooser + Disbursement wizard.
+     Sales Transaction / Other flows are not built yet; their buttons
+     below intentionally show a "coming soon" placeholder for now. -->
+<div class="modal-overlay" id="txnCategoryOverlay" style="display:none;">
+  <div class="modal" style="max-width:380px;">
+    <div class="modal-header" style="display:flex; align-items:center; justify-content:space-between;">
+      <div class="modal-title">Input Transaction</div>
+      <button type="button" class="btn-icon" id="btnCloseTxnCategoryOverlay" aria-label="Close" style="font-size:18px; line-height:1; font-weight:700;">
+        &times;
+      </button>
+    </div>
+    <div class="modal-body">
+      <button type="button" class="btn btn-primary" id="btnCategoryDisbursement">
+        Disbursement
+      </button>
+      <button type="button" class="btn btn-secondary" id="btnCategorySales">
+        Sales Transaction
+      </button>
+      <button type="button" class="btn btn-secondary" id="btnCategoryOther">
+        Other
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Disbursement step 1: Department -->
+<div class="modal-overlay" id="disbDepartmentOverlay" style="display:none;">
+  <div class="modal" style="max-width:380px;">
+    <div class="modal-header">
+      <div class="modal-title">Disbursement — Department</div>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <div class="label">Department</div>
+        <select class="select" id="disbDepartment">
+          <?php foreach ($departments as $dept): ?>
+            <option value="<?= htmlspecialchars($dept['key']) ?>"><?= htmlspecialchars($dept['label']) ?></option>
+          <?php endforeach; ?>
+        </select>
+      </div>
+      <div class="empty-sub" id="disbDepartmentError" style="display:none; color:var(--danger);"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" id="btnDisbDepartmentBack">Back</button>
+      <button type="button" class="btn btn-primary" id="btnDisbDepartmentNext">Next</button>
+    </div>
+  </div>
+</div>
+
+<!-- Disbursement step 2: Activity Code (filtered by chosen department) -->
+<div class="modal-overlay" id="disbActivityOverlay" style="display:none;">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-header">
+      <div class="modal-title">Disbursement — Activity Code</div>
+    </div>
+    <div class="modal-body">
+      <div class="accordion-list" id="disbActivityList" style="max-height:340px; overflow-y:auto;"></div>
+      <div class="empty-state" id="disbActivityEmpty" style="display:none;">
+        <div class="empty-title">No activity codes</div>
+        <div class="empty-sub">This department has no activity codes yet. Create one first.</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" id="btnDisbActivityBack">Back</button>
+    </div>
+  </div>
+</div>
+
+<!-- Disbursement step 3: Cashflow type (defaulted from activity) + Transaction Purpose -->
+<div class="modal-overlay" id="disbDetailsOverlay" style="display:none;">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-header">
+      <div class="modal-title">Disbursement — Details</div>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <div class="label">Activity Code</div>
+        <input type="text" class="input" id="disbSelectedActivityLabel" disabled>
+      </div>
+      <div class="form-group">
+        <div class="label">Cashflow Type</div>
+        <select class="select" id="disbCashflow">
+          <option value="inflow">Cash Inflows</option>
+          <option value="outflow">Cash Outflows</option>
+          <option value="in-out">Cash In-Out</option>
+        </select>
+        <div class="empty-sub">Defaults from the Activity Code, but you can change it.</div>
+      </div>
+      <div class="form-group">
+        <div class="label">Transaction Purpose</div>
+        <textarea class="input" id="disbPurpose" rows="3" maxlength="255" placeholder="What is this disbursement actually for?"></textarea>
+        <div class="empty-sub">This is the real purpose — separate from whatever notes end up on the bank slip.</div>
+      </div>
+      <div class="empty-sub" id="disbDetailsError" style="display:none; color:var(--danger);"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" id="btnDisbDetailsBack">Back</button>
+      <button type="button" class="btn btn-primary" id="btnDisbDetailsNext">Continue</button>
+    </div>
+  </div>
+</div>
+
+<!-- Disbursement — Field Picker: opens automatically right after a document
+     is uploaded/rendered, and again after each field is scanned, so the
+     user works through the field list one at a time without hunting for
+     the right "Scan" button. Left = field name, right = current value
+     (empty until scanned or typed). Click a row -> picker closes, canvas
+     becomes draggable for that field -> OCR runs -> picker reopens. -->
+<div class="modal-overlay" id="capFieldPickerOverlay" style="display:none;">
+  <div class="modal" style="max-width:440px;">
+    <div class="modal-header">
+      <div class="modal-title">Select a field to scan</div>
+    </div>
+    <div class="modal-body">
+      <div class="accordion-list" id="capFieldPickerList" style="max-height:420px; overflow-y:auto;"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-primary" id="btnCapFieldPickerDone">Done</button>
+    </div>
+  </div>
+</div>
+
 <script>
 (function () {
   var section = document.querySelector('.menu-section[data-section="transactions"]');
@@ -488,14 +763,24 @@ $currentYear     = date('Y');
   var itemPriceEditOverlay      = document.getElementById('itemPriceEditOverlay');
   var itemPriceDeleteOverlay    = document.getElementById('itemPriceDeleteOverlay');
 
+  // Transaction Logging — category chooser + Disbursement wizard overlays.
+  var txnCategoryOverlay   = document.getElementById('txnCategoryOverlay');
+  var disbDepartmentOverlay = document.getElementById('disbDepartmentOverlay');
+  var disbActivityOverlay   = document.getElementById('disbActivityOverlay');
+  var disbDetailsOverlay    = document.getElementById('disbDetailsOverlay');
+  var capFieldPickerOverlay = document.getElementById('capFieldPickerOverlay');
+
   var viewEmpty        = document.getElementById('viewTransactionsEmpty');
   var viewForm         = document.getElementById('viewCreateActivityCode');
   var viewResult       = document.getElementById('viewActivityCodeResult');
   var viewCustomerList = document.getElementById('viewCustomerList');
+  var viewDisbursementCapture = document.getElementById('viewDisbursementCapture');
 
   var flexOverlays = [entryOverlay, passwordOverlay, manageDeptOverlay, deleteCustomerOverlay,
     deleteActivityCodeOverlay, itemPriceAddOverlay, itemPriceReverifyOverlay,
-    itemPriceEditOverlay, itemPriceDeleteOverlay];
+    itemPriceEditOverlay, itemPriceDeleteOverlay,
+    txnCategoryOverlay, disbDepartmentOverlay, disbActivityOverlay, disbDetailsOverlay,
+    capFieldPickerOverlay];
 
   function show(el) {
     el.style.display = (flexOverlays.indexOf(el) !== -1) ? 'flex' : 'block';
@@ -544,8 +829,19 @@ $currentYear     = date('Y');
 
   document.querySelectorAll('.input-number-comma').forEach(initNumberCommaInput);
 
+  // ---------- Uppercase-while-typing for free-text fields ----------
+  // Same pattern as logistic_content.php's .input-uppercase handling —
+  // duplicated here since each *_content.php stays self-contained.
+  document.querySelectorAll('.input-uppercase').forEach(function (el) {
+    el.addEventListener('input', function () {
+      var pos = el.selectionStart;
+      el.value = el.value.toUpperCase();
+      el.setSelectionRange(pos, pos);
+    });
+  });
+
   function showOnlyView(target) {
-    [viewEmpty, viewForm, viewResult, viewCustomerList].forEach(hide);
+    [viewEmpty, viewForm, viewResult, viewCustomerList, viewDisbursementCapture].forEach(hide);
     show(target);
   }
 
@@ -580,6 +876,14 @@ $currentYear     = date('Y');
         hide(itemPriceReverifyOverlay);
         hide(itemPriceEditOverlay);
         hide(itemPriceDeleteOverlay);
+        hide(txnCategoryOverlay);
+        hide(disbDepartmentOverlay);
+        hide(disbActivityOverlay);
+        hide(disbDetailsOverlay);
+        hide(capFieldPickerOverlay);
+        disbState = { department_key: null, department_label: null, activity_id: null,
+          activity_name: null, activity_code: null, cashflow: null, purpose: '' };
+        if (typeof resetCaptureForm === 'function') resetCaptureForm();
       }
       wasVisible = isVisible;
     });
@@ -596,7 +900,683 @@ $currentYear     = date('Y');
   });
 
   document.getElementById('btnOpenInputTransaction').addEventListener('click', function () {
-    alert('Input Transaction: coming soon.');
+    hide(entryOverlay);
+    show(txnCategoryOverlay);
+  });
+
+  // --- Transaction Category chooser ---
+  document.getElementById('btnCloseTxnCategoryOverlay').addEventListener('click', function () {
+    hide(txnCategoryOverlay);
+    show(entryOverlay);
+  });
+
+  document.getElementById('btnCategorySales').addEventListener('click', function () {
+    alert('Sales Transaction: coming soon.');
+  });
+
+  document.getElementById('btnCategoryOther').addEventListener('click', function () {
+    alert('Other: coming soon.');
+  });
+
+  // --- Disbursement wizard state (reset whenever the wizard is abandoned,
+  // see the "left the Transactions section" branch above too) ---
+  var disbState = { department_key: null, department_label: null, activity_id: null,
+    activity_name: null, activity_code: null, cashflow: null, purpose: '' };
+
+  document.getElementById('btnCategoryDisbursement').addEventListener('click', function () {
+    hide(txnCategoryOverlay);
+    document.getElementById('disbDepartmentError').style.display = 'none';
+    // Default the select to whatever was picked last time, if anything.
+    if (disbState.department_key) {
+      document.getElementById('disbDepartment').value = disbState.department_key;
+    }
+    show(disbDepartmentOverlay);
+  });
+
+  // --- Disbursement step 1: Department ---
+  document.getElementById('btnDisbDepartmentBack').addEventListener('click', function () {
+    hide(disbDepartmentOverlay);
+    show(txnCategoryOverlay);
+  });
+
+  document.getElementById('btnDisbDepartmentNext').addEventListener('click', function () {
+    var sel = document.getElementById('disbDepartment');
+    disbState.department_key = sel.value;
+    disbState.department_label = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : sel.value;
+    hide(disbDepartmentOverlay);
+    renderDisbActivityList();
+    show(disbActivityOverlay);
+  });
+
+  // --- Disbursement step 2: Activity Code list, filtered by department ---
+  // Reuses loadActivityList()/activityListCache from the Create Activity
+  // Code tab (same ajax/list_activity_codes.php, same row shape: id,
+  // activity_name, activity_code, department, department_key, cashflow,
+  // relative_path) instead of hitting a separate endpoint.
+  function renderDisbActivityList() {
+    var listEl  = document.getElementById('disbActivityList');
+    var emptyEl = document.getElementById('disbActivityEmpty');
+    listEl.innerHTML = '';
+
+    function paint(rows) {
+      var filtered = (rows || []).filter(function (a) {
+        return a.department_key === disbState.department_key;
+      });
+      if (filtered.length === 0) {
+        listEl.style.display = 'none';
+        emptyEl.style.display = 'block';
+        return;
+      }
+      listEl.style.display = 'block';
+      emptyEl.style.display = 'none';
+      filtered.forEach(function (a) {
+        var row = document.createElement('div');
+        row.className = 'card';
+        row.style.cssText = 'padding:var(--space-3); display:flex; align-items:center; justify-content:space-between; gap:var(--space-2); cursor:pointer; margin-bottom:var(--space-2);';
+
+        var label = document.createElement('div');
+        var name = document.createElement('div');
+        name.style.fontWeight = '600';
+        name.textContent = a.activity_name;
+        var code = document.createElement('div');
+        code.className = 'empty-sub';
+        code.textContent = a.activity_code + ' \u00b7 ' + a.cashflow;
+        label.appendChild(name);
+        label.appendChild(code);
+
+        row.appendChild(label);
+        row.addEventListener('click', function () {
+          disbState.activity_id = a.id;
+          disbState.activity_name = a.activity_name;
+          disbState.activity_code = a.activity_code;
+          disbState.cashflow = a.cashflow; // default, still editable in the next step
+          hide(disbActivityOverlay);
+          document.getElementById('disbSelectedActivityLabel').value = a.activity_code + ' \u2014 ' + a.activity_name;
+          document.getElementById('disbCashflow').value = a.cashflow;
+          document.getElementById('disbPurpose').value = disbState.purpose || '';
+          document.getElementById('disbDetailsError').style.display = 'none';
+          show(disbDetailsOverlay);
+        });
+        listEl.appendChild(row);
+      });
+    }
+
+    if (typeof activityListCache !== 'undefined' && activityListCache && activityListCache.length) {
+      paint(activityListCache);
+    } else {
+      loadActivityList().then(function () { paint(activityListCache || []); });
+    }
+  }
+
+  document.getElementById('btnDisbActivityBack').addEventListener('click', function () {
+    hide(disbActivityOverlay);
+    show(disbDepartmentOverlay);
+  });
+
+  // --- Disbursement step 3: Cashflow + Purpose ---
+  document.getElementById('btnDisbDetailsBack').addEventListener('click', function () {
+    hide(disbDetailsOverlay);
+    renderDisbActivityList();
+    show(disbActivityOverlay);
+  });
+
+  document.getElementById('btnDisbDetailsNext').addEventListener('click', function () {
+    var errBox = document.getElementById('disbDetailsError');
+    var purpose = document.getElementById('disbPurpose').value.trim();
+    if (!purpose) {
+      errBox.textContent = 'Transaction Purpose is required.';
+      errBox.style.display = 'block';
+      return;
+    }
+    disbState.cashflow = document.getElementById('disbCashflow').value;
+    disbState.purpose = purpose;
+    hide(disbDetailsOverlay);
+    resetCaptureForm();
+    showOnlyView(viewDisbursementCapture);
+  });
+
+  document.getElementById('btnDisbCaptureBack').addEventListener('click', function () {
+    showOnlyView(viewEmpty);
+    show(entryOverlay);
+  });
+
+  // ==========================================================
+  // Disbursement — Document capture (upload, viewer, semi-automatic
+  // block-to-OCR via Tesseract.js, manual entry, save).
+  // ==========================================================
+
+  // pdf.js / Tesseract.js are loaded lazily (only once, only when this
+  // section is actually used) rather than unconditionally in <head>, so
+  // pages that never touch Transactions don't pay for them.
+  var libLoadPromise = null;
+  function ensureCaptureLibs() {
+    if (libLoadPromise) return libLoadPromise;
+    libLoadPromise = new Promise(function (resolve, reject) {
+      var pending = 2;
+      function done() { pending--; if (pending === 0) resolve(); }
+      function fail(src) { return function () { reject(new Error('Failed to load ' + src)); }; }
+
+      if (window.pdfjsLib) {
+        done();
+      } else {
+        var s1 = document.createElement('script');
+        s1.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+        s1.onload = function () {
+          window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+            'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+          done();
+        };
+        s1.onerror = fail('pdf.js');
+        document.head.appendChild(s1);
+      }
+
+      if (window.Tesseract) {
+        done();
+      } else {
+        var s2 = document.createElement('script');
+        s2.src = 'https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.0.4/tesseract.min.js';
+        s2.onload = done;
+        s2.onerror = fail('tesseract.js');
+        document.head.appendChild(s2);
+      }
+    });
+    return libLoadPromise;
+  }
+
+  var capFileInput   = document.getElementById('capFileInput');
+  var capViewerWrap  = document.getElementById('capViewerWrap');
+  var capCanvas      = document.getElementById('capCanvas');
+  var capCtx         = capCanvas.getContext('2d');
+  var capPageInfo    = document.getElementById('capPageInfo');
+  var btnCapPrevPage = document.getElementById('btnCapPrevPage');
+  var btnCapNextPage = document.getElementById('btnCapNextPage');
+  var capBlockHint   = document.getElementById('capBlockHint');
+  var capOcrBusy     = document.getElementById('capOcrBusy');
+  var capExchangeRateGroup = document.getElementById('capExchangeRateGroup');
+  var capCurrency    = document.getElementById('capCurrency');
+  var capAmount      = document.getElementById('capAmount');
+  var capExchangeRate = document.getElementById('capExchangeRate');
+  var capFinalAmountIdr = document.getElementById('capFinalAmountIdr');
+
+  var capDoc = null;       // pdf.js document instance, null if a plain image
+  var capNumPages = 1;
+  var capCurrentPage = 1;
+  var capUploadedFile = null; // the raw File, sent as-is on Save
+  var armedScanField = null;  // field id currently waiting for a drag-box, or null
+  var scanTriggerSource = null; // 'picker' | 'manual' — decides what happens after OCR finishes
+  var blockModeArmed = false; // false = user can still scroll/pan freely; true = next drag on canvas draws the crop box
+
+  function capBlockHintArmingText(label) {
+    return 'Field: "' + label + '". Scroll/zoom to find it, then double-tap (or double-click) the spot to start blocking. Triple-tap to skip this field.';
+  }
+  function capBlockHintDraggingText(label) {
+    return 'Field: "' + label + '". Now drag a box around the value.';
+  }
+
+  function resetCaptureForm() {
+    capFileInput.value = '';
+    capUploadedFile = null;
+    capDoc = null;
+    capNumPages = 1;
+    capCurrentPage = 1;
+    armedScanField = null;
+    scanTriggerSource = null;
+    blockModeArmed = false;
+    capCanvas.style.cursor = '';
+    tapCount = 0;
+    if (tapTimer) clearTimeout(tapTimer);
+    capViewerWrap.style.display = 'none';
+    capBlockHint.style.display = 'none';
+    hide(capFieldPickerOverlay);
+    capCtx.clearRect(0, 0, capCanvas.width, capCanvas.height);
+    ['capDate', 'capSourceBank', 'capDestBank', 'capSourceAccountNumber',
+     'capSourceAccountName', 'capDestAccountNumber', 'capDestAccountName',
+     'capNotes', 'capAmount', 'capExchangeRate'].forEach(function (id) {
+      document.getElementById(id).value = '';
+    });
+    capFields.forEach(function (f) { updateScanButtonVisibility(f.id); });
+    capCurrency.value = 'IDR';
+    capFinalAmountIdr.value = '';
+    capExchangeRateGroup.style.display = 'none';
+    document.getElementById('capError').style.display = 'none';
+  }
+
+  capFileInput.addEventListener('change', function () {
+    var file = capFileInput.files[0];
+    if (!file) return;
+    capUploadedFile = file;
+    document.getElementById('capError').style.display = 'none';
+
+    ensureCaptureLibs().then(function () {
+      if (file.type === 'application/pdf') {
+        var reader = new FileReader();
+        reader.onload = function () {
+          window.pdfjsLib.getDocument({ data: new Uint8Array(reader.result) }).promise
+            .then(function (pdf) {
+              capDoc = pdf;
+              capNumPages = pdf.numPages;
+              capCurrentPage = 1;
+              renderCapPage(true);
+            })
+            .catch(function () {
+              document.getElementById('capError').textContent = 'Could not read this PDF.';
+              document.getElementById('capError').style.display = 'block';
+            });
+        };
+        reader.readAsArrayBuffer(file);
+      } else {
+        capDoc = null;
+        capNumPages = 1;
+        capCurrentPage = 1;
+        var img = new Image();
+        img.onload = function () {
+          capCanvas.width = img.naturalWidth;
+          capCanvas.height = img.naturalHeight;
+          capCtx.drawImage(img, 0, 0);
+          capViewerWrap.style.display = 'block';
+          updateCapPageControls();
+          openFieldPicker();
+        };
+        img.src = URL.createObjectURL(file);
+      }
+    }).catch(function (err) {
+      document.getElementById('capError').textContent = 'Could not load the document viewer (' + err.message + ').';
+      document.getElementById('capError').style.display = 'block';
+    });
+  });
+
+  function renderCapPage(openPickerAfter) {
+    if (!capDoc) return;
+    capDoc.getPage(capCurrentPage).then(function (page) {
+      var viewport = page.getViewport({ scale: 1.5 });
+      capCanvas.width = viewport.width;
+      capCanvas.height = viewport.height;
+      page.render({ canvasContext: capCtx, viewport: viewport }).promise.then(function () {
+        capViewerWrap.style.display = 'block';
+        updateCapPageControls();
+        if (openPickerAfter) openFieldPicker();
+      });
+    });
+  }
+
+  function updateCapPageControls() {
+    if (capNumPages > 1) {
+      capPageInfo.textContent = 'Page ' + capCurrentPage + ' of ' + capNumPages;
+      btnCapPrevPage.style.display = capCurrentPage > 1 ? 'inline-block' : 'none';
+      btnCapNextPage.style.display = capCurrentPage < capNumPages ? 'inline-block' : 'none';
+    } else {
+      capPageInfo.textContent = '';
+      btnCapPrevPage.style.display = 'none';
+      btnCapNextPage.style.display = 'none';
+    }
+  }
+
+  btnCapPrevPage.addEventListener('click', function () {
+    if (capCurrentPage > 1) { capCurrentPage--; renderCapPage(); }
+  });
+  btnCapNextPage.addEventListener('click', function () {
+    if (capCurrentPage < capNumPages) { capCurrentPage++; renderCapPage(); }
+  });
+
+  // --- Field metadata, built from the Scan buttons' own data attributes so
+  // there's a single source of truth (HTML) instead of a duplicate JS list.
+  var capFields = Array.prototype.map.call(document.querySelectorAll('.btn-cap-scan'), function (btn) {
+    return { id: btn.getAttribute('data-scan-field'), label: btn.getAttribute('data-scan-label'), btn: btn };
+  });
+
+  function scanButtonFor(fieldId) {
+    var f = capFields.filter(function (f) { return f.id === fieldId; })[0];
+    return f ? f.btn : null;
+  }
+
+  function updateScanButtonVisibility(fieldId) {
+    var btn = scanButtonFor(fieldId);
+    var el = document.getElementById(fieldId);
+    if (!btn || !el) return;
+    btn.classList.toggle('visible', el.value.trim() !== '');
+  }
+
+  // Reveal each field's Scan button the moment it has a value — whether
+  // typed manually or filled by OCR — and keep it hidden while empty
+  // (nothing to re-block yet).
+  capFields.forEach(function (f) {
+    document.getElementById(f.id).addEventListener('input', function () {
+      updateScanButtonVisibility(f.id);
+    });
+  });
+
+  // --- Field Picker: opens right after upload, and again after each scan,
+  // so the whole field list can be worked through without hunting for
+  // individual Scan buttons. ---
+  function openFieldPicker() {
+    var listEl = document.getElementById('capFieldPickerList');
+    listEl.innerHTML = '';
+    capFields.forEach(function (f) {
+      var val = document.getElementById(f.id).value;
+      var row = document.createElement('div');
+      row.className = 'accordion-row';
+      row.style.cssText = 'display:flex; align-items:center; justify-content:space-between; gap:var(--space-3); padding:var(--space-3) 0; cursor:pointer; border-bottom:1px solid var(--shadow-dark);';
+
+      var label = document.createElement('div');
+      label.style.fontWeight = '600';
+      label.textContent = f.label;
+
+      var value = document.createElement('div');
+      value.className = 'empty-sub';
+      value.style.cssText = 'max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:right;';
+      value.textContent = val ? val : '— empty —';
+
+      row.appendChild(label);
+      row.appendChild(value);
+      row.addEventListener('click', function () {
+        hide(capFieldPickerOverlay);
+        scanTriggerSource = 'picker';
+        armedScanField = f.id;
+        blockModeArmed = false;
+        capCanvas.style.cursor = '';
+        capBlockHint.textContent = capBlockHintArmingText(f.label);
+        capBlockHint.style.display = 'block';
+      });
+      listEl.appendChild(row);
+    });
+    show(capFieldPickerOverlay);
+  }
+
+  document.getElementById('btnCapFieldPickerDone').addEventListener('click', function () {
+    hide(capFieldPickerOverlay);
+    capViewerWrap.style.display = 'none'; // close the opened document
+    armedScanField = null;
+    scanTriggerSource = null;
+    blockModeArmed = false;
+    capCanvas.style.cursor = '';
+    tapCount = 0;
+    if (tapTimer) clearTimeout(tapTimer);
+    capBlockHint.style.display = 'none';
+  });
+
+  // --- Scan buttons next to each field: a targeted re-scan outside the
+  // picker flow (e.g. fixing one field that OCR misread). Only visible
+  // once that field has a value (see updateScanButtonVisibility above). ---
+  capFields.forEach(function (f) {
+    f.btn.addEventListener('click', function () {
+      if (!capUploadedFile) {
+        document.getElementById('capError').textContent = 'Upload a document first.';
+        document.getElementById('capError').style.display = 'block';
+        return;
+      }
+      scanTriggerSource = 'manual';
+      armedScanField = f.id;
+      blockModeArmed = false;
+      capCanvas.style.cursor = '';
+      capBlockHint.textContent = capBlockHintArmingText(f.label);
+      capBlockHint.style.display = 'block';
+      capViewerWrap.style.display = 'block'; // re-open the document for reblocking
+    });
+  });
+
+  // --- Tap/click counting: arms the actual block-drag mode after a
+  // double-tap (so a single tap/scroll while hunting for the right spot
+  // doesn't accidentally start drawing a box), and skips the current field
+  // after a triple-tap (nothing found here, move on). Counted only while a
+  // field is armed but block mode isn't ready yet — once dragging starts,
+  // this is inert.
+  var tapCount = 0;
+  var tapTimer = null;
+  var TAP_WINDOW_MS = 400;
+
+  capCanvas.addEventListener('click', function () {
+    if (!armedScanField || blockModeArmed) return;
+    tapCount++;
+    if (tapTimer) clearTimeout(tapTimer);
+    tapTimer = setTimeout(function () {
+      if (tapCount === 2) {
+        blockModeArmed = true;
+        capCanvas.style.cursor = 'crosshair';
+        capBlockHint.textContent = capBlockHintDraggingText(currentArmedFieldLabel());
+      } else if (tapCount >= 3) {
+        skipCurrentField();
+      }
+      tapCount = 0;
+    }, TAP_WINDOW_MS);
+  });
+
+  function currentArmedFieldLabel() {
+    var f = capFields.filter(function (f) { return f.id === armedScanField; })[0];
+    return f ? f.label : '';
+  }
+
+  function skipCurrentField() {
+    var source = scanTriggerSource;
+    armedScanField = null;
+    scanTriggerSource = null;
+    blockModeArmed = false;
+    capCanvas.style.cursor = '';
+    capBlockHint.style.display = 'none';
+    afterScanCompleted(source);
+  }
+
+  // Rubber-band selection directly on the canvas, in canvas pixel space
+  // (accounting for CSS scaling since the canvas is displayed at
+  // max-width:100% but keeps its native pixel dimensions).
+  var dragStart = null;
+  var dragBox = null; // floating div drawn over the canvas while dragging
+
+  function canvasPointFromEvent(e) {
+    var rect = capCanvas.getBoundingClientRect();
+    var scaleX = capCanvas.width / rect.width;
+    var scaleY = capCanvas.height / rect.height;
+    return {
+      x: (e.clientX - rect.left) * scaleX,
+      y: (e.clientY - rect.top) * scaleY,
+      clientX: e.clientX,
+      clientY: e.clientY
+    };
+  }
+
+  capCanvas.addEventListener('mousedown', function (e) {
+    if (!armedScanField || !blockModeArmed) return; // still scrolling/hunting, not ready to draw yet
+    dragStart = canvasPointFromEvent(e);
+    dragBox = document.createElement('div');
+    dragBox.style.cssText = 'position:fixed; border:2px dashed var(--accent); background:rgba(0,120,255,0.15); pointer-events:none; z-index:9999;';
+    document.body.appendChild(dragBox);
+    positionDragBox(dragStart.clientX, dragStart.clientY, dragStart.clientX, dragStart.clientY);
+    e.preventDefault();
+  });
+
+  function positionDragBox(x1, y1, x2, y2) {
+    var left = Math.min(x1, x2), top = Math.min(y1, y2);
+    dragBox.style.left = left + 'px';
+    dragBox.style.top = top + 'px';
+    dragBox.style.width = Math.abs(x2 - x1) + 'px';
+    dragBox.style.height = Math.abs(y2 - y1) + 'px';
+  }
+
+  document.addEventListener('mousemove', function (e) {
+    if (!dragStart || !dragBox) return;
+    positionDragBox(dragStart.clientX, dragStart.clientY, e.clientX, e.clientY);
+  });
+
+  document.addEventListener('mouseup', function (e) {
+    if (!dragStart || !dragBox) return;
+    var end = canvasPointFromEvent(e);
+    document.body.removeChild(dragBox);
+    dragBox = null;
+
+    var x = Math.max(0, Math.min(dragStart.x, end.x));
+    var y = Math.max(0, Math.min(dragStart.y, end.y));
+    var w = Math.abs(end.x - dragStart.x);
+    var h = Math.abs(end.y - dragStart.y);
+    dragStart = null;
+
+    if (w < 6 || h < 6) return; // treat as an accidental click, not a real box
+    runOcrOnRegion(x, y, w, h);
+  });
+
+  function runOcrOnRegion(x, y, w, h) {
+    var fieldId = armedScanField;
+    var source = scanTriggerSource;
+    armedScanField = null;
+    scanTriggerSource = null;
+    blockModeArmed = false;
+    capCanvas.style.cursor = '';
+    capBlockHint.style.display = 'none';
+
+    var crop = document.createElement('canvas');
+    crop.width = w;
+    crop.height = h;
+    crop.getContext('2d').drawImage(capCanvas, x, y, w, h, 0, 0, w, h);
+
+    capOcrBusy.style.display = 'block';
+    ensureCaptureLibs().then(function () {
+      return window.Tesseract.recognize(crop, 'eng');
+    }).then(function (result) {
+      capOcrBusy.style.display = 'none';
+      applyOcrResult(fieldId, (result.data.text || '').trim());
+      afterScanCompleted(source);
+    }).catch(function () {
+      capOcrBusy.style.display = 'none';
+      document.getElementById('capError').textContent = 'OCR failed on that selection — try again or type it manually.';
+      document.getElementById('capError').style.display = 'block';
+      afterScanCompleted(source);
+    });
+  }
+
+  // Picker flow -> reopen the picker so the user can continue through the
+  // rest of the list. Manual re-scan flow -> just close the document back
+  // up, nothing else changes.
+  function afterScanCompleted(source) {
+    if (source === 'picker') {
+      openFieldPicker();
+    } else {
+      capViewerWrap.style.display = 'none';
+    }
+  }
+
+  // Best-effort cleanup per field type. The result is ALWAYS left editable
+  // afterwards — this just saves typing when OCR reads cleanly.
+  function applyOcrResult(fieldId, rawText) {
+    var el = document.getElementById(fieldId);
+    if (!el) return;
+
+    if (fieldId === 'capDate') {
+      var m = rawText.match(/(\d{1,2})[\/\-. ](\d{1,2})[\/\-. ](\d{2,4})/);
+      if (m) {
+        var d = m[1].padStart(2, '0'), mo = m[2].padStart(2, '0');
+        var y = m[3].length === 2 ? '20' + m[3] : m[3];
+        el.value = y + '-' + mo + '-' + d;
+      } else {
+        el.value = rawText; // not recognized as a date pattern, leave raw text for manual fix
+      }
+    } else if (fieldId === 'capAmount' || fieldId === 'capExchangeRate') {
+      var numMatch = rawText.replace(/[^0-9.,]/g, '');
+      var parsed = parseNumberInput(numMatch);
+      el.value = isNaN(parsed) ? '' : formatNumberInput(String(parsed));
+      recalcFinalAmount();
+    } else if (fieldId === 'capCurrency') {
+      el.value = rawText.replace(/[^A-Za-z]/g, '').toUpperCase().slice(0, 10);
+      toggleExchangeRateVisibility();
+    } else {
+      el.value = rawText.replace(/\s+/g, ' ').trim();
+    }
+    updateScanButtonVisibility(fieldId);
+  }
+
+  // --- Currency / amount / final amount interplay ---
+  function toggleExchangeRateVisibility() {
+    var isIdr = capCurrency.value.trim().toUpperCase() === 'IDR';
+    capExchangeRateGroup.style.display = isIdr ? 'none' : 'block';
+    recalcFinalAmount();
+  }
+
+  function recalcFinalAmount() {
+    var amount = parseNumberInput(capAmount.value);
+    if (isNaN(amount)) return;
+    var isIdr = capCurrency.value.trim().toUpperCase() === 'IDR';
+    if (isIdr) {
+      capFinalAmountIdr.value = formatNumberInput(String(amount));
+    } else {
+      var rate = parseNumberInput(capExchangeRate.value);
+      if (!isNaN(rate)) {
+        capFinalAmountIdr.value = formatNumberInput(String(amount * rate));
+      }
+    }
+  }
+
+  capCurrency.addEventListener('input', toggleExchangeRateVisibility);
+  capAmount.addEventListener('input', recalcFinalAmount);
+  capExchangeRate.addEventListener('input', recalcFinalAmount);
+
+  // --- Save ---
+  document.getElementById('btnCapSave').addEventListener('click', function () {
+    var errBox = document.getElementById('capError');
+    errBox.style.display = 'none';
+
+    if (!capUploadedFile) {
+      errBox.textContent = 'Upload the bank slip first.';
+      errBox.style.display = 'block';
+      return;
+    }
+    if (!document.getElementById('capDate').value) {
+      errBox.textContent = 'Date is required.';
+      errBox.style.display = 'block';
+      return;
+    }
+    var amount = parseNumberInput(capAmount.value);
+    if (isNaN(amount) || amount <= 0) {
+      errBox.textContent = 'Transaction Amount is not valid.';
+      errBox.style.display = 'block';
+      return;
+    }
+    var finalAmount = parseNumberInput(capFinalAmountIdr.value);
+    if (isNaN(finalAmount) || finalAmount <= 0) {
+      errBox.textContent = 'Final Amount (IDR) is not valid.';
+      errBox.style.display = 'block';
+      return;
+    }
+
+    var payload = new FormData();
+    payload.append('activity_id', disbState.activity_id);
+    payload.append('cashflow_type', disbState.cashflow);
+    payload.append('transaction_purpose', disbState.purpose);
+    payload.append('transaction_date', document.getElementById('capDate').value);
+    payload.append('source_bank', document.getElementById('capSourceBank').value);
+    payload.append('destination_bank', document.getElementById('capDestBank').value);
+    payload.append('source_account_number', document.getElementById('capSourceAccountNumber').value);
+    payload.append('source_account_name', document.getElementById('capSourceAccountName').value);
+    payload.append('destination_account_number', document.getElementById('capDestAccountNumber').value);
+    payload.append('destination_account_name', document.getElementById('capDestAccountName').value);
+    payload.append('notes', document.getElementById('capNotes').value);
+    payload.append('currency', capCurrency.value.trim().toUpperCase() || 'IDR');
+    payload.append('amount', String(amount));
+    var rate = parseNumberInput(capExchangeRate.value);
+    payload.append('exchange_rate', isNaN(rate) ? '' : String(rate));
+    payload.append('final_amount_idr', String(finalAmount));
+    payload.append('document', capUploadedFile);
+
+    var saveBtn = document.getElementById('btnCapSave');
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving…';
+
+    fetch('ajax/create_disbursement.php', { method: 'POST', body: payload })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save Transaction';
+        if (!res.ok) {
+          errBox.textContent = res.message || 'Failed to save the transaction.';
+          errBox.style.display = 'block';
+          return;
+        }
+        alert('Disbursement saved.');
+        showOnlyView(viewEmpty);
+        show(entryOverlay);
+      })
+      .catch(function () {
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save Transaction';
+        errBox.textContent = 'Connection error while saving.';
+        errBox.style.display = 'block';
+      });
   });
 
   document.getElementById('btnOpenCustomerList').addEventListener('click', function () {
