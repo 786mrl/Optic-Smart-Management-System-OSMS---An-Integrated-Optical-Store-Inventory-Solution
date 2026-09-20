@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Sep 18, 2026 at 06:01 PM
+-- Generation Time: Sep 20, 2026 at 10:06 AM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -84,6 +84,7 @@ CREATE TABLE `customers` (
   `phone_number` varchar(30) NOT NULL,
   `total_inflow` decimal(15,2) NOT NULL DEFAULT 0.00,
   `total_outflow` decimal(15,2) NOT NULL DEFAULT 0.00,
+  `total_paid` decimal(15,2) NOT NULL DEFAULT 0.00,
   `profit` decimal(15,2) NOT NULL DEFAULT 0.00,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
@@ -92,8 +93,8 @@ CREATE TABLE `customers` (
 -- Dumping data for table `customers`
 --
 
-INSERT INTO `customers` (`id`, `year`, `customer_name`, `phone_number`, `total_inflow`, `total_outflow`, `profit`, `created_at`) VALUES
-(1, 2026, 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', '+6281265472547', 0.00, 0.00, 0.00, '2026-09-18 10:55:33');
+INSERT INTO `customers` (`id`, `year`, `customer_name`, `phone_number`, `total_inflow`, `total_outflow`, `total_paid`, `profit`, `created_at`) VALUES
+(1, 2026, 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', '+6281265472547', 0.00, 0.00, 0.00, 0.00, '2026-09-18 10:55:33');
 
 -- --------------------------------------------------------
 
@@ -171,7 +172,7 @@ CREATE TABLE `logistics` (
 
 INSERT INTO `logistics` (`id`, `activity_id`, `incoming_date`, `primary_qty`, `primary_unit_label`, `primary_unit_weight_kg`, `remaining_primary_qty`, `total_taken_qty`, `secondary_unit_label`, `secondary_unit_weight_kg`, `secondary_ratio_per_primary`, `created_by`, `created_at`, `updated_at`) VALUES
 (2, 4, NULL, 1500.00, 'MASTER CARTON', 12.000, 1500.00, 0.00, 'BABY CARTON', 3.000, 4.000, 1, '2026-09-18 20:06:51', '2026-09-18 20:06:51'),
-(3, 1, NULL, 2500.00, 'MASTER CARTON', 10.000, 2500.00, 0.00, 'NO PRIMARY CARTON', 10.000, 1.000, 1, '2026-09-18 20:25:26', '2026-09-18 20:25:26');
+(3, 1, NULL, 5000.00, 'MASTER CARTON', 10.000, 5000.00, 0.00, 'NO PRIMARY CARTON', 10.000, 1.000, 1, '2026-09-18 20:25:26', '2026-09-20 10:55:56');
 
 -- --------------------------------------------------------
 
@@ -223,6 +224,49 @@ CREATE TABLE `logistic_movements` (
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `transactions`
+--
+
+CREATE TABLE `transactions` (
+  `id` int(10) UNSIGNED NOT NULL,
+  `category` enum('disbursement','other') NOT NULL,
+  `transaction_date` date NOT NULL,
+  `source_bank` varchar(100) NOT NULL DEFAULT '',
+  `destination_bank` varchar(100) NOT NULL DEFAULT '',
+  `source_account_number` varchar(60) NOT NULL DEFAULT '',
+  `source_account_name` varchar(150) NOT NULL DEFAULT '',
+  `destination_account_number` varchar(60) NOT NULL DEFAULT '',
+  `destination_account_name` varchar(150) NOT NULL DEFAULT '',
+  `notes` varchar(500) NOT NULL DEFAULT '',
+  `currency` varchar(10) NOT NULL DEFAULT 'IDR',
+  `amount` decimal(18,2) NOT NULL,
+  `exchange_rate` decimal(18,6) DEFAULT NULL,
+  `final_amount_idr` decimal(18,2) NOT NULL,
+  `document_path` varchar(255) NOT NULL,
+  `document_original_name` varchar(255) NOT NULL,
+  `created_by` int(10) UNSIGNED DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `transaction_disbursements`
+--
+
+CREATE TABLE `transaction_disbursements` (
+  `id` int(10) UNSIGNED NOT NULL,
+  `transaction_id` int(10) UNSIGNED NOT NULL,
+  `activity_id` int(10) UNSIGNED NOT NULL,
+  `cashflow_type` enum('inflow','outflow','in-out') NOT NULL,
+  `transaction_purpose` varchar(255) NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `users`
 --
 
@@ -243,7 +287,7 @@ CREATE TABLE `users` (
 --
 
 INSERT INTO `users` (`user_id`, `username`, `password_hash`, `role`, `is_approved`, `created_at`, `last_login`, `session_token`, `session_expires`) VALUES
-(1, 'Rais786', '$2y$10$QciWVGPK9aGHjy05rBoXgOWfCAesfocowc0vt4QCMHVeVzsVuGDS6', 'admin', 1, '2026-09-10 21:34:57', '2026-09-18 16:29:28', '976f924ee0dc74015e751a152c3a4f1ff98e55b148719f8ba9160c669cd66c5c', '2026-09-19 00:29:28');
+(1, 'Rais786', '$2y$10$QciWVGPK9aGHjy05rBoXgOWfCAesfocowc0vt4QCMHVeVzsVuGDS6', 'admin', 1, '2026-09-10 21:34:57', '2026-09-20 05:52:37', NULL, NULL);
 
 --
 -- Indexes for dumped tables
@@ -312,6 +356,22 @@ ALTER TABLE `logistic_movements`
   ADD KEY `idx_invoice` (`invoice_id`);
 
 --
+-- Indexes for table `transactions`
+--
+ALTER TABLE `transactions`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_txn_date` (`transaction_date`),
+  ADD KEY `idx_txn_category` (`category`);
+
+--
+-- Indexes for table `transaction_disbursements`
+--
+ALTER TABLE `transaction_disbursements`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uq_txn` (`transaction_id`),
+  ADD KEY `idx_activity` (`activity_id`);
+
+--
 -- Indexes for table `users`
 --
 ALTER TABLE `users`
@@ -368,6 +428,18 @@ ALTER TABLE `logistic_documents`
 -- AUTO_INCREMENT for table `logistic_movements`
 --
 ALTER TABLE `logistic_movements`
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `transactions`
+--
+ALTER TABLE `transactions`
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `transaction_disbursements`
+--
+ALTER TABLE `transaction_disbursements`
   MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --

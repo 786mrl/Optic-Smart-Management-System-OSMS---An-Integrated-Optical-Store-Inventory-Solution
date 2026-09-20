@@ -252,8 +252,8 @@ $currentYear     = date('Y');
   <style>
     /* Distinct from .btn-secondary on purpose — that one blends into the
        card background (neomorphic, same bg-surface). This is an outlined
-       accent button, small, and hidden until its field actually has a
-       value (only useful once there's something to re-block). */
+       accent button, small, and hidden until the user focuses its field to
+       type manually (every field has one; JS toggles .visible). */
     .btn-cap-scan {
       display: none;
       flex-shrink: 0;
@@ -274,21 +274,29 @@ $currentYear     = date('Y');
   <div class="form-group">
     <div class="label">Bank Slip (PDF or Image)</div>
     <input type="file" class="input" id="capFileInput" accept="application/pdf,image/*">
+    <button type="button" class="btn btn-secondary" id="btnCapOpenViewer" style="display:none; margin-top:var(--space-2);">View Document</button>
   </div>
 
-  <div id="capViewerWrap" style="display:none; margin-bottom:var(--space-4);">
-    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:var(--space-2);">
-      <div class="empty-sub" id="capPageInfo"></div>
-      <div style="display:flex; gap:var(--space-2);">
-        <button type="button" class="btn btn-secondary" id="btnCapPrevPage" style="display:none;">Prev Page</button>
-        <button type="button" class="btn btn-secondary" id="btnCapNextPage" style="display:none;">Next Page</button>
+  <!-- Fullscreen document viewer (moved to <body> by JS so no ancestor can
+       clip it). Shown after upload, when re-scanning a field, or via "View Document". -->
+  <div id="capViewerWrap" class="cap-viewer" style="display:none;">
+    <div class="cap-viewer-bar">
+      <div class="cap-viewer-info" id="capPageInfo"></div>
+      <div class="cap-viewer-controls">
+        <button type="button" class="btn btn-secondary" id="btnCapPrevPage" style="display:none;">Prev</button>
+        <button type="button" class="btn btn-secondary" id="btnCapNextPage" style="display:none;">Next</button>
+        <button type="button" class="btn btn-secondary" id="btnCapZoomOut" aria-label="Zoom out">&minus;</button>
+        <button type="button" class="btn btn-secondary" id="btnCapZoomFit" aria-label="Reset zoom" style="min-width:64px;"><span id="capZoomLabel">100%</span></button>
+        <button type="button" class="btn btn-secondary" id="btnCapZoomIn" aria-label="Zoom in">+</button>
+        <button type="button" class="btn btn-secondary" id="btnCapFields">Fields</button>
+        <button type="button" class="btn btn-primary" id="btnCapViewerClose">Close</button>
       </div>
     </div>
-    <div style="position:relative; overflow:auto; max-height:480px; border-radius:var(--radius-md); background:var(--bg-recessed);">
-      <canvas id="capCanvas" style="display:block; max-width:100%; cursor:crosshair;"></canvas>
+    <div class="cap-viewer-hint" id="capBlockHint" style="display:none;"></div>
+    <div class="cap-viewer-hint" id="capOcrBusy" style="display:none;">Reading selection…</div>
+    <div class="cap-viewer-stage" id="capStage">
+      <canvas id="capCanvas"></canvas>
     </div>
-    <div class="empty-sub" id="capBlockHint" style="display:none; color:var(--accent); margin-top:var(--space-2);"></div>
-    <div class="empty-sub" id="capOcrBusy" style="display:none; margin-top:var(--space-2);">Reading selection…</div>
   </div>
 
   <div class="form-group">
@@ -318,7 +326,7 @@ $currentYear     = date('Y');
   <div class="form-group">
     <div class="label">Source Account Number</div>
     <div style="display:flex; gap:var(--space-2);">
-      <input type="text" class="input" id="capSourceAccountNumber" style="flex:1;">
+      <input type="text" class="input input-uppercase" id="capSourceAccountNumber" style="flex:1;">
       <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="capSourceAccountNumber" data-scan-label="Source Account Number">Scan</button>
     </div>
   </div>
@@ -334,7 +342,7 @@ $currentYear     = date('Y');
   <div class="form-group">
     <div class="label">Destination Account Number</div>
     <div style="display:flex; gap:var(--space-2);">
-      <input type="text" class="input" id="capDestAccountNumber" style="flex:1;">
+      <input type="text" class="input input-uppercase" id="capDestAccountNumber" style="flex:1;">
       <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="capDestAccountNumber" data-scan-label="Destination Account Number">Scan</button>
     </div>
   </div>
@@ -350,7 +358,7 @@ $currentYear     = date('Y');
   <div class="form-group">
     <div class="label">Notes (as written on the slip)</div>
     <div style="display:flex; gap:var(--space-2);">
-      <input type="text" class="input" id="capNotes" style="flex:1;">
+      <input type="text" class="input input-uppercase" id="capNotes" style="flex:1;">
       <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="capNotes" data-scan-label="Notes">Scan</button>
     </div>
   </div>
@@ -683,14 +691,21 @@ $currentYear     = date('Y');
       <div class="modal-title">Disbursement — Activity Code</div>
     </div>
     <div class="modal-body">
-      <div class="accordion-list" id="disbActivityList" style="max-height:340px; overflow-y:auto;"></div>
+      <div class="form-group" id="disbActivityGroup">
+        <div class="label">Activity Code</div>
+        <select class="select" id="disbActivitySelect">
+          <option value="">-- select activity code --</option>
+        </select>
+      </div>
       <div class="empty-state" id="disbActivityEmpty" style="display:none;">
         <div class="empty-title">No activity codes</div>
         <div class="empty-sub">This department has no activity codes yet. Create one first.</div>
       </div>
+      <div class="empty-sub" id="disbActivityError" style="display:none; color:var(--danger);"></div>
     </div>
     <div class="modal-footer">
       <button type="button" class="btn btn-secondary" id="btnDisbActivityBack">Back</button>
+      <button type="button" class="btn btn-primary" id="btnDisbActivityNext">Next</button>
     </div>
   </div>
 </div>
@@ -717,7 +732,7 @@ $currentYear     = date('Y');
       </div>
       <div class="form-group">
         <div class="label">Transaction Purpose</div>
-        <textarea class="input" id="disbPurpose" rows="3" maxlength="255" placeholder="What is this disbursement actually for?"></textarea>
+        <textarea class="input input-uppercase" id="disbPurpose" rows="3" maxlength="255" placeholder="What is this disbursement actually for?"></textarea>
         <div class="empty-sub">This is the real purpose — separate from whatever notes end up on the bank slip.</div>
       </div>
       <div class="empty-sub" id="disbDetailsError" style="display:none; color:var(--danger);"></div>
@@ -748,6 +763,50 @@ $currentYear     = date('Y');
     </div>
   </div>
 </div>
+
+<style>
+  /* Visual side of the uppercase rule; the value itself is forced by JS + server. */
+  .input-uppercase { text-transform: uppercase; }
+
+  /* Fullscreen slip viewer. JS toggles display between none and flex. */
+  .cap-viewer {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    z-index: 2000;
+    flex-direction: column;
+    background: var(--bg-recessed);
+  }
+  .cap-viewer-bar {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    padding-top: calc(var(--space-2) + env(safe-area-inset-top, 0px));
+    background: var(--bg-surface);
+  }
+  .cap-viewer-info { font-weight: 600; font-size: var(--text-sm); }
+  .cap-viewer-controls { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+  .cap-viewer-controls .btn {
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--text-sm);
+    justify-content: center;
+  }
+  .cap-viewer-hint {
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--text-sm);
+    color: var(--accent);
+    background: var(--bg-surface);
+  }
+  .cap-viewer-stage {
+    flex: 1 1 auto; min-height: 0;
+    overflow: auto; overscroll-behavior: contain;
+    padding: 8px;
+  }
+  .cap-viewer-stage canvas {
+    display: block; margin: 0 auto; max-width: none;
+    cursor: crosshair; touch-action: manipulation;
+  }
+  /* The field picker must sit above the fullscreen viewer. */
+  #capFieldPickerOverlay { z-index: 2100 !important; }
+</style>
 
 <script>
 (function () {
@@ -954,51 +1013,39 @@ $currentYear     = date('Y');
   // activity_name, activity_code, department, department_key, cashflow,
   // relative_path) instead of hitting a separate endpoint.
   function renderDisbActivityList() {
-    var listEl  = document.getElementById('disbActivityList');
-    var emptyEl = document.getElementById('disbActivityEmpty');
-    listEl.innerHTML = '';
+    var selectEl = document.getElementById('disbActivitySelect');
+    var groupEl  = document.getElementById('disbActivityGroup');
+    var emptyEl  = document.getElementById('disbActivityEmpty');
+    var errEl    = document.getElementById('disbActivityError');
+    var nextBtn  = document.getElementById('btnDisbActivityNext');
+    errEl.style.display = 'none';
+    selectEl.innerHTML = '<option value="">-- select activity code --</option>';
+    disbActivityById = {};
 
     function paint(rows) {
       var filtered = (rows || []).filter(function (a) {
         return a.department_key === disbState.department_key;
       });
       if (filtered.length === 0) {
-        listEl.style.display = 'none';
+        groupEl.style.display = 'none';
         emptyEl.style.display = 'block';
+        nextBtn.disabled = true;
         return;
       }
-      listEl.style.display = 'block';
+      groupEl.style.display = 'block';
       emptyEl.style.display = 'none';
+      nextBtn.disabled = false;
       filtered.forEach(function (a) {
-        var row = document.createElement('div');
-        row.className = 'card';
-        row.style.cssText = 'padding:var(--space-3); display:flex; align-items:center; justify-content:space-between; gap:var(--space-2); cursor:pointer; margin-bottom:var(--space-2);';
-
-        var label = document.createElement('div');
-        var name = document.createElement('div');
-        name.style.fontWeight = '600';
-        name.textContent = a.activity_name;
-        var code = document.createElement('div');
-        code.className = 'empty-sub';
-        code.textContent = a.activity_code + ' \u00b7 ' + a.cashflow;
-        label.appendChild(name);
-        label.appendChild(code);
-
-        row.appendChild(label);
-        row.addEventListener('click', function () {
-          disbState.activity_id = a.id;
-          disbState.activity_name = a.activity_name;
-          disbState.activity_code = a.activity_code;
-          disbState.cashflow = a.cashflow; // default, still editable in the next step
-          hide(disbActivityOverlay);
-          document.getElementById('disbSelectedActivityLabel').value = a.activity_code + ' \u2014 ' + a.activity_name;
-          document.getElementById('disbCashflow').value = a.cashflow;
-          document.getElementById('disbPurpose').value = disbState.purpose || '';
-          document.getElementById('disbDetailsError').style.display = 'none';
-          show(disbDetailsOverlay);
-        });
-        listEl.appendChild(row);
+        disbActivityById[a.id] = a;
+        var opt = document.createElement('option');
+        opt.value = a.id;
+        opt.textContent = a.activity_code + ' \u2014 ' + a.activity_name + ' (' + a.cashflow + ')';
+        selectEl.appendChild(opt);
       });
+      // Coming back from the next step -> keep what was chosen.
+      if (disbState.activity_id && disbActivityById[disbState.activity_id]) {
+        selectEl.value = String(disbState.activity_id);
+      }
     }
 
     if (typeof activityListCache !== 'undefined' && activityListCache && activityListCache.length) {
@@ -1007,6 +1054,28 @@ $currentYear     = date('Y');
       loadActivityList().then(function () { paint(activityListCache || []); });
     }
   }
+  var disbActivityById = {};
+
+  document.getElementById('btnDisbActivityNext').addEventListener('click', function () {
+    var errEl = document.getElementById('disbActivityError');
+    var a = disbActivityById[document.getElementById('disbActivitySelect').value];
+    if (!a) {
+      errEl.textContent = 'Please select an Activity Code.';
+      errEl.style.display = 'block';
+      return;
+    }
+    errEl.style.display = 'none';
+    disbState.activity_id = a.id;
+    disbState.activity_name = a.activity_name;
+    disbState.activity_code = a.activity_code;
+    disbState.cashflow = a.cashflow; // default, still editable in the next step
+    hide(disbActivityOverlay);
+    document.getElementById('disbSelectedActivityLabel').value = a.activity_code + ' \u2014 ' + a.activity_name;
+    document.getElementById('disbCashflow').value = a.cashflow;
+    document.getElementById('disbPurpose').value = disbState.purpose || '';
+    document.getElementById('disbDetailsError').style.display = 'none';
+    show(disbDetailsOverlay);
+  });
 
   document.getElementById('btnDisbActivityBack').addEventListener('click', function () {
     hide(disbActivityOverlay);
@@ -1029,7 +1098,7 @@ $currentYear     = date('Y');
       return;
     }
     disbState.cashflow = document.getElementById('disbCashflow').value;
-    disbState.purpose = purpose;
+    disbState.purpose = purpose.toUpperCase();
     hide(disbDetailsOverlay);
     resetCaptureForm();
     showOnlyView(viewDisbursementCapture);
@@ -1085,6 +1154,10 @@ $currentYear     = date('Y');
 
   var capFileInput   = document.getElementById('capFileInput');
   var capViewerWrap  = document.getElementById('capViewerWrap');
+  document.body.appendChild(capViewerWrap); // fullscreen: keep it out of any clipped/transformed ancestor
+  var capStage       = document.getElementById('capStage');
+  var capZoomLabel   = document.getElementById('capZoomLabel');
+  var btnCapOpenViewer = document.getElementById('btnCapOpenViewer');
   var capCanvas      = document.getElementById('capCanvas');
   var capCtx         = capCanvas.getContext('2d');
   var capPageInfo    = document.getElementById('capPageInfo');
@@ -1127,6 +1200,8 @@ $currentYear     = date('Y');
     if (tapTimer) clearTimeout(tapTimer);
     capViewerWrap.style.display = 'none';
     capBlockHint.style.display = 'none';
+    capZoom = 1;
+    btnCapOpenViewer.style.display = 'none';
     hide(capFieldPickerOverlay);
     capCtx.clearRect(0, 0, capCanvas.width, capCanvas.height);
     ['capDate', 'capSourceBank', 'capDestBank', 'capSourceAccountNumber',
@@ -1145,6 +1220,8 @@ $currentYear     = date('Y');
     var file = capFileInput.files[0];
     if (!file) return;
     capUploadedFile = file;
+    capZoom = 1;
+    btnCapOpenViewer.style.display = 'inline-flex';
     document.getElementById('capError').style.display = 'none';
 
     ensureCaptureLibs().then(function () {
@@ -1173,7 +1250,7 @@ $currentYear     = date('Y');
           capCanvas.width = img.naturalWidth;
           capCanvas.height = img.naturalHeight;
           capCtx.drawImage(img, 0, 0);
-          capViewerWrap.style.display = 'block';
+          openCapViewer();
           updateCapPageControls();
           openFieldPicker();
         };
@@ -1185,14 +1262,69 @@ $currentYear     = date('Y');
     });
   });
 
+  // ---- Fullscreen viewer: open / zoom / close ----
+  var capZoom = 1; // 1 = fit to viewer width
+  var CAP_ZOOM_MIN = 0.5, CAP_ZOOM_MAX = 4, CAP_ZOOM_STEP = 0.25;
+
+  function applyCapZoom() {
+    var stageW = capStage.clientWidth;
+    if (!stageW) return; // viewer is hidden, nothing to size yet
+    var fitW = Math.max(200, stageW - 16);
+    capCanvas.style.width = Math.round(fitW * capZoom) + 'px';
+    capCanvas.style.height = 'auto';
+    capZoomLabel.textContent = Math.round(capZoom * 100) + '%';
+  }
+
+  function openCapViewer() {
+    capViewerWrap.style.display = 'flex';
+    applyCapZoom();
+  }
+
+  function setCapZoom(next) {
+    next = Math.min(CAP_ZOOM_MAX, Math.max(CAP_ZOOM_MIN, next));
+    if (next === capZoom) return;
+    // Keep whatever is at the centre of the view roughly in place.
+    var cx = (capStage.scrollLeft + capStage.clientWidth / 2) / Math.max(1, capStage.scrollWidth);
+    var cy = (capStage.scrollTop + capStage.clientHeight / 2) / Math.max(1, capStage.scrollHeight);
+    capZoom = next;
+    applyCapZoom();
+    capStage.scrollLeft = cx * capStage.scrollWidth - capStage.clientWidth / 2;
+    capStage.scrollTop = cy * capStage.scrollHeight - capStage.clientHeight / 2;
+  }
+
+  document.getElementById('btnCapZoomIn').addEventListener('click', function () { setCapZoom(capZoom + CAP_ZOOM_STEP); });
+  document.getElementById('btnCapZoomOut').addEventListener('click', function () { setCapZoom(capZoom - CAP_ZOOM_STEP); });
+  document.getElementById('btnCapZoomFit').addEventListener('click', function () { setCapZoom(1); });
+  window.addEventListener('resize', function () {
+    if (capViewerWrap.style.display === 'flex') applyCapZoom();
+  });
+
+  // Closes the viewer and cancels any half-finished "arm a field" state.
+  function closeCapViewer() {
+    hide(capFieldPickerOverlay);
+    capViewerWrap.style.display = 'none';
+    armedScanField = null;
+    scanTriggerSource = null;
+    blockModeArmed = false;
+    capCanvas.style.cursor = '';
+    tapCount = 0;
+    if (tapTimer) clearTimeout(tapTimer);
+    capBlockHint.style.display = 'none';
+  }
+  document.getElementById('btnCapViewerClose').addEventListener('click', closeCapViewer);
+  btnCapOpenViewer.addEventListener('click', function () { if (capUploadedFile) openCapViewer(); });
+  document.getElementById('btnCapFields').addEventListener('click', function () {
+    if (!armedScanField) openFieldPicker();
+  });
+
   function renderCapPage(openPickerAfter) {
     if (!capDoc) return;
     capDoc.getPage(capCurrentPage).then(function (page) {
-      var viewport = page.getViewport({ scale: 1.5 });
+      var viewport = page.getViewport({ scale: 2 }); // higher native resolution: sharper zoom + better OCR crops
       capCanvas.width = viewport.width;
       capCanvas.height = viewport.height;
       page.render({ canvasContext: capCtx, viewport: viewport }).promise.then(function () {
-        capViewerWrap.style.display = 'block';
+        openCapViewer();
         updateCapPageControls();
         if (openPickerAfter) openFieldPicker();
       });
@@ -1229,20 +1361,32 @@ $currentYear     = date('Y');
     return f ? f.btn : null;
   }
 
+  // Scan buttons are no longer tied to "field has a value". Every field has
+  // one, but it stays hidden until the user focuses that field to type
+  // manually (see focus/blur handlers below). This function now just hides it.
   function updateScanButtonVisibility(fieldId) {
     var btn = scanButtonFor(fieldId);
-    var el = document.getElementById(fieldId);
-    if (!btn || !el) return;
-    btn.classList.toggle('visible', el.value.trim() !== '');
+    if (btn) btn.classList.remove('visible');
   }
 
   // Reveal each field's Scan button the moment it has a value — whether
   // typed manually or filled by OCR — and keep it hidden while empty
   // (nothing to re-block yet).
   capFields.forEach(function (f) {
-    document.getElementById(f.id).addEventListener('input', function () {
-      updateScanButtonVisibility(f.id);
+    var el = document.getElementById(f.id);
+    el.addEventListener('focus', function () {
+      capFields.forEach(function (o) { if (o.id !== f.id) o.btn.classList.remove('visible'); });
+      delete f.btn.dataset.keep;
+      f.btn.classList.add('visible');
     });
+    el.addEventListener('blur', function () {
+      // Small delay + "keep" flag so tapping the Scan button itself (which
+      // blurs the input first) doesn't make the button vanish before the click lands.
+      setTimeout(function () {
+        if (!f.btn.dataset.keep && document.activeElement !== el) f.btn.classList.remove('visible');
+      }, 250);
+    });
+    f.btn.addEventListener('pointerdown', function () { f.btn.dataset.keep = '1'; });
   });
 
   // --- Field Picker: opens right after upload, and again after each scan,
@@ -1282,23 +1426,15 @@ $currentYear     = date('Y');
     show(capFieldPickerOverlay);
   }
 
-  document.getElementById('btnCapFieldPickerDone').addEventListener('click', function () {
-    hide(capFieldPickerOverlay);
-    capViewerWrap.style.display = 'none'; // close the opened document
-    armedScanField = null;
-    scanTriggerSource = null;
-    blockModeArmed = false;
-    capCanvas.style.cursor = '';
-    tapCount = 0;
-    if (tapTimer) clearTimeout(tapTimer);
-    capBlockHint.style.display = 'none';
-  });
+  document.getElementById('btnCapFieldPickerDone').addEventListener('click', closeCapViewer);
 
   // --- Scan buttons next to each field: a targeted re-scan outside the
   // picker flow (e.g. fixing one field that OCR misread). Only visible
   // once that field has a value (see updateScanButtonVisibility above). ---
   capFields.forEach(function (f) {
     f.btn.addEventListener('click', function () {
+      delete f.btn.dataset.keep;
+      f.btn.classList.remove('visible');
       if (!capUploadedFile) {
         document.getElementById('capError').textContent = 'Upload a document first.';
         document.getElementById('capError').style.display = 'block';
@@ -1310,7 +1446,7 @@ $currentYear     = date('Y');
       capCanvas.style.cursor = '';
       capBlockHint.textContent = capBlockHintArmingText(f.label);
       capBlockHint.style.display = 'block';
-      capViewerWrap.style.display = 'block'; // re-open the document for reblocking
+      openCapViewer(); // re-open the document for reblocking
     });
   });
 
@@ -1373,32 +1509,29 @@ $currentYear     = date('Y');
     };
   }
 
-  capCanvas.addEventListener('mousedown', function (e) {
-    if (!armedScanField || !blockModeArmed) return; // still scrolling/hunting, not ready to draw yet
-    dragStart = canvasPointFromEvent(e);
+  // Shared drag logic: mouse and touch both feed beginDrag/moveDrag/endDrag,
+  // so the rubber-band box behaves the same on desktop and on a phone.
+  function beginDrag(pt) {
+    dragStart = pt;
     dragBox = document.createElement('div');
     dragBox.style.cssText = 'position:fixed; border:2px dashed var(--accent); background:rgba(0,120,255,0.15); pointer-events:none; z-index:9999;';
     document.body.appendChild(dragBox);
-    positionDragBox(dragStart.clientX, dragStart.clientY, dragStart.clientX, dragStart.clientY);
-    e.preventDefault();
-  });
-
-  function positionDragBox(x1, y1, x2, y2) {
-    var left = Math.min(x1, x2), top = Math.min(y1, y2);
-    dragBox.style.left = left + 'px';
-    dragBox.style.top = top + 'px';
-    dragBox.style.width = Math.abs(x2 - x1) + 'px';
-    dragBox.style.height = Math.abs(y2 - y1) + 'px';
+    positionDragBox(pt.clientX, pt.clientY, pt.clientX, pt.clientY);
   }
 
-  document.addEventListener('mousemove', function (e) {
+  function moveDrag(clientX, clientY) {
     if (!dragStart || !dragBox) return;
-    positionDragBox(dragStart.clientX, dragStart.clientY, e.clientX, e.clientY);
-  });
+    positionDragBox(dragStart.clientX, dragStart.clientY, clientX, clientY);
+  }
 
-  document.addEventListener('mouseup', function (e) {
+  function cancelDrag() {
+    if (dragBox && dragBox.parentNode) dragBox.parentNode.removeChild(dragBox);
+    dragBox = null;
+    dragStart = null;
+  }
+
+  function endDrag(end) {
     if (!dragStart || !dragBox) return;
-    var end = canvasPointFromEvent(e);
     document.body.removeChild(dragBox);
     dragBox = null;
 
@@ -1408,9 +1541,55 @@ $currentYear     = date('Y');
     var h = Math.abs(end.y - dragStart.y);
     dragStart = null;
 
-    if (w < 6 || h < 6) return; // treat as an accidental click, not a real box
+    if (w < 6 || h < 6) return; // treat as an accidental click/tap, not a real box
     runOcrOnRegion(x, y, w, h);
+  }
+
+  function positionDragBox(x1, y1, x2, y2) {
+    var left = Math.min(x1, x2), top = Math.min(y1, y2);
+    dragBox.style.left = left + 'px';
+    dragBox.style.top = top + 'px';
+    dragBox.style.width = Math.abs(x2 - x1) + 'px';
+    dragBox.style.height = Math.abs(y2 - y1) + 'px';
+  }
+
+  // --- Mouse ---
+  capCanvas.addEventListener('mousedown', function (e) {
+    if (!armedScanField || !blockModeArmed) return; // still scrolling/hunting, not ready to draw yet
+    beginDrag(canvasPointFromEvent(e));
+    e.preventDefault();
   });
+  document.addEventListener('mousemove', function (e) { moveDrag(e.clientX, e.clientY); });
+  document.addEventListener('mouseup', function (e) {
+    if (!dragStart || !dragBox) return;
+    endDrag(canvasPointFromEvent(e));
+  });
+
+  // --- Touch ---
+  // Before block mode is armed (double-tap), touches are left alone so the
+  // page/viewer can still scroll and pinch-zoom. Once armed, touchstart is
+  // preventDefault()'d (needs passive:false) so the drag draws a box instead
+  // of scrolling the page.
+  capCanvas.addEventListener('touchstart', function (e) {
+    if (!armedScanField || !blockModeArmed || e.touches.length !== 1) return;
+    beginDrag(canvasPointFromEvent(e.touches[0]));
+    e.preventDefault();
+  }, { passive: false });
+
+  document.addEventListener('touchmove', function (e) {
+    if (!dragStart || !dragBox || e.touches.length < 1) return;
+    moveDrag(e.touches[0].clientX, e.touches[0].clientY);
+    e.preventDefault(); // stop the page from scrolling while a box is being drawn
+  }, { passive: false });
+
+  document.addEventListener('touchend', function (e) {
+    if (!dragStart || !dragBox) return;
+    var t = e.changedTouches && e.changedTouches[0];
+    if (!t) { cancelDrag(); return; }
+    endDrag(canvasPointFromEvent(t));
+  });
+
+  document.addEventListener('touchcancel', cancelDrag);
 
   function runOcrOnRegion(x, y, w, h) {
     var fieldId = armedScanField;
@@ -1473,17 +1652,28 @@ $currentYear     = date('Y');
       el.value = isNaN(parsed) ? '' : formatNumberInput(String(parsed));
       recalcFinalAmount();
     } else if (fieldId === 'capCurrency') {
-      el.value = rawText.replace(/[^A-Za-z]/g, '').toUpperCase().slice(0, 10);
+      el.value = normalizeCurrency(rawText);
       toggleExchangeRateVisibility();
     } else {
-      el.value = rawText.replace(/\s+/g, ' ').trim();
+      el.value = rawText.replace(/\s+/g, ' ').trim().toUpperCase();
     }
     updateScanButtonVisibility(fieldId);
   }
 
   // --- Currency / amount / final amount interplay ---
+  // Slips print local symbols (RM, Rp); we always store the ISO 4217 code.
+  var CURRENCY_ALIASES = {
+    'RM': 'MYR', 'RINGGIT': 'MYR', 'MYR': 'MYR',
+    'RP': 'IDR', 'RUPIAH': 'IDR', 'IDR': 'IDR',
+    'US$': 'USD', 'USD': 'USD'
+  };
+  function normalizeCurrency(raw) {
+    var key = String(raw || '').toUpperCase().replace(/[\s.]/g, '');
+    if (CURRENCY_ALIASES[key]) return CURRENCY_ALIASES[key];
+    return key.replace(/[^A-Z]/g, '').slice(0, 10);
+  }
   function toggleExchangeRateVisibility() {
-    var isIdr = capCurrency.value.trim().toUpperCase() === 'IDR';
+    var isIdr = normalizeCurrency(capCurrency.value) === 'IDR';
     capExchangeRateGroup.style.display = isIdr ? 'none' : 'block';
     recalcFinalAmount();
   }
@@ -1491,7 +1681,7 @@ $currentYear     = date('Y');
   function recalcFinalAmount() {
     var amount = parseNumberInput(capAmount.value);
     if (isNaN(amount)) return;
-    var isIdr = capCurrency.value.trim().toUpperCase() === 'IDR';
+    var isIdr = normalizeCurrency(capCurrency.value) === 'IDR';
     if (isIdr) {
       capFinalAmountIdr.value = formatNumberInput(String(amount));
     } else {
@@ -1503,6 +1693,12 @@ $currentYear     = date('Y');
   }
 
   capCurrency.addEventListener('input', toggleExchangeRateVisibility);
+  // Manual typing: convert RM -> MYR, Rp -> IDR once the user leaves the field
+  // (not per keystroke, so e.g. typing "RMB" isn't hijacked at "RM").
+  capCurrency.addEventListener('change', function () {
+    capCurrency.value = normalizeCurrency(capCurrency.value);
+    toggleExchangeRateVisibility();
+  });
   capAmount.addEventListener('input', recalcFinalAmount);
   capExchangeRate.addEventListener('input', recalcFinalAmount);
 
@@ -1546,7 +1742,7 @@ $currentYear     = date('Y');
     payload.append('destination_account_number', document.getElementById('capDestAccountNumber').value);
     payload.append('destination_account_name', document.getElementById('capDestAccountName').value);
     payload.append('notes', document.getElementById('capNotes').value);
-    payload.append('currency', capCurrency.value.trim().toUpperCase() || 'IDR');
+    payload.append('currency', normalizeCurrency(capCurrency.value) || 'IDR');
     payload.append('amount', String(amount));
     var rate = parseNumberInput(capExchangeRate.value);
     payload.append('exchange_rate', isNaN(rate) ? '' : String(rate));

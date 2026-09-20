@@ -453,7 +453,7 @@ bisa dipakai ulang di menu lain juga.
     masing-masing (Activity Code & Customer List sama-sama benar, dan
     accordion-list lain di masa depan otomatis ikut benar juga).
 
-- Belum: isi konten menu Report, Input Transaction (baru placeholder alert),
+- Belum: isi konten menu Report, Input Transaction untuk kategori Sales & Other (Disbursement sudah, lihat poin Transaction Logging),
   rancang tabel DB untuk Report, program terpisah untuk mengisi Total
   Inflow/Outflow/Profit di tabel `customers`, dan pengaturan
   `storage/recycle/` (retention/cleanup/siapa yang boleh lihat isinya) —
@@ -1403,7 +1403,222 @@ bisa dipakai ulang di menu lain juga.
     (bukan nested list per produk), karena itu yang di-render ulang
     `loadItemPrices()` setelah save/delete.
 
+- **Transactions — Transaction Logging (Input Transaction)** — mencatat transaksi
+  yang benar-benar berjalan, berdasarkan slip bank atau validasi pihak terkait.
+  **Status (per 20 Sep 2026): Disbursement end-to-end SUDAH JALAN dan sudah
+  dites user** (wizard → scan/manual → simpan ke DB + file slip), termasuk 7
+  perbaikan setelah tes (lihat poin "Perbaikan Disbursement" di bawah). Yang
+  berikutnya: **Sales Transaction** (desain lengkap ada di bawah, belum dibuat).
+  Other masih kosong.
+  - **Pintu masuk**: tombol **Input Transaction** di fly window `#txnEntryOverlay`
+    membuka fly window `#txnCategoryOverlay` dengan 3 opsi: **Disbursement**,
+    **Sales Transaction**, **Other**. Sales & Other masih `alert('coming soon')`.
+  - **Data yang diambil dari slip** (sama untuk semua kategori, dan isi form
+    `#viewDisbursementCapture`): tanggal, bank sumber, bank tujuan, nomor akun
+    sumber, nama akun sumber, nomor akun tujuan, nama akun tujuan, notes (apa
+    yang tertulis di slip), currency, nilai transaksi, nilai tukar (hanya
+    tampil kalau currency bukan IDR), nilai akhir transaksi dalam IDR
+    (auto = amount × rate, tetap bisa diedit; untuk IDR = amount).
+  - **Metode pengambilan data — berurutan: semi-otomatis dulu, manual kalau gagal.**
+    - **Semi-otomatis** = OCR **Tesseract.js di sisi browser** (client-side, bahasa
+      `eng`, v5.0.4 dari cdnjs) + pdf.js 3.11.174 untuk merender PDF ke canvas.
+      Keduanya di-load lazy lewat `ensureCaptureLibs()` (hanya saat form capture
+      dipakai). Tidak ada instalasi apa pun di server.
+    - Alur: upload slip (PDF/gambar) → **field picker** (`#capFieldPickerOverlay`)
+      terbuka otomatis, klik satu field → **double-tap/klik dua kali** pada dokumen
+      untuk mengaktifkan mode blok → **drag kotak** di sekitar nilainya → OCR jalan
+      di potongan itu → hasil dibersihkan `applyOcrResult()` (tanggal → `YYYY-MM-DD`,
+      angka → format koma, currency → huruf besar) → picker terbuka lagi untuk
+      field berikutnya. **Triple-tap = skip field** (tidak ketemu di dokumen).
+    - **Manual** = ketik langsung di field. Hasil OCR **selalu tetap bisa diedit**.
+      Tombol **Scan** kecil ada di semua field tapi tersembunyi; muncul hanya saat
+      field itu di-fokus untuk input manual (untuk scan/scan-ulang field itu).
+    - **Viewer dokumen = layar penuh** (`#capViewerWrap`, `.cap-viewer`, di-move ke
+      `<body>` lewat JS supaya tidak terpotong ancestor). Bar atas: info halaman,
+      Prev/Next, zoom (−, persen/reset, +; 50%–400%, langkah 25%, 100% = pas lebar
+      layar; zoom murni CSS jadi crop OCR tetap dari piksel asli), **Fields**
+      (buka field picker), **Close** (`closeCapViewer()`, sama dengan Done di
+      picker). Tombol **View Document** di bawah input file untuk membuka lagi
+      slip setelah ditutup. PDF dirender skala 2 (naik dari 1.5). Field picker
+      dipaksa `z-index:2100` supaya tampil di atas viewer (`2000`).
+    - **PDF multi-halaman**: tombol Prev/Next Page di viewer. Informasi yang
+      dibutuhkan bisa tersebar di semua halaman (slip 1–3 halaman). Yang disimpan
+      tetap **satu file utuh per transaksi** (bukan per halaman, bukan lebih dari 1 file).
+    - **Touch didukung**: seleksi drag di canvas jalan lewat mouse **dan** touch
+      (`beginDrag/moveDrag/endDrag` dipakai bersama). Sebelum mode blok aktif
+      (double-tap), sentuhan dibiarkan supaya viewer tetap bisa di-scroll/zoom;
+      setelah aktif, `touchstart`/`touchmove` di-`preventDefault()` (listener
+      `passive:false`) supaya geseran menggambar kotak, bukan men-scroll halaman.
+      Canvas diberi `touch-action:manipulation` agar double-tap tidak diambil alih
+      zoom browser. **Belum dites di HP nyata.**
+  - **Disbursement — wizard sebelum capture** (semua fly window, state di JS
+    `disbState`): (1) `#disbDepartmentOverlay` pilih departemen (dari
+    `departments.json`) → (2) `#disbActivityOverlay` **dropdown** activity code
+    departemen itu + tombol Next (reuse `activityListCache`/`list_activity_codes.php`, filter
+    `department_key`) → (3) `#disbDetailsOverlay`: **Cashflow Type**
+    (inflow/outflow/in-out, **default dari `activities.cashflow`**, tetap bisa
+    diubah) dan **Transaction Purpose** (wajib; ini tujuan sebenarnya, **beda dari
+    Notes** di slip yang sering asal tulis) → (4) view capture (scan slip semi-otomatis
+    atau manual) → **Save Transaction** (POST `FormData` ke
+    `ajax/create_disbursement.php`).
+  - **Perbaikan Disbursement setelah dites user (7 poin, semua sudah diterapkan)**:
+    1. **Step Activity Code = `<select>` + tombol Next** (bukan list card lagi),
+       opsi berlabel `{code} — {name} ({cashflow})`, supaya jelas apa yang dipilih.
+    2. **Semua input teks diketik/disimpan HURUF BESAR**: Transaction Purpose,
+       Notes, nomor akun sumber/tujuan ditambah ke class `.input-uppercase`
+       (nama bank/akun sudah sebelumnya); server juga `mb_strtoupper` semuanya.
+    3. **Hasil OCR untuk field teks selalu di-uppercase** di `applyOcrResult()`.
+    4. **Tombol Scan ada di SEMUA field**, tapi tersembunyi; baru muncul saat
+       field itu di-fokus untuk input manual (hanya satu tombol tampil pada satu
+       waktu, hilang saat blur; flag `data-keep` + delay 250ms supaya tap pada
+       tombol tidak hilang duluan). `updateScanButtonVisibility()` sekarang hanya
+       menyembunyikan — tidak lagi tergantung field sudah terisi atau belum.
+    5. **Nama file slip mengikuti Transaction Purpose**: `{purpose_slug}_{Ymd}.{ext}`
+       (huruf kecil, karakter aman, maks 80 char slug; kalau kembar diberi
+       `_2`, `_3`). Nama file asli tetap tersimpan di
+       `transactions.document_original_name`.
+    6. **Currency dinormalisasi ke kode ISO**: `RM`/`RINGGIT`→`MYR`,
+       `Rp`/`RUPIAH`→`IDR`, `US$`→`USD` (`normalizeCurrency()` di JS dan
+       `normalize_currency()` di PHP; tabel alias ada di kedua tempat — tambah
+       alias baru di dua-duanya). Hasil scan langsung dinormalisasi; ketikan manual
+       dinormalisasi saat keluar dari field (event `change`), dan lagi saat Save.
+    7. **Viewer dokumen layar penuh + zoom** (lihat poin Viewer di atas).
+  - **Penyimpanan Disbursement (BARU — `sql/lisani_aos_transactions.sql` +
+    `ajax/create_disbursement.php`, sudah dijalankan & dites user)**:
+    - **2 tabel**: `transactions` (semua field hasil scan + info dokumen +
+      `category` enum `disbursement`/`other`, jadi tabel yang sama nanti dipakai
+      Other) dan `transaction_disbursements` (khusus disbursement:
+      `transaction_id` UNIQUE, `activity_id`, `cashflow_type`,
+      `transaction_purpose`). Tidak pakai `FOREIGN KEY` eksplisit, sesuai pola
+      tabel lain di project ini (relasi dijaga di PHP).
+    - **Sales Transaction TIDAK memakai tabel `transactions`** sama sekali:
+      order barang cukup `logistic_movements` + `invoices` +
+      `customer_item_prices` + `customers`. Slip/bukti bayar baru relevan saat
+      customer membayar invoice, bukan saat order dicatat.
+    - **File slip** disimpan di
+      `AOS_STORAGE_BASE/{activities.relative_path}disbursement/{Ymd}_{random8}.{ext}`
+      (satu root storage yang sama dengan activity code/customer/logistic).
+      Kolom `transactions.document_path` menyimpan path **relatif terhadap
+      `AOS_STORAGE_BASE`**. Ekstensi yang diizinkan: pdf, jpg, jpeg, png, webp
+      (dicek juga MIME asli via `finfo`), maks 20 MB.
+    - **Urutan simpan**: validasi → pindahkan file → `INSERT transactions` +
+      `INSERT transaction_disbursements` dalam satu DB transaction → kalau
+      gagal, rollback dan file yang sudah dipindah dihapus lagi.
+    - Endpoint memakai pola response `{ok, message}` dan pola anti-notice
+      (`display_errors=0` + `ob_start()` + buang buffer sebelum JSON), belajar
+      dari kasus `manage_packaging_units.php`. Uppercase bank/nama akun juga
+      dipaksa di server (`mb_strtoupper`), konsisten dengan aturan uppercase project.
+    - **Belum ada**: list/preview transaksi yang sudah tersimpan, edit/delete
+      transaksi, dan cara membuka lagi file slip dari UI.
+  - **Sales Transaction — DESAIN (belum dibuat, keputusan sudah disepakati)**:
+    - **2 tab**: (1) input order customer, (2) daftar customer sebagai card
+      collapsible (satu terbuka, lainnya tertutup).
+    - **Tab 1 — urutan input**: pilih **customer** (dari Customer List, bentuk
+      option) → tempel teks pesan WA → parsing → **tanggal pesanan** (default
+      hari ini, bisa diedit) → simpan → fly window konfirmasi berisi detail order.
+    - **Format pesan WA** (urutan bebas, isi tetap sama): nama driver (mis. "Pak
+      Fadlun"), nomor polisi (mis. "BL 8392 N"), dan baris produk + jumlah karton
+      (mis. "Tunis tangkai 500gr 30dus", "20 ajwa", "small deglet 30dus").
+      Nama driver & nomor polisi relatif mudah dikenali; **yang sulit adalah
+      produknya** karena penulisannya bervariasi.
+    - **Pola produk direkam di file JSON per activity code**: tiap activity
+      code menyimpan daftar cara-tulis (alias) yang pernah dipakai customer untuk
+      produk itu. Contoh: activity code 001 (small deglet) menyimpan dua alias
+      "small deglet" dan "deglet kecil". **2 kata kunci**: nama produk & jumlah
+      pengambilan. Alias yang sudah dikenali diurai otomatis; yang belum dikenali
+      memunculkan fly window "maksud baris ini apa?" lalu jawabannya disimpan
+      sebagai alias baru. (Lokasi/struktur file JSON belum dipastikan — usulan:
+      `json_file/order_patterns/{activity_id}.json`, pakai `activity_id` karena
+      nomor activity code reset per departemen+tahun.)
+    - **Penyimpanan order**: 1 order = **1 baris `logistic_movements` per produk**
+      (`movement_type='out'`), diisi customer, driver, nomor polisi, qty karton,
+      **`price`** (harga jual saat barang diambil, snapshot supaya perubahan harga
+      di masa depan tidak mengubah histori) dan **`total_price`** (= qty × price).
+    - **Aturan pemilihan harga**: dari `customer_item_prices` untuk pasangan
+      (customer, produk), ambil baris dengan **`price_date` terbesar yang masih
+      ≤ tanggal pesanan**. Kalau tidak ada harga yang berlaku → order ditolak /
+      diminta isi harga dulu (belum diputuskan tampilannya).
+    - **Efek samping tiap order** (semua dalam **satu DB transaction**):
+      `logistics.remaining_primary_qty` berkurang, `logistics.total_taken_qty`
+      bertambah (kumulatif, **tidak pernah berkurang meski ada retur** — beda dari
+      remaining yang naik-turun), `customers.total_inflow` naik sebesar
+      `total_price` (untuk retur/`in` nanti `total_outflow`), dan
+      `invoices.total_amount` invoice terkait ikut naik.
+    - **`customers.total_paid`** (kolom baru): total yang sudah dibayarkan customer
+      secara keseluruhan (semua invoice). `total_inflow` = total nilai order,
+      `total_outflow` = total nilai barang yang dikembalikan customer.
+    - **Tab 2 — card per customer**: bagian atas = total pengambilan **per
+      produk** (jumlah + nilai transaksi per item), lalu total nilai pengambilan
+      keseluruhan dan yang sudah dibayar. Bagian bawah = tabel riwayat pengambilan
+      **dikelompokkan per invoice**.
+    - **Invoice**: tabel `invoices` sudah ada di DB (`customer_id`,
+      `invoice_number` UNIQUE, `sequence_number`, `period_month`, `period_year`,
+      `status` open/paid, `total_amount`, `paid_amount`, `paid_at`).
+      Format nomor: `[urutan 3 digit]/inv/laj-[inisial customer]/[bulan]/[tahun]`,
+      urutan **di-reset per customer per bulan**, mulai `001`. Invoice `open`
+      dibuat **otomatis saat order pertama masuk** dan customer belum punya invoice
+      open; selama belum lunas, order baru masuk ke invoice open yang sama. Status
+      `paid` **otomatis** saat `paid_amount >= total_amount` — tapi **pencatatan
+      pembayaran customer belum dirancang** (ditunda), jadi untuk sementara belum
+      ada jalan mengubah invoice ke `paid`. Print invoice (desain PDF) dibahas
+      setelah bagian ini beres.
+    - **Perubahan skema untuk ini** (semua ada di `sql/lisani_aos_transactions.sql`,
+      bagian ALTER): `customers.total_paid`, `logistics.total_taken_qty`,
+      `logistic_movements.customer_id/price/total_price/invoice_id`.
+      `customer_item_prices` dan `invoices` **sudah dibuat** di `lisani_aos_db`.
+    - **Keputusan yang sudah dikonfirmasi user**: `[bulan]` di nomor invoice
+      pakai **angka romawi** (I–XII, mis. `001/inv/laj-CMJ/IX/2026`);
+      `[inisial customer]` = huruf pertama tiap kata di `customer_name`; kalau
+      order masuk tapi customer belum punya harga untuk produk itu, **muncul fly
+      window untuk mengisi harga saat itu juga** (harga tersimpan ke
+      `customer_item_prices` dengan `price_date` = tanggal pesanan, lalu order
+      lanjut). Sales Transaction **ditahan** sampai Disbursement selesai dites.
+    - **Catatan DB**: `total_taken_qty`, `logistic_movements.customer_id/price/
+      total_price/invoice_id` ternyata sudah ada dari sesi lama (SQL cuma memberi
+      Note "Duplicate column", bukan error). `idx_mov_customer`/`idx_mov_invoice`
+      mungkin duplikat dari index lama (Note #1831) — cek `SHOW INDEX FROM
+      logistic_movements`, drop yang dobel kalau ada.
+  - **Other**: kosong, belum ada rancangan.
+
 ## Cara lanjut kerja di chat/akun baru
-1. Upload file ini + `index.php` (atau zip `lisani_aos/` lengkap).
-2. Sebutkan menu mana yang mau diisi dan alur kerjanya (proses bisnis).
-3. Kalau tabel DB belum ada, ceritakan datanya seperti apa — akan dirancang skema tabelnya.
+1. Upload **file ini** + file kode yang relevan dengan pekerjaan berikutnya.
+   Untuk lanjut Transactions/Sales: `transaction_content.php` (paling penting),
+   folder `ajax/` yang terkait (minimal `create_disbursement.php`, `list_customers.php`,
+   `list_activity_codes.php`, `list_customer_item_prices.php`,
+   `_require_reverify.php`), `sql/lisani_aos_transactions.sql`, dan
+   `logistic_content.php` kalau menyentuh Logistic. Kalau butuh styling: `theme.css`.
+2. Bilang "lanjutkan dari bagian **Langkah berikutnya** di PROJECT_NOTES".
+3. Kalau tabel DB belum ada, ceritakan datanya — akan dirancang skemanya.
+4. Gaya kerja user: konfirmasi pola verifikasi password sebelum bikin fitur
+   destructive baru (lihat catatan 2 pola), semua kode/identifier Inggris,
+   komunikasi Indonesia, semua input teks bebas uppercase (kecuali yang jadi
+   nama folder), UI berbahasa Inggris.
+
+## Langkah berikutnya (urut, per 20 Sep 2026)
+**A. Sales Transaction** — desain sudah final di poin "Sales Transaction — DESAIN"
+di atas. Urutan pengerjaan yang disarankan:
+1. **Parser pesan WA** + file JSON pola produk per activity code
+   (`json_file/order_patterns/{activity_id}.json` — *usulan, belum disetujui user*).
+   Ekstrak: nama driver, nomor polisi, baris produk + jumlah karton. Baris produk
+   tak dikenal → fly window "maksud baris ini apa?" → simpan alias.
+2. **Endpoint order** (satu DB transaction): pilih harga dari
+   `customer_item_prices` (price_date terbesar ≤ tanggal pesanan; kalau tidak ada →
+   fly window isi harga, simpan ke `customer_item_prices`), insert
+   `logistic_movements` (out, per produk, dengan `price`/`total_price`/`invoice_id`),
+   update `logistics.remaining_primary_qty` (−) & `total_taken_qty` (+),
+   `customers.total_inflow` (+), cari/buat invoice `open` (nomor
+   `[001]/inv/laj-[INISIAL]/[BULAN ROMAWI]/[TAHUN]`, urutan reset per customer per
+   bulan) dan naikkan `invoices.total_amount`.
+3. **UI Tab 1** (input order: customer option → paste WA → tanggal → simpan →
+   fly window konfirmasi detail) dan **Tab 2** (card collapsible per customer:
+   total per produk, total & terbayar, tabel riwayat per invoice).
+4. Tombol Sales Transaction di `#txnCategoryOverlay` (sekarang masih `alert`).
+
+**B. Ditunda / belum dirancang**: pencatatan pembayaran customer (mengisi
+`invoices.paid_amount`, `customers.total_paid`, auto-status `paid`; kemungkinan
+melibatkan scan slip lagi), print invoice (desain PDF), kategori **Other**,
+list/preview/edit/delete transaksi Disbursement yang sudah tersimpan, Report,
+restore/retention untuk `storage/recycle/`, dan program pengisi `customers.profit`.
+
+**C. Rapikan**: cek index dobel di `logistic_movements` (`idx_mov_customer`,
+`idx_mov_invoice` vs index lama; `SHOW INDEX FROM logistic_movements`).
