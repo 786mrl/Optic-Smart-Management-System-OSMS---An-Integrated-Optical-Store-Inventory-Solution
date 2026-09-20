@@ -1483,6 +1483,16 @@ bisa dipakai ulang di menu lain juga.
        alias baru di dua-duanya). Hasil scan langsung dinormalisasi; ketikan manual
        dinormalisasi saat keluar dari field (event `change`), dan lagi saat Save.
     7. **Viewer dokumen layar penuh + zoom** (lihat poin Viewer di atas).
+    8. **Parser tanggal OCR diperluas** (`parseOcrDate()` di `transaction_content.php`):
+       mengenali `15-Jun-2026`, `15 June 2026`, `September 25, 2026`, `25 Agustus
+       2026`, `25 Ogos 2026`, `15/06/2026`, `15.06.26`, `2026-06-15`, `15JUN2026`,
+       `15th June 2026`, `20260615`, plus jam di belakang tanggal diabaikan.
+       Bulan dikenali dari 3 huruf pertama (Inggris/Indonesia/Melayu: Agu/Ags/Ogos,
+       Mei, Mac, Okt, Des, dst). Angka murni dianggap **hari-dulu (D/M/Y)**, kecuali
+       bulan >12 (jadi M/D/Y). Huruf mirip angka (`O`→0, `l`/`I`→1) dikoreksi di
+       token angka. Tahun 2 digit → 20xx. Kalau gagal, field dikosongkan dan
+       muncul pesan "Could not read the date from …" (dulu gagal diam-diam karena
+       `<input type=date>` membuang teks yang tidak valid). Sudah diuji 23 kasus di Node.
   - **Penyimpanan Disbursement (BARU — `sql/lisani_aos_transactions.sql` +
     `ajax/create_disbursement.php`, sudah dijalankan & dites user)**:
     - **2 tabel**: `transactions` (semua field hasil scan + info dokumen +

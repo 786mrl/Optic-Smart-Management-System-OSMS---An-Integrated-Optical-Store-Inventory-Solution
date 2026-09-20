@@ -1631,6 +1631,79 @@ $currentYear     = date('Y');
     }
   }
 
+  // ---- Date parsing for OCR text -------------------------------------------
+  // Banks print dates in many shapes: 15-06-2026, 15-Jun-2026, 15 June 2026,
+  // September 25, 2026, 2026/06/15, 15JUN2026 ... Returns "YYYY-MM-DD" or ''.
+  // Month names are matched on their first 3 letters, English + Indonesian +
+  // Malay (Agu/Ags/Ogos, Mei, Mac, Okt, Des, ...).
+  var MONTH_BY_PREFIX = {
+    jan: 1, feb: 2, mar: 3, mac: 3, apr: 4, may: 5, mei: 5, jun: 6, jul: 7,
+    aug: 8, agu: 8, ags: 8, ogo: 8, sep: 9, oct: 10, okt: 10, nov: 11, dec: 12, des: 12
+  };
+
+  function parseOcrDate(raw) {
+    var t = String(raw || '');
+
+    // OCR often reads digits as letters inside number-like tokens (2O26, 1l).
+    t = t.replace(/\b(?=[0-9OolI]*\d)[0-9OolI]+\b/g, function (tok) {
+      return tok.replace(/[Oo]/g, '0').replace(/[lI]/g, '1');
+    });
+    t = t.toLowerCase()
+         .replace(/(\d)(st|nd|rd|th)\b/g, '$1') // 25th -> 25
+         .replace(/[\r\n,]+/g, ' ');
+
+    function pad(n) { return (n < 10 ? '0' : '') + n; }
+    function build(y, m, d) {
+      y = Number(y); m = Number(m); d = Number(d);
+      if (y < 100) y += 2000;
+      if (y < 1990 || y > 2100 || m < 1 || m > 12 || d < 1) return '';
+      if (d > new Date(y, m, 0).getDate()) return '';
+      return y + '-' + pad(m) + '-' + pad(d);
+    }
+
+    // 1) Month written as a word.
+    var month = 0;
+    var words = t.match(/[a-z]{3,}/g) || [];
+    for (var i = 0; i < words.length && !month; i++) {
+      month = MONTH_BY_PREFIX[words[i].slice(0, 3)] || 0;
+    }
+    if (month) {
+      // Also splits glued forms like 15jun2026 because \d+ ignores the letters.
+      var nums = t.match(/\d+/g) || [];
+      if (nums.length >= 2) {
+        var first = nums[0], second = nums[1];
+        var res = (first.length === 4 || Number(first) > 31)
+          ? build(first, month, second)   // 2026 Jun 15
+          : build(second, month, first);  // 15 Jun 2026 / Sep 25 2026
+        if (res) return res;
+      }
+    }
+
+    // 2) All numeric with separators. Day-first unless the numbers say otherwise.
+    var m = t.match(/(\d{1,4})\s*[\/\-. ]\s*(\d{1,2})\s*[\/\-. ]\s*(\d{2,4})/);
+    if (m) {
+      var a = m[1], b = m[2], c = m[3], out = '';
+      if (a.length === 4) {
+        out = build(a, b, c);                                  // 2026-06-15
+      } else if (c.length === 4 || c.length === 2) {
+        out = (Number(b) > 12 && Number(a) <= 12)
+          ? build(c, a, b)                                     // 06/25/2026 (month-first)
+          : build(c, b, a);                                    // 15/06/2026 (day-first)
+      }
+      if (out) return out;
+    }
+
+    // 3) Compact 8 digits: 20260615 or 15062026.
+    var compact = t.match(/\b(\d{8})\b/);
+    if (compact) {
+      var s = compact[1];
+      return /^(19|20)/.test(s)
+        ? build(s.slice(0, 4), s.slice(4, 6), s.slice(6, 8))
+        : build(s.slice(4, 8), s.slice(2, 4), s.slice(0, 2));
+    }
+    return '';
+  }
+
   // Best-effort cleanup per field type. The result is ALWAYS left editable
   // afterwards — this just saves typing when OCR reads cleanly.
   function applyOcrResult(fieldId, rawText) {
@@ -1638,13 +1711,16 @@ $currentYear     = date('Y');
     if (!el) return;
 
     if (fieldId === 'capDate') {
-      var m = rawText.match(/(\d{1,2})[\/\-. ](\d{1,2})[\/\-. ](\d{2,4})/);
-      if (m) {
-        var d = m[1].padStart(2, '0'), mo = m[2].padStart(2, '0');
-        var y = m[3].length === 2 ? '20' + m[3] : m[3];
-        el.value = y + '-' + mo + '-' + d;
+      var iso = parseOcrDate(rawText);
+      var errEl = document.getElementById('capError');
+      if (iso) {
+        el.value = iso;
+        if (errEl.textContent.indexOf('Could not read the date') === 0) errEl.style.display = 'none';
       } else {
-        el.value = rawText; // not recognized as a date pattern, leave raw text for manual fix
+        // A <input type="date"> silently drops invalid text, so say what happened.
+        el.value = '';
+        errEl.textContent = 'Could not read the date from "' + rawText.replace(/\s+/g, ' ').slice(0, 40) + '" — please pick it manually.';
+        errEl.style.display = 'block';
       }
     } else if (fieldId === 'capAmount' || fieldId === 'capExchangeRate') {
       var numMatch = rawText.replace(/[^0-9.,]/g, '');
