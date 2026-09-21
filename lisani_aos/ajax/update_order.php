@@ -219,7 +219,7 @@ try {
         sort($movIds);
         $marks = implode(',', array_fill(0, count($movIds), '?'));
         $st = $lisani_conn->prepare(
-            "SELECT id, logistic_id, invoice_id, qty_primary_package, price, total_price
+            "SELECT id, logistic_id, invoice_id, qty_primary_package, price, total_price, created_at, batch_id
              FROM logistic_movements
              WHERE id IN (" . $marks . ") AND customer_id = ? AND movement_type = 'out' AND movement_date = ?
              FOR UPDATE"
@@ -243,6 +243,34 @@ try {
 
     if (!$existingRows) {
         throw new AosOrderError('No existing order line was selected to revise or add to.');
+    }
+
+    // The target order's own created_at (earliest among its existing rows —
+    // they were all written together by the same create_order.php /
+    // update_order.php call, only differing by sub-second write time). Any
+    // brand-new line this update adds is stamped with this SAME value below
+    // instead of NOW(), so it stays grouped with the rest of its order in
+    // check_existing_orders.php and list_customer_orders.php (both group by
+    // created_at-rounded-to-the-minute + driver + police) — otherwise a
+    // just-added line would look like a separate order the next time this
+    // order is revised or its history is viewed.
+    $targetCreatedAt = min(array_column($existingRows, 'created_at'));
+
+    // batch_id = the explicit "one order" identifier (replaces the old
+    // created_at-minute + driver + police guess). Reuse the batch_id of the
+    // target order; if its rows predate batch_id (NULL) the lowest movement id
+    // among them becomes the batch_id. Existing rows are stamped below and new
+    // lines inherit it, so the whole order always stays one group no matter how
+    // often it is revised or whether driver/police change.
+    $targetBatchId = null;
+    foreach ($existingRows as $row) {
+        if ($row['batch_id'] !== null) {
+            $targetBatchId = (int) $row['batch_id'];
+            break;
+        }
+    }
+    if ($targetBatchId === null) {
+        $targetBatchId = min(array_keys($existingRows));
     }
 
     // The invoice this order belongs to: taken from any of the existing rows
@@ -436,10 +464,10 @@ try {
     );
     $movIns = $lisani_conn->prepare(
         "INSERT INTO logistic_movements
-           (logistic_id, customer_id, movement_type, movement_date, customer_name,
+           (logistic_id, customer_id, movement_type, movement_date, created_at, customer_name,
             driver_name, police_number, qty_primary_package, price, total_price,
-            invoice_id, created_by)
-         VALUES (?, ?, 'out', ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            invoice_id, created_by, batch_id)
+         VALUES (?, ?, 'out', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     );
     $movUpd = $lisani_conn->prepare(
         'UPDATE logistic_movements
@@ -484,9 +512,9 @@ try {
             $logUpdWithOld->execute();
         } else {
             $movIns->bind_param(
-                'iisssssssii',
-                $lid, $customerId, $orderDate, $customer['customer_name'],
-                $driverDb, $policeDb, $q, $p, $t, $targetInvoiceId, $userId
+                'iissssssssiii',
+                $lid, $customerId, $orderDate, $targetCreatedAt, $customer['customer_name'],
+                $driverDb, $policeDb, $q, $p, $t, $targetInvoiceId, $userId, $targetBatchId
             );
             $movIns->execute();
 
@@ -499,6 +527,16 @@ try {
     $movUpd->close();
     $logUpdWithOld->close();
     $logUpdNew->close();
+
+    // Stamp batch_id on the target order's existing rows that don't have one yet.
+    $stampIds = array_keys($existingRows);
+    $stampMarks = implode(',', array_fill(0, count($stampIds), '?'));
+    $st = $lisani_conn->prepare(
+        'UPDATE logistic_movements SET batch_id = ? WHERE batch_id IS NULL AND id IN (' . $stampMarks . ')'
+    );
+    $st->bind_param('i' . str_repeat('i', count($stampIds)), $targetBatchId, ...$stampIds);
+    $st->execute();
+    $st->close();
 
     $d = money($diffTotal);
 

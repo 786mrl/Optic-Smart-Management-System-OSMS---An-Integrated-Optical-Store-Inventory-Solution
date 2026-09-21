@@ -117,15 +117,19 @@ try {
     $st->close();
 
     // ---- Movements, dropped into their invoice ----
+    // created_at (down to the minute) + driver_name + police_number is how
+    // the frontend groups these flat rows back into order cards — same
+    // grouping key as check_existing_orders.php — so it has to be selected
+    // here even though nothing else in this endpoint uses it.
     $st = $lisani_conn->prepare(
-        "SELECT m.id, m.invoice_id, m.movement_date, m.driver_name, m.police_number,
+        "SELECT m.id, m.invoice_id, m.movement_date, m.created_at, m.batch_id, m.driver_name, m.police_number,
                 m.qty_primary_package, m.price, m.total_price,
                 a.activity_name, l.primary_unit_label AS unit_label
          FROM logistic_movements m
          JOIN logistics l ON l.id = m.logistic_id
          JOIN activities a ON a.id = l.activity_id
          WHERE m.customer_id = ? AND m.movement_type = 'out'
-         ORDER BY m.movement_date DESC, m.id DESC"
+         ORDER BY m.movement_date DESC, m.created_at DESC, m.id DESC"
     );
     $st->bind_param('i', $customerId);
     $st->execute();
@@ -135,6 +139,8 @@ try {
         $mov = [
             'id'            => (int) $row['id'],
             'movement_date' => $row['movement_date'],
+            'created_at'    => $row['created_at'],
+            'batch_id'      => $row['batch_id'] === null ? null : (int) $row['batch_id'],
             'activity_name' => $row['activity_name'],
             'unit_label'    => $row['unit_label'],
             'qty'           => $row['qty_primary_package'],

@@ -516,6 +516,49 @@ $currentYear     = date('Y');
       color: var(--text-secondary);
       margin-bottom: var(--space-2);
     }
+
+    /* Customers tab > Invoices: one card per order (grouped from the flat
+       logistic_movements rows), not one box per product line. Same visual
+       language as .st-order-pick-card but not clickable — this is a read-
+       only history list, not a picker. */
+    .st-order-group-card {
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: var(--radius-md, 10px);
+      padding: var(--space-3);
+      margin-bottom: var(--space-3);
+    }
+    .st-order-group-card:last-child { margin-bottom: 0; }
+    .st-order-group-top {
+      display: flex;
+      justify-content: space-between;
+      gap: var(--space-2);
+      font-size: var(--text-sm);
+      color: var(--text-secondary);
+      margin-bottom: var(--space-2);
+    }
+    .st-order-group-card .st-mov:last-child { border-bottom: none; }
+
+    /* Collapsible order cards (Customers history + Update Existing Order
+       picker). Header is always visible; body shows only when .st-open.
+       Single click = accordion (others close), double click = open without
+       closing the others. */
+    .st-collapsible .st-collapsible-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-2);
+      font-size: var(--text-sm);
+      color: var(--text-secondary);
+      cursor: pointer;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .st-collapsible .st-collapsible-title { flex: 1; min-width: 0; }
+    .st-collapsible .st-collapsible-chevron { flex-shrink: 0; transition: transform 0.15s ease; }
+    .st-collapsible.st-open .st-collapsible-chevron { transform: rotate(180deg); }
+    .st-collapsible .st-collapsible-body { display: none; margin-top: var(--space-2); }
+    .st-collapsible.st-open .st-collapsible-body { display: block; }
+    .st-order-pick-card.st-collapsible { cursor: default; }
   </style>
   <div class="tab-group" id="stTabGroup">
     <div class="tab active" data-st-tab="order">New Order</div>
@@ -4124,6 +4167,56 @@ $currentYear     = date('Y');
   // "Revise" button — the distinction was cosmetic only, decided per line,
   // not per order (simplified 21 Sep 2026).
 
+  // Collapsible order card behaviour, shared by the Customers history and
+  // the Update Existing Order picker.
+  //   single click : toggle this card; opening it closes its sibling cards
+  //   double click : toggle this card only, leave the other cards as they are
+  // The single-click action waits a moment so a double click is not also
+  // handled as two single clicks.
+  // The Invoices accordion animates a fixed max-height measured when it was
+  // opened, so a card expanding inside it must trigger a re-measure of the
+  // open accordion ancestors — otherwise the extra height is clipped.
+  function stRemeasureAncestors(card) {
+    if (typeof refreshAncestorHeights === 'function') refreshAncestorHeights(card);
+  }
+
+  function stBindCollapsible(card, head) {
+    var timer = null;
+    card.classList.add('st-collapsible');
+    head.classList.add('st-collapsible-head');
+    head.setAttribute('tabindex', '0');
+
+    function toggleExclusive() {
+      var willOpen = !card.classList.contains('st-open');
+      if (willOpen && card.parentNode) {
+        Array.prototype.forEach.call(card.parentNode.children, function (sib) {
+          if (sib !== card && sib.classList.contains('st-collapsible')) sib.classList.remove('st-open');
+        });
+      }
+      card.classList.toggle('st-open', willOpen);
+      stRemeasureAncestors(card);
+    }
+
+    head.addEventListener('click', function () {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(function () { timer = null; toggleExclusive(); }, 220);
+    });
+    head.addEventListener('dblclick', function () {
+      if (timer) { clearTimeout(timer); timer = null; }
+      card.classList.toggle('st-open');
+      stRemeasureAncestors(card);
+    });
+    head.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleExclusive(); }
+    });
+  }
+
+  function stMakeChevron() {
+    var c = document.createElement('i');
+    c.className = 'ti ti-chevron-down st-collapsible-chevron';
+    return c;
+  }
+
   function stFormatOrderTime(createdAt) {
     // "2026-09-21 14:32:07" -> "14:32"
     if (!createdAt) return '';
@@ -4139,29 +4232,34 @@ $currentYear     = date('Y');
     stExistingOrders.forEach(function (ord) {
       var card = document.createElement('div');
       card.className = 'st-order-pick-card';
-      card.setAttribute('tabindex', '0');
-      card.setAttribute('role', 'button');
 
-      var top = document.createElement('div');
-      top.className = 'st-order-pick-top';
-      var left = document.createElement('div');
-      left.textContent = stFormatOrderTime(ord.created_at)
+      var head = document.createElement('div');
+      var title = document.createElement('div');
+      title.className = 'st-collapsible-title';
+      title.textContent = stFormatOrderTime(ord.created_at)
         + ' \u00b7 ' + (ord.driver_name || 'No driver')
         + ' \u00b7 ' + (ord.police_number || 'No police number');
-      top.appendChild(left);
-      card.appendChild(top);
+      var selectBtn = document.createElement('button');
+      selectBtn.type = 'button';
+      selectBtn.className = 'btn btn-secondary';
+      selectBtn.textContent = 'Select';
+      selectBtn.addEventListener('click', function (e) { e.stopPropagation(); pickStOrder(ord); });
+      selectBtn.addEventListener('dblclick', function (e) { e.stopPropagation(); });
+      head.appendChild(title);
+      head.appendChild(selectBtn);
+      head.appendChild(stMakeChevron());
+      card.appendChild(head);
 
+      var body = document.createElement('div');
+      body.className = 'st-collapsible-body';
       ord.items.forEach(function (it) {
         var line = document.createElement('div');
         line.className = 'st-mov-sub';
         line.textContent = it.activity_name + ': ' + fmtQty(it.qty) + ' ' + (it.unit_label || '');
-        card.appendChild(line);
+        body.appendChild(line);
       });
-
-      card.addEventListener('click', function () { pickStOrder(ord); });
-      card.addEventListener('keydown', function (e) {
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pickStOrder(ord); }
-      });
+      card.appendChild(body);
+      stBindCollapsible(card, head);
 
       stOrderPickList.appendChild(card);
     });
@@ -4791,30 +4889,74 @@ $currentYear     = date('Y');
       stAddRow(bi, 'Paid', formatIDR(inv.paid_amount));
     }
 
+    // Group the flat movement rows back into order cards — same grouping
+    // key as check_existing_orders.php (created_at rounded to the minute +
+    // driver_name + police_number): rows from the same order were written
+    // by the same request, so they only differ by sub-second write time.
+    // inv.movements is already newest-first (movement_date, created_at, id
+    // all DESC from the server), so groups come out newest-order-first too.
+    var groups = [];
+    var byKey = {};
     inv.movements.forEach(function (m) {
-      var box = document.createElement('div');
-      box.className = 'st-mov';
+      var minute = String(m.created_at || '').substring(0, 16); // "Y-m-d H:i"
+      // batch_id = explicit order id; rows without one (older data) fall back
+      // to the old minute + driver + police key.
+      var key = (m.batch_id !== null && m.batch_id !== undefined)
+        ? 'b' + m.batch_id
+        : minute + '|' + (m.driver_name || '') + '|' + (m.police_number || '');
+      var g = byKey[key];
+      if (!g) {
+        g = { movement_date: m.movement_date, created_at: m.created_at,
+              driver_name: m.driver_name, police_number: m.police_number, items: [] };
+        byKey[key] = g;
+        groups.push(g);
+      }
+      g.items.push(m);
+    });
+
+    groups.forEach(function (g) {
+      var card = document.createElement('div');
+      card.className = 'st-order-group-card';
 
       var top = document.createElement('div');
-      top.className = 'st-mov-top';
-      var left = document.createElement('div');
-      left.textContent = formatPriceDate(m.movement_date) + ' \u00b7 ' + m.activity_name;
-      var right = document.createElement('div');
-      right.style.flexShrink = '0';
-      right.textContent = formatIDR(m.total_price);
-      top.appendChild(left);
-      top.appendChild(right);
+      var ttl = document.createElement('div');
+      ttl.className = 'st-collapsible-title';
+      ttl.textContent = formatPriceDate(g.movement_date) + ' ' + stFormatOrderTime(g.created_at)
+        + ' \u00b7 ' + (g.driver_name || 'No driver')
+        + ' \u00b7 ' + (g.police_number || 'No police number');
+      top.appendChild(ttl);
+      top.appendChild(stMakeChevron());
+      card.appendChild(top);
 
-      var sub = document.createElement('div');
-      sub.className = 'st-mov-sub';
-      var parts = [fmtQty(m.qty) + ' ' + (m.unit_label || '') + ' \u00d7 ' + formatIDR(m.price)];
-      if (m.driver_name) parts.push(m.driver_name);
-      if (m.police_number) parts.push(m.police_number);
-      sub.textContent = parts.join(' \u00b7 ');
+      var cbody = document.createElement('div');
+      cbody.className = 'st-collapsible-body';
+      card.appendChild(cbody);
+      stBindCollapsible(card, top);
 
-      box.appendChild(top);
-      box.appendChild(sub);
-      bi.appendChild(box);
+      g.items.forEach(function (m) {
+        var box = document.createElement('div');
+        box.className = 'st-mov';
+
+        var mtop = document.createElement('div');
+        mtop.className = 'st-mov-top';
+        var left = document.createElement('div');
+        left.textContent = m.activity_name;
+        var right = document.createElement('div');
+        right.style.flexShrink = '0';
+        right.textContent = formatIDR(m.total_price);
+        mtop.appendChild(left);
+        mtop.appendChild(right);
+
+        var sub = document.createElement('div');
+        sub.className = 'st-mov-sub';
+        sub.textContent = fmtQty(m.qty) + ' ' + (m.unit_label || '') + ' \u00d7 ' + formatIDR(m.price);
+
+        box.appendChild(mtop);
+        box.appendChild(sub);
+        cbody.appendChild(box);
+      });
+
+      bi.appendChild(card);
     });
 
     invItem.appendChild(h);

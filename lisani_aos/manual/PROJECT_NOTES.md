@@ -1768,19 +1768,29 @@ Revisi"). Yang perlu dicek user:
    cek Tab 2, `logistics` (remaining/total_taken), `customers.total_inflow`, dan
    `invoices.total_amount`. Coba juga stok kurang, tanggal mundur, dan dua customer
    berinisial sama (nomor invoice harus `…-CMJ-1` dan `…-CMJ-2`).
-4. **Khusus fitur baru Order Baru/Tambahan/Revisi**: pesan pertama untuk satu
-   customer di satu tanggal (harus langsung ke alur biasa, fly window pemilihan mode
-   TIDAK muncul) → simpan → kirim pesan kedua untuk customer+tanggal yang sama (fly
-   window mode harus muncul) → coba ketiga tombol (New Order tetap independen; Add/
-   Revise buka picker) → pilih order → cek baris yang qty-nya sama persis dengan
-   nama produk yang sudah ada tertandai "(revised)" dengan `qty_before → qty`,
-   produk baru tertandai "(added)" → Confirm & Save → cek `logistic_movements` (baris
-   lama ke-UPDATE, bukan row baru), `logistics.remaining_primary_qty` (harus net,
-   bukan dikurangi dobel), `invoices.total_amount`/`customers.total_inflow` (naik/
-   turun sesuai selisih, bukan nilai order penuh). Coba juga qty **turun** (stok
-   harus bertambah balik), 3 order di hari yang sama (urutan card di picker harus
-   terbaru di atas), dan ubah `Order Date` manual setelah Read Message (target order
-   yang sudah dipilih harus batal, balik ke mode New Order).
+4. **Khusus fitur Order Baru/Update Existing** (sudah disederhanakan 21 Sep 2026
+   jadi 2 tombol, lihat "New Order — sederhanakan fly window..." di bawah, dan
+   bug `bind_param` di `update_order.php` sudah diperbaiki & dikonfirmasi user
+   OK): pesan pertama untuk satu customer di satu tanggal (harus langsung ke
+   alur biasa, fly window mode TIDAK muncul) → simpan → kirim pesan kedua untuk
+   customer+tanggal yang sama (fly window 2 tombol harus muncul: New Order /
+   Update Existing Order) → pilih **Update Existing Order** → picker order →
+   pilih satu → cek baris yang qty-nya sama persis dengan produk yang sudah ada
+   tertandai "(revised)" dengan `qty_before → qty`, produk baru tertandai
+   "(added)" → kalau driver/police berubah, **modal warning blocking** harus
+   muncul dulu (isi Driver/Police lama → baru) sebelum Confirm Order kebuka,
+   dan **tidak** muncul kalau driver/police sama persis dengan order target →
+   Confirm & Save → cek `logistic_movements` (baris lama ke-UPDATE, bukan row
+   baru), `logistics.remaining_primary_qty` (harus net, bukan dikurangi
+   dobel), `invoices.total_amount`/`customers.total_inflow` (naik/turun sesuai
+   selisih, bukan nilai order penuh). Coba juga qty **turun** (stok harus
+   bertambah balik), 3 order di hari yang sama (urutan card di picker harus
+   terbaru di atas), ubah `Order Date` manual setelah Read Message (target
+   order yang sudah dipilih harus batal, balik ke mode New Order), ganti
+   order target ke card lain setelah sempat klik "OK, Continue" pada warning
+   (warning harus muncul lagi terhadap order target yang baru kalau masih
+   beda), dan klik **Cancel** di warning (harus balik ke Review, tidak lanjut
+   simpan).
 5. Cek di Termux (Apache + MariaDB) bahwa `mysqli` mengembalikan angka desimal
    seperti di XAMPP (sandbox memakai PHP 8.3).
 Kalau ada kendala, laporkan pesan error / isi `error_log` PHP.
@@ -1912,7 +1922,9 @@ pesanan sebelumnya. Perlu dibedakan dari **order baru** yang memang berdiri send
   di hari yang sama (urutan card harus benar, terbaru paling atas).
 
 ## New Order — sederhanakan fly window ke 2 tombol + warning perubahan data
-driver (IMPLEMENTASI, 21 Sep 2026; BELUM DITES USER DI XAMPP/TERMUX)
+driver (IMPLEMENTASI, 21 Sep 2026; **DITES USER, OK** — kasus revisi qty +
+tambah produk + driver/police berubah sudah dicoba dan berhasil setelah
+bugfix bind_param di bawah)
 **Latar**: tombol "Add to Existing Order" vs "Revise Existing Order" di
 `#stOrderModeOverlay` selama ini cuma kosmetik — keduanya sama-sama memanggil
 `openStOrderPick()`, dan auto-detect per baris (`logistic_id` match → qty
@@ -1986,3 +1998,140 @@ pembedaan kosmetik itu, plus tambah warning saat data driver berubah.
   tidak ada mismatch lain.
 - **Belum dites ulang** oleh user setelah fix ini — perlu diverifikasi lagi di
   XAMPP/Termux dengan skenario yang sama (revisi qty baris existing).
+
+## Customers tab — riwayat order dikelompokkan per order, bukan per baris
+produk (IMPLEMENTASI, 21 Sep 2026; BELUM DITES USER DI XAMPP/TERMUX)
+**Latar**: di Sales Transaction → tab Customers → buka satu customer →
+accordion "Invoices", tiap baris `logistic_movements` dulu dirender sebagai
+box terpisah (`buildStInvoiceItem()`), jadi kalau satu order isinya 2+ produk,
+tampil sebagai beberapa box lepas yang tidak kelihatan sebagai satu order.
+User mau ini dikelompokkan per order (satu card = satu order, driver/police/
+jam sekali di header, baris produk nested di bawahnya) — sama seperti card di
+picker "Update Existing Order" yang sudah begini dari awal.
+
+- **`ajax/list_customer_orders.php`**: query movements ditambah kolom
+  `m.created_at` (sebelumnya tidak di-`SELECT`) + `ORDER BY` disesuaikan jadi
+  `movement_date DESC, created_at DESC, id DESC` — dibutuhkan sebagai kunci
+  pengelompokan di frontend (sama seperti `check_existing_orders.php`).
+- **`transaction_content.php` — `buildStInvoiceItem()`**: loop `inv.movements`
+  yang tadinya flat, sekarang dikelompokkan dulu (JS, bukan SQL) pakai key
+  `menit(created_at) + driver_name + police_number` — grouping key sama
+  persis dengan `check_existing_orders.php` di server. Tiap grup dirender
+  sebagai card baru `.st-order-group-card` (CSS baru, senada dengan
+  `.st-order-pick-card` tapi tidak clickable — ini list riwayat read-only,
+  bukan picker): header card = tanggal + jam (reuse `stFormatOrderTime()`
+  yang sudah ada) + driver + police, lalu tiap baris produk di-nested di
+  bawahnya pakai style `.st-mov`/`.st-mov-top`/`.st-mov-sub` yang sudah ada.
+  Urutan tetap terbaru di atas (data dari server sudah DESC).
+- **Belum dites user.**
+
+### Bugfix (21 Sep 2026): baris baru saat revisi dianggap order terpisah
+(root cause dari grouping yang gagal untuk order yang sudah pernah direvisi)
+- **Ditemukan user** saat tes grouping di atas: order yang sudah pernah
+  direvisi (ada baris baru ditambahkan lewat Update Existing Order) selalu
+  tampil sebagai 2 card terpisah di riwayat customer, padahal harusnya satu.
+  Order yang **belum pernah** direvisi grouping-nya berhasil normal.
+- **Penyebab**: di `update_order.php`, baris produk baru yang di-INSERT saat
+  revisi (`mode === 'added'`) tidak diberi `created_at` eksplisit, jadi MySQL
+  isi otomatis pakai waktu request saat itu — **beda** dari `created_at`
+  baris-baris asli order yang sedang direvisi. Karena grouping (baik di
+  `check_existing_orders.php` maupun `list_customer_orders.php` yang baru)
+  sama-sama pakai kunci `menit(created_at) + driver + police`, baris baru itu
+  jatuh ke grup/kunci yang berbeda dari order aslinya → kelihatan seperti
+  order terpisah. **Bug ini juga memengaruhi picker "Update Existing Order"**
+  sendiri, tidak cuma tampilan riwayat — kalau order itu direvisi lagi di
+  masa depan, baris yang ditambahkan tadi akan muncul sebagai "order" sendiri
+  di picker.
+- **Fix**: di `update_order.php` —
+  - Query `$existingRows` (baris-baris asli order target yang di-lock)
+    ditambah kolom `created_at`.
+  - `$targetCreatedAt = min(array_column($existingRows, 'created_at'))` —
+    diambil dari baris-baris asli order target (selalu ada, karena
+    `pickStOrder()` di client mengisi `movement_ids` untuk semua baris order
+    target, bukan cuma yang direvisi).
+  - `INSERT` `logistic_movements` untuk baris baru (`$movIns`) ditambah kolom
+    `created_at`, di-bind eksplisit ke `$targetCreatedAt` — bukan `NOW()`
+    implisit lagi. Jadi baris baru sekarang benar-benar "menyatu" (created_at
+    identik, bukan cuma sama-menitnya) dengan order aslinya, tahan direvisi
+    berkali-kali.
+  - Sekalian ke-catch salah ketik type-string `bind_param` lagi waktu nambah
+    kolom (13 karakter, harusnya 12 sesuai 12 placeholder) — dicek pakai
+    script Python cepat (bandingkan panjang type string vs jumlah variabel di
+    semua `bind_param` literal file ini) sebelum dikirim, sudah benar.
+- **Data lama** (order yang sudah kadung direvisi **sebelum** fix ini)
+  `created_at`-nya sudah kepalang beda di database — order-order itu akan
+  tetap tampil terpecah sampai di-migrasi manual (belum dibuatkan skrip
+  perbaikannya; kalau perlu, tanya user apakah mau). Order baru/revisi ke
+  depan (setelah fix ini di-deploy) sudah aman.
+- **Belum dites ulang** oleh user setelah fix ini.
+### Investigasi (21 Sep 2026): order hasil revisi masih tampil terpisah di riwayat Customers
+(STATUS: BELUM DIPERBAIKI — menunggu file & data dari user)
+- **Laporan user**: grouping per order di tab Customers sudah berhasil untuk order
+  lama yang tidak pernah direvisi. Order yang pernah lewat Update Existing Order masih
+  tampil terpisah (dianggap order baru).
+- **Kemungkinan penyebab (belum diverifikasi, butuh baca kode + data):**
+  1. **Order lama yang sudah direvisi sebelum fix `created_at`** — `created_at` baris
+     tambahan sudah kepalang beda di DB (sudah dicatat di bagian Bugfix di atas,
+     memang belum ada skrip migrasi).
+  2. **Driver/police berubah saat revisi** — grouping key = `menit(created_at) +
+     driver_name + police_number`. Aturan revisi: kalau pesan susulan berisi driver/
+     police baru maka nilainya diganti. Kalau `update_order.php` hanya meng-UPDATE
+     driver/police di baris yang direvisi/ditambah (bukan SEMUA baris order target),
+     baris yang tidak tersentuh tetap membawa nilai lama → key beda → terpecah,
+     walau `created_at` sudah benar. Kasus tes user (sukkari 8→10, +sayyer 5, driver/
+     police berubah) persis skenario ini.
+  3. Fix `created_at` belum di-deploy / belum dites ulang oleh user.
+- **Arah perbaikan yang dipertimbangkan** (jangan dieksekusi sebelum penyebab pasti):
+  - Kalau (2): `update_order.php` harus meng-UPDATE `driver_name`/`police_number`
+    untuk SEMUA baris `movement_ids` order target, bukan hanya baris revisi.
+  - Untuk jangka panjang: kolom `order_batch` (atau sejenisnya) menggantikan grouping
+    berbasis menit+driver+police yang rapuh. Sebelumnya user memutuskan tidak perlu
+    `batch_id`; keputusan ini perlu dikonfirmasi ulang karena grouping heuristik
+    terbukti mudah pecah.
+  - Data lama: skrip migrasi satu kali (usulkan dulu ke user sebelum dijalankan).
+- **Yang diminta dari user**: `ajax/update_order.php`, `ajax/list_customer_orders.php`,
+  `ajax/check_existing_orders.php`, `buildStInvoiceItem()` di `transaction_content.php`,
+  dan hasil query `logistic_movements` contoh order yang terpecah
+  (id, created_at, driver_name, police_number, logistic_id, qty).
+
+### Implementasi (21 Sep 2026): `batch_id` sebagai identitas order (BELUM DITES USER)
+- **Konfirmasi user**: order yang terpecah memang direvisi **sebelum** fix `created_at`
+  (hipotesis 1 = data lama). Hipotesis driver/police berubah ternyata bukan penyebab:
+  `update_order.php` meng-UPDATE driver/police di semua baris order target karena
+  semua baris ikut di `items`. User **menyetujui** kolom `batch_id` (keputusan lama
+  "tidak perlu batch_id" **dicabut**).
+- **Kolom baru**: `logistic_movements.batch_id INT UNSIGNED NULL` (+ index). Migrasi &
+  backfill di `migration_batch_id.sql` (backfill lewat aturan grouping lama, batch_id =
+  MIN(id) grup). Query cek order terpecah + template merge manual ada di file yang sama.
+- **`update_order.php`**: baca `batch_id` baris order target; kalau semua NULL, pakai
+  MIN(id) baris target. Baris baru di-INSERT dengan `batch_id` itu; baris lama yang
+  NULL di-stamp. `bind_param` INSERT sekarang 13 param / `'iissssssssiii'` (sudah dicek).
+- **`check_existing_orders.php`, `list_customer_orders.php`, `buildStInvoiceItem()`**:
+  key grup = `'b' + batch_id` kalau ada; fallback ke key lama (menit+driver+police)
+  kalau NULL — jadi aman walau migrasi belum dijalankan.
+- **`create_order.php`** (sudah diubah): setelah semua baris movement di-INSERT,
+  satu `UPDATE` menset `batch_id = MIN(id)` untuk semua baris order itu (dalam
+  transaksi yang sama). Order baru langsung punya `batch_id`.
+- **Data lama yang terpecah**: butuh merge manual (langkah 3-4 di SQL migrasi), karena
+  tidak bisa dibedakan otomatis dari order terpisah yang kebetulan driver/police sama.
+- **Urutan deploy**: jalankan SQL langkah 1-2 → ganti 4 file → cek langkah 3 → merge
+  manual → tes ulang riwayat customer + revisi order.
+
+### Card order collapsible (21 Sep 2026; BELUM DITES USER)
+- Berlaku di 2 tempat: riwayat order tab Customers (`.st-order-group-card`) dan picker
+  Update Existing Order (`.st-order-pick-card`). Default collapse (hanya header:
+  jam · driver · police + chevron).
+- **Klik sekali** = buka/tutup card itu, membuka satu card menutup saudara-nya (accordion).
+  **Klik dua kali** = toggle card itu saja tanpa menutup card lain. Klik tunggal
+  ditunda 220 ms supaya double-click tidak dihitung sebagai dua klik tunggal.
+  Enter/Space di header = klik tunggal.
+- Implementasi: helper `stBindCollapsible(card, head)` + `stMakeChevron()` di
+  `transaction_content.php`, CSS `.st-collapsible` (+ `.st-open`). Sibling = anak lain
+  dari parent card yang sama, jadi accordion per invoice / per picker.
+- **Picker**: card tidak lagi clickable untuk memilih (bentrok dengan collapse) — ada
+  tombol **Select** di header tiap card (selalu terlihat, tidak perlu dibuka dulu).
+- **Bugfix (21 Sep 2026): card terpotong di riwayat Customers.** Accordion Invoices
+  memakai `max-height` yang diukur sekali saat dibuka (`measureAccordionItem`), jadi
+  card order yang dibuka di dalamnya menambah tinggi yang terpotong. Fix:
+  `stBindCollapsible()` memanggil `stRemeasureAncestors()` (→ `refreshAncestorHeights()`
+  yang sudah ada) setiap kali card dibuka/ditutup. Belum dites user.

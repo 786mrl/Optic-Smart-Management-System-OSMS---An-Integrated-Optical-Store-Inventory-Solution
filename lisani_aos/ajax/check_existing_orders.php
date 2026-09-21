@@ -73,7 +73,7 @@ mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 try {
     $st = $lisani_conn->prepare(
         "SELECT m.id AS movement_id, m.logistic_id, m.movement_date, m.created_at,
-                m.driver_name, m.police_number, m.qty_primary_package, m.price, m.total_price,
+                m.batch_id, m.driver_name, m.police_number, m.qty_primary_package, m.price, m.total_price,
                 a.activity_name, l.primary_unit_label AS unit_label
          FROM logistic_movements m
          JOIN logistics l ON l.id = m.logistic_id
@@ -91,7 +91,11 @@ try {
     $order  = [];  // keeps first-seen order for group_key, in DESC created_at order
     while ($row = $res->fetch_assoc()) {
         $minute = substr((string) $row['created_at'], 0, 16); // "Y-m-d H:i"
-        $groupKey = $minute . '|' . (string) $row['driver_name'] . '|' . (string) $row['police_number'];
+        // batch_id is the real order identifier; rows written before batch_id
+        // existed (NULL) fall back to the old minute + driver + police key.
+        $groupKey = $row['batch_id'] !== null
+            ? 'b' . $row['batch_id']
+            : $minute . '|' . (string) $row['driver_name'] . '|' . (string) $row['police_number'];
 
         if (!isset($groups[$groupKey])) {
             $groups[$groupKey] = [

@@ -488,6 +488,20 @@ try {
     $movIns->close();
     $logUpd->close();
 
+    // batch_id = explicit "one order" identifier shared by every row written
+    // by this call (lowest movement id of the order). update_order.php reuses
+    // it for lines added later, so the order stays one group when revised.
+    if ($movementIds) {
+        $batchId = min($movementIds);
+        $stampMarks = implode(',', array_fill(0, count($movementIds), '?'));
+        $st = $lisani_conn->prepare(
+            'UPDATE logistic_movements SET batch_id = ? WHERE id IN (' . $stampMarks . ')'
+        );
+        $st->bind_param('i' . str_repeat('i', count($movementIds)), $batchId, ...$movementIds);
+        $st->execute();
+        $st->close();
+    }
+
     $g = money($grand);
 
     $st = $lisani_conn->prepare('UPDATE customers SET total_inflow = total_inflow + ? WHERE id = ?');
