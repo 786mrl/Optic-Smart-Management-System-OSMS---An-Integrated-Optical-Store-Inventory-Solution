@@ -400,6 +400,163 @@ $currentYear     = date('Y');
   </div>
 </div>
 
+
+<!-- Sales Transaction — tabbed: New Order (paste the WhatsApp message) + Customers
+     (per-customer totals and order history per invoice). Same placement pattern as
+     viewCustomerList: a plain .card shown/hidden via showOnlyView(), not a modal. -->
+<div class="card" id="viewSalesTransaction" style="width:100%; display:none;">
+  <div class="panel-header">
+    <div class="panel-title">Sales Transaction</div>
+    <button type="button" class="btn btn-secondary" id="btnBackToEntryFromSales">Back</button>
+  </div>
+
+  <style>
+    #stTabGroup {
+      display: flex;
+      width: 100%;
+      gap: var(--space-2);
+      margin-bottom: var(--space-4);
+      background: none;
+      padding: 0;
+    }
+    #stTabGroup .tab {
+      flex: 1 1 0;
+      text-align: center;
+      padding: var(--space-3) var(--space-4);
+      border-radius: var(--radius-md);
+      background: var(--bg-recessed);
+      box-shadow: inset 3px 3px 6px var(--shadow-dark), inset -2px -2px 5px var(--shadow-light);
+      color: var(--text-secondary);
+      font-size: var(--text-sm);
+      font-weight: 600;
+      cursor: pointer;
+      transition: color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+    }
+    #stTabGroup .tab:hover { color: var(--text-primary); }
+    #stTabGroup .tab.active {
+      background: var(--bg-surface);
+      color: var(--accent);
+      box-shadow: 5px 5px 10px var(--shadow-dark), -4px -4px 8px var(--shadow-light);
+    }
+    #viewSalesTransaction textarea.input { resize: vertical; min-height: 120px; line-height: 1.4; }
+    #viewSalesTransaction .st-item-row {
+      padding: var(--space-3) 0;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+    #viewSalesTransaction .st-item-row:last-child { border-bottom: none; }
+    #viewSalesTransaction .st-item-line {
+      font-size: var(--text-xs);
+      color: var(--text-muted);
+      margin-bottom: var(--space-1);
+      word-break: break-word;
+    }
+    #viewSalesTransaction .st-item-main {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: var(--space-2);
+    }
+    #viewSalesTransaction .st-item-name {
+      flex: 1 1 150px;
+      font-size: var(--text-sm);
+      font-weight: 600;
+    }
+    #viewSalesTransaction .st-item-name.unresolved { color: var(--warning); }
+    #viewSalesTransaction .st-item-qty { width: 84px; flex: 0 0 auto; text-align: right; }
+    #viewSalesTransaction .st-item-unit {
+      min-width: 46px;
+      font-size: var(--text-sm);
+      color: var(--text-secondary);
+    }
+    #viewSalesTransaction .st-mini-btn { padding: var(--space-2) var(--space-3); }
+    #viewSalesTransaction .st-section-label {
+      margin-top: var(--space-3);
+      padding-top: var(--space-3);
+      border-top: 1px solid rgba(255,255,255,0.08);
+      font-size: var(--text-sm);
+      color: var(--text-muted);
+    }
+    #viewSalesTransaction .st-mov {
+      padding: var(--space-2) 0;
+      border-bottom: 1px solid rgba(255,255,255,0.03);
+      font-size: var(--text-sm);
+    }
+    #viewSalesTransaction .st-mov:last-child { border-bottom: none; }
+    #viewSalesTransaction .st-mov-top {
+      display: flex;
+      justify-content: space-between;
+      gap: var(--space-3);
+    }
+    #viewSalesTransaction .st-mov-sub {
+      font-size: var(--text-xs);
+      color: var(--text-muted);
+      margin-top: 2px;
+      word-break: break-word;
+    }
+    #viewSalesTransaction .st-value { word-break: normal; }
+  </style>
+  <div class="tab-group" id="stTabGroup">
+    <div class="tab active" data-st-tab="order">New Order</div>
+    <div class="tab" data-st-tab="customers">Customers</div>
+  </div>
+
+  <!-- Tab 1: New Order -->
+  <div id="stTabPanelOrder">
+    <div class="empty-sub" id="stSuccessBox" style="display:none; color:var(--success); margin-bottom:var(--space-3);"></div>
+
+    <div class="form-group">
+      <div class="label">Customer</div>
+      <select class="select" id="stCustomer">
+        <option value="">-- select customer --</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <div class="label">Order Message (WhatsApp)</div>
+      <textarea class="input" id="stMessage" rows="6" placeholder="Paste the order message here"></textarea>
+    </div>
+    <div class="empty-sub" id="stReadError" style="display:none; color:var(--danger); white-space:pre-line;"></div>
+    <div style="display:flex; justify-content:flex-end; margin-bottom:var(--space-2);">
+      <button type="button" class="btn btn-secondary" id="btnStRead">Read Message</button>
+    </div>
+
+    <div id="stParsedBox" style="display:none;">
+      <div class="form-group">
+        <div class="label">Driver</div>
+        <input type="text" class="input input-uppercase" id="stDriver" maxlength="150" placeholder="e.g. PAK FADLUN" autocomplete="off">
+      </div>
+      <div class="form-group">
+        <div class="label">Police Number</div>
+        <input type="text" class="input input-uppercase" id="stPolice" maxlength="30" placeholder="e.g. BL 8392 N" autocomplete="off">
+      </div>
+
+      <div class="label">Products</div>
+      <div id="stItemList"></div>
+      <div class="empty-sub" id="stItemEmpty" style="display:none;">No product lines were found in this message.</div>
+      <div class="empty-sub" id="stIgnoredBox" style="display:none; margin-top:var(--space-2);"></div>
+
+      <div class="form-group" style="margin-top:var(--space-4);">
+        <div class="label">Order Date</div>
+        <input type="date" class="input" id="stOrderDate">
+      </div>
+
+      <div class="empty-sub" id="stReviewError" style="display:none; color:var(--danger); white-space:pre-line;"></div>
+      <div style="display:flex; justify-content:flex-end; margin-top:var(--space-4);">
+        <button type="button" class="btn btn-primary" id="btnStReview">Review Order</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab 2: Customers — one collapsible card per customer, loaded when opened -->
+  <div id="stTabPanelCustomers" style="display:none;">
+    <div class="accordion-list" id="stCustList"></div>
+    <div class="empty-state" id="stCustEmpty" style="display:none;">
+      <div class="empty-title">No customers yet</div>
+      <div class="empty-sub">Add customers from Customer List first.</div>
+    </div>
+  </div>
+</div>
+
 </div> <!-- /.menu-section[data-section="transactions"] -->
 
 <!-- ============================================================
@@ -764,6 +921,74 @@ $currentYear     = date('Y');
   </div>
 </div>
 
+<!-- Sales Transaction — "Which product is this?" for a line the parser did not
+     recognize. Saving with "Remember" adds the wording to
+     json_file/order_patterns/{activity_id}.json (ajax/save_order_alias.php). -->
+<div class="modal-overlay" id="stProductOverlay" style="display:none;">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-header">
+      <div class="modal-title">Which product is this?</div>
+    </div>
+    <div class="modal-body">
+      <div class="empty-sub" id="stProductLine" style="word-break:break-word; margin-bottom:var(--space-3);"></div>
+      <div class="form-group">
+        <div class="label">Product</div>
+        <select class="select" id="stProductSelect">
+          <option value="">-- select product --</option>
+        </select>
+      </div>
+      <div class="form-group" id="stProductRememberBox">
+        <label style="display:flex; align-items:center; gap:var(--space-2); font-size:var(--text-sm); color:var(--text-secondary);">
+          <input type="checkbox" id="stProductRemember" checked>
+          <span>Remember &ldquo;<span id="stProductWording"></span>&rdquo; as this product</span>
+        </label>
+      </div>
+      <div class="empty-sub" id="stProductError" style="display:none; color:var(--danger);"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" id="btnStProductSkip">Skip</button>
+      <button type="button" class="btn btn-primary" id="btnStProductSave">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Sales Transaction — price for products this customer has no price for yet.
+     Saved to customer_item_prices (price_date = order date) together with the order. -->
+<div class="modal-overlay" id="stPriceOverlay" style="display:none;">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-header">
+      <div class="modal-title">Set Price</div>
+    </div>
+    <div class="modal-body">
+      <div class="empty-sub" id="stPriceIntro" style="margin-bottom:var(--space-3);"></div>
+      <div id="stPriceRows"></div>
+      <div class="empty-sub" id="stPriceError" style="display:none; color:var(--danger);"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" id="btnStPriceCancel">Cancel</button>
+      <button type="button" class="btn btn-primary" id="btnStPriceContinue">Continue</button>
+    </div>
+  </div>
+</div>
+
+<!-- Sales Transaction — order details to confirm. Nothing is saved until
+     "Confirm & Save" (the preview comes from create_order.php with dry_run=1). -->
+<div class="modal-overlay" id="stConfirmOverlay" style="display:none;">
+  <div class="modal" style="max-width:460px;">
+    <div class="modal-header">
+      <div class="modal-title">Confirm Order</div>
+    </div>
+    <div class="modal-body">
+      <div id="stConfirmBody"></div>
+      <div class="empty-sub" id="stConfirmError" style="display:none; color:var(--danger); white-space:pre-line; margin-top:var(--space-3);"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" id="btnStConfirmCancel">Cancel</button>
+      <button type="button" class="btn btn-primary" id="btnStConfirmSave">Confirm &amp; Save</button>
+    </div>
+  </div>
+</div>
+
 <style>
   /* Visual side of the uppercase rule; the value itself is forced by JS + server. */
   .input-uppercase { text-transform: uppercase; }
@@ -829,17 +1054,23 @@ $currentYear     = date('Y');
   var disbDetailsOverlay    = document.getElementById('disbDetailsOverlay');
   var capFieldPickerOverlay = document.getElementById('capFieldPickerOverlay');
 
+  // Sales Transaction fly windows.
+  var stProductOverlay = document.getElementById('stProductOverlay');
+  var stPriceOverlay   = document.getElementById('stPriceOverlay');
+  var stConfirmOverlay = document.getElementById('stConfirmOverlay');
+
   var viewEmpty        = document.getElementById('viewTransactionsEmpty');
   var viewForm         = document.getElementById('viewCreateActivityCode');
   var viewResult       = document.getElementById('viewActivityCodeResult');
   var viewCustomerList = document.getElementById('viewCustomerList');
   var viewDisbursementCapture = document.getElementById('viewDisbursementCapture');
+  var viewSales        = document.getElementById('viewSalesTransaction');
 
   var flexOverlays = [entryOverlay, passwordOverlay, manageDeptOverlay, deleteCustomerOverlay,
     deleteActivityCodeOverlay, itemPriceAddOverlay, itemPriceReverifyOverlay,
     itemPriceEditOverlay, itemPriceDeleteOverlay,
     txnCategoryOverlay, disbDepartmentOverlay, disbActivityOverlay, disbDetailsOverlay,
-    capFieldPickerOverlay];
+    capFieldPickerOverlay, stProductOverlay, stPriceOverlay, stConfirmOverlay];
 
   function show(el) {
     el.style.display = (flexOverlays.indexOf(el) !== -1) ? 'flex' : 'block';
@@ -900,7 +1131,7 @@ $currentYear     = date('Y');
   });
 
   function showOnlyView(target) {
-    [viewEmpty, viewForm, viewResult, viewCustomerList, viewDisbursementCapture].forEach(hide);
+    [viewEmpty, viewForm, viewResult, viewCustomerList, viewDisbursementCapture, viewSales].forEach(hide);
     show(target);
   }
 
@@ -940,6 +1171,7 @@ $currentYear     = date('Y');
         hide(disbActivityOverlay);
         hide(disbDetailsOverlay);
         hide(capFieldPickerOverlay);
+        if (typeof resetSalesForm === 'function') resetSalesForm();
         disbState = { department_key: null, department_label: null, activity_id: null,
           activity_name: null, activity_code: null, cashflow: null, purpose: '' };
         if (typeof resetCaptureForm === 'function') resetCaptureForm();
@@ -970,7 +1202,7 @@ $currentYear     = date('Y');
   });
 
   document.getElementById('btnCategorySales').addEventListener('click', function () {
-    alert('Sales Transaction: coming soon.');
+    openSalesView();
   });
 
   document.getElementById('btnCategoryOther').addEventListener('click', function () {
@@ -3489,5 +3721,763 @@ $currentYear     = date('Y');
         itemPriceDeleteError.style.display = 'block';
       });
   });
+  // ==========================================================
+  // Sales Transaction — New Order (paste WhatsApp message) + Customers.
+  // Endpoints: parse_order_message.php, save_order_alias.php,
+  // create_order.php (dry_run=1 preview -> dry_run=0 save),
+  // list_customers.php, list_customer_orders.php.
+  // ==========================================================
+  var stCustomer    = document.getElementById('stCustomer');
+  var stMessage     = document.getElementById('stMessage');
+  var btnStRead     = document.getElementById('btnStRead');
+  var stReadError   = document.getElementById('stReadError');
+  var stParsedBox   = document.getElementById('stParsedBox');
+  var stDriver      = document.getElementById('stDriver');
+  var stPolice      = document.getElementById('stPolice');
+  var stItemList    = document.getElementById('stItemList');
+  var stItemEmpty   = document.getElementById('stItemEmpty');
+  var stIgnoredBox  = document.getElementById('stIgnoredBox');
+  var stOrderDate   = document.getElementById('stOrderDate');
+  var stReviewError = document.getElementById('stReviewError');
+  var btnStReview   = document.getElementById('btnStReview');
+  var stSuccessBox  = document.getElementById('stSuccessBox');
+
+  var stProductLine        = document.getElementById('stProductLine');
+  var stProductSelect      = document.getElementById('stProductSelect');
+  var stProductRememberBox = document.getElementById('stProductRememberBox');
+  var stProductRemember    = document.getElementById('stProductRemember');
+  var stProductWording     = document.getElementById('stProductWording');
+  var stProductError       = document.getElementById('stProductError');
+  var btnStProductSave     = document.getElementById('btnStProductSave');
+
+  var stPriceIntro = document.getElementById('stPriceIntro');
+  var stPriceRows  = document.getElementById('stPriceRows');
+  var stPriceError = document.getElementById('stPriceError');
+
+  var stConfirmBody  = document.getElementById('stConfirmBody');
+  var stConfirmError = document.getElementById('stConfirmError');
+  var btnStConfirmSave = document.getElementById('btnStConfirmSave');
+
+  var stCustList  = document.getElementById('stCustList');
+  var stCustEmpty = document.getElementById('stCustEmpty');
+
+  var stItems        = []; // [{line, qty, product_text, logistic_id, activity_id, product_name, unit_label, remaining_qty}]
+  var stProducts     = []; // every orderable product, sent by parse_order_message.php
+  var stNewPrices    = {}; // logistic_id -> price typed in the Set Price window
+  var stUnknownQueue = []; // lines still waiting for "which product is this?"
+  var stPickerItem   = null;
+  var stPriceMissing = [];
+  var stSaving       = false;
+
+  function stPost(url, data) {
+    return fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(data).toString()
+    }).then(function (r) { return r.json(); });
+  }
+
+  function stShowError(el, msg) { el.textContent = msg; el.style.display = 'block'; }
+  function stHideError(el) { el.textContent = ''; el.style.display = 'none'; }
+
+  // "30.00" -> "30", "30.50" -> "30.5"
+  function fmtQty(v) {
+    var n = parseFloat(v);
+    return isNaN(n) ? String(v) : String(n);
+  }
+
+  function stIgnoredReasonText(reason) {
+    if (reason === 'unrecognized_text') return 'not an order line';
+    if (reason === 'no_quantity') return 'no quantity found';
+    if (reason === 'duplicate_driver') return 'second driver name';
+    if (reason === 'duplicate_police_number') return 'second police number';
+    return 'skipped';
+  }
+
+  function resetSalesForm() {
+    stCustomer.value = '';
+    stMessage.value = '';
+    stItems = [];
+    stProducts = [];
+    stNewPrices = {};
+    stUnknownQueue = [];
+    stPickerItem = null;
+    stPriceMissing = [];
+    stSaving = false;
+    btnStReview.disabled = false;
+    btnStRead.disabled = false;
+    btnStConfirmSave.disabled = false;
+    stParsedBox.style.display = 'none';
+    stDriver.value = '';
+    stPolice.value = '';
+    stItemList.innerHTML = '';
+    stItemEmpty.style.display = 'none';
+    stIgnoredBox.innerHTML = '';
+    stIgnoredBox.style.display = 'none';
+    stOrderDate.value = todayISO();
+    stHideError(stReadError);
+    stHideError(stReviewError);
+    stHideError(stConfirmError);
+    stHideError(stPriceError);
+    stHideError(stProductError);
+    stSuccessBox.style.display = 'none';
+    hide(stProductOverlay);
+    hide(stPriceOverlay);
+    hide(stConfirmOverlay);
+  }
+
+  // ---------- Customers (used by the dropdown and by the Customers tab) ----------
+  function loadStCustomers() {
+    return fetch('ajax/list_customers.php', { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        var list = res.ok ? res.data : [];
+        var keep = stCustomer.value;
+        stCustomer.innerHTML = '<option value="">-- select customer --</option>';
+        list.forEach(function (c) {
+          var opt = document.createElement('option');
+          opt.value = c.id;
+          opt.textContent = c.customer_name + ' (' + c.year + ')';
+          stCustomer.appendChild(opt);
+        });
+        stCustomer.value = keep;
+        return list;
+      })
+      .catch(function () { return []; });
+  }
+
+  // A price typed for one customer must never leak into another customer's order.
+  stCustomer.addEventListener('change', function () { stNewPrices = {}; });
+
+  function openSalesView() {
+    hide(txnCategoryOverlay);
+    resetSalesForm();
+    setActiveStTab('order');
+    showOnlyView(viewSales);
+    loadStCustomers();
+  }
+
+  document.getElementById('btnBackToEntryFromSales').addEventListener('click', function () {
+    resetSalesForm();
+    showOnlyView(viewEmpty);
+    show(entryOverlay);
+  });
+
+  // ---------- Tab 1: read the message ----------
+  btnStRead.addEventListener('click', function () {
+    stHideError(stReadError);
+    stHideError(stReviewError);
+    stSuccessBox.style.display = 'none';
+
+    if (!stCustomer.value) { stShowError(stReadError, 'Select a customer first.'); return; }
+    if (!stMessage.value.trim()) { stShowError(stReadError, 'Paste the order message first.'); return; }
+
+    btnStRead.disabled = true;
+    stPost('ajax/parse_order_message.php', { message: stMessage.value })
+      .then(function (res) {
+        btnStRead.disabled = false;
+        if (!res.ok) { stShowError(stReadError, res.message || 'Could not read the message.'); return; }
+        applyParsedMessage(res);
+      })
+      .catch(function () {
+        btnStRead.disabled = false;
+        stShowError(stReadError, 'Connection error.');
+      });
+  });
+
+  function applyParsedMessage(res) {
+    stProducts = res.products || [];
+    stNewPrices = {};
+    stItems = (res.items || []).map(function (it) {
+      return {
+        line: it.line,
+        qty: it.qty,
+        product_text: it.product_text,
+        logistic_id: it.logistic_id,
+        activity_id: it.activity_id,
+        product_name: it.product_name,
+        unit_label: it.unit_label,
+        remaining_qty: null
+      };
+    });
+    stItems.forEach(function (it) {
+      if (!it.logistic_id) return;
+      var p = stProducts.filter(function (x) { return x.logistic_id === it.logistic_id; })[0];
+      if (p) it.remaining_qty = p.remaining_qty;
+    });
+
+    stDriver.value = res.driver_name || '';
+    stPolice.value = res.police_number || '';
+
+    stIgnoredBox.innerHTML = '';
+    var ignored = res.ignored || [];
+    if (ignored.length) {
+      var head = document.createElement('div');
+      head.textContent = 'Skipped lines:';
+      stIgnoredBox.appendChild(head);
+      ignored.forEach(function (g) {
+        var d = document.createElement('div');
+        d.textContent = '\u2022 ' + g.line + ' (' + stIgnoredReasonText(g.reason) + ')';
+        d.style.wordBreak = 'break-word';
+        stIgnoredBox.appendChild(d);
+      });
+      stIgnoredBox.style.display = 'block';
+    } else {
+      stIgnoredBox.style.display = 'none';
+    }
+
+    stParsedBox.style.display = 'block';
+    renderStItems();
+
+    stUnknownQueue = stItems.filter(function (it) { return !it.logistic_id; });
+    nextUnknown();
+  }
+
+  function assignProduct(item, p) {
+    item.logistic_id = p.logistic_id;
+    item.activity_id = p.activity_id;
+    item.product_name = p.activity_name;
+    item.unit_label = p.unit_label;
+    item.remaining_qty = p.remaining_qty;
+  }
+
+  function renderStItems() {
+    stItemList.innerHTML = '';
+    stItemEmpty.style.display = stItems.length ? 'none' : 'block';
+
+    stItems.forEach(function (it, idx) {
+      var row = document.createElement('div');
+      row.className = 'st-item-row';
+
+      var lineEl = document.createElement('div');
+      lineEl.className = 'st-item-line';
+      lineEl.textContent = it.line;
+
+      var main = document.createElement('div');
+      main.className = 'st-item-main';
+
+      var name = document.createElement('div');
+      name.className = 'st-item-name' + (it.logistic_id ? '' : ' unresolved');
+      name.textContent = it.logistic_id ? it.product_name : 'Product not recognized';
+
+      var qty = document.createElement('input');
+      qty.type = 'text';
+      qty.setAttribute('inputmode', 'decimal');
+      qty.className = 'input st-item-qty';
+      qty.placeholder = 'Qty';
+      qty.value = (it.qty === null || it.qty === undefined) ? '' : fmtQty(it.qty);
+      qty.addEventListener('input', function () {
+        qty.value = qty.value.replace(/[^0-9.]/g, '');
+        var n = parseNumberInput(qty.value);
+        it.qty = isNaN(n) ? null : n;
+      });
+
+      var unit = document.createElement('span');
+      unit.className = 'st-item-unit';
+      unit.textContent = it.unit_label || '';
+
+      main.appendChild(name);
+      main.appendChild(qty);
+      main.appendChild(unit);
+
+      if (!it.logistic_id) {
+        var chooseBtn = document.createElement('button');
+        chooseBtn.type = 'button';
+        chooseBtn.className = 'btn btn-secondary st-mini-btn';
+        chooseBtn.textContent = 'Choose';
+        chooseBtn.addEventListener('click', function () { openProductPicker(it); });
+        main.appendChild(chooseBtn);
+      }
+
+      var rm = document.createElement('button');
+      rm.type = 'button';
+      rm.className = 'btn-icon';
+      rm.setAttribute('aria-label', 'Remove line');
+      rm.style.fontSize = '18px';
+      rm.innerHTML = '&times;';
+      rm.addEventListener('click', function () {
+        stItems.splice(idx, 1);
+        renderStItems();
+      });
+      main.appendChild(rm);
+
+      row.appendChild(lineEl);
+      row.appendChild(main);
+      stItemList.appendChild(row);
+    });
+  }
+
+  // ---------- "Which product is this?" ----------
+  function nextUnknown() {
+    while (stUnknownQueue.length && stUnknownQueue[0].logistic_id) stUnknownQueue.shift();
+    if (stUnknownQueue.length) openProductPicker(stUnknownQueue[0]);
+  }
+
+  function openProductPicker(item) {
+    stPickerItem = item;
+    stHideError(stProductError);
+    stProductLine.textContent = 'Line: ' + item.line;
+
+    stProductSelect.innerHTML = '<option value="">-- select product --</option>';
+    stProducts.forEach(function (p) {
+      var opt = document.createElement('option');
+      opt.value = p.logistic_id;
+      opt.textContent = p.activity_name + (p.remaining_qty === null || p.remaining_qty === undefined
+        ? '' : ' \u2014 ' + fmtQty(p.remaining_qty) + ' ' + (p.unit_label || '') + ' left');
+      stProductSelect.appendChild(opt);
+    });
+
+    // Only a real wording can be remembered (a line like "30 dus" has none).
+    stProductRememberBox.style.display = item.product_text ? 'block' : 'none';
+    stProductRemember.checked = true;
+    stProductWording.textContent = item.product_text || '';
+    show(stProductOverlay);
+  }
+
+  document.getElementById('btnStProductSkip').addEventListener('click', function () {
+    hide(stProductOverlay);
+    if (stUnknownQueue.length && stUnknownQueue[0] === stPickerItem) stUnknownQueue.shift();
+    stPickerItem = null;
+    renderStItems();
+    nextUnknown();
+  });
+
+  btnStProductSave.addEventListener('click', function () {
+    stHideError(stProductError);
+    var item = stPickerItem;
+    if (!item) return;
+
+    var lid = stProductSelect.value;
+    if (!lid) { stShowError(stProductError, 'Select a product.'); return; }
+    var p = stProducts.filter(function (x) { return String(x.logistic_id) === lid; })[0];
+    if (!p) { stShowError(stProductError, 'Product was not found.'); return; }
+
+    var remember = !!item.product_text && stProductRemember.checked;
+
+    function apply() {
+      var wording = item.product_text;
+      assignProduct(item, p);
+      if (remember) {
+        // Same wording elsewhere in this message -> same product.
+        stItems.forEach(function (o) {
+          if (!o.logistic_id && o.product_text === wording) assignProduct(o, p);
+        });
+      }
+      hide(stProductOverlay);
+      stPickerItem = null;
+      renderStItems();
+      nextUnknown();
+    }
+
+    if (!remember) { apply(); return; }
+
+    btnStProductSave.disabled = true;
+    stPost('ajax/save_order_alias.php', { activity_id: p.activity_id, alias_text: item.product_text })
+      .then(function (res) {
+        btnStProductSave.disabled = false;
+        if (!res.ok) { stShowError(stProductError, res.message || 'Could not save the wording.'); return; }
+        apply();
+      })
+      .catch(function () {
+        btnStProductSave.disabled = false;
+        stShowError(stProductError, 'Connection error.');
+      });
+  });
+
+  // ---------- Review -> (Set Price) -> Confirm -> Save ----------
+  function stBuildPayload(dryRun) {
+    if (!stCustomer.value) { stShowError(stReviewError, 'Select a customer.'); return null; }
+    if (!stItems.length) { stShowError(stReviewError, 'There are no product lines in this order.'); return null; }
+
+    var items = [];
+    for (var i = 0; i < stItems.length; i++) {
+      var it = stItems[i];
+      if (!it.logistic_id) {
+        stShowError(stReviewError, 'Choose a product for every line, or remove the line.');
+        return null;
+      }
+      if (!it.qty || it.qty <= 0) {
+        stShowError(stReviewError, 'Enter a quantity for every line.');
+        return null;
+      }
+      items.push({ logistic_id: it.logistic_id, qty: it.qty });
+    }
+    if (!stOrderDate.value) { stShowError(stReviewError, 'Select the order date.'); return null; }
+
+    return {
+      customer_id: stCustomer.value,
+      order_date: stOrderDate.value,
+      driver_name: stDriver.value.trim().toUpperCase(),
+      police_number: stPolice.value.trim().toUpperCase(),
+      items: JSON.stringify(items),
+      new_prices: JSON.stringify(stNewPrices),
+      dry_run: dryRun ? '1' : '0'
+    };
+  }
+
+  function stReview() {
+    stHideError(stReviewError);
+    stSuccessBox.style.display = 'none';
+    var payload = stBuildPayload(true);
+    if (!payload) return;
+
+    btnStReview.disabled = true;
+    stPost('ajax/create_order.php', payload)
+      .then(function (res) {
+        btnStReview.disabled = false;
+        if (res.ok) { showStConfirm(res.order); return; }
+        if (res.code === 'missing_prices') { openStPrice(res.missing || []); return; }
+        stShowError(stReviewError, res.message || 'Could not review the order.');
+      })
+      .catch(function () {
+        btnStReview.disabled = false;
+        stShowError(stReviewError, 'Connection error.');
+      });
+  }
+
+  btnStReview.addEventListener('click', stReview);
+
+  // --- Set Price ---
+  function openStPrice(missing) {
+    stPriceMissing = missing;
+    stHideError(stPriceError);
+    stPriceIntro.textContent = 'No price is set for the products below on '
+      + formatPriceDate(stOrderDate.value)
+      + '. The price you enter is saved for this customer, effective that date.';
+    stPriceRows.innerHTML = '';
+
+    missing.forEach(function (m) {
+      var g = document.createElement('div');
+      g.className = 'form-group';
+
+      var label = document.createElement('div');
+      label.className = 'label';
+      label.textContent = m.product_name + ' (per ' + (m.unit_label || 'unit') + ')';
+
+      var inp = document.createElement('input');
+      inp.type = 'text';
+      inp.setAttribute('inputmode', 'decimal');
+      inp.className = 'input input-number-comma';
+      inp.placeholder = 'Price';
+      inp.setAttribute('data-lid', m.logistic_id);
+      if (stNewPrices[m.logistic_id]) inp.value = formatNumberInput(String(stNewPrices[m.logistic_id]));
+      initNumberCommaInput(inp);
+
+      g.appendChild(label);
+      g.appendChild(inp);
+      stPriceRows.appendChild(g);
+    });
+    show(stPriceOverlay);
+  }
+
+  document.getElementById('btnStPriceCancel').addEventListener('click', function () {
+    hide(stPriceOverlay);
+  });
+
+  document.getElementById('btnStPriceContinue').addEventListener('click', function () {
+    stHideError(stPriceError);
+    var entered = {};
+    var inputs = stPriceRows.querySelectorAll('input[data-lid]');
+    for (var i = 0; i < inputs.length; i++) {
+      var n = parseNumberInput(inputs[i].value);
+      if (isNaN(n) || n <= 0) {
+        stShowError(stPriceError, 'Enter a price above zero for every product.');
+        return;
+      }
+      entered[inputs[i].getAttribute('data-lid')] = n;
+    }
+    Object.keys(entered).forEach(function (k) { stNewPrices[k] = entered[k]; });
+    hide(stPriceOverlay);
+    stReview(); // ask the server again, now with the prices
+  });
+
+  // --- Confirm ---
+  function stAddRow(parent, label, value) {
+    var row = document.createElement('div');
+    row.className = 'accordion-row';
+    var l = document.createElement('div');
+    l.className = 'accordion-row-label';
+    l.textContent = label;
+    var v = document.createElement('div');
+    v.className = 'accordion-row-value st-value';
+    v.textContent = value;
+    row.appendChild(l);
+    row.appendChild(v);
+    parent.appendChild(row);
+  }
+
+  function showStConfirm(order) {
+    stHideError(stConfirmError);
+    stConfirmBody.innerHTML = '';
+
+    stAddRow(stConfirmBody, 'Customer', order.customer.name);
+    stAddRow(stConfirmBody, 'Order Date', formatPriceDate(order.order_date));
+    stAddRow(stConfirmBody, 'Driver', order.driver_name || '-');
+    stAddRow(stConfirmBody, 'Police Number', order.police_number || '-');
+    stAddRow(stConfirmBody, 'Invoice', order.invoice.number + (order.invoice.is_new ? ' (new)' : ''));
+
+    var lbl = document.createElement('div');
+    lbl.className = 'st-section-label';
+    lbl.textContent = 'Products';
+    stConfirmBody.appendChild(lbl);
+
+    order.items.forEach(function (ln) {
+      var box = document.createElement('div');
+      box.className = 'st-mov';
+
+      var top = document.createElement('div');
+      top.className = 'st-mov-top';
+      var nm = document.createElement('div');
+      nm.style.fontWeight = '600';
+      nm.textContent = ln.product_name;
+      var tot = document.createElement('div');
+      tot.textContent = formatIDR(ln.total_price);
+      top.appendChild(nm);
+      top.appendChild(tot);
+
+      var sub = document.createElement('div');
+      sub.className = 'st-mov-sub';
+      sub.textContent = fmtQty(ln.qty) + ' ' + (ln.unit_label || '') + ' \u00d7 ' + formatIDR(ln.price)
+        + ' \u00b7 ' + (ln.price_source === 'new'
+          ? 'new price, saved for this customer'
+          : 'price of ' + formatPriceDate(ln.price_date))
+        + ' \u00b7 stock ' + fmtQty(ln.remaining_before) + ' \u2192 ' + fmtQty(ln.remaining_after);
+
+      box.appendChild(top);
+      box.appendChild(sub);
+      stConfirmBody.appendChild(box);
+    });
+
+    var sep = document.createElement('div');
+    sep.className = 'st-section-label';
+    sep.textContent = 'Total';
+    stConfirmBody.appendChild(sep);
+    stAddRow(stConfirmBody, 'This Order', formatIDR(order.grand_total));
+    stAddRow(stConfirmBody, 'Invoice After', formatIDR(order.invoice.total_after));
+
+    show(stConfirmOverlay);
+  }
+
+  document.getElementById('btnStConfirmCancel').addEventListener('click', function () {
+    hide(stConfirmOverlay);
+  });
+
+  btnStConfirmSave.addEventListener('click', function () {
+    if (stSaving) return;
+    stHideError(stConfirmError);
+    var payload = stBuildPayload(false);
+    if (!payload) { hide(stConfirmOverlay); return; }
+
+    stSaving = true;
+    btnStConfirmSave.disabled = true;
+    stPost('ajax/create_order.php', payload)
+      .then(function (res) {
+        stSaving = false;
+        btnStConfirmSave.disabled = false;
+        if (!res.ok) {
+          if (res.code === 'missing_prices') { hide(stConfirmOverlay); openStPrice(res.missing || []); return; }
+          stShowError(stConfirmError, res.message || 'Failed to save the order.');
+          return;
+        }
+        var o = res.order;
+        var summary = 'Order saved \u2014 ' + o.customer.name + ' \u00b7 Invoice ' + o.invoice.number
+          + ' \u00b7 ' + formatIDR(o.grand_total);
+        resetSalesForm(); // also closes the fly windows
+        stSuccessBox.textContent = summary;
+        stSuccessBox.style.display = 'block';
+        loadStCustomers();
+      })
+      .catch(function () {
+        stSaving = false;
+        btnStConfirmSave.disabled = false;
+        stShowError(stConfirmError, 'Connection error.');
+      });
+  });
+
+  // ---------- Tabs: New Order <-> Customers ----------
+  var stTabs = document.querySelectorAll('#stTabGroup .tab');
+  var stTabPanelMap = {
+    order:     document.getElementById('stTabPanelOrder'),
+    customers: document.getElementById('stTabPanelCustomers')
+  };
+
+  function setActiveStTab(name) {
+    stTabs.forEach(function (t) {
+      t.classList.toggle('active', t.getAttribute('data-st-tab') === name);
+    });
+    Object.keys(stTabPanelMap).forEach(function (key) {
+      stTabPanelMap[key].style.display = (key === name) ? 'block' : 'none';
+    });
+  }
+
+  stTabs.forEach(function (t) {
+    t.addEventListener('click', function () {
+      var name = t.getAttribute('data-st-tab');
+      setActiveStTab(name);
+      if (name === 'customers') loadStCustomerCards(); // refresh every visit
+    });
+  });
+
+  // ---------- Tab 2: one collapsible card per customer ----------
+  function loadStCustomerCards() {
+    return loadStCustomers().then(renderStCustomerCards);
+  }
+
+  function renderStCustomerCards(list) {
+    stCustList.innerHTML = '';
+    stCustEmpty.style.display = list.length ? 'none' : 'block';
+
+    list.forEach(function (c) {
+      var item = document.createElement('div');
+      item.className = 'accordion-item';
+
+      var header = document.createElement('div');
+      header.className = 'accordion-header';
+      var title = document.createElement('span');
+      title.className = 'accordion-title';
+      title.textContent = c.customer_name + ' (' + c.year + ')';
+      var chevron = document.createElement('i');
+      chevron.className = 'ti ti-chevron-down accordion-chevron';
+      header.appendChild(title);
+      header.appendChild(chevron);
+
+      var body = document.createElement('div');
+      body.className = 'accordion-body';
+      var inner = document.createElement('div');
+      inner.className = 'accordion-body-inner';
+      body.appendChild(inner);
+
+      header.addEventListener('click', function () {
+        toggleAccordionItem(item);
+        if (!item.classList.contains('open')) return;
+        // Loaded on every open so a just-saved order is always included.
+        inner.innerHTML = '';
+        var loading = document.createElement('div');
+        loading.className = 'empty-sub';
+        loading.textContent = 'Loading...';
+        inner.appendChild(loading);
+        refreshOpenHeight(item);
+
+        fetch('ajax/list_customer_orders.php?customer_id=' + encodeURIComponent(c.id), { cache: 'no-store' })
+          .then(function (r) { return r.json(); })
+          .then(function (res) {
+            if (!res.ok) { loading.textContent = res.message || 'Could not load the orders.'; refreshOpenHeight(item); return; }
+            renderStCustomerDetail(inner, res.data, item);
+          })
+          .catch(function () {
+            loading.textContent = 'Connection error.';
+            refreshOpenHeight(item);
+          });
+      });
+
+      item.appendChild(header);
+      item.appendChild(body);
+      stCustList.appendChild(item);
+    });
+  }
+
+  function renderStCustomerDetail(container, data, item) {
+    container.innerHTML = '';
+
+    stAddRow(container, 'Total Ordered', formatIDR(data.customer.total_ordered));
+    stAddRow(container, 'Total Paid', formatIDR(data.customer.total_paid));
+
+    var pl = document.createElement('div');
+    pl.className = 'st-section-label';
+    pl.textContent = 'Products';
+    container.appendChild(pl);
+
+    if (!data.products.length) {
+      var none = document.createElement('div');
+      none.className = 'empty-sub';
+      none.textContent = 'No orders yet.';
+      container.appendChild(none);
+    }
+    data.products.forEach(function (p) {
+      stAddRow(container, p.activity_name,
+        fmtQty(p.total_qty) + ' ' + (p.unit_label || '') + ' \u00b7 ' + formatIDR(p.total_value));
+    });
+
+    var il = document.createElement('div');
+    il.className = 'st-section-label';
+    il.textContent = 'Invoices';
+    container.appendChild(il);
+
+    var invList = document.createElement('div');
+    invList.className = 'accordion-list';
+    invList.style.marginTop = 'var(--space-2)';
+    container.appendChild(invList);
+
+    data.invoices.forEach(function (inv) { invList.appendChild(buildStInvoiceItem(inv)); });
+
+    refreshOpenHeight(item);
+  }
+
+  function buildStInvoiceItem(inv) {
+    var invItem = document.createElement('div');
+    invItem.className = 'accordion-item';
+
+    var h = document.createElement('div');
+    h.className = 'accordion-header';
+    var t = document.createElement('span');
+    t.className = 'accordion-title';
+    t.textContent = inv.invoice_number;
+    h.appendChild(t);
+
+    if (inv.status === 'open' || inv.status === 'paid') {
+      var badge = document.createElement('span');
+      badge.className = 'badge ' + (inv.status === 'paid' ? 'badge-success' : 'badge-warning');
+      badge.style.flexShrink = '0';
+      badge.textContent = inv.status.toUpperCase();
+      h.appendChild(badge);
+    }
+
+    var chev = document.createElement('i');
+    chev.className = 'ti ti-chevron-down accordion-chevron';
+    h.appendChild(chev);
+    h.addEventListener('click', function () { toggleAccordionItem(invItem); });
+
+    var b = document.createElement('div');
+    b.className = 'accordion-body';
+    var bi = document.createElement('div');
+    bi.className = 'accordion-body-inner';
+    b.appendChild(bi);
+
+    if (inv.total_amount !== null) {
+      stAddRow(bi, 'Total', formatIDR(inv.total_amount));
+      stAddRow(bi, 'Paid', formatIDR(inv.paid_amount));
+    }
+
+    inv.movements.forEach(function (m) {
+      var box = document.createElement('div');
+      box.className = 'st-mov';
+
+      var top = document.createElement('div');
+      top.className = 'st-mov-top';
+      var left = document.createElement('div');
+      left.textContent = formatPriceDate(m.movement_date) + ' \u00b7 ' + m.activity_name;
+      var right = document.createElement('div');
+      right.style.flexShrink = '0';
+      right.textContent = formatIDR(m.total_price);
+      top.appendChild(left);
+      top.appendChild(right);
+
+      var sub = document.createElement('div');
+      sub.className = 'st-mov-sub';
+      var parts = [fmtQty(m.qty) + ' ' + (m.unit_label || '') + ' \u00d7 ' + formatIDR(m.price)];
+      if (m.driver_name) parts.push(m.driver_name);
+      if (m.police_number) parts.push(m.police_number);
+      sub.textContent = parts.join(' \u00b7 ');
+
+      box.appendChild(top);
+      box.appendChild(sub);
+      bi.appendChild(box);
+    });
+
+    invItem.appendChild(h);
+    invItem.appendChild(b);
+    return invItem;
+  }
+
 })();
 </script>

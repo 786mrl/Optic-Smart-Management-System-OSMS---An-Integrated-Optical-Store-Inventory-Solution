@@ -1408,11 +1408,13 @@ bisa dipakai ulang di menu lain juga.
   **Status (per 20 Sep 2026): Disbursement end-to-end SUDAH JALAN dan sudah
   dites user** (wizard → scan/manual → simpan ke DB + file slip), termasuk 7
   perbaikan setelah tes (lihat poin "Perbaikan Disbursement" di bawah). Yang
-  berikutnya: **Sales Transaction** (desain lengkap ada di bawah, belum dibuat).
+  berikutnya: **Sales Transaction** — **SUDAH DIBUAT (20 Sep 2026), tapi belum
+  dites user di browser** (lihat "Sales Transaction — IMPLEMENTASI" di bawah).
   Other masih kosong.
   - **Pintu masuk**: tombol **Input Transaction** di fly window `#txnEntryOverlay`
     membuka fly window `#txnCategoryOverlay` dengan 3 opsi: **Disbursement**,
-    **Sales Transaction**, **Other**. Sales & Other masih `alert('coming soon')`.
+    **Sales Transaction**, **Other**. Sales Transaction sekarang membuka `#viewSalesTransaction`; Other masih
+    `alert('coming soon')`.
   - **Data yang diambil dari slip** (sama untuk semua kategori, dan isi form
     `#viewDisbursementCapture`): tanggal, bank sumber, bank tujuan, nomor akun
     sumber, nama akun sumber, nomor akun tujuan, nama akun tujuan, notes (apa
@@ -1520,7 +1522,8 @@ bisa dipakai ulang di menu lain juga.
       dipaksa di server (`mb_strtoupper`), konsisten dengan aturan uppercase project.
     - **Belum ada**: list/preview transaksi yang sudah tersimpan, edit/delete
       transaksi, dan cara membuka lagi file slip dari UI.
-  - **Sales Transaction — DESAIN (belum dibuat, keputusan sudah disepakati)**:
+  - **Sales Transaction — DESAIN (keputusan sudah disepakati; sudah dibuat, lihat
+    IMPLEMENTASI di bawahnya)**:
     - **2 tab**: (1) input order customer, (2) daftar customer sebagai card
       collapsible (satu terbuka, lainnya tertutup).
     - **Tab 1 — urutan input**: pilih **customer** (dari Customer List, bentuk
@@ -1537,9 +1540,9 @@ bisa dipakai ulang di menu lain juga.
       "small deglet" dan "deglet kecil". **2 kata kunci**: nama produk & jumlah
       pengambilan. Alias yang sudah dikenali diurai otomatis; yang belum dikenali
       memunculkan fly window "maksud baris ini apa?" lalu jawabannya disimpan
-      sebagai alias baru. (Lokasi/struktur file JSON belum dipastikan — usulan:
-      `json_file/order_patterns/{activity_id}.json`, pakai `activity_id` karena
-      nomor activity code reset per departemen+tahun.)
+      sebagai alias baru. (Lokasi: `json_file/order_patterns/{activity_id}.json` —
+      **DISETUJUI user 20 Sep 2026**; pakai `activity_id` karena nomor activity
+      code reset per departemen+tahun.)
     - **Penyimpanan order**: 1 order = **1 baris `logistic_movements` per produk**
       (`movement_type='out'`), diisi customer, driver, nomor polisi, qty karton,
       **`price`** (harga jual saat barang diambil, snapshot supaya perubahan harga
@@ -1564,7 +1567,8 @@ bisa dipakai ulang di menu lain juga.
     - **Invoice**: tabel `invoices` sudah ada di DB (`customer_id`,
       `invoice_number` UNIQUE, `sequence_number`, `period_month`, `period_year`,
       `status` open/paid, `total_amount`, `paid_amount`, `paid_at`).
-      Format nomor: `[urutan 3 digit]/inv/laj-[inisial customer]/[bulan]/[tahun]`,
+      Format nomor: `[urutan 3 digit]/inv/laj-[inisial customer]-[n]/[bulan]/[tahun]`
+      (`-[n]` ditambahkan atas revisi user 20 Sep 2026, lihat bawah),
       urutan **di-reset per customer per bulan**, mulai `001`. Invoice `open`
       dibuat **otomatis saat order pertama masuk** dan customer belum punya invoice
       open; selama belum lunas, order baru masuk ke invoice open yang sama. Status
@@ -1577,17 +1581,156 @@ bisa dipakai ulang di menu lain juga.
       `logistic_movements.customer_id/price/total_price/invoice_id`.
       `customer_item_prices` dan `invoices` **sudah dibuat** di `lisani_aos_db`.
     - **Keputusan yang sudah dikonfirmasi user**: `[bulan]` di nomor invoice
-      pakai **angka romawi** (I–XII, mis. `001/inv/laj-CMJ/IX/2026`);
-      `[inisial customer]` = huruf pertama tiap kata di `customer_name`; kalau
+      pakai **angka romawi** (I–XII, mis. `001/inv/laj-CMJ-1/IX/2026`);
+      `[inisial customer]` = huruf pertama tiap kata di `customer_name`;
+      `[n]` = urutan customer di antara customer yang berinisial sama, mulai 1
+      (mencegah nomor kembar antar customer, lihat IMPLEMENTASI); kalau
       order masuk tapi customer belum punya harga untuk produk itu, **muncul fly
       window untuk mengisi harga saat itu juga** (harga tersimpan ke
       `customer_item_prices` dengan `price_date` = tanggal pesanan, lalu order
-      lanjut). Sales Transaction **ditahan** sampai Disbursement selesai dites.
+      lanjut). Disbursement dinyatakan user cukup untuk tahap awal (20 Sep 2026),
+      jadi Sales Transaction dikerjakan.
     - **Catatan DB**: `total_taken_qty`, `logistic_movements.customer_id/price/
       total_price/invoice_id` ternyata sudah ada dari sesi lama (SQL cuma memberi
-      Note "Duplicate column", bukan error). `idx_mov_customer`/`idx_mov_invoice`
-      mungkin duplikat dari index lama (Note #1831) — cek `SHOW INDEX FROM
-      logistic_movements`, drop yang dobel kalau ada.
+      Note "Duplicate column", bukan error). **Index sudah dicek (20 Sep 2026)**:
+      `SHOW INDEX FROM logistic_movements` hanya berisi PRIMARY, `idx_logistic`,
+      `idx_customer`, `idx_invoice` — tidak ada index dobel, tidak perlu di-drop.
+  - **Sales Transaction — IMPLEMENTASI (20 Sep 2026; dites di sandbox, BELUM dites
+    user di XAMPP/Termux)**:
+    - **File baru di `ajax/`** (semua pola `{ok, message}` + `display_errors=0` +
+      `ob_start()`):
+      - `_order_patterns.php` — helper bersama: `aos_norm_product_text()`,
+        parser murni `aos_parse_order_message()` (tanpa DB), `aos_load_products()`
+        (logistics JOIN activities + `remaining_qty`), baca/simpan alias.
+      - `parse_order_message.php` — POST `message` → `driver_name`, `police_number`,
+        `items[]` (status `matched|unknown_product|missing_qty|missing_product`),
+        `ignored[]` (chatter/duplikat/tanpa jumlah), dan `products[]` (isi dropdown
+        "produk yang mana?"). Hanya membaca, tidak menyimpan.
+      - `save_order_alias.php` — POST `activity_id`, `alias_text` → menambah alias
+        ke JSON. Tidak pakai reverify (hanya menambah, tidak mengubah/menghapus).
+      - `create_order.php` — endpoint order (lihat aturan di bawah).
+      - `list_customer_orders.php` — GET `customer_id` → total ordered/paid, total
+        per produk, riwayat `out` dikelompokkan per invoice (untuk Tab 2).
+    - **`transaction_content.php`**: card baru `#viewSalesTransaction` (2 tab:
+      New Order / Customers), 3 fly window baru `#stProductOverlay` ("Which product
+      is this?"), `#stPriceOverlay` (Set Price), `#stConfirmOverlay` (Confirm
+      Order), dan blok JS "Sales Transaction" di akhir IIFE (variabel berawalan
+      `st`). Perubahan pada kode lama hanya 3 baris: daftar `flexOverlays`,
+      daftar `showOnlyView`, dan `alert('coming soon')` tombol Sales → `openSalesView()`
+      (plus sisipan deklarasi variabel, hide overlay + `resetSalesForm()` saat keluar
+      section).
+    - **File JSON pola**: `lisani_aos/json_file/order_patterns/{activity_id}.json`
+      berisi `{"activity_id": 1, "aliases": ["SMALL DEGLET", "DEGLET KECIL"]}`. Alias
+      = nama produk **tanpa jumlah**, disimpan dalam bentuk ternormalisasi (UPPERCASE,
+      tanda baca dibuang, `500 gram` → `500GR`, `1,5 kg` → `1.5KG`). Folder dibuat
+      otomatis; tulis atomik (file `.tmp` lalu rename) dengan `flock` di `.lock`.
+      Satu alias tidak boleh dipakai dua produk (ditolak, menyebut produk pemakainya).
+      File milik produk yang sudah dihapus dari `logistics` diabaikan (tidak ikut
+      dibaca), tapi file-nya tidak dihapus.
+    - **Aturan parser**: pesan dipecah per baris dan `;` (BUKAN koma, karena koma
+      = desimal). **URUTAN BARIS TIDAK BERPENGARUH** (permintaan user 20 Sep 2026):
+      nama driver, nopol, dan baris produk boleh di posisi mana saja, dengan atau
+      tanpa baris kosong (contoh yang harus jalan: `rendi / bl 2114bnn / sukkari
+      lisani 50 carton / 42 carton sayyer`, produk dulu baru nama+plat, plat lalu
+      nama, atau nama di antara produk). Parser **dua tahap**: (1) tiap baris
+      diklasifikasi sendiri-sendiri — nopol, driver bergelar/berlabel, baris produk
+      (punya jumlah atau alias dikenal), atau baris teks-saja yang disimpan sebagai
+      **kandidat nama driver**; (2) kalau driver belum ketemu, driver = kandidat yang
+      persis **sebelum** (diutamakan) atau **sesudah** baris nopol; kalau tidak ada
+      tetangga, dan kandidatnya hanya satu di seluruh pesan, dialah driver. Selain
+      itu **tidak ditebak**: baris masuk daftar "Skipped lines" dan kolom Driver
+      dibiarkan kosong (bisa diisi manual). Kandidat nama = teks-saja (tanpa angka),
+      1–3 kata, huruf saja, dan tidak mengandung kata sapaan/basa-basi
+      (`aos_chatter_words()` di `_order_patterns.php`: assalamualaikum, selamat,
+      terima kasih, tolong, ok, dst.) — tambahkan kata di sana kalau ada basa-basi
+      yang sering salah jadi nama driver. Nopol = pola plat (`BL 8392 N`, `BL8392N`,
+      `bl 2114bnn`, boleh berlabel `Nopol:`); nama driver boleh satu baris dengan nopol
+      (`bl 2114bnn rendi`). Driver bergelar (Pak/Bp/Mas/Bang/Om/Kak/Koh/Haji/Bu…) atau
+      berlabel `Driver:`/`Sopir:`/`Nama:` tetap dikenali di mana pun, dan gelar
+      dipertahankan (`PAK FADLUN`). Jumlah karton =
+      angka di samping `dus/kardus/karton/ctn/box` (`30dus`), atau angka biasa di
+      awal/akhir baris (`20 ajwa`); angka berat (`500gr`, `2 kg`, `1,5kg`) **tidak
+      pernah** dianggap jumlah. **Pencocokan produk = persis** setelah normalisasi
+      (tanpa tebak-tebakan/fuzzy, karena tebakan salah = harga salah di invoice);
+      yang belum dikenal → fly window → alias baru. Nama activity **tidak** dipakai
+      sebagai alias implisit (nama bisa sama antar tahun/departemen).
+    - **Alur UI Tab 1**: pilih customer (option `NAMA (tahun)`) → tempel pesan →
+      **Read Message** → driver/nopol terisi (bisa diedit), tiap baris produk bisa
+      diedit jumlahnya atau dihapus → baris tak dikenal memunculkan fly window
+      berurutan (centang "Remember" = simpan alias; wording yang sama di pesan itu
+      ikut terisi) → tanggal pesanan (default hari ini) → **Review Order** → (kalau
+      ada produk tanpa harga: fly window **Set Price**) → fly window **Confirm
+      Order** → **Confirm & Save** → pesan sukses + form direset (customer juga
+      dikosongkan supaya tidak salah customer).
+    - **Aturan `create_order.php`** (POST `customer_id`, `order_date`, `driver_name`,
+      `police_number`, `items` JSON `[{logistic_id, qty}]`, `new_prices` JSON
+      `{logistic_id: price}`, `dry_run`):
+      - **`dry_run` default = 1 (preview)**; hanya `dry_run=0` yang menulis. Preview
+        dan simpan memakai **jalur kode yang sama** (preview = hitung lalu rollback),
+        jadi tampilan konfirmasi pasti sama dengan yang tersimpan. Ini tafsiran
+        "simpan → fly window konfirmasi" = konfirmasi **sebelum** menulis; kalau
+        maksud user konfirmasi **setelah** simpan, cukup ubah alur tombol di JS.
+      - Baris produk yang sama digabung (qty dijumlah). Maks 50 baris. Qty > 0,
+        maks 99999.99.
+      - **Stok**: order **ditolak** kalau qty > `remaining_primary_qty` (pesan
+        menyebut semua produk yang kurang). `remaining` NULL dianggap 0. Kalau stok
+        nyata beda dari catatan, koreksi dulu di Logistic.
+      - **Harga**: `customer_item_prices` (customer, produk) dengan `price_date`
+        terbesar **≤ tanggal pesanan** (seri: `created_at`/`id` terbaru). Tidak ada
+        → respons `{ok:false, code:"missing_prices", missing:[…]}`; UI membuka Set
+        Price lalu mengirim ulang dengan `new_prices` (harus > 0); harga baru
+        disimpan ke `customer_item_prices` dengan `price_date` = tanggal pesanan
+        dalam transaction yang sama. `new_prices` diabaikan kalau harga riwayat ada.
+      - **Invoice**: pakai invoice `open` milik customer (satu saja) kalau ada;
+        kalau tidak, buat baru:
+        `[urutan 3 digit]/inv/laj-[INISIAL]-[n]/[BULAN ROMAWI]/[TAHUN]` (bulan/tahun
+        diambil dari **tanggal pesanan**, urutan reset per customer per bulan).
+        - **`[n]`** = urutan customer di antara customer yang berinisial sama, mulai 1
+          (**selalu ada**, juga untuk inisial yang unik, mis. `001/inv/laj-AB-1/…`).
+          Ditetapkan saat **invoice pertama** customer itu dibuat = (`[n]` tertinggi
+          yang sudah dipakai untuk inisial itu) + 1, lalu **dipakai ulang** di semua
+          invoice customer itu (dibaca dari nomor invoice terakhirnya yang berinisial
+          sama), jadi tidak berubah walau customer lain ditambah/dihapus. Kalau nama
+          customer diganti sampai inisialnya berubah, `[n]` baru ditetapkan untuk
+          inisial baru itu.
+        - Contoh: A (CMJ) → `001/inv/laj-CMJ-1/IX/2026`; B (CMJ) →
+          `001/inv/laj-CMJ-2/IX/2026`; A lunas lalu order lagi →
+          `002/inv/laj-CMJ-1/IX/2026` (urutan `002` milik A, tidak bentrok dengan B).
+        - **Pendekatan lama DITOLAK user (20 Sep 2026)**: "naikkan urutan sampai
+          nomor unik" (customer kedua jadi `002/…-CMJ`) — begitu invoice customer
+          pertama lunas, nomor berikutnya miliknya juga `002/…-CMJ` dan bentrok.
+          Jangan dikembalikan.
+        - `invoice_number` tetap UNIQUE; ada pemeriksaan pengaman terakhir yang
+          menolak order (bukan menebak nomor lain) kalau nomor ternyata sudah ada.
+          Dua customer berinisial sama yang membuat **invoice pertamanya persis
+          bersamaan** bisa salah satunya gagal (transaction batal, tidak ada data
+          setengah jadi) — ulangi saja.
+      - **Tulis** (satu DB transaction, customer/logistics/invoice di-lock `FOR
+        UPDATE`): `INSERT logistic_movements` per produk (`out`, `price`,
+        `total_price = round(qty×price,2)`, `customer_name` snapshot, `invoice_id`,
+        `created_by`), `logistics.remaining_primary_qty −`, `total_taken_qty +`,
+        `customers.total_inflow +` nilai order, `invoices.total_amount +`. Tidak
+        menyentuh `customers.profit/total_paid/total_outflow`.
+      - Driver/nopol kosong disimpan NULL; keduanya di-uppercase di server.
+    - **Tab 2 (Customers)**: kartu collapsible per customer (satu terbuka), dimuat
+      ulang **setiap dibuka**. Isi: Total Ordered (`customers.total_inflow`), Total
+      Paid (`customers.total_paid`), total per produk (jumlah + nilai), lalu
+      invoice (badge OPEN/PAID) yang bisa dibuka berisi riwayat pengambilan
+      (tanggal · produk · qty × harga · driver · nopol). Movement `out` lama tanpa
+      invoice dikelompokkan sebagai "(No invoice)".
+    - **Pengujian yang sudah dilakukan (sandbox, PHP 8.3 + MariaDB 10.11 dengan
+      skema dari `DESCRIBE` user)**: preview vs simpan (DB tidak berubah saat
+      preview), harga per tanggal (pesanan mundur pakai harga lama), pemakaian ulang
+      invoice, nomor invoice customer berinisial sama (3 customer CMJ, skenario
+      invoice lunas lalu order lagi, bulan berbeda), stok kurang, validasi input, **atomicity** (insert
+      movement kedua digagalkan pakai trigger → semua ikut batal), alias +
+      konflik, dan seluruh alur UI di jsdom dengan endpoint PHP sungguhan (29
+      pemeriksaan lolos). **Belum**: dites di browser/XAMPP/Termux user.
+    - **Belum ada / keterbatasan**: edit/hapus alias (sementara edit JSON manual);
+      edit/hapus order dan retur (`in` → `total_outflow`); pencatatan pembayaran;
+      print invoice; stok tidak bisa minus (tidak ada override). Preview dan simpan
+      adalah dua request terpisah; kalau stok berubah di antaranya, simpan
+      menolak dengan pesan stok.
   - **Other**: kosong, belum ada rancangan.
 
 ## Cara lanjut kerja di chat/akun baru
@@ -1595,40 +1738,47 @@ bisa dipakai ulang di menu lain juga.
    Untuk lanjut Transactions/Sales: `transaction_content.php` (paling penting),
    folder `ajax/` yang terkait (minimal `create_disbursement.php`, `list_customers.php`,
    `list_activity_codes.php`, `list_customer_item_prices.php`,
-   `_require_reverify.php`), `sql/lisani_aos_transactions.sql`, dan
+   `_require_reverify.php`; untuk Sales juga `create_order.php`,
+   `parse_order_message.php`, `save_order_alias.php`, `_order_patterns.php`,
+   `list_customer_orders.php`), `sql/lisani_aos_transactions.sql`, dan
    `logistic_content.php` kalau menyentuh Logistic. Kalau butuh styling: `theme.css`.
 2. Bilang "lanjutkan dari bagian **Langkah berikutnya** di PROJECT_NOTES".
 3. Kalau tabel DB belum ada, ceritakan datanya — akan dirancang skemanya.
 4. Gaya kerja user: konfirmasi pola verifikasi password sebelum bikin fitur
    destructive baru (lihat catatan 2 pola), semua kode/identifier Inggris,
    komunikasi Indonesia, semua input teks bebas uppercase (kecuali yang jadi
-   nama folder), UI berbahasa Inggris.
+   nama folder), UI berbahasa Inggris. User menguji sendiri lalu melapor kalau ada
+   kendala; ubah kode lama **sesempit mungkin** ("jangan ganggu yang lainnya") dan
+   serahkan file lengkap siap copy-paste. Struktur tabel diberikan user lewat hasil
+   `DESCRIBE` di phpMyAdmin — jangan menebak nama kolom.
 
 ## Langkah berikutnya (urut, per 20 Sep 2026)
-**A. Sales Transaction** — desain sudah final di poin "Sales Transaction — DESAIN"
-di atas. Urutan pengerjaan yang disarankan:
-1. **Parser pesan WA** + file JSON pola produk per activity code
-   (`json_file/order_patterns/{activity_id}.json` — *usulan, belum disetujui user*).
-   Ekstrak: nama driver, nomor polisi, baris produk + jumlah karton. Baris produk
-   tak dikenal → fly window "maksud baris ini apa?" → simpan alias.
-2. **Endpoint order** (satu DB transaction): pilih harga dari
-   `customer_item_prices` (price_date terbesar ≤ tanggal pesanan; kalau tidak ada →
-   fly window isi harga, simpan ke `customer_item_prices`), insert
-   `logistic_movements` (out, per produk, dengan `price`/`total_price`/`invoice_id`),
-   update `logistics.remaining_primary_qty` (−) & `total_taken_qty` (+),
-   `customers.total_inflow` (+), cari/buat invoice `open` (nomor
-   `[001]/inv/laj-[INISIAL]/[BULAN ROMAWI]/[TAHUN]`, urutan reset per customer per
-   bulan) dan naikkan `invoices.total_amount`.
-3. **UI Tab 1** (input order: customer option → paste WA → tanggal → simpan →
-   fly window konfirmasi detail) dan **Tab 2** (card collapsible per customer:
-   total per produk, total & terbayar, tabel riwayat per invoice).
-4. Tombol Sales Transaction di `#txnCategoryOverlay` (sekarang masih `alert`).
+**A. Uji Sales Transaction di lingkungan user** (kode sudah jadi, lihat
+"Sales Transaction — IMPLEMENTASI"). Yang perlu dicek user:
+1. Salin file baru ke `lisani_aos/ajax/` (`_order_patterns.php`,
+   `parse_order_message.php`, `save_order_alias.php`, `create_order.php`,
+   `list_customer_orders.php`) dan ganti `transaction_content.php`. Tidak ada
+   perubahan skema DB.
+2. Pastikan folder `lisani_aos/json_file/` bisa ditulis web server (folder
+   `order_patterns/` dibuat otomatis). Kalau `json_file` ada di tempat lain, ubah
+   konstanta `AOS_ORDER_PATTERNS_DIR` di `_order_patterns.php`.
+3. Coba: pesan WA contoh → alias baru → harga belum ada → konfirmasi → simpan →
+   cek Tab 2, `logistics` (remaining/total_taken), `customers.total_inflow`, dan
+   `invoices.total_amount`. Coba juga stok kurang, tanggal mundur, dan dua customer
+   berinisial sama (nomor invoice harus `…-CMJ-1` dan `…-CMJ-2`).
+4. Cek di Termux (Apache + MariaDB) bahwa `mysqli` mengembalikan angka desimal
+   seperti di XAMPP (sandbox memakai PHP 8.3).
+Kalau ada kendala, laporkan pesan error / isi `error_log` PHP.
 
-**B. Ditunda / belum dirancang**: pencatatan pembayaran customer (mengisi
+**B. Lanjutan Sales yang masih terbuka**: edit/hapus alias di UI, edit/hapus order,
+retur (`movement_type='in'` → `customers.total_outflow`), keputusan soal override
+stok minus.
+
+**C. Ditunda / belum dirancang**: pencatatan pembayaran customer (mengisi
 `invoices.paid_amount`, `customers.total_paid`, auto-status `paid`; kemungkinan
 melibatkan scan slip lagi), print invoice (desain PDF), kategori **Other**,
 list/preview/edit/delete transaksi Disbursement yang sudah tersimpan, Report,
 restore/retention untuk `storage/recycle/`, dan program pengisi `customers.profit`.
 
-**C. Rapikan**: cek index dobel di `logistic_movements` (`idx_mov_customer`,
-`idx_mov_invoice` vs index lama; `SHOW INDEX FROM logistic_movements`).
+**D. Rapikan**: ~~cek index dobel di `logistic_movements`~~ — **selesai**, tidak ada
+index dobel (20 Sep 2026).
