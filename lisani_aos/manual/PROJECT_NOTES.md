@@ -1739,8 +1739,9 @@ bisa dipakai ulang di menu lain juga.
    folder `ajax/` yang terkait (minimal `create_disbursement.php`, `list_customers.php`,
    `list_activity_codes.php`, `list_customer_item_prices.php`,
    `_require_reverify.php`; untuk Sales juga `create_order.php`,
-   `parse_order_message.php`, `save_order_alias.php`, `_order_patterns.php`,
-   `list_customer_orders.php`), `sql/lisani_aos_transactions.sql`, dan
+   `update_order.php`, `parse_order_message.php`, `save_order_alias.php`,
+   `_order_patterns.php`, `list_customer_orders.php`,
+   `check_existing_orders.php`), `sql/lisani_aos_transactions.sql`, dan
    `logistic_content.php` kalau menyentuh Logistic. Kalau butuh styling: `theme.css`.
 2. Bilang "lanjutkan dari bagian **Langkah berikutnya** di PROJECT_NOTES".
 3. Kalau tabel DB belum ada, ceritakan datanya — akan dirancang skemanya.
@@ -1752,13 +1753,14 @@ bisa dipakai ulang di menu lain juga.
    serahkan file lengkap siap copy-paste. Struktur tabel diberikan user lewat hasil
    `DESCRIBE` di phpMyAdmin — jangan menebak nama kolom.
 
-## Langkah berikutnya (urut, per 20 Sep 2026)
+## Langkah berikutnya (urut, per 21 Sep 2026)
 **A. Uji Sales Transaction di lingkungan user** (kode sudah jadi, lihat
-"Sales Transaction — IMPLEMENTASI"). Yang perlu dicek user:
+"Sales Transaction — IMPLEMENTASI" dan "New Order — deteksi Order Baru / Tambahan /
+Revisi"). Yang perlu dicek user:
 1. Salin file baru ke `lisani_aos/ajax/` (`_order_patterns.php`,
    `parse_order_message.php`, `save_order_alias.php`, `create_order.php`,
-   `list_customer_orders.php`) dan ganti `transaction_content.php`. Tidak ada
-   perubahan skema DB.
+   `update_order.php`, `list_customer_orders.php`, `check_existing_orders.php`) dan
+   ganti `transaction_content.php`. Tidak ada perubahan skema DB.
 2. Pastikan folder `lisani_aos/json_file/` bisa ditulis web server (folder
    `order_patterns/` dibuat otomatis). Kalau `json_file` ada di tempat lain, ubah
    konstanta `AOS_ORDER_PATTERNS_DIR` di `_order_patterns.php`.
@@ -1766,7 +1768,20 @@ bisa dipakai ulang di menu lain juga.
    cek Tab 2, `logistics` (remaining/total_taken), `customers.total_inflow`, dan
    `invoices.total_amount`. Coba juga stok kurang, tanggal mundur, dan dua customer
    berinisial sama (nomor invoice harus `…-CMJ-1` dan `…-CMJ-2`).
-4. Cek di Termux (Apache + MariaDB) bahwa `mysqli` mengembalikan angka desimal
+4. **Khusus fitur baru Order Baru/Tambahan/Revisi**: pesan pertama untuk satu
+   customer di satu tanggal (harus langsung ke alur biasa, fly window pemilihan mode
+   TIDAK muncul) → simpan → kirim pesan kedua untuk customer+tanggal yang sama (fly
+   window mode harus muncul) → coba ketiga tombol (New Order tetap independen; Add/
+   Revise buka picker) → pilih order → cek baris yang qty-nya sama persis dengan
+   nama produk yang sudah ada tertandai "(revised)" dengan `qty_before → qty`,
+   produk baru tertandai "(added)" → Confirm & Save → cek `logistic_movements` (baris
+   lama ke-UPDATE, bukan row baru), `logistics.remaining_primary_qty` (harus net,
+   bukan dikurangi dobel), `invoices.total_amount`/`customers.total_inflow` (naik/
+   turun sesuai selisih, bukan nilai order penuh). Coba juga qty **turun** (stok
+   harus bertambah balik), 3 order di hari yang sama (urutan card di picker harus
+   terbaru di atas), dan ubah `Order Date` manual setelah Read Message (target order
+   yang sudah dipilih harus batal, balik ke mode New Order).
+5. Cek di Termux (Apache + MariaDB) bahwa `mysqli` mengembalikan angka desimal
    seperti di XAMPP (sandbox memakai PHP 8.3).
 Kalau ada kendala, laporkan pesan error / isi `error_log` PHP.
 
@@ -1782,3 +1797,192 @@ restore/retention untuk `storage/recycle/`, dan program pengisi `customers.profi
 
 **D. Rapikan**: ~~cek index dobel di `logistic_movements`~~ — **selesai**, tidak ada
 index dobel (20 Sep 2026).
+
+## New Order — deteksi Order Baru / Tambahan / Revisi (IMPLEMENTASI, 21 Sep 2026;
+BELUM dites user di XAMPP/Termux)
+**Latar**: customer kadang mengirim pesan susulan di hari yang sama —
+bisa **revisi** qty produk yang sudah dipesan (kirim ulang cuma baris yang berubah,
+atau kirim ulang seluruh pesan dengan qty baru), atau **tambahan** produk baru di luar
+pesanan sebelumnya. Perlu dibedakan dari **order baru** yang memang berdiri sendiri.
+
+- **Konsep "satu order"**: tidak ada tabel `orders` terpisah (dikonfirmasi user 21 Sep
+  2026: tidak perlu `batch_id`) — satu order dikenali dari kelompok baris
+  `logistic_movements` (`movement_type='out'`) yang `created_at`-nya sama sampai ke
+  **menit** ditambah `driver_name` + `police_number` yang sama, dibaca dan dikelompokkan
+  di `check_existing_orders.php` (fungsi grouping murni di PHP, tidak ada query GROUP BY
+  SQL untuk ini karena groupingnya bukan agregat, hanya pengelompokan baris).
+- **Trigger fly window "Order Baru / Tambahan / Revisi?"**: muncul **hanya kalau**
+  customer yang dipilih **sudah punya order lain di tanggal order yang sama** (tanggal
+  order yang dipilih user di form, default hari ini — bukan hardcode `NOW()`, supaya
+  konsisten kalau user input order mundur). Dicek lewat AJAX baru (misal
+  `check_existing_orders.php`, GET `customer_id`+`order_date`) tepat setelah **Read
+  Message** selesai parse. Kalau customer belum punya order lain di tanggal itu →
+  langsung ke alur normal yang sudah ada, tidak ada fly window tambahan.
+  - 3 pilihan di fly window ini: **Order Baru** (lanjut alur biasa, tidak ada
+    perubahan), **Tambahan**, **Revisi** (dua yang terakhir lanjut ke poin berikutnya).
+- **Fly window pilih order target** (muncul untuk Tambahan maupun Revisi): list semua
+  order customer itu di tanggal tersebut, **terurut terbaru di paling atas, paling
+  lama di paling bawah**. Tiap card tampil **full detail**: driver, police number, jam
+  (dari `created_at`), dan semua baris produk + qty saat itu. User klik satu card
+  sebagai order target.
+- **Auto-merge setelah order target dipilih** — hasil Read Message (dari pesan susulan
+  yang baru saja ditempel) digabung ke order target secara otomatis:
+  - Baris produk yang **nama produknya (logistic_id) sama** dengan salah satu baris di
+    order target → qty-nya **diganti** (bukan dijumlah) dengan qty dari pesan baru.
+    Ini yang membedakan "revisi" dari "tambahan" secara otomatis, sesuai penjelasan
+    user: kalau produknya sudah ada di order target → itu revisi qty; kalau belum ada
+    sama sekali → itu baris tambahan.
+  - Baris produk yang **belum ada** di order target → ditambahkan sebagai baris baru
+    ke order target itu.
+  - Driver/police_number: kalau di pesan susulan ada isinya → replace nilai order
+    target; kalau kosong → pertahankan nilai order target yang lama.
+  - Hasil merge ditampilkan di **Review Order** yang sudah ada (bukan langsung
+    tersimpan) — supaya user tetap bisa koreksi manual tiap baris (ubah qty, hapus
+    baris) sebelum **Confirm & Save**, sama seperti alur order baru biasa. Tombol
+    "Add to Existing Order" dan "Revise Existing Order" di fly window pertama membuka
+    picker yang **sama** dan memicu merge logic yang **sama** (implementasi:
+    `btnStModeAdd`/`btnStModeRevise` sama-sama memanggil `openStOrderPick()`) — auto-
+    detect per baris (produk sudah ada di order target → revisi qty; produk belum ada
+    → baris tambahan) sudah cukup untuk membedakan keduanya, jadi pilihan tombol ini
+    murni untuk kejelasan konteks user, **tidak dikirim ke server**.
+- **Endpoint baru `ajax/update_order.php`** (beda dari `create_order.php` yang selalu
+  INSERT) — dipanggil saat order target ada isinya (mode Tambahan/Revisi), payload
+  mirip `create_order.php` ditambah `movement_ids` (JSON `{logistic_id: movement_id}`)
+  untuk tahu baris `logistic_movements` mana yang di-UPDATE vs di-INSERT:
+  - Baris yang **match produk** dengan order target → **UPDATE** langsung baris
+    `logistic_movements` yang sudah ada (`qty`, `total_price = round(qty×price,2)`),
+    **bukan** INSERT baris koreksi baru — riwayat lama tertimpa qty barunya (beda dari
+    pola "baris koreksi terpisah"; dikonfirmasi user 21 Sep 2026).
+  - Baris **baru** (produk belum ada di order target) → **INSERT** baris
+    `logistic_movements` baru, sama seperti `create_order.php` biasa, terhubung ke
+    invoice yang sama dengan order target.
+  - **Stok** (`logistics.remaining_primary_qty`): untuk baris yang di-UPDATE, kembalikan
+    dulu qty lama ke stok (`remaining_primary_qty + qty_lama`) baru dipotong qty baru
+    (`remaining_primary_qty - qty_baru`) — supaya validasi stok & hasil akhir konsisten
+    baik qty naik maupun turun. Baris baru (INSERT) potong stok seperti biasa.
+  - **Invoice & customer**: `invoices.total_amount` dan `customers.total_inflow`
+    disesuaikan pakai **selisih** (nilai baru − nilai lama untuk baris yang di-UPDATE,
+    ditambah nilai penuh baris yang baru di-INSERT) — bukan ditambah nilai penuh
+    seperti order baru biasa.
+  - **Harga**: tetap ikut aturan `customer_item_prices` yang sudah ada (price_date
+    ≤ tanggal order); kalau baris baru (produk belum pernah dipesan customer ini) dan
+    belum ada harga → fly window Set Price seperti biasa.
+  - Sama seperti `create_order.php`: `dry_run` untuk preview sebelum tulis (kode
+    identik: hitung lalu `rollback()` kalau `dry_run`), satu DB transaction dengan
+    `FOR UPDATE` lock (customer, baris `logistic_movements` existing yang mau di-UPDATE,
+    invoice, logistics — semua dikunci sebelum dihitung), dan atomicity (exception apa
+    pun → `rollback()`).
+  - **Baris existing divalidasi ulang di server** sebelum dipakai (bukan cuma percaya
+    `movement_ids` dari client): tiap `movement_id` yang dikirim harus benar milik
+    `customer_id`+`movement_date` yang sama dan `logistic_id`-nya cocok — kalau tidak,
+    order ditolak dengan pesan "order sudah berubah, pilih ulang" (jaga-jaga race
+    condition kalau ada 2 revisi berjalan hampir bersamaan, atau data di client sudah
+    basi).
+  - **Histori qty lama TIDAK disimpan sebagai audit trail** (dikonfirmasi user 21 Sep
+    2026: qty di DB harus mencerminkan barang yang benar-benar keluar) — baris lama
+    ditimpa langsung, tidak ada tabel log terpisah.
+- **File yang dibuat/diubah**:
+  - `ajax/check_existing_orders.php` — **baru**. GET `customer_id`+`order_date` →
+    `{has_existing, orders[]}` (order terbaru dulu, tiap order berisi
+    `created_at`/`driver_name`/`police_number`/`items[]` dengan `movement_id` per baris
+    — dipakai nanti untuk isi `movement_ids` saat merge).
+  - `ajax/update_order.php` — **baru**, lihat detail di atas.
+  - `transaction_content.php` — perubahan (bukan file baru): 2 fly window baru
+    (`#stOrderModeOverlay` 3 tombol New/Add/Revise, `#stOrderPickOverlay` list card
+    order dengan waktu+driver+nopol+semua baris produk, card di-`.st-order-pick-card`,
+    terbaru di atas — dari urutan `check_existing_orders.php` yang memang DESC); state
+    JS baru `stExistingOrders`/`stTargetOrder`/`stMovementIdByLogistic`; fungsi baru
+    `checkExistingOrders()` (dipanggil dari `applyParsedMessage()`/`nextUnknown()`
+    setelah semua baris produk teridentifikasi — supaya merge selalu tahu
+    `logistic_id` tiap baris), `openStOrderMode()`, `openStOrderPick()`, `pickStOrder()`
+    (logic merge: baris `stItems` yang `logistic_id`-nya match baris order target →
+    ditandai untuk UPDATE; baris di order target yang tidak disebut ulang di pesan
+    baru → dipertahankan apa adanya di `stItems`, supaya Review Order menampilkan
+    order gabungan yang lengkap, bukan cuma baris baru), `stOrderEndpoint()` (pilih
+    `create_order.php` vs `update_order.php`). `stBuildPayload()` menyisipkan
+    `movement_ids` kalau `stTargetOrder` terisi. `showStConfirm()` menandai baris
+    "(revised)"/"(added)" dan menampilkan `qty_before → qty` untuk baris revisi, serta
+    label total "Net Change" (bukan "This Order") untuk mode update. Mengubah tanggal
+    order manual setelah Read Message membatalkan target order yang sudah dipilih
+    (kembali ke mode New Order) karena order target itu untuk tanggal lama.
+- **Belum dites user** (baru implementasi, sandbox tidak punya PHP untuk lint/uji):
+  cek dulu di XAMPP/Termux — terutama kasus qty turun (stok harus bertambah balik
+  dengan benar), kasus tambah produk baru yang belum pernah dipesan customer ini
+  (harus memicu fly window Set Price seperti order baru biasa), dan kasus 3+ order
+  di hari yang sama (urutan card harus benar, terbaru paling atas).
+
+## New Order — sederhanakan fly window ke 2 tombol + warning perubahan data
+driver (IMPLEMENTASI, 21 Sep 2026; BELUM DITES USER DI XAMPP/TERMUX)
+**Latar**: tombol "Add to Existing Order" vs "Revise Existing Order" di
+`#stOrderModeOverlay` selama ini cuma kosmetik — keduanya sama-sama memanggil
+`openStOrderPick()`, dan auto-detect per baris (`logistic_id` match → qty
+di-replace = revisi; tidak match → baris ditambahkan = tambahan) yang sudah
+menentukan sendiri mana revisi mana tambahan. User (21 Sep 2026) minta hilangkan
+pembedaan kosmetik itu, plus tambah warning saat data driver berubah.
+
+- **`#stOrderModeOverlay` sekarang 2 tombol**: **New Order** dan **Update
+  Existing Order** (menggantikan Add/Revise). `btnStModeUpdate` memanggil
+  `openStOrderPick()` yang sama persis seperti sebelumnya — picker
+  (`#stOrderPickOverlay`) dan merge logic (`pickStOrder()`) **tidak berubah**,
+  karena auto-detect per baris itu sudah benar sejak awal.
+- **Warning perubahan driver/police — blocking modal baru
+  `#stDriverWarnOverlay`** (dikonfirmasi user: perlu blocking, tombol
+  **"OK, Continue"**, teks UI Bahasa Inggris seperti komponen lain):
+  - Trigger: hanya kalau ada order target (`stTargetOrder`) **dan**
+    `driver_name`/`police_number` di form saat ini beda dari nilai order
+    target (dibandingkan ter-normalisasi trim+uppercase, sama seperti
+    `stBuildPayload()`) — fungsi `stDriverPoliceChanged()`.
+  - Muncul di antara **Review** (dry-run sukses) dan **Confirm Order**: kalau
+    `stDriverPoliceChanged()` true dan belum di-acknowledge
+    (`stDriverWarnAck`), tampilkan `#stDriverWarnOverlay` (isi: Driver lama →
+    baru, Police Number lama → baru) dan **tahan** `showStConfirm()` sampai
+    user klik **OK, Continue** (set `stDriverWarnAck = true`, lanjut ke
+    Confirm Order) atau **Cancel** (kembali ke Review, tidak lanjut).
+  - `stDriverWarnAck` di-reset ke `false` setiap kali order target
+    (di)pilih ulang (`pickStOrder()`), setiap kali balik ke New Order
+    (`btnStModeNew`), dan setiap kali tanggal order diubah manual — supaya
+    perubahan driver/police berikutnya tetap ditangkap ulang, bukan cuma
+    sekali per sesi form.
+  - **Tidak ada perubahan server-side** (`ajax/update_order.php`) — nilai
+    driver/police yang dikirim ke server sama persis seperti sebelumnya
+    (rule lama tetap: replace kalau pesan susulan ada isinya, pertahankan
+    kalau kosong); warning ini murni notifikasi di client sebelum data
+    tersimpan, bukan mengubah apa yang disimpan.
+- **File yang diubah**: `transaction_content.php` saja —
+  `#stOrderModeOverlay` (HTML 2 tombol), `#stDriverWarnOverlay` (modal baru),
+  var `btnStModeUpdate` (gantikan `btnStModeAdd`/`btnStModeRevise`), var baru
+  `stDriverWarnAck`/`stPendingConfirmOrder`, fungsi baru
+  `stDriverPoliceChanged()`/`openStDriverWarn()` + handler
+  `btnStDriverWarnOk`/`btnStDriverWarnCancel`, `stReview()` disisipi 1
+  pengecekan sebelum `showStConfirm()`. `ajax/update_order.php` dan
+  `ajax/check_existing_orders.php` **tidak diubah** (sudah cukup — field
+  `driver_name`/`police_number` per order target sudah dikembalikan
+  `check_existing_orders.php` sejak awal).
+- **Belum dites user** (sandbox tidak ada PHP untuk lint): cek di
+  XAMPP/Termux — terutama (a) warning muncul saat driver **atau** police
+  berubah salah satu saja, (b) warning **tidak** muncul kalau keduanya sama
+  persis (termasuk kasus New Order biasa, tanpa target order), (c) klik
+  Cancel di warning benar-benar menahan di Review (tidak lanjut simpan),
+  (d) ganti order target ke card lain setelah sempat acknowledge
+  benar-benar memicu ulang warning terhadap nilai order target yang baru.
+
+### Bugfix (21 Sep 2026): "Failed to update the order" saat Confirm & Save baris revisi
+- **Ditemukan user** saat tes: update order (sukkari 8 → 10, tambah sayyer 5,
+  driver/police berubah) — Review sukses, tapi klik **Confirm & Save** gagal
+  dengan pesan generik "Failed to update the order."
+- **Penyebab**: di `update_order.php`, `bind_param('sssssi', $oldQ, $q, $oldQ,
+  $q, $lid)` untuk statement `$logUpdWithOld` — query-nya cuma **5 placeholder**
+  (`remaining_primary_qty + ? - ?`, `total_taken_qty - ? + ?`, `WHERE id = ?`)
+  tapi type string `'sssssi'` 6 karakter sedangkan variabel yang dikirim cuma
+  5. Mismatch jumlah tipe vs variabel di PHP 8 langsung `throw`, lolos ke
+  `catch (Throwable $e)` paling bawah → pesan generik. **Hanya kena kalau ada
+  baris `mode === 'updated'`** (baris revisi qty produk yang sudah ada di
+  order target) — baris murni tambahan (`mode === 'added'`) lewat jalur
+  `$logUpdNew` yang tidak kena bug ini, jadi baru ketahuan sekarang setelah
+  user tes kasus revisi qty.
+- **Fix**: type string diperbaiki jadi `'ssssi'` (5 karakter, sesuai 5
+  placeholder). Sudah dicek ulang semua `bind_param` literal lain di file ini
+  (script Python cepat, bandingkan panjang type string vs jumlah variabel) —
+  tidak ada mismatch lain.
+- **Belum dites ulang** oleh user setelah fix ini — perlu diverifikasi lagi di
+  XAMPP/Termux dengan skenario yang sama (revisi qty baris existing).

@@ -494,6 +494,28 @@ $currentYear     = date('Y');
       word-break: break-word;
     }
     #viewSalesTransaction .st-value { word-break: normal; }
+
+    .st-order-pick-card {
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: var(--radius-md, 10px);
+      padding: var(--space-3);
+      margin-bottom: var(--space-3);
+      cursor: pointer;
+      transition: border-color 0.15s ease, background 0.15s ease;
+    }
+    .st-order-pick-card:hover,
+    .st-order-pick-card:focus-visible {
+      border-color: var(--accent, #6b8afd);
+      background: rgba(255,255,255,0.03);
+    }
+    .st-order-pick-top {
+      display: flex;
+      justify-content: space-between;
+      gap: var(--space-2);
+      font-size: var(--text-sm);
+      color: var(--text-secondary);
+      margin-bottom: var(--space-2);
+    }
   </style>
   <div class="tab-group" id="stTabGroup">
     <div class="tab active" data-st-tab="order">New Order</div>
@@ -989,6 +1011,73 @@ $currentYear     = date('Y');
   </div>
 </div>
 
+<!-- Sales Transaction — shown after Read Message ONLY when the selected
+     customer already has other order(s) on the same order date. Lets the
+     user say whether this message is a standalone New Order, or should be
+     merged into (Update) one of those existing orders — whether a given
+     line ends up being a revision (qty replaced) or an addition (new line)
+     is auto-detected per line once the target order is picked, so there is
+     no separate "Add" vs "Revise" choice here. -->
+<div class="modal-overlay" id="stOrderModeOverlay" style="display:none;">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-header">
+      <div class="modal-title">This customer already has order(s) today</div>
+    </div>
+    <div class="modal-body">
+      <div class="empty-sub" style="margin-bottom:var(--space-3);">
+        Is this message a new, separate order — or does it add to / revise one already entered?
+      </div>
+      <div class="empty-sub" id="stOrderModeError" style="display:none; color:var(--danger);"></div>
+    </div>
+    <div class="modal-footer" style="flex-wrap:wrap; gap:var(--space-2);">
+      <button type="button" class="btn btn-secondary" id="btnStModeNew">New Order</button>
+      <button type="button" class="btn btn-primary" id="btnStModeUpdate">Update Existing Order</button>
+    </div>
+  </div>
+</div>
+
+<!-- Sales Transaction — pick WHICH existing order (of possibly several today)
+     to merge this message into. Newest order first. Each card shows full
+     detail (time, driver, police number, every product line) so the user
+     can tell them apart. -->
+<div class="modal-overlay" id="stOrderPickOverlay" style="display:none;">
+  <div class="modal" style="max-width:460px;">
+    <div class="modal-header">
+      <div class="modal-title">Which order?</div>
+    </div>
+    <div class="modal-body">
+      <div id="stOrderPickList"></div>
+      <div class="empty-sub" id="stOrderPickError" style="display:none; color:var(--danger);"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" id="btnStOrderPickBack">Back</button>
+    </div>
+  </div>
+</div>
+
+<!-- Sales Transaction — blocking warning shown before Confirm Order when the
+     driver and/or police number on this update differs from the target
+     order's current value. Purely informational (the new value is still the
+     one saved), but the user must acknowledge it before Confirm Order opens. -->
+<div class="modal-overlay" id="stDriverWarnOverlay" style="display:none;">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-header">
+      <div class="modal-title">Driver / Police Number Changed</div>
+    </div>
+    <div class="modal-body">
+      <div class="empty-sub" style="color:var(--warning); margin-bottom:var(--space-3);">
+        This update changes the driver and/or police number on the existing order.
+        The new value below will be saved for this order.
+      </div>
+      <div id="stDriverWarnBody"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" id="btnStDriverWarnCancel">Cancel</button>
+      <button type="button" class="btn btn-primary" id="btnStDriverWarnOk">OK, Continue</button>
+    </div>
+  </div>
+</div>
+
 <style>
   /* Visual side of the uppercase rule; the value itself is forced by JS + server. */
   .input-uppercase { text-transform: uppercase; }
@@ -1055,9 +1144,12 @@ $currentYear     = date('Y');
   var capFieldPickerOverlay = document.getElementById('capFieldPickerOverlay');
 
   // Sales Transaction fly windows.
-  var stProductOverlay = document.getElementById('stProductOverlay');
-  var stPriceOverlay   = document.getElementById('stPriceOverlay');
-  var stConfirmOverlay = document.getElementById('stConfirmOverlay');
+  var stProductOverlay   = document.getElementById('stProductOverlay');
+  var stPriceOverlay     = document.getElementById('stPriceOverlay');
+  var stConfirmOverlay   = document.getElementById('stConfirmOverlay');
+  var stOrderModeOverlay = document.getElementById('stOrderModeOverlay');
+  var stOrderPickOverlay = document.getElementById('stOrderPickOverlay');
+  var stDriverWarnOverlay = document.getElementById('stDriverWarnOverlay');
 
   var viewEmpty        = document.getElementById('viewTransactionsEmpty');
   var viewForm         = document.getElementById('viewCreateActivityCode');
@@ -1070,7 +1162,8 @@ $currentYear     = date('Y');
     deleteActivityCodeOverlay, itemPriceAddOverlay, itemPriceReverifyOverlay,
     itemPriceEditOverlay, itemPriceDeleteOverlay,
     txnCategoryOverlay, disbDepartmentOverlay, disbActivityOverlay, disbDetailsOverlay,
-    capFieldPickerOverlay, stProductOverlay, stPriceOverlay, stConfirmOverlay];
+    capFieldPickerOverlay, stProductOverlay, stPriceOverlay, stConfirmOverlay,
+    stOrderModeOverlay, stOrderPickOverlay, stDriverWarnOverlay];
 
   function show(el) {
     el.style.display = (flexOverlays.indexOf(el) !== -1) ? 'flex' : 'block';
@@ -3738,6 +3831,15 @@ $currentYear     = date('Y');
   var stItemEmpty   = document.getElementById('stItemEmpty');
   var stIgnoredBox  = document.getElementById('stIgnoredBox');
   var stOrderDate   = document.getElementById('stOrderDate');
+  // Changing the date by hand invalidates any order the user already picked
+  // to add to / revise (it was for the old date) — fall back to New Order
+  // and let the user re-check via Read Message / re-pick if they meant to
+  // keep merging.
+  stOrderDate.addEventListener('change', function () {
+    stTargetOrder = null;
+    stMovementIdByLogistic = {};
+    stDriverWarnAck = false;
+  });
   var stReviewError = document.getElementById('stReviewError');
   var btnStReview   = document.getElementById('btnStReview');
   var stSuccessBox  = document.getElementById('stSuccessBox');
@@ -3761,6 +3863,17 @@ $currentYear     = date('Y');
   var stCustList  = document.getElementById('stCustList');
   var stCustEmpty = document.getElementById('stCustEmpty');
 
+  var stOrderModeError = document.getElementById('stOrderModeError');
+  var btnStModeNew      = document.getElementById('btnStModeNew');
+  var btnStModeUpdate   = document.getElementById('btnStModeUpdate');
+  var stOrderPickList   = document.getElementById('stOrderPickList');
+  var stOrderPickError  = document.getElementById('stOrderPickError');
+  var btnStOrderPickBack = document.getElementById('btnStOrderPickBack');
+
+  var stDriverWarnBody    = document.getElementById('stDriverWarnBody');
+  var btnStDriverWarnCancel = document.getElementById('btnStDriverWarnCancel');
+  var btnStDriverWarnOk     = document.getElementById('btnStDriverWarnOk');
+
   var stItems        = []; // [{line, qty, product_text, logistic_id, activity_id, product_name, unit_label, remaining_qty}]
   var stProducts     = []; // every orderable product, sent by parse_order_message.php
   var stNewPrices    = {}; // logistic_id -> price typed in the Set Price window
@@ -3768,6 +3881,29 @@ $currentYear     = date('Y');
   var stPickerItem   = null;
   var stPriceMissing = [];
   var stSaving       = false;
+
+  // New Order / Add to Existing / Revise Existing — set after Read Message
+  // when the customer already has other order(s) on the same date.
+  // stExistingOrders: raw list from check_existing_orders.php (newest first).
+  // stTargetOrder: the order card the user picked (Add/Revise), or null for
+  // a plain New Order. stMovementIdByLogistic: logistic_id -> movement_id of
+  // the existing row to UPDATE, built by merging stItems into stTargetOrder.
+  var stExistingOrders     = [];
+  var stTargetOrder        = null;
+  var stMovementIdByLogistic = {};
+
+  // Driver/police-change warning (blocking): shown once before Confirm Order
+  // opens, only when a target order is picked AND the driver name and/or
+  // police number now differs from that order's current value. Acknowledging
+  // it ("OK, Continue") just lets the flow proceed to Confirm Order — the
+  // new value was always going to be saved either way (existing rule:
+  // replace if the follow-up message has a value, keep the old one if it
+  // doesn't); this only makes the change visible before it's saved.
+  // Reset whenever a (new) target order is picked, so editing driver/police
+  // again after acknowledging re-triggers the warning against the latest
+  // values.
+  var stDriverWarnAck = false;
+  var stPendingConfirmOrder = null;
 
   function stPost(url, data) {
     return fetch(url, {
@@ -3804,6 +3940,11 @@ $currentYear     = date('Y');
     stPickerItem = null;
     stPriceMissing = [];
     stSaving = false;
+    stExistingOrders = [];
+    stTargetOrder = null;
+    stMovementIdByLogistic = {};
+    stDriverWarnAck = false;
+    stPendingConfirmOrder = null;
     btnStReview.disabled = false;
     btnStRead.disabled = false;
     btnStConfirmSave.disabled = false;
@@ -3820,10 +3961,15 @@ $currentYear     = date('Y');
     stHideError(stConfirmError);
     stHideError(stPriceError);
     stHideError(stProductError);
+    stHideError(stOrderModeError);
+    stHideError(stOrderPickError);
     stSuccessBox.style.display = 'none';
     hide(stProductOverlay);
     hide(stPriceOverlay);
     hide(stConfirmOverlay);
+    hide(stOrderModeOverlay);
+    hide(stOrderPickOverlay);
+    hide(stDriverWarnOverlay);
   }
 
   // ---------- Customers (used by the dropdown and by the Customers tab) ----------
@@ -3930,7 +4076,149 @@ $currentYear     = date('Y');
     renderStItems();
 
     stUnknownQueue = stItems.filter(function (it) { return !it.logistic_id; });
-    nextUnknown();
+    if (stUnknownQueue.length) {
+      nextUnknown(); // checkExistingOrders() runs after the queue drains, see nextUnknown()
+    } else {
+      checkExistingOrders();
+    }
+  }
+
+  // ---------- New Order / Add to Existing / Revise Existing ----------
+  // Runs once every product line is resolved (no more "which product is
+  // this?" prompts pending). Only asks the user anything if the customer
+  // already has other order(s) on the chosen order_date.
+  function checkExistingOrders() {
+    stExistingOrders = [];
+    stTargetOrder = null;
+    stMovementIdByLogistic = {};
+    if (!stCustomer.value || !stOrderDate.value) return;
+
+    var qs = new URLSearchParams({ customer_id: stCustomer.value, order_date: stOrderDate.value }).toString();
+    fetch('ajax/check_existing_orders.php?' + qs, { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (!res.ok || !res.data || !res.data.has_existing) return;
+        stExistingOrders = res.data.orders || [];
+        if (stExistingOrders.length) openStOrderMode();
+      })
+      .catch(function () { /* silently fall back to New Order behaviour */ });
+  }
+
+  function openStOrderMode() {
+    stHideError(stOrderModeError);
+    show(stOrderModeOverlay);
+  }
+
+  btnStModeNew.addEventListener('click', function () {
+    stTargetOrder = null;
+    stMovementIdByLogistic = {};
+    stDriverWarnAck = false;
+    hide(stOrderModeOverlay);
+  });
+
+  btnStModeUpdate.addEventListener('click', function () { openStOrderPick(); });
+  // Which existing order gets merged into is decided by clicking a card in
+  // the picker; per-line the merge itself auto-detects add vs revise (same
+  // product -> qty replaced, new product -> line added), per the user's
+  // 21 Sep 2026 explanation. There is deliberately no separate "Add" vs
+  // "Revise" button — the distinction was cosmetic only, decided per line,
+  // not per order (simplified 21 Sep 2026).
+
+  function stFormatOrderTime(createdAt) {
+    // "2026-09-21 14:32:07" -> "14:32"
+    if (!createdAt) return '';
+    var m = String(createdAt).match(/(\d{2}):(\d{2})/);
+    return m ? (m[1] + ':' + m[2]) : String(createdAt);
+  }
+
+  function openStOrderPick() {
+    hide(stOrderModeOverlay);
+    stHideError(stOrderPickError);
+    stOrderPickList.innerHTML = '';
+
+    stExistingOrders.forEach(function (ord) {
+      var card = document.createElement('div');
+      card.className = 'st-order-pick-card';
+      card.setAttribute('tabindex', '0');
+      card.setAttribute('role', 'button');
+
+      var top = document.createElement('div');
+      top.className = 'st-order-pick-top';
+      var left = document.createElement('div');
+      left.textContent = stFormatOrderTime(ord.created_at)
+        + ' \u00b7 ' + (ord.driver_name || 'No driver')
+        + ' \u00b7 ' + (ord.police_number || 'No police number');
+      top.appendChild(left);
+      card.appendChild(top);
+
+      ord.items.forEach(function (it) {
+        var line = document.createElement('div');
+        line.className = 'st-mov-sub';
+        line.textContent = it.activity_name + ': ' + fmtQty(it.qty) + ' ' + (it.unit_label || '');
+        card.appendChild(line);
+      });
+
+      card.addEventListener('click', function () { pickStOrder(ord); });
+      card.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pickStOrder(ord); }
+      });
+
+      stOrderPickList.appendChild(card);
+    });
+
+    show(stOrderPickOverlay);
+  }
+
+  btnStOrderPickBack.addEventListener('click', function () {
+    hide(stOrderPickOverlay);
+    openStOrderMode();
+  });
+
+  // Merge the just-parsed message into the picked order:
+  //   - product already in the target order -> qty is REPLACED (a revision)
+  //   - product not in the target order     -> line is ADDED
+  // Driver/police number: use what was just read if non-empty, otherwise
+  // keep the target order's own values.
+  function pickStOrder(ord) {
+    stTargetOrder = ord;
+    stMovementIdByLogistic = {};
+    stDriverWarnAck = false; // re-warn against this (possibly different) order's own driver/police
+
+    var byLogistic = {}; // logistic_id -> target order item
+    ord.items.forEach(function (it) { byLogistic[it.logistic_id] = it; });
+
+    // Lines already in stItems (from the message just read) that match a
+    // product already in the target order: mark them for UPDATE.
+    stItems.forEach(function (it) {
+      if (it.logistic_id && byLogistic[it.logistic_id]) {
+        stMovementIdByLogistic[it.logistic_id] = byLogistic[it.logistic_id].movement_id;
+      }
+    });
+
+    // Target-order lines that the new message did NOT mention: keep them in
+    // stItems unchanged (still part of the same order), so the review list
+    // shows the full, merged order rather than just the new lines.
+    ord.items.forEach(function (it) {
+      var already = stItems.some(function (x) { return x.logistic_id === it.logistic_id; });
+      if (already) return;
+      stItems.push({
+        line: it.activity_name,
+        qty: parseFloat(it.qty),
+        product_text: null,
+        logistic_id: it.logistic_id,
+        activity_id: null,
+        product_name: it.activity_name,
+        unit_label: it.unit_label,
+        remaining_qty: null
+      });
+      stMovementIdByLogistic[it.logistic_id] = it.movement_id;
+    });
+
+    if (!stDriver.value.trim() && ord.driver_name) stDriver.value = ord.driver_name;
+    if (!stPolice.value.trim() && ord.police_number) stPolice.value = ord.police_number;
+
+    renderStItems();
+    hide(stOrderPickOverlay);
   }
 
   function assignProduct(item, p) {
@@ -4010,7 +4298,8 @@ $currentYear     = date('Y');
   // ---------- "Which product is this?" ----------
   function nextUnknown() {
     while (stUnknownQueue.length && stUnknownQueue[0].logistic_id) stUnknownQueue.shift();
-    if (stUnknownQueue.length) openProductPicker(stUnknownQueue[0]);
+    if (stUnknownQueue.length) { openProductPicker(stUnknownQueue[0]); return; }
+    checkExistingOrders(); // every line is resolved now; safe to try merging
   }
 
   function openProductPicker(item) {
@@ -4104,7 +4393,7 @@ $currentYear     = date('Y');
     }
     if (!stOrderDate.value) { stShowError(stReviewError, 'Select the order date.'); return null; }
 
-    return {
+    var payload = {
       customer_id: stCustomer.value,
       order_date: stOrderDate.value,
       driver_name: stDriver.value.trim().toUpperCase(),
@@ -4113,7 +4402,53 @@ $currentYear     = date('Y');
       new_prices: JSON.stringify(stNewPrices),
       dry_run: dryRun ? '1' : '0'
     };
+    if (stTargetOrder) {
+      payload.movement_ids = JSON.stringify(stMovementIdByLogistic);
+    }
+    return payload;
   }
+
+  // Update Existing Order uses update_order.php (merges into the picked
+  // order); a plain New Order keeps using create_order.php.
+  function stOrderEndpoint() {
+    return stTargetOrder ? 'ajax/update_order.php' : 'ajax/create_order.php';
+  }
+
+  // True when there's a target order AND the driver name and/or police
+  // number currently on the form differs from that order's own value.
+  // Compared the same way stBuildPayload() normalizes them (trimmed,
+  // uppercased) so a case-only difference doesn't falsely trigger it.
+  function stDriverPoliceChanged() {
+    if (!stTargetOrder) return false;
+    var newDriver = stDriver.value.trim().toUpperCase();
+    var newPolice = stPolice.value.trim().toUpperCase();
+    var oldDriver = (stTargetOrder.driver_name || '').trim().toUpperCase();
+    var oldPolice = (stTargetOrder.police_number || '').trim().toUpperCase();
+    return (newDriver !== oldDriver) || (newPolice !== oldPolice);
+  }
+
+  function openStDriverWarn(order) {
+    stPendingConfirmOrder = order;
+    stDriverWarnBody.innerHTML = '';
+    var oldDriver = stTargetOrder.driver_name || '-';
+    var oldPolice = stTargetOrder.police_number || '-';
+    var newDriver = stDriver.value.trim().toUpperCase() || '-';
+    var newPolice = stPolice.value.trim().toUpperCase() || '-';
+    stAddRow(stDriverWarnBody, 'Driver', oldDriver + ' \u2192 ' + newDriver);
+    stAddRow(stDriverWarnBody, 'Police Number', oldPolice + ' \u2192 ' + newPolice);
+    show(stDriverWarnOverlay);
+  }
+
+  btnStDriverWarnCancel.addEventListener('click', function () {
+    stPendingConfirmOrder = null;
+    hide(stDriverWarnOverlay);
+  });
+
+  btnStDriverWarnOk.addEventListener('click', function () {
+    stDriverWarnAck = true;
+    hide(stDriverWarnOverlay);
+    if (stPendingConfirmOrder) { showStConfirm(stPendingConfirmOrder); stPendingConfirmOrder = null; }
+  });
 
   function stReview() {
     stHideError(stReviewError);
@@ -4122,10 +4457,14 @@ $currentYear     = date('Y');
     if (!payload) return;
 
     btnStReview.disabled = true;
-    stPost('ajax/create_order.php', payload)
+    stPost(stOrderEndpoint(), payload)
       .then(function (res) {
         btnStReview.disabled = false;
-        if (res.ok) { showStConfirm(res.order); return; }
+        if (res.ok) {
+          if (!stDriverWarnAck && stDriverPoliceChanged()) { openStDriverWarn(res.order); return; }
+          showStConfirm(res.order);
+          return;
+        }
         if (res.code === 'missing_prices') { openStPrice(res.missing || []); return; }
         stShowError(stReviewError, res.message || 'Could not review the order.');
       })
@@ -4229,7 +4568,7 @@ $currentYear     = date('Y');
       top.className = 'st-mov-top';
       var nm = document.createElement('div');
       nm.style.fontWeight = '600';
-      nm.textContent = ln.product_name;
+      nm.textContent = ln.product_name + (ln.mode === 'updated' ? ' (revised)' : ln.mode === 'added' ? ' (added)' : '');
       var tot = document.createElement('div');
       tot.textContent = formatIDR(ln.total_price);
       top.appendChild(nm);
@@ -4237,7 +4576,10 @@ $currentYear     = date('Y');
 
       var sub = document.createElement('div');
       sub.className = 'st-mov-sub';
-      sub.textContent = fmtQty(ln.qty) + ' ' + (ln.unit_label || '') + ' \u00d7 ' + formatIDR(ln.price)
+      var qtyText = ln.mode === 'updated'
+        ? (fmtQty(ln.qty_before) + ' \u2192 ' + fmtQty(ln.qty) + ' ' + (ln.unit_label || ''))
+        : (fmtQty(ln.qty) + ' ' + (ln.unit_label || ''));
+      sub.textContent = qtyText + ' \u00d7 ' + formatIDR(ln.price)
         + ' \u00b7 ' + (ln.price_source === 'new'
           ? 'new price, saved for this customer'
           : 'price of ' + formatPriceDate(ln.price_date))
@@ -4252,7 +4594,7 @@ $currentYear     = date('Y');
     sep.className = 'st-section-label';
     sep.textContent = 'Total';
     stConfirmBody.appendChild(sep);
-    stAddRow(stConfirmBody, 'This Order', formatIDR(order.grand_total));
+    stAddRow(stConfirmBody, order.mode === 'update' ? 'Net Change' : 'This Order', formatIDR(order.grand_total));
     stAddRow(stConfirmBody, 'Invoice After', formatIDR(order.invoice.total_after));
 
     show(stConfirmOverlay);
@@ -4270,7 +4612,7 @@ $currentYear     = date('Y');
 
     stSaving = true;
     btnStConfirmSave.disabled = true;
-    stPost('ajax/create_order.php', payload)
+    stPost(stOrderEndpoint(), payload)
       .then(function (res) {
         stSaving = false;
         btnStConfirmSave.disabled = false;
@@ -4280,8 +4622,9 @@ $currentYear     = date('Y');
           return;
         }
         var o = res.order;
-        var summary = 'Order saved \u2014 ' + o.customer.name + ' \u00b7 Invoice ' + o.invoice.number
-          + ' \u00b7 ' + formatIDR(o.grand_total);
+        var summary = (o.mode === 'update' ? 'Order updated \u2014 ' : 'Order saved \u2014 ') + o.customer.name
+          + ' \u00b7 Invoice ' + o.invoice.number
+          + ' \u00b7 ' + (o.mode === 'update' ? 'net change ' : '') + formatIDR(o.grand_total);
         resetSalesForm(); // also closes the fly windows
         stSuccessBox.textContent = summary;
         stSuccessBox.style.display = 'block';
