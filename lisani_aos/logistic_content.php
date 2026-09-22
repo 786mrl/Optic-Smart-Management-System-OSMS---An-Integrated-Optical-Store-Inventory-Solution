@@ -104,10 +104,115 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
       gap: var(--space-2);
       margin-bottom: var(--space-2);
     }
+
+    /* ---- Tab 2: Movements — nested collapsible cards ----
+       Generic collapsible mechanics, same class names/behaviour as
+       .st-collapsible in transaction_content.php (single click = toggle +
+       close siblings, double click within 220ms = toggle without closing
+       siblings). Kept local to this file since *_content.php files don't
+       share JS/CSS scope. Sibling-scoping is per parentNode, so nesting
+       these cards automatically gives one independent accordion group per
+       level (main card / year / month / day) with no extra logic needed. */
+    .log-mov-collapsible .log-mov-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-2);
+      cursor: pointer;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .log-mov-collapsible .log-mov-title { flex: 1 1 auto; min-width: 0; }
+    .log-mov-collapsible .log-mov-totals {
+      flex-shrink: 0;
+      font-size: var(--text-xs);
+      color: var(--text-muted);
+      text-align: right;
+      white-space: nowrap;
+    }
+    .log-mov-collapsible .log-mov-totals .log-mov-out { color: var(--text-secondary); }
+    .log-mov-collapsible .log-mov-totals .log-mov-in { color: var(--accent); }
+    .log-mov-collapsible .log-mov-totals .log-mov-actual { color: var(--text-primary); font-weight: 600; }
+    .log-mov-collapsible .log-mov-chevron { flex-shrink: 0; transition: transform 0.15s ease; }
+    .log-mov-collapsible.log-mov-open .log-mov-chevron { transform: rotate(180deg); }
+    /* Direct-child combinator (>) is essential here: each collapsible
+       card's own .log-mov-body must be controlled only by its own
+       .log-mov-open class, never by an ancestor's. Without ">" this was a
+       plain descendant selector, so opening the outer (logistic) card
+       also force-displayed every nested year/month/day body regardless of
+       their own state, and they couldn't be closed while the ancestor was
+       open (bug found 22 Sep 2026, fixed same day). */
+    .log-mov-collapsible > .log-mov-body { display: none; margin-top: var(--space-3); }
+    .log-mov-collapsible.log-mov-open > .log-mov-body { display: block; }
+
+    .log-mov-logistic-card {
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: var(--radius-md, 10px);
+      padding: var(--space-3);
+      margin-bottom: var(--space-3);
+    }
+    .log-mov-logistic-card:last-child { margin-bottom: 0; }
+    .log-mov-logistic-card.log-mov-open {
+      border-color: var(--accent, #6b8afd);
+      background: rgba(107,138,253,0.05);
+    }
+    .log-mov-logistic-card .log-mov-title { font-weight: 600; color: var(--text-primary); }
+    .log-mov-logistic-card .log-mov-subtitle {
+      font-size: var(--text-xs);
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    .log-mov-year-card,
+    .log-mov-month-card,
+    .log-mov-day-card {
+      border-left: 2px solid rgba(255,255,255,0.08);
+      padding: var(--space-2) 0 var(--space-2) var(--space-3);
+      margin-bottom: var(--space-2);
+    }
+    .log-mov-year-card:last-child,
+    .log-mov-month-card:last-child,
+    .log-mov-day-card:last-child { margin-bottom: 0; }
+    .log-mov-year-card.log-mov-open,
+    .log-mov-month-card.log-mov-open { border-left-color: var(--accent, #6b8afd); }
+    .log-mov-year-card .log-mov-body,
+    .log-mov-month-card .log-mov-body { padding-left: var(--space-2); }
+
+    /* Day card: full boxed block when open (not just the left accent
+       line used by Year/Month), so the exact day being reviewed stands
+       out clearly — same visual language as the main logistic card. */
+    .log-mov-day-card.log-mov-open {
+      border: 1px solid var(--accent, #6b8afd);
+      border-left: 2px solid var(--accent, #6b8afd);
+      border-radius: var(--radius-md, 10px);
+      background: rgba(107,138,253,0.06);
+      padding: var(--space-3);
+    }
+    .log-mov-day-card.log-mov-open > .log-mov-body { padding-left: 0; }
+
+    .log-mov-line {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: var(--space-2);
+      padding: var(--space-2) 0;
+      border-bottom: 1px dashed rgba(255,255,255,0.06);
+      font-size: var(--text-sm);
+    }
+    .log-mov-line:last-child { border-bottom: none; }
+    .log-mov-line-left { flex: 1 1 auto; min-width: 0; }
+    .log-mov-line-sub {
+      font-size: var(--text-xs);
+      color: var(--text-muted);
+      margin-top: 2px;
+      word-break: break-word;
+    }
+    .log-mov-line-right { flex-shrink: 0; text-align: right; }
   </style>
 
   <div class="tab-group" id="logTabGroup">
     <div class="tab active" data-log-tab="list">Logistic List</div>
+    <div class="tab" data-log-tab="movements">Movements</div>
     <div class="tab" data-log-tab="create">Create New Logistic</div>
   </div>
 
@@ -120,7 +225,23 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
     </div>
   </div>
 
-  <!-- Tab 2: Create New Logistic -->
+  <!-- Tab 2: Movements — logistic_movements history (in/out), grouped
+       Year -> Month -> Day, nested collapsible cards, one main collapsible
+       card per logistic/activity code. Collapse behaviour mirrors
+       stBindCollapsible() in transaction_content.php (Returns / Customers
+       history): single click = toggle + close siblings, double click
+       within 220ms = toggle without closing siblings — reimplemented
+       locally below since each *_content.php file is its own IIFE and
+       doesn't share JS scope. -->
+  <div id="logTabPanelMovements" style="display:none;">
+    <div id="logMovementsList"></div>
+    <div class="empty-state" id="logMovementsEmpty" style="display:none;">
+      <div class="empty-title">No movements yet</div>
+      <div class="empty-sub">Movements appear here once pickups or returns are recorded from Sales Transaction.</div>
+    </div>
+  </div>
+
+  <!-- Tab 3: Create New Logistic -->
   <div id="logTabPanelCreate" style="display:none;">
 
     <div class="form-group">
@@ -497,8 +618,9 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
   // ---------- Tabs ----------
   var logTabGroup = document.getElementById('logTabGroup');
   var panels = {
-    list:   document.getElementById('logTabPanelList'),
-    create: document.getElementById('logTabPanelCreate')
+    list:      document.getElementById('logTabPanelList'),
+    movements: document.getElementById('logTabPanelMovements'),
+    create:    document.getElementById('logTabPanelCreate')
   };
 
   function setActiveLogTab(name) {
@@ -509,6 +631,7 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
       panels[key].style.display = key === name ? 'block' : 'none';
     });
     if (name === 'list') loadLogisticList();
+    if (name === 'movements') loadLogisticMovements();
   }
 
   logTabGroup.querySelectorAll('.tab').forEach(function (tab) {
@@ -650,7 +773,258 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
       .catch(function (e) { console.error(e); });
   }
 
-  // ---------- Tab 2: Create New Logistic ----------
+  // ---------- Tab 2: Movements ----------
+  // Same collapsible click/dblclick behaviour as stBindCollapsible() in
+  // transaction_content.php, reimplemented here (own class names
+  // log-mov-* / log-mov-open) since each *_content.php file is its own
+  // IIFE and doesn't share JS scope with the others.
+  function logMovBindCollapsible(card, head) {
+    var timer = null;
+    card.classList.add('log-mov-collapsible');
+    head.classList.add('log-mov-head');
+    head.setAttribute('tabindex', '0');
+
+    function toggleExclusive() {
+      var willOpen = !card.classList.contains('log-mov-open');
+      if (willOpen && card.parentNode) {
+        Array.prototype.forEach.call(card.parentNode.children, function (sib) {
+          if (sib !== card && sib.classList.contains('log-mov-collapsible')) sib.classList.remove('log-mov-open');
+        });
+      }
+      card.classList.toggle('log-mov-open', willOpen);
+    }
+
+    head.addEventListener('click', function () {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(function () { timer = null; toggleExclusive(); }, 220);
+    });
+    head.addEventListener('dblclick', function () {
+      if (timer) { clearTimeout(timer); timer = null; }
+      card.classList.toggle('log-mov-open');
+    });
+    head.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleExclusive(); }
+    });
+  }
+
+  function logMovChevron() {
+    var c = document.createElement('i');
+    c.className = 'ti ti-chevron-down log-mov-chevron';
+    return c;
+  }
+
+  function fmtIDR(v) {
+    var n = Number(v || 0);
+    if (isNaN(n)) n = 0;
+    return 'Rp ' + n.toLocaleString('en-US', { maximumFractionDigits: 0 });
+  }
+
+  // Actual Taken = Taken (out) - Returned (in), same "Actual" convention
+  // already used in Sales Transaction > Customers tab.
+  function logMovActual(totalOut, totalIn) {
+    return {
+      qty:   round2(totalOut.qty - totalIn.qty),
+      value: round2(totalOut.value - totalIn.value)
+    };
+  }
+  function round2(n) { return Math.round((Number(n) || 0) * 100) / 100; }
+
+  // "Taken: 12 CTN · Rp 1,200,000" / "Returned: 2 CTN · Rp 200,000" /
+  // "Actual Taken: 10 CTN · Rp 1,000,000"
+  function logMovTotalsEl(totalOut, totalIn, unitLabel) {
+    var wrap = document.createElement('div');
+    wrap.className = 'log-mov-totals';
+    var outLine = document.createElement('div');
+    outLine.className = 'log-mov-out';
+    outLine.textContent = 'Taken: ' + fmtNum(totalOut.qty) + ' ' + (unitLabel || '') + ' \u00b7 ' + fmtIDR(totalOut.value);
+    var inLine = document.createElement('div');
+    inLine.className = 'log-mov-in';
+    inLine.textContent = 'Returned: ' + fmtNum(totalIn.qty) + ' ' + (unitLabel || '') + ' \u00b7 ' + fmtIDR(totalIn.value);
+    var actual = logMovActual(totalOut, totalIn);
+    var actualLine = document.createElement('div');
+    actualLine.className = 'log-mov-actual';
+    actualLine.textContent = 'Actual Taken: ' + fmtNum(actual.qty) + ' ' + (unitLabel || '') + ' \u00b7 ' + fmtIDR(actual.value);
+    wrap.appendChild(outLine);
+    wrap.appendChild(inLine);
+    wrap.appendChild(actualLine);
+    return wrap;
+  }
+
+  function logMovFormatTime(createdAt) {
+    if (!createdAt) return '';
+    var m = String(createdAt).match(/(\d{2}):(\d{2})/);
+    return m ? (m[1] + ':' + m[2]) : '';
+  }
+
+  function renderLogMovLine(mv, unitLabel) {
+    var line = document.createElement('div');
+    line.className = 'log-mov-line';
+
+    var left = document.createElement('div');
+    left.className = 'log-mov-line-left';
+    var badge = document.createElement('span');
+    badge.className = 'badge ' + (mv.movement_type === 'in' ? 'badge-success' : 'badge-warning');
+    badge.textContent = mv.movement_type === 'in' ? 'Returned' : 'Taken';
+    left.appendChild(badge);
+    var sub = document.createElement('div');
+    sub.className = 'log-mov-line-sub';
+    var subParts = [];
+    if (logMovFormatTime(mv.created_at)) subParts.push(logMovFormatTime(mv.created_at));
+    if (mv.customer_name) subParts.push(mv.customer_name);
+    if (mv.driver_name) subParts.push(mv.driver_name);
+    if (mv.police_number) subParts.push(mv.police_number);
+    sub.textContent = subParts.join(' \u00b7 ');
+    left.appendChild(sub);
+
+    var right = document.createElement('div');
+    right.className = 'log-mov-line-right';
+    right.textContent = fmtNum(mv.qty) + ' ' + (unitLabel || '');
+    var rightSub = document.createElement('div');
+    rightSub.className = 'log-mov-line-sub';
+    rightSub.textContent = mv.total_price !== null ? fmtIDR(mv.total_price) : '';
+    right.appendChild(rightSub);
+
+    line.appendChild(left);
+    line.appendChild(right);
+    return line;
+  }
+
+  // Simple "Valid" / "Invalid" badge shown right next to the activity name
+  // in the main (logistic) card header — visible immediately even while
+  // the card is collapsed. Reuses the existing .badge component instead of
+  // a bespoke style. Actual Taken (derived from movement history, out -
+  // in) must equal (primary_qty - remaining_primary_qty) —
+  // remaining_primary_qty is the stored running balance (same value shown
+  // in the Logistic List tab), so primary_qty minus that balance is how
+  // much has net been taken out according to the stored field. Comparing
+  // the two catches a movement that was missed or double-counted.
+  function logMovValidTag(actualQty, primaryQty, remainingQty) {
+    var tag = document.createElement('span');
+    if (primaryQty === null || remainingQty === null) {
+      tag.className = 'badge';
+      tag.textContent = 'Not validated';
+      return tag;
+    }
+    var expected = round2(primaryQty - remainingQty);
+    var ok = Math.abs(round2(actualQty) - expected) < 0.01;
+    tag.className = 'badge ' + (ok ? 'badge-success' : 'badge-danger');
+    tag.textContent = ok ? 'Valid' : 'Invalid';
+    return tag;
+  }
+
+  function renderLogisticMovements(list) {
+    var container = document.getElementById('logMovementsList');
+    var empty = document.getElementById('logMovementsEmpty');
+    container.innerHTML = '';
+    empty.style.display = list.length ? 'none' : 'block';
+
+    list.forEach(function (lg) {
+      var unitLabel = lg.primary_unit_label || '';
+
+      var mainCard = document.createElement('div');
+      mainCard.className = 'log-mov-logistic-card';
+      var mainHead = document.createElement('div');
+      var mainTitle = document.createElement('div');
+      mainTitle.className = 'log-mov-title';
+      mainTitle.style.cssText = 'display:flex; align-items:center; gap:var(--space-2); flex-wrap:wrap;';
+      var mainTitleText = document.createElement('span');
+      mainTitleText.textContent = lg.activity_name;
+      mainTitle.appendChild(mainTitleText);
+      var mainActual = logMovActual(lg.total_out, lg.total_in);
+      mainTitle.appendChild(logMovValidTag(mainActual.qty, lg.primary_qty, lg.remaining_primary_qty));
+      var mainSub = document.createElement('div');
+      mainSub.className = 'log-mov-subtitle';
+      mainSub.textContent = 'Activity Code ' + lg.activity_code + ' \u00b7 ' + lg.department;
+      var mainTitleWrap = document.createElement('div');
+      mainTitleWrap.appendChild(mainTitle);
+      mainTitleWrap.appendChild(mainSub);
+      mainHead.appendChild(mainTitleWrap);
+      var mainTotals = logMovTotalsEl(lg.total_out, lg.total_in, unitLabel);
+      mainHead.appendChild(mainTotals);
+      mainHead.appendChild(logMovChevron());
+      mainCard.appendChild(mainHead);
+
+      var mainBody = document.createElement('div');
+      mainBody.className = 'log-mov-body';
+
+      lg.years.forEach(function (y) {
+        var yCard = document.createElement('div');
+        yCard.className = 'log-mov-year-card';
+        var yHead = document.createElement('div');
+        var yTitle = document.createElement('div');
+        yTitle.className = 'log-mov-title';
+        yTitle.textContent = y.year;
+        yHead.appendChild(yTitle);
+        yHead.appendChild(logMovTotalsEl(y.total_out, y.total_in, unitLabel));
+        yHead.appendChild(logMovChevron());
+        yCard.appendChild(yHead);
+
+        var yBody = document.createElement('div');
+        yBody.className = 'log-mov-body';
+
+        y.months.forEach(function (mo) {
+          var moCard = document.createElement('div');
+          moCard.className = 'log-mov-month-card';
+          var moHead = document.createElement('div');
+          var moTitle = document.createElement('div');
+          moTitle.className = 'log-mov-title';
+          moTitle.textContent = mo.month_label;
+          moHead.appendChild(moTitle);
+          moHead.appendChild(logMovTotalsEl(mo.total_out, mo.total_in, unitLabel));
+          moHead.appendChild(logMovChevron());
+          moCard.appendChild(moHead);
+
+          var moBody = document.createElement('div');
+          moBody.className = 'log-mov-body';
+
+          mo.days.forEach(function (d) {
+            var dCard = document.createElement('div');
+            dCard.className = 'log-mov-day-card';
+            var dHead = document.createElement('div');
+            var dTitle = document.createElement('div');
+            dTitle.className = 'log-mov-title';
+            dTitle.textContent = d.date_label;
+            dHead.appendChild(dTitle);
+            dHead.appendChild(logMovTotalsEl(d.total_out, d.total_in, unitLabel));
+            dHead.appendChild(logMovChevron());
+            dCard.appendChild(dHead);
+
+            var dBody = document.createElement('div');
+            dBody.className = 'log-mov-body';
+            d.movements.forEach(function (mv) { dBody.appendChild(renderLogMovLine(mv, unitLabel)); });
+            dCard.appendChild(dBody);
+
+            logMovBindCollapsible(dCard, dHead);
+            moBody.appendChild(dCard);
+          });
+
+          moCard.appendChild(moBody);
+          logMovBindCollapsible(moCard, moHead);
+          yBody.appendChild(moCard);
+        });
+
+        yCard.appendChild(yBody);
+        logMovBindCollapsible(yCard, yHead);
+        mainBody.appendChild(yCard);
+      });
+
+      mainCard.appendChild(mainBody);
+      logMovBindCollapsible(mainCard, mainHead);
+      container.appendChild(mainCard);
+    });
+  }
+
+  function loadLogisticMovements() {
+    fetch('ajax/list_logistic_movements.php')
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (res.ok) renderLogisticMovements(res.data);
+        else console.warn(res.message);
+      })
+      .catch(function (e) { console.error(e); });
+  }
+
+  // ---------- Tab 3: Create New Logistic ----------
   var logDepartment       = document.getElementById('logDepartment');
   var logActivityCode     = document.getElementById('logActivityCode');
   var logActivityCodeEmpty= document.getElementById('logActivityCodeEmpty');

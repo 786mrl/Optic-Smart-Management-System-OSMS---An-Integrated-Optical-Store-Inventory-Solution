@@ -2542,3 +2542,241 @@ saja):
 **File yang diubah:** hanya `transaction_content.php` (CSS + JS
 `renderRtItems`, `renderRtAllocations` — hapus reset `reviewed=false` di
 handler alokasi, `renderStCustomerDetail`). **Belum ditest di browser.**
+
+## Tab baru "Movements" di menu Logistic (22 Sep 2026; SUDAH DIKERJAKAN kode, BELUM DITES di browser)
+
+Realisasi dari rencana lama "tab ketiga di menu Logistic" (lihat catatan
+awal soal `logistic_movements`).
+
+**Konfirmasi user sebelum coding:**
+- Card utama (paling luar) = **per Logistic/Activity Code** (1 card = 1 baris `logistics`).
+- Total Taken/Returned tampil di **semua level sekaligus** (utama, tahun, bulan, hari).
+- Ini **tab ke-3 terpisah** ("Movements"), bukan digabung ke tab Logistic List.
+
+**File baru: `ajax/list_logistic_movements.php`**
+- Query flat `logistic_movements JOIN logistics JOIN activities`, di-group
+  di PHP (bukan SQL `GROUP BY` bertingkat) jadi struktur bersarang per
+  logistic: `years[] -> months[] -> days[] -> movements[]`. Tiap level
+  bawa `total_out`/`total_in` masing-masing `{qty, value}` (`value` = SUM
+  `total_price`), dihitung dengan roll-up dari level di bawahnya.
+- Urutan: logistic terbaru dulu (`logistic_id DESC`), lalu tahun/bulan/hari
+  terbaru dulu (`krsort`), movement dalam 1 hari terbaru dulu (`created_at`).
+- `activity_code`/`department` di-parse dari `activities.relative_path`,
+  pola sama persis dengan `list_logistics.php`.
+- Belum ada filter (department/tanggal/logistic tertentu) — selalu return
+  semua logistic yang punya minimal 1 movement. Kalau datanya nanti banyak,
+  perlu ditambah filter/pagination di sini.
+
+**Edit `logistic_content.php`:**
+- Tab-group: tambah `<div class="tab" data-log-tab="movements">Movements</div>`.
+- Panel baru `#logTabPanelMovements` (`#logMovementsList` + `#logMovementsEmpty`),
+  di-load lewat `loadLogisticMovements()` yang dipanggil dari
+  `setActiveLogTab()` pas tab movements dibuka (pola sama seperti
+  `loadLogisticList()` untuk tab list).
+- **Collapsible di-reimplementasi lokal**, bukan reuse langsung
+  `stBindCollapsible` dari `transaction_content.php` — karena tiap
+  `*_content.php` adalah IIFE sendiri-sendiri, tidak share JS/CSS scope.
+  Jadi dibuat versi lokal: `logMovBindCollapsible()`/`logMovChevron()`,
+  class `.log-mov-collapsible`/`.log-mov-open` (bukan `.st-collapsible`/
+  `.st-open`), tapi **behavior-nya identik**: klik sekali = toggle +
+  tutup saudara (exclusive per parent), klik dua kali dalam 220ms = toggle
+  tanpa menutup saudara lain. Exclusivity otomatis per level karena cuma
+  lihat `card.parentNode.children` — jadi tinggal panggil
+  `logMovBindCollapsible(card, head)` di tiap level (utama/tahun/bulan/hari),
+  tidak perlu logic tambahan buat nested accordion-nya.
+- Class CSS card per level: `.log-mov-logistic-card` (card utama, border
+  penuh + highlight biru saat open, mirror `.rt-line-card`),
+  `.log-mov-year-card`/`.log-mov-month-card`/`.log-mov-day-card` (border-left
+  aksen + indent, biar terlihat nested/bersarang). Baris movement individual
+  (`.log-mov-line`, di dalam card Hari, tidak collapsible) menampilkan badge
+  Taken/Returned (reuse `.badge-warning`/`.badge-success`), qty, customer/
+  driver/police number, jam, dan value (`fmtIDR`, helper baru lokal — Rp
+  dibulatkan, tanpa desimal).
+- Helper baru: `fmtIDR()`, `logMovTotalsEl()` (render 2 baris "Taken: … ·
+  Rp …" / "Returned: … · Rp …" dipakai di header semua level),
+  `logMovFormatTime()`, `renderLogMovLine()`, `renderLogisticMovements()`.
+
+**Belum ditest di browser** — perlu dicoba: buka tab Movements pertama kali
+(load & render benar), klik satu card tahun lalu klik card tahun lain
+(exclusive-nya jalan), klik dua kali salah satu card hari (tetap terbuka
+tanpa menutup yang lain), cek total di tiap level cocok sama total di card
+di atasnya, dan cek kondisi logistic yang belum punya movement sama sekali
+(harus tidak muncul di list, bukan error).
+
+**Belum dikerjakan (di luar scope saat ini):**
+- Filter/pencarian di tab Movements (per activity code, per rentang tanggal).
+- `department` ditampilkan tapi tidak dipakai untuk apa pun selain label —
+  konsisten dengan `list_logistics.php`.
+
+### Follow-up (22 Sep 2026): posisi tab, Actual Taken, validasi (SUDAH DIKERJAKAN kode, BELUM DITES)
+
+Empat perbaikan kecil di atas versi pertama tab Movements:
+
+1. **Card Tahun/Bulan/Hari memang sudah collapsible** dari versi pertama
+   (tiap level dipanggil `logMovBindCollapsible(card, head)` sendiri-sendiri,
+   exclusive otomatis per parent karena cek `card.parentNode.children`) —
+   dicek ulang, tidak ada perubahan kode di bagian ini, cuma dikonfirmasi.
+2. **Baris "Actual Taken" baru** (`logMovActual()` = `total_out - total_in`,
+   qty & value, dibulatkan `round2()`) ditambahkan sebagai baris ke-3 di
+   `logMovTotalsEl()` — jadi tampil di **semua level** (utama, tahun,
+   bulan, hari), sama seperti Taken/Returned. Styling beda (`.log-mov-actual`,
+   bold + warna teks utama) biar menonjol dari 2 baris lain.
+3. **Area validasi baru** (`logMovValidationEl()`) — banner di dalam body
+   card utama (di atas daftar tahun), bandingkan **Actual Taken grand total**
+   (dihitung dari `lg.total_out`/`lg.total_in`) dengan
+   **`remaining_primary_qty`** (field tersimpan di tabel `logistics`, sama
+   dengan yang ditampilkan di tab Logistic List — nilainya dikirim ajax
+   baru lewat kolom tambahan `l.primary_qty`, `l.remaining_primary_qty`).
+   Toleransi floating-point `0.01`. Hijau (`.log-mov-valid-ok`,
+   ikon `ti-circle-check`) kalau cocok, merah (`.log-mov-valid-bad`,
+   ikon `ti-alert-triangle`) kalau tidak — supaya user langsung lihat kalau
+   ada movement yang kelewat/duplikat tanpa harus bandingkan manual ke tab
+   Logistic List. Kalau `remaining_primary_qty` belum pernah di-set
+   (`NULL`, logistic baru dibuat tanpa qty), banner netral: "cannot validate".
+4. **Posisi tab diubah**: urutan sekarang **Logistic List → Movements →
+   Create New Logistic** (semula List → Create → Movements). Panel HTML
+   `#logTabPanelMovements` dipindah ke antara panel List dan panel Create;
+   komentar `Tab 1/2/3` di CSS & JS disesuaikan (Movements sekarang Tab 2,
+   Create jadi Tab 3). `panels` object di JS diurut ulang juga (kosmetik,
+   tidak mempengaruhi fungsi).
+
+**File yang diubah:** `logistic_content.php` (poin 2–4) dan
+`ajax/list_logistic_movements.php` (tambah `primary_qty`/
+`remaining_primary_qty` ke query & response, untuk poin 3). **Belum
+ditest di browser** — perlu dicoba: banner validasi hijau utk logistic yang
+datanya konsisten, cek juga skenario NULL (logistic baru tanpa
+`remaining_primary_qty`), dan urutan tab tampil benar (List, Movements,
+Create) dengan default tab yang terbuka tetap Logistic List.
+
+### Follow-up 2 (22 Sep 2026): bugfix collapse + rumus validasi + posisi tag (SUDAH DIKERJAKAN kode, BELUM DITES)
+
+User lapor 2 masalah dari hasil follow-up pertama:
+
+1. **Bug: buka card utama (logistic) bikin SEMUA card tahun/bulan/hari
+   ikut kebuka dan tidak bisa ditutup sama sekali.** Penyebab: CSS
+   `.log-mov-collapsible .log-mov-body { display:none }` /
+   `.log-mov-collapsible.log-mov-open .log-mov-body { display:block }`
+   pakai **descendant selector** (tanpa `>`), jadi kena ke SEMUA
+   `.log-mov-body` di bawahnya sampai level manapun, bukan cuma body
+   miliknya sendiri — begitu card utama dapat `.log-mov-open`, rule itu
+   maksa `display:block` ke body tahun/bulan/hari juga, dan mereka
+   memang tidak bisa ditutup lagi selama ancestor-nya masih open (sama
+   specificity, rule "open" datang belakangan di stylesheet jadi menang).
+   **Fix:** ganti ke **child combinator** `.log-mov-collapsible > .log-mov-body`
+   di kedua rule, supaya tiap card cuma kontrol body miliknya sendiri
+   (yang memang selalu direct child dari card itu di struktur DOM-nya).
+2. **Rumus validasi salah.** Semula bandingkan Actual Taken langsung
+   dengan `remaining_primary_qty`. **Dikoreksi** (konfirmasi user):
+   yang benar dibandingkan adalah Actual Taken vs
+   **`primary_qty - remaining_primary_qty`** — karena
+   `remaining_primary_qty` itu sisa stok sekarang, jadi selisihnya
+   dengan `primary_qty` itulah net yang sudah terambil (secara logika
+   sama dengan Actual Taken kalau semua movement tercatat benar).
+   Fungsi baru `logMovValidTag(actualQty, primaryQty, remainingQty)`.
+3. **Tampilan dipindah**, semula banner detail (ikon + kalimat panjang)
+   di dalam body card utama (baru kelihatan kalau di-expand) → sekarang
+   jadi **baris ke-4 di header card utama**, persis gaya baris
+   Taken/Returned/Actual Taken (`.log-mov-totals`), cuma teksnya
+   **"Valid" / "Invalid" / "Not validated"** (kalau `primary_qty` atau
+   `remaining_primary_qty` masih NULL). Jadi langsung kelihatan walau
+   card-nya masih collapsed, tidak perlu expand dulu. Fungsi lama
+   `logMovValidationEl()` (banner ikon+kalimat) **dihapus total**, diganti
+   `logMovValidTag()`. CSS `.log-mov-validation*` (banner) dihapus, diganti
+   `.log-mov-valid-tag` (+`.log-mov-valid-yes`/`-no`/`-unknown`) yang jauh
+   lebih ringkas.
+   - Tag ini **cuma muncul di card utama** (logistic-level), tidak di
+     tahun/bulan/hari — karena `primary_qty`/`remaining_primary_qty`
+     memang konsepnya per-logistic, bukan per-periode.
+
+**File yang diubah:** `logistic_content.php` saja (CSS `.log-mov-collapsible
+> .log-mov-body`, fungsi `logMovValidTag` menggantikan `logMovValidationEl`,
+susunan header main card). **Belum ditest di browser** — perlu dicoba:
+buka card utama lalu cek card tahun di dalamnya masih collapsed (harus
+tertutup, hanya terbuka kalau di-klik sendiri), tutup salah satu card
+tahun tanpa menutup ancestor-nya, dan cek tag Valid/Invalid muncul di
+header collapsed (tanpa expand) dengan warna yang benar.
+
+### Follow-up 3 (22 Sep 2026): posisi badge + blok penuh card Hari (SUDAH DIKERJAKAN kode, BELUM DITES)
+
+Dua penyesuaian kecil lagi:
+
+1. **Badge Valid/Invalid dipindah** dari baris ke-4 di blok totals →
+   sekarang **di sebelah nama activity** langsung (dalam `mainTitle`,
+   `display:flex` + `gap`). Diganti pakai class **`.badge`/`.badge-success`/
+   `.badge-danger`** yang sudah ada di `theme.css` (reuse komponen, bukan
+   style baru) — teks "Valid"/"Invalid"/"Not validated". CSS custom
+   `.log-mov-valid-tag*` yang dibuat di follow-up sebelumnya **dihapus**,
+   tidak dipakai lagi.
+2. **Card Hari saat dibuka sekarang full block** (border penuh + background
+   accent, radius, padding penuh — mirror gaya card utama), bukan cuma
+   garis aksen di sisi kiri seperti Tahun/Bulan. Tujuannya biar area hari
+   yang lagi ditinjau kelihatan jelas. Tahun & Bulan **tidak diubah**,
+   tetap garis kiri saja (supaya level hierarki masih kebaca — cuma level
+   paling detail yang ditonjolkan penuh). Rule baru
+   `.log-mov-day-card.log-mov-open` (override border+background+padding)
+   + `.log-mov-day-card.log-mov-open > .log-mov-body { padding-left:0 }`
+   (body-nya ikut disesuaikan karena parent-nya sudah punya padding penuh,
+   biar tidak dobel indent).
+
+**File yang diubah:** `logistic_content.php` saja. **Belum ditest di
+browser** — perlu dicoba: badge Valid/Invalid nempel rapi di sebelah nama
+activity (termasuk saat activity name panjang/wrap), dan card Hari yang
+dibuka keliatan sebagai blok penuh yang jelas beda dari Tahun/Bulan di
+sekitarnya.
+
+---
+
+### (Riwayat requirement gathering asli, sebelum konfirmasi di atas)
+
+**Tujuan:** di menu **Logistic**, tampilkan riwayat pengeluaran (`out`) dan
+pemasukan/retur (`in`) barang dari tabel `logistic_movements`, dikelompokkan
+bertingkat: **Tahun → Bulan → Hari**, dalam bentuk card collapsible bersarang.
+
+**Struktur (dikonfirmasi user 22 Sep 2026):**
+```
+Tab baru "Movements" (nama sementara — tab ke-3, TERPISAH dari
+                       "Logistic List" yang sudah ada, bukan digabung)
+└─ Card utama = per Logistic / Activity Code (1 card = 1 baris `logistics`)
+    └─ Card Tahun
+        └─ Card Bulan
+            └─ Card Hari
+                └─ list movement (out/in) hari itu
+```
+- Default semua collapsed.
+- Mekanisme collapse: **reuse pola `stBindCollapsible`/`stMakeChevron`
+  yang sudah ada** (dipakai di Returns & history Customers,
+  `transaction_content.php`) — klik sekali = buka & otomatis tutup
+  saudara di level yang sama (exclusive per parent), klik dua kali
+  (dalam 220ms) = tetap terbuka tanpa menutup yang lain. TIDAK bikin
+  mekanisme baru, tinggal pasang ulang di tiap level (card utama, tahun,
+  bulan, hari) — masing-masing level exclusive terhadap sibling-nya
+  sendiri (mirror pola accordion-per-parent yang sudah dipakai di
+  Customers/Returns).
+- **Total Taken (out) & Total Returned (in) ditampilkan di SEMUA level**
+  sekaligus (card utama, tahun, bulan, hari) — tiap level agregat dari
+  level di bawahnya.
+
+**Dokumen yang diperlukan sebelum mulai coding** (belum di-upload user):
+1. `logistic_content.php` — struktur tab yang sudah ada (Logistic List +
+   Create New Logistic) supaya tab baru konsisten.
+2. `transaction_content.php` — buat contek implementasi persis
+   `stBindCollapsible()`, `stMakeChevron()`, `stRemeasureAncestors()`,
+   CSS `.st-collapsible`/`.st-open`.
+3. `assets/css/theme.css` — cek class yang sudah ada (`.card`,
+   `.accordion-row`, dst) biar tidak duplikat.
+4. Skema tabel `logistics` & `logistic_movements` (`sql/lisani_aos_logistics.sql`
+   atau hasil `DESCRIBE`) — perlu tahu kolom pasti (nama produk, qty,
+   price, movement_date, movement_type, dst).
+5. Contoh file ajax query gabungan logistics+activities yang sudah ada
+   (mis. `ajax/list_logistic_activities.php` / `ajax/list_logistics.php`)
+   — buat pola koneksi DB & format response JSON yang konsisten.
+
+**Rencana implementasi (setelah dokumen di atas didapat):**
+- File ajax baru `ajax/list_logistic_movements.php` — query
+  `logistic_movements` per `logistic_id`, di-group by
+  `YEAR(movement_date)` → `MONTH` → `DAY`, hitung `SUM(qty) WHERE
+  movement_type='out'` dan `SUM(qty) WHERE movement_type='in'` di tiap
+  level (bisa full di server, atau ambil flat list lalu group di
+  client — diputuskan setelah lihat skema tabel).
+- Edit `logistic_content.php` — tambah tab ke-3, render nested card pakai
+  `stBindCollapsible` yang sudah ada di codebase.
