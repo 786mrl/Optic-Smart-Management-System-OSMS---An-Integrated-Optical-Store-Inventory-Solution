@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Sep 20, 2026 at 10:06 AM
+-- Generation Time: Sep 22, 2026 at 07:35 AM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -94,7 +94,8 @@ CREATE TABLE `customers` (
 --
 
 INSERT INTO `customers` (`id`, `year`, `customer_name`, `phone_number`, `total_inflow`, `total_outflow`, `total_paid`, `profit`, `created_at`) VALUES
-(1, 2026, 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', '+6281265472547', 0.00, 0.00, 0.00, 0.00, '2026-09-18 10:55:33');
+(1, 2026, 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', '+6281265472547', 33375000.00, 0.00, 0.00, 0.00, '2026-09-18 10:55:33'),
+(2, 2026, 'RAIS', '+6281267646916', 2650000.00, 0.00, 0.00, 0.00, '2026-09-21 04:36:37');
 
 -- --------------------------------------------------------
 
@@ -120,7 +121,10 @@ CREATE TABLE `customer_item_prices` (
 INSERT INTO `customer_item_prices` (`id`, `customer_id`, `logistic_id`, `price`, `price_date`, `unit_label`, `created_at`, `updated_at`) VALUES
 (1, 1, 2, 136000.00, '2026-09-18', 'MASTER CARTON', '2026-09-18 13:26:04', '2026-09-18 13:26:04'),
 (2, 1, 3, 345000.00, '2026-09-18', 'MASTER CARTON', '2026-09-18 13:26:21', '2026-09-18 13:26:21'),
-(3, 1, 2, 145000.00, '2026-09-18', 'MASTER CARTON', '2026-09-18 13:26:42', '2026-09-18 13:26:42');
+(3, 1, 2, 145000.00, '2026-09-18', 'MASTER CARTON', '2026-09-18 13:26:42', '2026-09-18 13:26:42'),
+(4, 2, 2, 140000.00, '2026-09-21', 'MASTER CARTON', '2026-09-21 04:47:41', '2026-09-21 04:47:41'),
+(5, 2, 2, 130000.00, '2026-09-21', 'MASTER CARTON', '2026-09-21 09:58:51', '2026-09-21 09:58:51'),
+(6, 2, 3, 260000.00, '2026-09-21', 'MASTER CARTON', '2026-09-21 10:49:43', '2026-09-21 10:49:43');
 
 -- --------------------------------------------------------
 
@@ -142,6 +146,14 @@ CREATE TABLE `invoices` (
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `invoices`
+--
+
+INSERT INTO `invoices` (`id`, `customer_id`, `invoice_number`, `sequence_number`, `period_month`, `period_year`, `status`, `total_amount`, `paid_amount`, `paid_at`, `created_at`, `updated_at`) VALUES
+(1, 1, '001/inv/laj-TAHKP-1/IX/2026', 1, 9, 2026, 'open', 33375000.00, 0.00, NULL, '2026-09-21 04:39:50', '2026-09-21 12:47:18'),
+(2, 2, '001/inv/laj-R-1/IX/2026', 1, 9, 2026, 'open', 2650000.00, 0.00, NULL, '2026-09-21 04:47:41', '2026-09-21 10:53:55');
 
 -- --------------------------------------------------------
 
@@ -171,8 +183,8 @@ CREATE TABLE `logistics` (
 --
 
 INSERT INTO `logistics` (`id`, `activity_id`, `incoming_date`, `primary_qty`, `primary_unit_label`, `primary_unit_weight_kg`, `remaining_primary_qty`, `total_taken_qty`, `secondary_unit_label`, `secondary_unit_weight_kg`, `secondary_ratio_per_primary`, `created_by`, `created_at`, `updated_at`) VALUES
-(2, 4, NULL, 1500.00, 'MASTER CARTON', 12.000, 1500.00, 0.00, 'BABY CARTON', 3.000, 4.000, 1, '2026-09-18 20:06:51', '2026-09-18 20:06:51'),
-(3, 1, NULL, 5000.00, 'MASTER CARTON', 10.000, 5000.00, 0.00, 'NO PRIMARY CARTON', 10.000, 1.000, 1, '2026-09-18 20:25:26', '2026-09-20 10:55:56');
+(2, 4, NULL, 1500.00, 'MASTER CARTON', 12.000, 1355.00, 145.00, 'BABY CARTON', 3.000, 4.000, 1, '2026-09-18 20:06:51', '2026-09-21 19:46:02'),
+(3, 1, NULL, 5000.00, 'MASTER CARTON', 10.000, 4955.00, 45.00, 'NO PRIMARY CARTON', 10.000, 1.000, 1, '2026-09-18 20:25:26', '2026-09-21 19:47:18');
 
 -- --------------------------------------------------------
 
@@ -207,6 +219,7 @@ INSERT INTO `logistic_documents` (`id`, `activity_id`, `document_type`, `documen
 CREATE TABLE `logistic_movements` (
   `id` int(10) UNSIGNED NOT NULL,
   `logistic_id` int(10) UNSIGNED NOT NULL,
+  `source_movement_id` int(10) UNSIGNED DEFAULT NULL,
   `customer_id` int(10) UNSIGNED DEFAULT NULL,
   `movement_type` enum('in','out') NOT NULL,
   `movement_date` date NOT NULL,
@@ -217,9 +230,25 @@ CREATE TABLE `logistic_movements` (
   `price` decimal(15,2) DEFAULT NULL COMMENT 'Harga satuan per unit primary package',
   `total_price` decimal(15,2) DEFAULT NULL COMMENT 'qty_primary_package x price',
   `invoice_id` int(10) UNSIGNED DEFAULT NULL,
+  `batch_id` int(10) UNSIGNED DEFAULT NULL,
   `created_by` int(10) UNSIGNED DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `logistic_movements`
+--
+
+INSERT INTO `logistic_movements` (`id`, `logistic_id`, `source_movement_id`, `customer_id`, `movement_type`, `movement_date`, `customer_name`, `driver_name`, `police_number`, `qty_primary_package`, `price`, `total_price`, `invoice_id`, `batch_id`, `created_by`, `created_at`) VALUES
+(1, 2, NULL, 1, 'out', '2026-09-21', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BK 1284 AXE', 5.00, 145000.00, 725000.00, 1, 1, 1, '2026-09-21 11:39:50'),
+(2, 3, NULL, 1, 'out', '2026-09-21', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BK 1284 AXE', 8.00, 345000.00, 2760000.00, 1, 1, 1, '2026-09-21 11:39:50'),
+(3, 2, NULL, 1, 'out', '2026-09-21', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'RENDI', 'BL 2114 BNN', 50.00, 145000.00, 7250000.00, 1, 3, 1, '2026-09-21 11:45:13'),
+(4, 2, NULL, 2, 'out', '2026-09-21', 'RAIS', 'PAK RE', 'BA 3421 AAS', 5.00, 140000.00, 700000.00, 2, 4, 1, '2026-09-21 11:47:41'),
+(5, 3, NULL, 1, 'out', '2026-09-21', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'ADI', 'BK 4124 BL', 2.00, 345000.00, 690000.00, 1, 5, 1, '2026-09-21 11:52:34'),
+(6, 2, NULL, 2, 'out', '2026-09-21', 'RAIS', 'RAIS', 'BA 1687 AWN', 5.00, 130000.00, 650000.00, 2, 6, 1, '2026-09-21 17:01:54'),
+(7, 3, NULL, 2, 'out', '2026-09-21', 'RAIS', 'RAIS', 'BA 1687 AWN', 5.00, 260000.00, 1300000.00, 2, 7, 1, '2026-09-21 17:49:43'),
+(8, 2, NULL, 1, 'out', '2026-09-21', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BL 3415 AHY', 80.00, 145000.00, 11600000.00, 1, 8, 1, '2026-09-21 19:44:40'),
+(9, 3, NULL, 1, 'out', '2026-09-21', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BL 3415 AHY', 30.00, 345000.00, 10350000.00, 1, 8, 1, '2026-09-21 19:44:40');
 
 -- --------------------------------------------------------
 
@@ -249,6 +278,14 @@ CREATE TABLE `transactions` (
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+--
+-- Dumping data for table `transactions`
+--
+
+INSERT INTO `transactions` (`id`, `category`, `transaction_date`, `source_bank`, `destination_bank`, `source_account_number`, `source_account_name`, `destination_account_number`, `destination_account_name`, `notes`, `currency`, `amount`, `exchange_rate`, `final_amount_idr`, `document_path`, `document_original_name`, `created_by`, `created_at`, `updated_at`) VALUES
+(1, 'disbursement', '2026-06-16', 'MAYBANK', 'BANK MUAMALAT', '', '', '1205 0003 5177 19', 'RAMIN AKBARINAKHIJAVANI', 'Maher Rostam', 'RM', 7000.00, 4325.000000, 30275000.00, 'input/2026/dates/001/disbursement/20260616_453546b7.pdf', 'M2U_20260615_1401.pdf', 1, '2026-09-20 15:11:22', '2026-09-20 15:11:22'),
+(2, 'disbursement', '2026-06-15', 'MANDIRI', 'CIMB BANK BERHAD', '1060030131984.', 'LISANI ALAF JAYA', '850002311940', 'EDGE SPIRAL SDN BHD', 'RFB PAYMENT FOR INVOICE NO. 423', 'USD', 17005.00, 17690.000000, 300818450.00, 'input/2026/dates/001/disbursement/second_payment_20260615.pdf', 'USD 17K Edge Spiral Sayer.pdf', 1, '2026-09-20 15:55:37', '2026-09-20 15:55:37');
+
 -- --------------------------------------------------------
 
 --
@@ -263,6 +300,14 @@ CREATE TABLE `transaction_disbursements` (
   `transaction_purpose` varchar(255) NOT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `transaction_disbursements`
+--
+
+INSERT INTO `transaction_disbursements` (`id`, `transaction_id`, `activity_id`, `cashflow_type`, `transaction_purpose`, `created_at`) VALUES
+(1, 1, 1, 'outflow', 'FIRST PAYMENT', '2026-09-20 15:11:22'),
+(2, 2, 1, 'outflow', 'SECOND PAYMENT', '2026-09-20 15:55:37');
 
 -- --------------------------------------------------------
 
@@ -287,7 +332,7 @@ CREATE TABLE `users` (
 --
 
 INSERT INTO `users` (`user_id`, `username`, `password_hash`, `role`, `is_approved`, `created_at`, `last_login`, `session_token`, `session_expires`) VALUES
-(1, 'Rais786', '$2y$10$QciWVGPK9aGHjy05rBoXgOWfCAesfocowc0vt4QCMHVeVzsVuGDS6', 'admin', 1, '2026-09-10 21:34:57', '2026-09-20 05:52:37', NULL, NULL);
+(1, 'Rais786', '$2y$10$QciWVGPK9aGHjy05rBoXgOWfCAesfocowc0vt4QCMHVeVzsVuGDS6', 'admin', 1, '2026-09-10 21:34:57', '2026-09-22 06:25:01', NULL, NULL);
 
 --
 -- Indexes for dumped tables
@@ -353,7 +398,9 @@ ALTER TABLE `logistic_movements`
   ADD PRIMARY KEY (`id`),
   ADD KEY `idx_logistic` (`logistic_id`),
   ADD KEY `idx_customer` (`customer_id`),
-  ADD KEY `idx_invoice` (`invoice_id`);
+  ADD KEY `idx_invoice` (`invoice_id`),
+  ADD KEY `idx_movements_batch` (`batch_id`),
+  ADD KEY `idx_lm_source_movement` (`source_movement_id`);
 
 --
 -- Indexes for table `transactions`
@@ -398,19 +445,19 @@ ALTER TABLE `company_documents`
 -- AUTO_INCREMENT for table `customers`
 --
 ALTER TABLE `customers`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
 -- AUTO_INCREMENT for table `customer_item_prices`
 --
 ALTER TABLE `customer_item_prices`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
 
 --
 -- AUTO_INCREMENT for table `invoices`
 --
 ALTER TABLE `invoices`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
 -- AUTO_INCREMENT for table `logistics`
@@ -428,19 +475,19 @@ ALTER TABLE `logistic_documents`
 -- AUTO_INCREMENT for table `logistic_movements`
 --
 ALTER TABLE `logistic_movements`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=10;
 
 --
 -- AUTO_INCREMENT for table `transactions`
 --
 ALTER TABLE `transactions`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
 -- AUTO_INCREMENT for table `transaction_disbursements`
 --
 ALTER TABLE `transaction_disbursements`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
 -- AUTO_INCREMENT for table `users`
@@ -468,6 +515,7 @@ ALTER TABLE `logistic_documents`
 -- Constraints for table `logistic_movements`
 --
 ALTER TABLE `logistic_movements`
+  ADD CONSTRAINT `fk_lm_source_movement` FOREIGN KEY (`source_movement_id`) REFERENCES `logistic_movements` (`id`),
   ADD CONSTRAINT `fk_logmov_logistic` FOREIGN KEY (`logistic_id`) REFERENCES `logistics` (`id`) ON DELETE CASCADE;
 COMMIT;
 

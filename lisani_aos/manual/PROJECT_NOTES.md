@@ -1768,6 +1768,12 @@ Revisi"). Yang perlu dicek user:
    cek Tab 2, `logistics` (remaining/total_taken), `customers.total_inflow`, dan
    `invoices.total_amount`. Coba juga stok kurang, tanggal mundur, dan dua customer
    berinisial sama (nomor invoice harus `…-CMJ-1` dan `…-CMJ-2`).
+
+**B. Tab "Returns" di Sales Transaction** — SUDAH DITULIS (22 Sep 2026), belum
+dites di browser. Lihat "Sales Transaction — Tab Returns (IMPLEMENTASI...)" di
+atas untuk detail lengkap + daftar tes yang perlu dijalankan sebelum dianggap
+selesai (validasi tolak retur, dua baris harga beda, invoice baru minus,
+password gate, badge di tab Customers).
 4. **Khusus fitur Order Baru/Update Existing** (sudah disederhanakan 21 Sep 2026
    jadi 2 tombol, lihat "New Order — sederhanakan fly window..." di bawah, dan
    bug `bind_param` di `update_order.php` sudah diperbaiki & dikonfirmasi user
@@ -2117,6 +2123,143 @@ picker "Update Existing Order" yang sudah begini dari awal.
 - **Urutan deploy**: jalankan SQL langkah 1-2 → ganti 4 file → cek langkah 3 → merge
   manual → tes ulang riwayat customer + revisi order.
 
+## Sales Transaction — Tab "Returns" (IMPLEMENTASI, 22 Sep 2026; BELUM DITES USER)
+Tab ke-3 di `#viewSalesTransaction` (`data-st-tab="returns"`, panel
+`#stTabPanelReturns`), sejajar New Order & Customers. Alur input sama pola
+dengan New Order (pilih customer → tempel pesan WA → `parse_order_message.php`
+→ "Which product is this?" untuk baris tak dikenal, reuse
+`save_order_alias.php` → tanggal → Review → Confirm → Save), TAPI: tidak
+terikat order/invoice asal, harga per baris **dipilih/diisi manual** (bukan
+ditarik dari `customer_item_prices`), dan ada gerbang password sebelum
+tersimpan. Sengaja TIDAK mereuse alur "Update Existing Order" (New Order)
+karena retur memang tidak boleh terikat ke order manapun.
+
+**File baru:**
+- `ajax/create_return.php` — mirror `create_order.php` (pola dry_run=1 preview
+  / dry_run=0 simpan, satu DB transaction, error class sendiri
+  `AosReturnError`). POST: `customer_id, return_date, driver_name,
+  police_number, items JSON [{logistic_id, qty, price}], dry_run`.
+  - Baris TIDAK digabung per produk (beda dari `create_order.php`) karena dua
+    baris produk sama boleh punya harga manual berbeda (mis. sebagian rusak).
+  - **Validasi ketersediaan**: per `logistic_id`, hitung
+    `total_taken = SUM(qty) WHERE movement_type='out'` dan
+    `total_returned = SUM(qty) WHERE movement_type='in'` (customer+logistic
+    yang sama). `available = total_taken - total_returned`. **Ditolak**
+    (code `not_returnable`) kalau `total_taken <= 0` (belum pernah diambil
+    sama sekali) atau `qty diminta > available`.
+  - Harga: **manual dari client**, divalidasi `> 0`, tidak disentuh
+    `customer_item_prices` sama sekali (sesuai keputusan user).
+  - **Invoice: reuse yang OPEN kalau ada** (query sama seperti
+    `create_order.php`, `FOR UPDATE`), `total_amount`-nya dikurangi
+    (`total_amount += -grand_total`, boleh jadi minus). **Hanya kalau
+    customer tidak punya invoice open** baru dibuatkan yang baru, dengan
+    `total_amount` langsung diisi **negatif** sejak INSERT. Invoice baru
+    pakai skema sama dengan order tapi infix `/ret/` bukan `/inv/`
+    (`001/ret/laj-CMJ-1/IX/2026`) supaya tetap kelihatan itu invoice retur;
+    `[n]` index dicari dari kedua pola (`invoice_initials_index()` scan
+    `/(?:inv|ret)/laj-...`) supaya tidak tabrakan dengan invoice order.
+    Sequence number diambil dari `MAX(sequence_number)` semua invoice
+    (order+retur) customer itu di bulan/tahun yang sama (satu counter).
+    **Direvisi 22 Sep 2026** dari desain awal "selalu invoice baru" — user
+    mau retur masuk ke invoice open yang sedang berjalan kalau ada.
+  - Efek tulis: `INSERT logistic_movements` (`movement_type='in'`) per baris,
+    `batch_id` distempel sama seperti `create_order.php` (grouping riwayat);
+    `logistics.remaining_primary_qty += qty`;
+    `logistics.total_taken_qty = GREATEST(total_taken_qty - qty, 0)` (saldo,
+    bukan akumulator — **merevisi** desain lama New Order khusus kolom ini);
+    `customers.total_outflow += grand_total` (akumulator searah
+    `total_inflow`; piutang bersih = `total_inflow − total_outflow`).
+- `ajax/list_return_price_options.php` — GET `customer_id, logistic_id` →
+  `{ available, total_taken, total_returned, options: [{price,
+  movement_date}] }`. `options` = harga distinct dari `logistic_movements`
+  `movement_type='out'` milik pasangan itu, terbaru dulu — dipakai UI sebagai
+  pilihan harga (bukan user mengetik dari nol).
+
+**File diubah:**
+- `ajax/list_customer_orders.php` — query movements tidak lagi difilter
+  `movement_type='out'` saja (supaya retur ikut tampil di riwayat tab
+  Customers, per invoice, karena invoice retur selalu baru jadi otomatis
+  jadi card tersendiri); tambah `movement_type` ke tiap movement; per-produk
+  sekarang punya `returned_qty`/`returned_value` terpisah dari
+  `total_qty`/`total_value`; customer summary tambah `total_returned`
+  (=`customers.total_outflow`).
+- `transaction_content.php`:
+  - Tab baru + panel `#stTabPanelReturns` (customer select, textarea pesan,
+    Read Message, daftar item dengan qty + **select harga** async per baris,
+    catatan "Available to return: X" / "Never taken \u2014 cannot be
+    returned.", tanggal retur, Review Return).
+  - Overlay baru: `#rtProductOverlay` ("which product?", sama pola
+    `stProductOverlay`), `#rtConfirmOverlay` (ringkasan sebelum simpan),
+    `#rtReverifyOverlay` (password, pola sama `itemPriceReverifyOverlay`).
+    Semua didaftarkan ke `flexOverlays`.
+  - JS Returns 100% namespace `rt*` terpisah dari `st*` (New Order) — tidak
+    berbagi state maupun elemen, supaya alur New Order yang sudah jalan tidak
+    tersentuh sama sekali.
+  - `loadStCustomers()` sekarang juga mengisi `#rtCustomer` (satu fetch untuk
+    kedua dropdown).
+  - `openSalesView()` / tombol Back sekarang juga panggil
+    `resetReturnForm()`.
+  - Riwayat di tab Customers: baris movement `movement_type='in'` diberi
+    badge "RETURN" + nilai ditulis dengan tanda minus; ringkasan per produk
+    menampilkan "returned X" kalau ada; card customer menampilkan baris
+    "Total Returned".
+
+**Keputusan desain (semua sudah dikonfirmasi user, 21-22 Sep 2026):**
+- Retur BEBAS pilih customer, tidak terikat order/invoice asal.
+- Harga retur **dipilih dari riwayat harga** (dropdown, opsi "Custom price…"
+  kalau mau isi manual via `prompt()` — bukan overlay terpisah, simplifikasi
+  disengaja) — bukan otomatis ditarik dari histori/order asal.
+  - **Simplifikasi yang perlu direview user**: input harga custom saat ini
+    pakai `window.prompt()` browser biasa (bukan modal bergaya app). Kalau
+    dirasa kurang pas secara UX, gampang diganti jadi modal kecil.
+- Qty retur **ditolak** kalau > total pernah diambil (bersih setelah
+  dikurangi retur sebelumnya), atau kalau produk itu belum pernah diambil
+  sama sekali.
+- `logistics.total_taken_qty` sekarang **saldo**, bukan akumulator: naik saat
+  order, **turun saat retur** (`GREATEST(total_taken_qty - qty, 0)`).
+  Konsekuensi yang sudah dijelaskan & disetujui user (22 Sep 2026): kolom ini
+  sekarang menjawab "berapa yang SEDANG ada di tangan customer", bukan lagi
+  "berapa yang PERNAH keluar sepanjang masa" — kalau nanti butuh angka
+  historis itu, harus dihitung ulang dari `SUM(logistic_movements WHERE
+  movement_type='out')`, bukan dibaca dari kolom ini.
+- `customers.total_outflow` **akumulator** (naik terus, searah
+  `total_inflow`, tidak pernah turun) — beda dari `total_taken_qty` di atas.
+- **Invoice: reuse yang open kalau ada, baru hanya kalau tidak ada** (revisi
+  22 Sep 2026 dari desain awal "selalu invoice baru" — lihat poin invoice di
+  atas untuk detail).
+- **Perlu verifikasi password** sebelum retur benar-benar tersimpan (gerbang
+  `rtReverifyOverlay`, sama pola dengan hapus/edit Itemized Price).
+
+**Belum diuji end-to-end oleh user** (kode lot-based selesai ditulis 22 Sep
+2026, belum dicoba di browser — dan migrasi DB-nya sendiri belum dijalankan).
+Yang perlu dites saat sesi berikutnya (setelah migrasi dijalankan):
+1. Pesan WA retur dengan produk yang customer-nya belum pernah ambil sama
+   sekali → tidak ada pickup untuk dipilih, ditolak dengan pesan jelas.
+2. Buka satu produk yang punya beberapa pengambilan (pickup) berbeda tanggal
+   → daftar pickup tampil **terbaru dulu**, tiap baris ada "remaining"-nya
+   sendiri; isi qty di baris utama → cek **auto-FIFO** mengisi alokasi mulai
+   dari pickup **tertua** dulu.
+3. Koreksi manual angka di salah satu baris alokasi → cek catatan "Allocated
+   X of Y requested" update real-time dan berubah warna (merah) kalau belum
+   pas, tombol Review harus ditolak sampai pas persis.
+4. Retur split ke >1 pickup (contoh dari user: 2 dari satu hari, 3 dari hari
+   lain) → Review → Confirm harus menampilkan pecahan per sumber dengan
+   tanggal & harga masing-masing (sesuai contoh di atas) → masukkan password
+   salah (ditolak) lalu benar → tersimpan. Cek di DB: muncul **2 baris**
+   `logistic_movements` (`in`) terpisah, masing-masing `source_movement_id`
+   menunjuk pickup yang benar.
+5. Pickup dengan `remaining = 0` → baris tetap **tampil tapi disabled**
+   (input qty & harga tidak bisa diisi).
+6. Setelah retur tersimpan, buka lagi daftar pickup untuk produk yang sama
+   → `remaining` pickup yang dipakai harus **berkurang** sesuai qty yang
+   dialokasikan ke situ (bukan berkurang di semua pickup).
+7. Riwayat tab Customers: baris retur baru menampilkan baris kecil "from
+   pickup on [tanggal]" di bawahnya (baris retur lama, sebelum fitur ini,
+   tidak menampilkan apa-apa karena `source_movement_id`-nya NULL).
+8. Cek juga alur lama yang TIDAK berubah masih jalan: reuse invoice open vs
+   invoice baru (`/ret/`), `logistics.remaining_primary_qty` naik &
+   `total_taken_qty` turun (saldo), `customers.total_outflow` naik.
+
 ### Card order collapsible (21 Sep 2026; BELUM DITES USER)
 - Berlaku di 2 tempat: riwayat order tab Customers (`.st-order-group-card`) dan picker
   Update Existing Order (`.st-order-pick-card`). Default collapse (hanya header:
@@ -2135,3 +2278,267 @@ picker "Update Existing Order" yang sudah begini dari awal.
   card order yang dibuka di dalamnya menambah tinggi yang terpotong. Fix:
   `stBindCollapsible()` memanggil `stRemeasureAncestors()` (→ `refreshAncestorHeights()`
   yang sudah ada) setiap kali card dibuka/ditutup. Belum dites user.
+
+## Redesign Returns: alokasi per-lot (bukan agregat) (22 Sep 2026)
+
+**Status: SUDAH DIKERJAKAN (kode), BELUM DIJALANKAN migrasi DB-nya, BELUM
+DITES di browser.** Ini merevisi total desain "harga dipilih dari riwayat
+harga distinct" yang ditulis di section Returns lama di atas —
+`list_return_price_options.php` sekarang mengembalikan **daftar pengambilan
+(pickup)**, bukan daftar harga.
+
+**Yang harus dilakukan user sebelum dicoba:**
+1. Jalankan `migration_add_source_movement_id.sql` di phpMyAdmin
+   (`127.0.0.1/lisani_aos_db`) — nambah kolom `source_movement_id` +
+   index + FK di `logistic_movements`. **Wajib jalan dulu**, kode baru akan
+   error kalau kolom ini belum ada.
+2. Replace 4 file dengan versi baru: `transaction_content.php`,
+   `ajax/list_return_price_options.php`, `ajax/create_return.php`,
+   `ajax/list_customer_orders.php`.
+
+**Penyimpangan kecil dari rencana awal (disengaja, perlu direview user):**
+Rencana awal bilang harga custom tetap lewat `prompt()` seperti desain lama.
+Karena satu produk sekarang bisa punya **banyak baris alokasi sekaligus**
+(satu per pickup sumber), pakai `prompt()` per baris jadi sangat tidak
+praktis (bisa munculkan banyak dialog berurutan). Diganti jadi **input harga
+inline yang editable langsung** di tiap baris alokasi (bukan dropdown +
+prompt lagi) — nilai defaultnya tetap harga pickup itu, tinggal diketik ulang
+kalau mau custom. Kalau dirasa kurang pas, gampang di-review lagi.
+
+**Masalah yang mau diperbaiki:** saat ini `available = total_taken - total_returned`
+itu **agregat** — tidak tahu retur itu ambil dari pengambilan (movement) yang mana.
+User mau retur bisa **ditelusuri ke pengambilan asalnya**, termasuk kalau qty retur
+itu harus **di-split ke lebih dari satu pengambilan/order**.
+
+**Contoh kasus (dari user, 22 Sep 2026):**
+```
+Hari 1: Produk A diambil 10                         (movement #1)
+Hari 2: Pengambilan pertama Produk A diambil 10     (movement #2)
+        Pengambilan kedua   Produk A diambil 5      (movement #3)
+Hari 3: Produk A diambil 5                          (movement #4)
+Hari 3: RETUR Produk A 5 pcs
+          → 2 pcs dari movement #3 (hari 2, pengambilan kedua)
+          → 3 pcs dari movement #4 (hari 3)
+```
+
+**Desain baru (garis besar):**
+- Fly window pemilihan sumber retur **bukan lagi daftar harga distinct**
+  (`list_return_price_options.php` versi lama), tapi **daftar movement `out`**
+  milik (customer, produk) itu — tiap baris: tanggal, label "pengambilan ke-N"
+  kalau lebih dari satu movement `out` di hari/waktu yang sama, qty sisa
+  (`remaining`), dan harga movement itu.
+- `remaining` sekarang dihitung **per movement**, bukan agregat:
+  `remaining(movement) = movement.qty - SUM(qty retur yang sudah dialokasikan
+  ke movement itu)`. Movement dengan `remaining = 0` tidak lagi bisa dipilih
+  (definisi final: disembunyikan vs ditampilkan-disabled — lihat pertanyaan
+  terbuka di bawah).
+- User isi qty retur **per baris movement** (bisa isi di lebih dari satu baris
+  untuk split). Harga tiap baris **default ke harga movement itu**, tetap bisa
+  diedit manual per baris (custom price tetap ada, tidak dihapus).
+- **Validasi**: total qty yang diisi di semua baris split harus **persis sama**
+  dengan qty retur yang diminta di form utama untuk produk itu.
+- **Penyimpanan**: satu baris retur produk yang di-split ke N movement sumber
+  → jadi **N baris `logistic_movements` (`movement_type='in'`) terpisah**,
+  masing-masing menunjuk ke movement asalnya. Butuh kolom baru, misal
+  `source_movement_id` (nullable, FK ke `logistic_movements.id`, dipakai
+  hanya kalau `movement_type='in'`) — dipakai untuk (a) hitung `remaining`
+  per movement, (b) tampilkan atribusi sumber di invoice/riwayat.
+- **Invoice / riwayat Customers**: sudah granular per movement (bukan
+  agregat) sesuai arah desain yang ada — tinggal baris retur ditambah label
+  sumbernya, mis. "Return 2 (from pengambilan kedua, [tanggal]), 3 (from
+  [tanggal])" sesuai contoh di atas.
+- `ajax/list_return_price_options.php` kemungkinan diganti total (bukan lagi
+  return harga distinct, tapi daftar movement + remaining masing-masing) —
+  perlu lihat kode aslinya dulu sebelum diputuskan direname atau di-refactor
+  in place.
+
+**Keputusan final (dikonfirmasi user, 22 Sep 2026):**
+1. Alokasi qty per movement: **auto-alokasi FIFO dari yang TERTUA dulu**, user
+   tinggal koreksi manual kalau mau.
+2. Urutan tampil daftar movement di fly window/picker: **terbaru dulu**.
+3. Total qty semua sub-baris alokasi harus **persis sama** dengan qty yang
+   diminta di baris utama — kalau tidak pas, ditolak (tombol Review/Save
+   diblokir dengan pesan jelas).
+4. Movement dengan `remaining = 0`: **tetap ditampilkan tapi disabled**
+   (bukan disembunyikan) — supaya histori lengkap tetap kelihatan.
+5. Custom price **per baris alokasi sendiri-sendiri** (bukan satu custom
+   price untuk semua split); nilai default tiap baris tetap ikut harga
+   movement asalnya saat itu.
+
+**Endpoint create/save retur ternyata sudah ada**, namanya `ajax/create_return.php`
+(bukan `save_return.php`) — dipakai JS `rtReview()` (dry_run=1, untuk preview di
+`rtConfirmOverlay`) dan `rtSaveReturn()` (dry_run=0, simpan beneran), lihat
+`transaction_content.php` baris ~5552 & ~5674. File ini **belum diupload**,
+masih diperlukan sebelum implementasi backend bisa mulai.
+
+**File sudah diupload & sudah dibaca (22 Sep 2026):** `transaction_content.php`,
+`ajax/list_customer_orders.php`, `ajax/list_return_price_options.php`, skema
+`DESCRIBE logistic_movements` (kolom: id, logistic_id, customer_id,
+movement_type, movement_date, customer_name, driver_name, police_number,
+qty_primary_package, price, total_price, invoice_id, batch_id, created_by,
+created_at — **belum ada** kolom penunjuk sumber movement).
+
+**File yang masih diperlukan:** `ajax/create_return.php`.
+
+**Rencana implementasi final (siap dikerjakan begitu `create_return.php` ada):**
+1. **Migrasi DB** — tambah `source_movement_id INT UNSIGNED NULL` di
+   `logistic_movements` (FK ke `logistic_movements.id`, dipakai hanya kalau
+   `movement_type='in'`, nullable karena data lama tidak punya sumber).
+2. **`ajax/list_return_price_options.php`** — nama/endpoint dipertahankan tapi
+   isi diganti total: bukan lagi daftar harga distinct, tapi **daftar movement
+   `out`** milik (customer_id, logistic_id) dengan `remaining` dihitung
+   per-movement (`qty - SUM(qty movement 'in' yang source_movement_id = movement
+   ini)`), urut terbaru dulu, tiap movement bawa `{movement_id, movement_date,
+   remaining, price, disabled}` + label "pengambilan ke-N" kalau ada >1 di
+   tanggal sama. `available` (total) tetap dikirim untuk validasi cepat.
+3. **UI Returns (`transaction_content.php`, JS `rt*`)** — tiap item line bisa
+   expand ke sub-baris alokasi per movement sumber; auto-FIFO isi awal, user
+   bisa koreksi; payload ke `create_return.php` berubah dari
+   `items:[{logistic_id,qty,price}]` jadi
+   `items:[{logistic_id, allocations:[{source_movement_id, qty, price}]}]`.
+4. **`ajax/create_return.php`** — validasi ulang server-side tiap alokasi
+   (source movement milik customer+logistic yang sama, remaining cukup —
+   jangan percaya angka dari client), insert `logistic_movements` **per
+   alokasi** (bukan per produk) dengan `source_movement_id` & `price`
+   masing-masing, response preview (`ret.items`) dipecah per alokasi juga
+   biar overlay konfirmasi menunjukkan sumbernya seperti contoh di atas.
+5. **`ajax/list_customer_orders.php`** — movement `in` yang punya
+   `source_movement_id` ditambah field itu di response JSON, supaya riwayat
+   tab Customers bisa tampilkan atribusi sumber di baris retur.
+
+## Perbaikan tampilan tab Returns & Customers (22 Sep 2026)
+
+**Status: SUDAH DIKERJAKAN (kode, `transaction_content.php` saja),
+BELUM DITES di browser.** Murni perubahan front-end di atas fondasi
+redesign per-lot di atas — tidak ada perubahan skema DB atau endpoint AJAX
+(`list_customer_orders.php`, `list_return_price_options.php`,
+`create_return.php` semuanya dibiarkan seperti kondisi terbaru yang
+diupload user, tidak disentuh).
+
+**Tab Returns:**
+1. **Per-produk jadi card collapsible (accordion).** Sebelumnya semua
+   product line di form Returns dirender flat, langsung expanded semua.
+   Sekarang tiap line dibungkus `.rt-line-card` + class umum
+   `.st-collapsible` (reuse mekanisme accordion yang sudah ada di app —
+   `stBindCollapsible`/`stMakeChevron`, sama seperti di history Customers &
+   Update Existing Order picker). Default collapsed; klik header salah satu
+   card otomatis menutup card lain (`toggleExclusive` di `stBindCollapsible`
+   sudah begitu, tidak perlu logic baru). Header menampilkan ringkasan
+   (qty × nama produk atau "Product not recognized"), badge status, tombol
+   hapus (×, `stopPropagation` supaya tidak ikut toggle collapse), dan
+   chevron. Body berisi field asli (qty, unit, allocation per pickup, avail
+   note) plus baris "Mark as Reviewed" baru (lihat poin gate di bawah).
+2. **Gate "wajib direview".** Tiap item dapat properti `reviewed` (boolean,
+   default `false`). Fungsi baru `rtItemIsValid(it)` mengecek line itu punya
+   produk + qty + alokasi pickup yang totalnya persis sama dengan qty (mirror
+   validasi yang sudah ada di `rtBuildPayload`, dijalankan di client tanpa
+   round-trip server). Tombol **"Mark as Reviewed"** di tiap card hanya aktif
+   kalau `rtItemIsValid(it)` true; diklik → `it.reviewed = true`. Setiap kali
+   user mengedit qty, qty alokasi, atau harga alokasi pada card manapun,
+   `it.reviewed` di-reset ke `false` lagi (harus di-review ulang). Fungsi baru
+   `updateRtReviewButtonState()` men-disable tombol **Review Return**
+   (`btnRtReview`) kecuali SEMUA item di `rtItems` sudah `reviewed === true`
+   dan valid — dipanggil di setiap titik yang mengubah data return (qty
+   input, alokasi qty/harga, tombol Mark as Reviewed, tambah/hapus line,
+   render awal). `resetReturnForm()` sekarang start dengan
+   `btnRtReview.disabled = true` (dulu `false`).
+   - Styling beda saat card terbuka: `.rt-line-card.st-open` dapat border +
+     background accent (biru). Card yang sudah di-mark reviewed dapat class
+     `.rt-line-reviewed` → border hijau (`--success`), dan kalau
+     dibuka+reviewed dapat tint hijau juga. Badge di header: "Needs review"
+     (kuning, `.badge-warning`) vs "Reviewed" (hijau, `.badge-success`).
+3. **Harga dipisah koma.** Input harga per alokasi (`.rt-alloc-price`)
+   sebelumnya polos angka tanpa pemisah ribuan (pakai `fmtQty`, format
+   quantity biasa). Sekarang pakai class `.input-number-comma` +
+   `initNumberCommaInput()` — helper yang **sudah ada** di file ini
+   (dipakai di tempat lain seperti Itemized Pricing) untuk live-format
+   angka jadi "1,500,000" sambil mengetik, cursor position dijaga. Parsing
+   balik ke number tetap lewat `parseNumberInput()` yang sudah otomatis
+   strip koma. Overlay konfirmasi (`rtConfirmOverlay`) tidak disentuh —
+   sudah pakai `formatIDR()` (dengan koma) dari awal, jadi sudah benar.
+
+**Tab Customers:**
+1. **Ringkasan per-produk jadi 3 baris.** Sebelumnya satu baris padat:
+   "qty unit · IDR value · returned qty unit". Sekarang tiap produk
+   dirender sebagai mini-card (`.st-product-summary-card`, class CSS baru)
+   dengan 3 baris (atas ke bawah), masing-masing qty + nilai (reuse
+   `.accordion-row`/`.accordion-row-label`/`.accordion-row-value` yang
+   sudah ada di `theme.css`):
+   1. **Actual (Taken − Returned)** — net qty & value riil yang masih ada
+      di customer (`total_qty - returned_qty`, `total_value - returned_value`).
+   2. **Total Taken** — gross, sama seperti `p.total_qty`/`p.total_value`
+      lama (field ini **tidak berubah dari API**, cuma dipisah jadi baris
+      sendiri; sesuai konfirmasi user 22 Sep 2026 "total pengambilan"
+      = gross sebelum dikurangi retur, bukan konsep storage terpisah).
+   3. **Total Returned** — `p.returned_qty`/`p.returned_value`, sama seperti
+      sebelumnya.
+   Helper baru `round2()` ditambahkan (dekat `formatIDR`) untuk membulatkan
+   hasil pengurangan qty/value floating-point.
+2. **Baris "Total Actual" baru** di ringkasan customer level atas
+   (`renderStCustomerDetail`), diselipkan di antara Total Returned dan Total
+   Paid: `Total Actual = total_ordered - total_returned` (pakai `round2`),
+   ditampilkan dengan `formatIDR`. `customers.total_inflow`/`total_outflow`
+   (sumber `total_ordered`/`total_returned`) tidak berubah — murni turunan
+   di front-end, tidak perlu query baru.
+
+**File yang diubah:** hanya `transaction_content.php` (CSS di dalam
+`<style>` blok section Sales Transaction, + JS `renderRtItems`,
+`rtFillAllocations`, `renderRtAllocations`, `renderStCustomerDetail`, plus
+fungsi baru `rtItemIsValid`, `updateRtReviewButtonState`, `round2`).
+**Belum ditest di browser** — perlu dicoba: return dengan >1 produk (cek
+accordion exclusive-nya jalan, badge review berubah benar, tombol Review
+Return ke-disable/enable sesuai state), input harga alokasi (cek koma
+muncul & value yang terkirim ke `create_return.php` tetap angka bersih),
+dan tab Customers untuk salah satu customer yang punya retur (cek 3 baris
+per produk + Total Actual angkanya benar).
+
+## Follow-up: hapus tombol X & Mark as Reviewed di Returns, jadikan card produk Customers collapsible (22 Sep 2026)
+
+**Status: SUDAH DIKERJAKAN (kode), BELUM DITES di browser.** Dua
+penyesuaian kecil di atas pekerjaan sebelumnya (masih di `transaction_content.php`
+saja):
+
+**Tab Returns:**
+- **Tombol hapus baris (\u00d7) dihapus** dari header `.rt-line-card`. Saat ini
+  **tidak ada lagi cara dari UI untuk menghapus satu product line** dari form
+  Returns setelah "Read Message" — kalau parsing salah menangkap baris,
+  satu-satunya jalan adalah baca ulang pesan dari awal (`Read Message` lagi,
+  yang me-reset `rtItems`). Kalau ternyata ini bikin ribet, gampang ditambah
+  lagi (tinggal balikin `rm`/`btn-icon rt-line-remove` yang dihapus).
+- **Tombol "Mark as Reviewed" dihapus.** Sekarang `it.reviewed` di-set
+  `true` otomatis begitu card-nya **dibuka** (bukan saat diklik tombol) —
+  dideteksi lewat `MutationObserver` yang mengawasi perubahan class pada
+  card (nunggu `.st-open` muncul), bukan langsung di handler klik, karena
+  `stBindCollapsible` sengaja menunda toggle klik tunggal 220ms untuk
+  membedakan dari dobel-klik. Sekali `reviewed` jadi `true`, **tidak
+  di-reset lagi** walau qty/alokasi/harga diedit setelahnya (beda dari
+  desain sebelumnya yang reset ke `false` tiap ada perubahan) — badge
+  header ("Reviewed" vs "Needs review") jadi murni penanda "sudah pernah
+  dibuka", bukan "data-nya sudah difinalkan". Validitas data (qty terisi,
+  alokasi pas) tetap dicek terpisah lewat `rtItemIsValid(it)`, dan tombol
+  **Review Return** tetap butuh **keduanya**: `it.reviewed && rtItemIsValid(it)`
+  untuk semua item (lihat `updateRtReviewButtonState()`, logic-nya tidak
+  berubah). Body card sekarang cuma nampilin pesan peringatan
+  (`.rt-line-status-msg`, teks kuning) kalau datanya belum valid — tanpa
+  tombol, cuma info.
+
+**Tab Customers:**
+- **Card ringkasan per-produk (`.st-product-summary-card`) sekarang
+  collapsible**, reuse pola generic `.st-collapsible`/`stBindCollapsible`
+  yang sama dipakai di Returns & tempat lain. Default collapsed; buka satu
+  produk otomatis menutup produk lain di customer yang sama (exclusive,
+  karena `toggleExclusive()` di `stBindCollapsible` menutup sibling dengan
+  class `.st-collapsible` di parent yang sama — di sini parent-nya adalah
+  container detail customer, isinya juga ada baris Total Ordered/dst yang
+  TIDAK punya class itu jadi tidak ikut ke-toggle).
+- **Header card (selalu terlihat walau collapsed) sekarang menampilkan nama
+  produk + preview "Actual: <qty> <unit> \u00b7 <value>"** (`.st-product-summary-actual-preview`,
+  teks kecil warna muted), supaya info penting tetap kelihat tanpa perlu
+  expand. Body (muncul saat expand) tetap berisi 3 baris penuh seperti
+  sebelumnya (Actual, Total Taken, Total Returned) — jadi baris "Actual"
+  muncul dua kali (preview di header + baris lengkap di body), disengaja
+  supaya konsisten dengan 2 baris lain saat card dibuka.
+
+**File yang diubah:** hanya `transaction_content.php` (CSS + JS
+`renderRtItems`, `renderRtAllocations` — hapus reset `reviewed=false` di
+handler alokasi, `renderStCustomerDetail`). **Belum ditest di browser.**

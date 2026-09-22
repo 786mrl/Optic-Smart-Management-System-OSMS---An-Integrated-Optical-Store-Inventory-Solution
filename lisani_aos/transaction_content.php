@@ -494,6 +494,126 @@ $currentYear     = date('Y');
       word-break: break-word;
     }
     #viewSalesTransaction .st-value { word-break: normal; }
+    #viewSalesTransaction .rt-item-avail {
+      font-size: var(--text-xs);
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+    #viewSalesTransaction .rt-item-avail.rt-item-avail-bad { color: var(--danger); }
+
+    /* Lot-based return allocation rows (22 Sep 2026) — one per pickup a
+       product line can be split against, shown under its item row. */
+    #viewSalesTransaction .rt-alloc-box {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-2, 6px);
+      margin-top: var(--space-2, 6px);
+      padding-left: var(--space-3, 12px);
+      border-left: 2px solid rgba(255,255,255,0.08);
+    }
+    #viewSalesTransaction .rt-alloc-row {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2, 6px);
+      flex-wrap: wrap;
+    }
+    #viewSalesTransaction .rt-alloc-row.rt-alloc-disabled { opacity: 0.45; }
+    #viewSalesTransaction .rt-alloc-label {
+      flex: 1 1 220px;
+      font-size: var(--text-xs);
+      color: var(--text-muted);
+    }
+    #viewSalesTransaction .rt-alloc-qty,
+    #viewSalesTransaction .rt-alloc-price {
+      width: 100px;
+      flex: 0 0 auto;
+      text-align: right;
+    }
+    #viewSalesTransaction .rt-alloc-total {
+      font-size: var(--text-xs);
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+    #viewSalesTransaction .rt-alloc-total.rt-item-avail-bad { color: var(--danger); }
+
+    /* Returns tab: one collapsible card per product line (accordion — only
+       one open at a time), so a multi-product return doesn't turn into one
+       long scroll. Must be marked "Reviewed" (see rt-line-review-row below)
+       before Review Return is enabled. */
+    #viewSalesTransaction .rt-line-card {
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: var(--radius-md, 10px);
+      padding: var(--space-3);
+      margin-bottom: var(--space-3);
+      transition: border-color 0.15s ease, background 0.15s ease;
+    }
+    #viewSalesTransaction .rt-line-card:last-child { margin-bottom: 0; }
+    #viewSalesTransaction .rt-line-card.st-open {
+      border-color: var(--accent, #6b8afd);
+      background: rgba(107,138,253,0.06);
+    }
+    #viewSalesTransaction .rt-line-card.rt-line-reviewed {
+      border-color: var(--success, #3ecf8e);
+    }
+    #viewSalesTransaction .rt-line-card.rt-line-reviewed.st-open {
+      background: rgba(62,207,142,0.07);
+    }
+    #viewSalesTransaction .rt-line-head-top {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+    }
+    #viewSalesTransaction .rt-line-head-top .st-collapsible-title {
+      flex: 1 1 auto;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    #viewSalesTransaction .rt-line-head-top .badge { flex-shrink: 0; }
+    #viewSalesTransaction .rt-line-card .st-item-line {
+      padding-top: var(--space-1);
+    }
+    #viewSalesTransaction .rt-line-status-msg {
+      margin-top: var(--space-3);
+      padding-top: var(--space-2);
+      border-top: 1px dashed rgba(255,255,255,0.08);
+      color: var(--warning);
+    }
+
+    /* Customers tab: per-product summary, three stacked lines (actual net,
+       gross taken, returned) instead of one packed line. Collapsible —
+       default collapsed, accordion (one open at a time); the header always
+       shows the product name plus an Actual preview even while collapsed. */
+    #viewSalesTransaction .st-product-summary-card {
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: var(--radius-md, 10px);
+      padding: var(--space-3);
+      margin-bottom: var(--space-2);
+    }
+    #viewSalesTransaction .st-product-summary-card:last-child { margin-bottom: 0; }
+    #viewSalesTransaction .st-product-summary-head-top {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+    }
+    #viewSalesTransaction .st-product-summary-headtext {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+    #viewSalesTransaction .st-product-summary-name {
+      font-weight: 600;
+    }
+    #viewSalesTransaction .st-product-summary-actual-preview {
+      font-size: var(--text-xs);
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+    #viewSalesTransaction .st-product-summary-card .st-collapsible-body {
+      margin-top: var(--space-3);
+      padding-top: var(--space-2);
+      border-top: 1px dashed rgba(255,255,255,0.08);
+    }
 
     .st-order-pick-card {
       border: 1px solid rgba(255,255,255,0.08);
@@ -562,6 +682,7 @@ $currentYear     = date('Y');
   </style>
   <div class="tab-group" id="stTabGroup">
     <div class="tab active" data-st-tab="order">New Order</div>
+    <div class="tab" data-st-tab="returns">Returns</div>
     <div class="tab" data-st-tab="customers">Customers</div>
   </div>
 
@@ -608,6 +729,56 @@ $currentYear     = date('Y');
       <div class="empty-sub" id="stReviewError" style="display:none; color:var(--danger); white-space:pre-line;"></div>
       <div style="display:flex; justify-content:flex-end; margin-top:var(--space-4);">
         <button type="button" class="btn btn-primary" id="btnStReview">Review Order</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab: Returns — same read-message flow as New Order, but the goods are
+       coming BACK from the customer. Not tied to any specific order/invoice
+       (bebas, per user decision 21 Sep 2026); price is picked/typed by hand
+       per line instead of pulled from customer_item_prices. -->
+  <div id="stTabPanelReturns" style="display:none;">
+    <div class="empty-sub" id="rtSuccessBox" style="display:none; color:var(--success); margin-bottom:var(--space-3);"></div>
+
+    <div class="form-group">
+      <div class="label">Customer</div>
+      <select class="select" id="rtCustomer">
+        <option value="">-- select customer --</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <div class="label">Return Message (WhatsApp)</div>
+      <textarea class="input" id="rtMessage" rows="6" placeholder="Paste the return message here"></textarea>
+    </div>
+    <div class="empty-sub" id="rtReadError" style="display:none; color:var(--danger); white-space:pre-line;"></div>
+    <div style="display:flex; justify-content:flex-end; margin-bottom:var(--space-2);">
+      <button type="button" class="btn btn-secondary" id="btnRtRead">Read Message</button>
+    </div>
+
+    <div id="rtParsedBox" style="display:none;">
+      <div class="form-group">
+        <div class="label">Driver</div>
+        <input type="text" class="input input-uppercase" id="rtDriver" maxlength="150" placeholder="e.g. PAK FADLUN" autocomplete="off">
+      </div>
+      <div class="form-group">
+        <div class="label">Police Number</div>
+        <input type="text" class="input input-uppercase" id="rtPolice" maxlength="30" placeholder="e.g. BL 8392 N" autocomplete="off">
+      </div>
+
+      <div class="label">Products Returned</div>
+      <div id="rtItemList"></div>
+      <div class="empty-sub" id="rtItemEmpty" style="display:none;">No product lines were found in this message.</div>
+      <div class="empty-sub" id="rtIgnoredBox" style="display:none; margin-top:var(--space-2);"></div>
+
+      <div class="form-group" style="margin-top:var(--space-4);">
+        <div class="label">Return Date</div>
+        <input type="date" class="input" id="rtReturnDate">
+      </div>
+
+      <div class="empty-sub" id="rtReviewError" style="display:none; color:var(--danger); white-space:pre-line;"></div>
+      <div style="display:flex; justify-content:flex-end; margin-top:var(--space-4);">
+        <button type="button" class="btn btn-primary" id="btnRtReview">Review Return</button>
       </div>
     </div>
   </div>
@@ -1121,6 +1292,76 @@ $currentYear     = date('Y');
   </div>
 </div>
 
+<!-- Returns — "Which product is this?" for a line the parser did not
+     recognize. Same behaviour as stProductOverlay, kept separate so the
+     Returns flow never shares state with the New Order flow. -->
+<div class="modal-overlay" id="rtProductOverlay" style="display:none;">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-header">
+      <div class="modal-title">Which product is this?</div>
+    </div>
+    <div class="modal-body">
+      <div class="empty-sub" id="rtProductLine" style="word-break:break-word; margin-bottom:var(--space-3);"></div>
+      <div class="form-group">
+        <div class="label">Product</div>
+        <select class="select" id="rtProductSelect">
+          <option value="">-- select product --</option>
+        </select>
+      </div>
+      <div class="form-group" id="rtProductRememberBox">
+        <label style="display:flex; align-items:center; gap:var(--space-2); font-size:var(--text-sm); color:var(--text-secondary);">
+          <input type="checkbox" id="rtProductRemember" checked>
+          <span>Remember &ldquo;<span id="rtProductWording"></span>&rdquo; as this product</span>
+        </label>
+      </div>
+      <div class="empty-sub" id="rtProductError" style="display:none; color:var(--danger);"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" id="btnRtProductSkip">Skip</button>
+      <button type="button" class="btn btn-primary" id="btnRtProductSave">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Returns — return details to confirm. Nothing is saved until the password
+     re-check + "Confirm & Save" (the preview comes from create_return.php
+     with dry_run=1). -->
+<div class="modal-overlay" id="rtConfirmOverlay" style="display:none;">
+  <div class="modal" style="max-width:460px;">
+    <div class="modal-header">
+      <div class="modal-title">Confirm Return</div>
+    </div>
+    <div class="modal-body">
+      <div id="rtConfirmBody"></div>
+      <div class="empty-sub" id="rtConfirmError" style="display:none; color:var(--danger); white-space:pre-line; margin-top:var(--space-3);"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" id="btnRtConfirmCancel">Cancel</button>
+      <button type="button" class="btn btn-primary" id="btnRtConfirmSave">Confirm &amp; Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Returns — password re-check gate right before the return is actually
+     written (goods + money moving back is treated like the other sensitive
+     actions in this app), same pattern as itemPriceReverifyOverlay. -->
+<div class="modal-overlay" id="rtReverifyOverlay" style="display:none;">
+  <div class="modal">
+    <div class="modal-header"><div class="modal-title">Confirm Password</div></div>
+    <div class="modal-body">
+      <div class="form-group">
+        <div class="label">Enter your password to save this return</div>
+        <input type="password" class="input" id="rtReverifyPassword" placeholder="Password">
+      </div>
+      <div class="empty-sub" id="rtReverifyError" style="display:none; color:var(--danger);"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" id="btnRtReverifyCancel">Cancel</button>
+      <button type="button" class="btn btn-primary" id="btnRtReverifyConfirm">Confirm</button>
+    </div>
+  </div>
+</div>
+
 <style>
   /* Visual side of the uppercase rule; the value itself is forced by JS + server. */
   .input-uppercase { text-transform: uppercase; }
@@ -1194,6 +1435,11 @@ $currentYear     = date('Y');
   var stOrderPickOverlay = document.getElementById('stOrderPickOverlay');
   var stDriverWarnOverlay = document.getElementById('stDriverWarnOverlay');
 
+  // Returns tab fly windows.
+  var rtProductOverlay  = document.getElementById('rtProductOverlay');
+  var rtConfirmOverlay  = document.getElementById('rtConfirmOverlay');
+  var rtReverifyOverlay = document.getElementById('rtReverifyOverlay');
+
   var viewEmpty        = document.getElementById('viewTransactionsEmpty');
   var viewForm         = document.getElementById('viewCreateActivityCode');
   var viewResult       = document.getElementById('viewActivityCodeResult');
@@ -1206,7 +1452,8 @@ $currentYear     = date('Y');
     itemPriceEditOverlay, itemPriceDeleteOverlay,
     txnCategoryOverlay, disbDepartmentOverlay, disbActivityOverlay, disbDetailsOverlay,
     capFieldPickerOverlay, stProductOverlay, stPriceOverlay, stConfirmOverlay,
-    stOrderModeOverlay, stOrderPickOverlay, stDriverWarnOverlay];
+    stOrderModeOverlay, stOrderPickOverlay, stDriverWarnOverlay,
+    rtProductOverlay, rtConfirmOverlay, rtReverifyOverlay];
 
   function show(el) {
     el.style.display = (flexOverlays.indexOf(el) !== -1) ? 'flex' : 'block';
@@ -3511,6 +3758,13 @@ $currentYear     = date('Y');
     });
   }
 
+  // Rounds to 2 decimals, avoiding float noise like 799999.9999999999.
+  function round2(v) {
+    var n = parseFloat(v);
+    if (isNaN(n)) return 0;
+    return Math.round(n * 100) / 100;
+  }
+
   var MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   function formatPriceDate(iso) {
     var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ''));
@@ -4022,14 +4276,22 @@ $currentYear     = date('Y');
       .then(function (res) {
         var list = res.ok ? res.data : [];
         var keep = stCustomer.value;
+        var keepRt = rtCustomer.value;
         stCustomer.innerHTML = '<option value="">-- select customer --</option>';
+        rtCustomer.innerHTML = '<option value="">-- select customer --</option>';
         list.forEach(function (c) {
           var opt = document.createElement('option');
           opt.value = c.id;
           opt.textContent = c.customer_name + ' (' + c.year + ')';
           stCustomer.appendChild(opt);
+
+          var rtOpt = document.createElement('option');
+          rtOpt.value = c.id;
+          rtOpt.textContent = c.customer_name + ' (' + c.year + ')';
+          rtCustomer.appendChild(rtOpt);
         });
         stCustomer.value = keep;
+        rtCustomer.value = keepRt;
         return list;
       })
       .catch(function () { return []; });
@@ -4041,6 +4303,7 @@ $currentYear     = date('Y');
   function openSalesView() {
     hide(txnCategoryOverlay);
     resetSalesForm();
+    resetReturnForm();
     setActiveStTab('order');
     showOnlyView(viewSales);
     loadStCustomers();
@@ -4048,6 +4311,7 @@ $currentYear     = date('Y');
 
   document.getElementById('btnBackToEntryFromSales').addEventListener('click', function () {
     resetSalesForm();
+    resetReturnForm();
     showOnlyView(viewEmpty);
     show(entryOverlay);
   });
@@ -4739,6 +5003,7 @@ $currentYear     = date('Y');
   var stTabs = document.querySelectorAll('#stTabGroup .tab');
   var stTabPanelMap = {
     order:     document.getElementById('stTabPanelOrder'),
+    returns:   document.getElementById('stTabPanelReturns'),
     customers: document.getElementById('stTabPanelCustomers')
   };
 
@@ -4820,7 +5085,10 @@ $currentYear     = date('Y');
   function renderStCustomerDetail(container, data, item) {
     container.innerHTML = '';
 
+    var totalActual = round2(parseFloat(data.customer.total_ordered) - parseFloat(data.customer.total_returned));
     stAddRow(container, 'Total Ordered', formatIDR(data.customer.total_ordered));
+    stAddRow(container, 'Total Returned', formatIDR(data.customer.total_returned));
+    stAddRow(container, 'Total Actual', formatIDR(totalActual));
     stAddRow(container, 'Total Paid', formatIDR(data.customer.total_paid));
 
     var pl = document.createElement('div');
@@ -4834,9 +5102,63 @@ $currentYear     = date('Y');
       none.textContent = 'No orders yet.';
       container.appendChild(none);
     }
+    // Three stacked lines per product, top to bottom: the actual net amount
+    // still with the customer (taken minus returned) with its net selling
+    // value, then the gross total taken with its value, then what's been
+    // returned with its value. Per user decision 22 Sep 2026.
     data.products.forEach(function (p) {
-      stAddRow(container, p.activity_name,
-        fmtQty(p.total_qty) + ' ' + (p.unit_label || '') + ' \u00b7 ' + formatIDR(p.total_value));
+      var netQty = round2(parseFloat(p.total_qty) - parseFloat(p.returned_qty));
+      var netVal = round2(parseFloat(p.total_value) - parseFloat(p.returned_value));
+
+      var card = document.createElement('div');
+      card.className = 'st-product-summary-card';
+
+      var head = document.createElement('div');
+      var headTop = document.createElement('div');
+      headTop.className = 'st-product-summary-head-top';
+
+      var headText = document.createElement('div');
+      headText.className = 'st-product-summary-headtext';
+
+      var name = document.createElement('div');
+      name.className = 'st-product-summary-name';
+      name.textContent = p.activity_name;
+
+      var actualPreview = document.createElement('div');
+      actualPreview.className = 'st-product-summary-actual-preview';
+      actualPreview.textContent = 'Actual: ' + fmtQty(netQty) + ' ' + (p.unit_label || '') + ' \u00b7 ' + formatIDR(netVal);
+
+      headText.appendChild(name);
+      headText.appendChild(actualPreview);
+      headTop.appendChild(headText);
+      headTop.appendChild(stMakeChevron());
+      head.appendChild(headTop);
+      card.appendChild(head);
+
+      var body = document.createElement('div');
+      body.className = 'st-collapsible-body';
+      card.appendChild(body);
+
+      function addLine(label, qty, val) {
+        var row = document.createElement('div');
+        row.className = 'accordion-row';
+        var l = document.createElement('div');
+        l.className = 'accordion-row-label';
+        l.textContent = label;
+        var v = document.createElement('div');
+        v.className = 'accordion-row-value';
+        v.textContent = fmtQty(qty) + ' ' + (p.unit_label || '') + ' \u00b7 ' + formatIDR(val);
+        row.appendChild(l);
+        row.appendChild(v);
+        body.appendChild(row);
+      }
+
+      addLine('Actual (Taken \u2212 Returned)', netQty, netVal);
+      addLine('Total Taken', p.total_qty, p.total_value);
+      addLine('Total Returned', p.returned_qty, p.returned_value);
+
+      stBindCollapsible(card, head);
+      container.appendChild(card);
     });
 
     var il = document.createElement('div');
@@ -4941,9 +5263,16 @@ $currentYear     = date('Y');
         mtop.className = 'st-mov-top';
         var left = document.createElement('div');
         left.textContent = m.activity_name;
+        if (m.movement_type === 'in') {
+          var retBadge = document.createElement('span');
+          retBadge.className = 'badge badge-warning';
+          retBadge.style.marginLeft = 'var(--space-2)';
+          retBadge.textContent = 'RETURN';
+          left.appendChild(retBadge);
+        }
         var right = document.createElement('div');
         right.style.flexShrink = '0';
-        right.textContent = formatIDR(m.total_price);
+        right.textContent = (m.movement_type === 'in' ? '\u2212 ' : '') + formatIDR(m.total_price);
         mtop.appendChild(left);
         mtop.appendChild(right);
 
@@ -4953,6 +5282,17 @@ $currentYear     = date('Y');
 
         box.appendChild(mtop);
         box.appendChild(sub);
+
+        // Lot-based returns (22 Sep 2026 onward) know which pickup they came
+        // from; older return rows have no source_movement_id and show nothing.
+        if (m.movement_type === 'in' && m.source_movement_id) {
+          var src = document.createElement('div');
+          src.className = 'st-mov-sub';
+          src.style.opacity = '0.75';
+          src.textContent = 'from pickup on ' + formatPriceDate(m.source_movement_date);
+          box.appendChild(src);
+        }
+
         cbody.appendChild(box);
       });
 
@@ -4962,6 +5302,798 @@ $currentYear     = date('Y');
     invItem.appendChild(h);
     invItem.appendChild(b);
     return invItem;
+  }
+
+  // ==========================================================
+  // Sales Transaction — Returns tab. Same "paste WhatsApp message" flow as
+  // New Order (parse_order_message.php, save_order_alias.php), but goods
+  // move IN instead of OUT. NOT tied to any specific order/invoice — see
+  // "Sales Transaction — Tab Returns" in PROJECT_NOTES.md for the full
+  // design and the reasoning behind each rule enforced by create_return.php.
+  // Deliberately its own set of variables/overlays (rt*), never sharing
+  // state with the New Order (st*) flow above.
+  //
+  // Revised 22 Sep 2026 ("Redesign Returns: alokasi per-lot"): the qty on
+  // each product line is no longer priced/validated as one aggregate number.
+  // It is auto-allocated (FIFO, oldest pickup first) across the customer's
+  // actual pickups (list_return_price_options.php now returns pickups, not
+  // distinct prices), and the user can correct that allocation by hand —
+  // splitting a return across several pickups is the normal case, not an
+  // edge case. Each allocation keeps its own price, defaulted to what that
+  // pickup charged but freely editable. See PROJECT_NOTES.md for the full
+  // rationale and the exact server-side contract (create_return.php).
+  // ==========================================================
+  var rtCustomer   = document.getElementById('rtCustomer');
+  var rtMessage    = document.getElementById('rtMessage');
+  var btnRtRead    = document.getElementById('btnRtRead');
+  var rtReadError  = document.getElementById('rtReadError');
+  var rtParsedBox  = document.getElementById('rtParsedBox');
+  var rtDriver     = document.getElementById('rtDriver');
+  var rtPolice     = document.getElementById('rtPolice');
+  var rtItemList   = document.getElementById('rtItemList');
+  var rtItemEmpty  = document.getElementById('rtItemEmpty');
+  var rtIgnoredBox = document.getElementById('rtIgnoredBox');
+  var rtReturnDate = document.getElementById('rtReturnDate');
+  var rtReviewError = document.getElementById('rtReviewError');
+  var btnRtReview  = document.getElementById('btnRtReview');
+  var rtSuccessBox = document.getElementById('rtSuccessBox');
+
+  var rtProductLine        = document.getElementById('rtProductLine');
+  var rtProductSelect      = document.getElementById('rtProductSelect');
+  var rtProductRememberBox = document.getElementById('rtProductRememberBox');
+  var rtProductRemember    = document.getElementById('rtProductRemember');
+  var rtProductWording     = document.getElementById('rtProductWording');
+  var rtProductError       = document.getElementById('rtProductError');
+  var btnRtProductSave     = document.getElementById('btnRtProductSave');
+
+  var rtConfirmBody  = document.getElementById('rtConfirmBody');
+  var rtConfirmError = document.getElementById('rtConfirmError');
+  var btnRtConfirmSave = document.getElementById('btnRtConfirmSave');
+
+  var rtReverifyPassword = document.getElementById('rtReverifyPassword');
+  var rtReverifyError    = document.getElementById('rtReverifyError');
+
+  var rtItems        = []; // [{line, qty, product_text, logistic_id, activity_id, product_name, unit_label, available, movements, allocations}]
+  // movements: pickups fetched for this item's product (from list_return_price_options.php), newest first.
+  // allocations: [{source_movement_id, movement_date, label, qty, price}] — the user's current split, auto-seeded FIFO.
+  var rtProducts      = []; // every product, sent by parse_order_message.php
+  var rtUnknownQueue  = [];
+  var rtPickerItem    = null;
+  var rtSaving        = false;
+  var rtPriceCache    = {}; // logistic_id -> pickups response, so re-rendering a row doesn't refetch
+
+  function rtPost(url, data) {
+    return fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(data).toString()
+    }).then(function (r) { return r.json(); });
+  }
+
+  function resetReturnForm() {
+    rtCustomer.value = '';
+    rtMessage.value = '';
+    rtItems = [];
+    rtProducts = [];
+    rtUnknownQueue = [];
+    rtPickerItem = null;
+    rtSaving = false;
+    rtPriceCache = {};
+    btnRtReview.disabled = true; // re-enabled once every line card is marked Reviewed
+    btnRtRead.disabled = false;
+    btnRtConfirmSave.disabled = false;
+    rtParsedBox.style.display = 'none';
+    rtDriver.value = '';
+    rtPolice.value = '';
+    rtItemList.innerHTML = '';
+    rtItemEmpty.style.display = 'none';
+    rtIgnoredBox.innerHTML = '';
+    rtIgnoredBox.style.display = 'none';
+    rtReturnDate.value = todayISO();
+    stHideError(rtReadError);
+    stHideError(rtReviewError);
+    stHideError(rtConfirmError);
+    stHideError(rtProductError);
+    rtSuccessBox.style.display = 'none';
+    hide(rtProductOverlay);
+    hide(rtConfirmOverlay);
+    hide(rtReverifyOverlay);
+  }
+
+  // A price fetched for one customer must never leak into another customer's return.
+  rtCustomer.addEventListener('change', function () { rtPriceCache = {}; });
+
+  // ---------- Read the message ----------
+  btnRtRead.addEventListener('click', function () {
+    stHideError(rtReadError);
+    stHideError(rtReviewError);
+    rtSuccessBox.style.display = 'none';
+
+    if (!rtCustomer.value) { stShowError(rtReadError, 'Select a customer first.'); return; }
+    if (!rtMessage.value.trim()) { stShowError(rtReadError, 'Paste the return message first.'); return; }
+
+    btnRtRead.disabled = true;
+    rtPost('ajax/parse_order_message.php', { message: rtMessage.value })
+      .then(function (res) {
+        btnRtRead.disabled = false;
+        if (!res.ok) { stShowError(rtReadError, res.message || 'Could not read the message.'); return; }
+        applyParsedReturn(res);
+      })
+      .catch(function () {
+        btnRtRead.disabled = false;
+        stShowError(rtReadError, 'Connection error.');
+      });
+  });
+
+  function applyParsedReturn(res) {
+    rtProducts = res.products || [];
+    rtItems = (res.items || []).map(function (it) {
+      return {
+        line: it.line,
+        qty: it.qty,
+        product_text: it.product_text,
+        logistic_id: it.logistic_id,
+        activity_id: it.activity_id,
+        product_name: it.product_name,
+        unit_label: it.unit_label,
+        available: null,
+        movements: [],
+        allocations: [],
+        reviewed: false // per-card gate — see rtItemIsValid/updateRtReviewButtonState
+      };
+    });
+
+    rtDriver.value = res.driver_name || '';
+    rtPolice.value = res.police_number || '';
+
+    rtIgnoredBox.innerHTML = '';
+    var ignored = res.ignored || [];
+    if (ignored.length) {
+      var head = document.createElement('div');
+      head.textContent = 'Skipped lines:';
+      rtIgnoredBox.appendChild(head);
+      ignored.forEach(function (g) {
+        var d = document.createElement('div');
+        d.textContent = '\u2022 ' + g.line + ' (' + stIgnoredReasonText(g.reason) + ')';
+        d.style.wordBreak = 'break-word';
+        rtIgnoredBox.appendChild(d);
+      });
+      rtIgnoredBox.style.display = 'block';
+    } else {
+      rtIgnoredBox.style.display = 'none';
+    }
+
+    rtParsedBox.style.display = 'block';
+    renderRtItems();
+
+    rtUnknownQueue = rtItems.filter(function (it) { return !it.logistic_id; });
+    if (rtUnknownQueue.length) nextRtUnknown();
+  }
+
+  // ---------- Item rows: qty + which pickup(s) it's returned against ----------
+  function rtLoadMovements(logisticId) {
+    var key = String(logisticId);
+    if (rtPriceCache[key]) return Promise.resolve(rtPriceCache[key]);
+    var qs = new URLSearchParams({ customer_id: rtCustomer.value, logistic_id: logisticId }).toString();
+    return fetch('ajax/list_return_price_options.php?' + qs, { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        var data = res.ok ? res.data : { available: 0, movements: [] };
+        rtPriceCache[key] = data;
+        return data;
+      })
+      .catch(function () {
+        return { available: 0, movements: [] };
+      });
+  }
+
+  // FIFO seed: movements arrive newest-first, so walk from the back (oldest)
+  // filling each pickup's remaining until the requested qty is covered.
+  // Never touches an allocation the user already typed for a pickup that's
+  // still in range — recomputed fresh every time qty or the product changes.
+  function rtAutoAllocate(it) {
+    it.allocations = [];
+    var need = it.qty || 0;
+    if (need <= 0) return;
+    for (var i = it.movements.length - 1; i >= 0 && need > 0.0001; i--) {
+      var m = it.movements[i];
+      if (m.remaining <= 0.0001) continue;
+      var take = Math.min(m.remaining, need);
+      take = Math.round(take * 100) / 100;
+      it.allocations.push({
+        source_movement_id: m.movement_id,
+        movement_date: m.movement_date,
+        label: m.label,
+        qty: take,
+        price: m.price
+      });
+      need = Math.round((need - take) * 100) / 100;
+    }
+  }
+
+  function rtFindAllocation(it, movementId) {
+    for (var i = 0; i < it.allocations.length; i++) {
+      if (it.allocations[i].source_movement_id === movementId) return it.allocations[i];
+    }
+    return null;
+  }
+
+  function rtSetAllocationQty(it, m, qty) {
+    var alloc = rtFindAllocation(it, m.movement_id);
+    if (!qty || qty <= 0) {
+      if (alloc) it.allocations.splice(it.allocations.indexOf(alloc), 1);
+      return;
+    }
+    if (alloc) {
+      alloc.qty = qty;
+    } else {
+      it.allocations.push({
+        source_movement_id: m.movement_id,
+        movement_date: m.movement_date,
+        label: m.label,
+        qty: qty,
+        price: m.price
+      });
+    }
+  }
+
+  function rtAllocatedTotal(it) {
+    return (it.allocations || []).reduce(function (s, a) { return Math.round((s + a.qty) * 100) / 100; }, 0);
+  }
+
+  // A line is ready to be marked "Reviewed" only once it resolves to a real
+  // product, has a quantity, and its pickup allocations add up exactly to
+  // that quantity with a price on every allocated row. Mirrors the checks
+  // rtBuildPayload does server-round-trip-side, kept here so the per-card
+  // gate can run instantly without a network call.
+  function rtItemIsValid(it) {
+    if (!it.logistic_id) return false;
+    if (!it.qty || it.qty <= 0) return false;
+    var allocs = it.allocations || [];
+    if (!allocs.length) return false;
+    if (Math.abs(rtAllocatedTotal(it) - it.qty) >= 0.005) return false;
+    for (var i = 0; i < allocs.length; i++) {
+      if (allocs[i].qty > 0 && (!allocs[i].price || allocs[i].price <= 0)) return false;
+    }
+    return true;
+  }
+
+  // Review Return stays disabled until every line card has been opened,
+  // checked, and explicitly marked Reviewed — per user decision 22 Sep 2026.
+  function updateRtReviewButtonState() {
+    var ready = rtItems.length > 0 && rtItems.every(function (it) { return it.reviewed && rtItemIsValid(it); });
+    btnRtReview.disabled = !ready;
+  }
+
+  function renderRtItems() {
+    rtItemList.innerHTML = '';
+    rtItemEmpty.style.display = rtItems.length ? 'none' : 'block';
+
+    rtItems.forEach(function (it) {
+      if (typeof it.reviewed !== 'boolean') it.reviewed = false;
+
+      var card = document.createElement('div');
+      card.className = 'rt-line-card';
+
+      var head = document.createElement('div');
+      var headTop = document.createElement('div');
+      headTop.className = 'rt-line-head-top';
+
+      var title = document.createElement('div');
+      title.className = 'st-collapsible-title';
+
+      var badge = document.createElement('span');
+      badge.className = 'badge';
+
+      headTop.appendChild(title);
+      headTop.appendChild(badge);
+      headTop.appendChild(stMakeChevron());
+      head.appendChild(headTop);
+      card.appendChild(head);
+
+      var body = document.createElement('div');
+      body.className = 'st-collapsible-body';
+      card.appendChild(body);
+
+      stBindCollapsible(card, head);
+      rtItemList.appendChild(card);
+
+      // Opening a card counts as reviewing it (per user decision 22 Sep
+      // 2026) — no separate "Mark as Reviewed" button. Watched via class
+      // mutation rather than the click handler itself, since stBindCollapsible
+      // delays a plain click (to distinguish it from dblclick) before it
+      // actually toggles .st-open.
+      var reviewObserver = new MutationObserver(function () {
+        if (card.classList.contains('st-open') && !it.reviewed) {
+          it.reviewed = true;
+          refreshCardState();
+          updateRtReviewButtonState();
+        }
+      });
+      reviewObserver.observe(card, { attributes: true, attributeFilter: ['class'] });
+
+      var lineEl = document.createElement('div');
+      lineEl.className = 'st-item-line';
+      lineEl.textContent = it.line;
+
+      var main = document.createElement('div');
+      main.className = 'st-item-main';
+
+      var name = document.createElement('div');
+      name.className = 'st-item-name' + (it.logistic_id ? '' : ' unresolved');
+      name.textContent = it.logistic_id ? it.product_name : 'Product not recognized';
+
+      var qty = document.createElement('input');
+      qty.type = 'text';
+      qty.setAttribute('inputmode', 'decimal');
+      qty.className = 'input st-item-qty';
+      qty.placeholder = 'Qty';
+      qty.value = (it.qty === null || it.qty === undefined) ? '' : fmtQty(it.qty);
+      qty.addEventListener('input', function () {
+        qty.value = qty.value.replace(/[^0-9.]/g, '');
+        var n = parseNumberInput(qty.value);
+        it.qty = isNaN(n) ? null : n;
+        if (it.movements && it.movements.length) {
+          rtAutoAllocate(it);
+          renderRtAllocations(it, allocBox, availNote, refreshCardState);
+        } else {
+          rtUpdateAvailNote(it, availNote);
+        }
+        refreshCardState();
+        updateRtReviewButtonState();
+      });
+
+      var unit = document.createElement('span');
+      unit.className = 'st-item-unit';
+      unit.textContent = it.unit_label || '';
+
+      main.appendChild(name);
+      main.appendChild(qty);
+      main.appendChild(unit);
+
+      if (!it.logistic_id) {
+        var chooseBtn = document.createElement('button');
+        chooseBtn.type = 'button';
+        chooseBtn.className = 'btn btn-secondary st-mini-btn';
+        chooseBtn.textContent = 'Choose';
+        chooseBtn.addEventListener('click', function () { openRtProductPicker(it); });
+        main.appendChild(chooseBtn);
+      }
+
+      var availNote = document.createElement('div');
+      availNote.className = 'rt-item-avail';
+
+      var allocBox = document.createElement('div');
+      allocBox.className = 'rt-alloc-box';
+
+      var statusMsg = document.createElement('div');
+      statusMsg.className = 'empty-sub rt-line-status-msg';
+
+      body.appendChild(lineEl);
+      body.appendChild(main);
+      body.appendChild(availNote);
+      body.appendChild(allocBox);
+      body.appendChild(statusMsg);
+
+      function refreshCardState() {
+        var qtyTxt = (it.qty === null || it.qty === undefined || it.qty === '')
+          ? ''
+          : (fmtQty(it.qty) + ' ' + (it.unit_label || '') + ' \u00d7 ');
+        title.textContent = qtyTxt + (it.logistic_id ? it.product_name : 'Product not recognized');
+
+        var valid = rtItemIsValid(it);
+        card.classList.toggle('rt-line-reviewed', !!it.reviewed);
+        badge.className = 'badge ' + (it.reviewed ? 'badge-success' : 'badge-warning');
+        badge.textContent = it.reviewed ? 'Reviewed' : 'Needs review';
+
+        statusMsg.style.display = valid ? 'none' : 'block';
+        statusMsg.textContent = valid ? '' : 'Complete the quantity and pickup allocation for this line before it can be saved.';
+      }
+
+      refreshCardState();
+      if (it.logistic_id) rtFillAllocations(it, allocBox, availNote, refreshCardState);
+    });
+
+    updateRtReviewButtonState();
+  }
+
+  function rtUpdateAvailNote(it, availNote) {
+    if (it.available === null || it.available === undefined) return;
+    var over = it.qty !== null && it.qty !== undefined && it.qty > it.available + 0.0001;
+    availNote.classList.toggle('rt-item-avail-bad', !!over);
+    availNote.textContent = it.available <= 0
+      ? 'Never taken by this customer \u2014 cannot be returned.'
+      : 'Available to return: ' + fmtQty(it.available) + ' ' + (it.unit_label || '')
+        + (over ? ' \u2014 exceeds what is available' : '');
+  }
+
+  // Fetches this product's pickups (once, cached), auto-seeds the FIFO
+  // allocation for the qty already typed, then renders the editable rows.
+  function rtFillAllocations(it, allocBox, availNote, onChange) {
+    availNote.textContent = 'Loading pickup history\u2026';
+    rtLoadMovements(it.logistic_id).then(function (data) {
+      it.available = data.available;
+      it.movements = data.movements || [];
+      rtAutoAllocate(it);
+      renderRtAllocations(it, allocBox, availNote, onChange);
+      if (onChange) onChange();
+    });
+  }
+
+  // One row per pickup: label + remaining, an editable qty (seeded by FIFO,
+  // hand-correctable), an editable price (defaulted to that pickup's price,
+  // shown with thousand-commas via the same .input-number-comma pattern
+  // used elsewhere in this file, so it's unambiguous at a glance).
+  // A running "allocated X of Y requested" note enforces the exact-match rule.
+  function renderRtAllocations(it, allocBox, availNote, onChange) {
+    allocBox.innerHTML = '';
+    rtUpdateAvailNote(it, availNote);
+
+    if (!it.movements.length) {
+      return; // availNote above already says "Never taken..." when available <= 0
+    }
+
+    it.movements.forEach(function (m) {
+      var alloc = rtFindAllocation(it, m.movement_id);
+      var row = document.createElement('div');
+      row.className = 'rt-alloc-row' + (m.disabled ? ' rt-alloc-disabled' : '');
+
+      var lbl = document.createElement('div');
+      lbl.className = 'rt-alloc-label';
+      lbl.textContent = formatPriceDate(m.movement_date) + (m.label ? ' \u2014 ' + m.label : '')
+        + ' \u00b7 remaining ' + fmtQty(m.remaining) + ' ' + (it.unit_label || '');
+
+      var qtyInput = document.createElement('input');
+      qtyInput.type = 'text';
+      qtyInput.setAttribute('inputmode', 'decimal');
+      qtyInput.className = 'input rt-alloc-qty';
+      qtyInput.placeholder = 'Qty';
+      qtyInput.disabled = !!m.disabled;
+      qtyInput.value = alloc ? fmtQty(alloc.qty) : '';
+      qtyInput.addEventListener('input', function () {
+        qtyInput.value = qtyInput.value.replace(/[^0-9.]/g, '');
+        var n = parseNumberInput(qtyInput.value);
+        rtSetAllocationQty(it, m, isNaN(n) ? 0 : n);
+        rtUpdateAllocTotal(it, allocBox);
+        if (onChange) onChange();
+        updateRtReviewButtonState();
+      });
+
+      var priceInput = document.createElement('input');
+      priceInput.type = 'text';
+      priceInput.setAttribute('inputmode', 'decimal');
+      priceInput.className = 'input rt-alloc-price input-number-comma';
+      priceInput.title = 'Return price for this line \u2014 defaults to the price it was taken at, editable';
+      priceInput.disabled = !!m.disabled;
+      priceInput.value = formatNumberInput(fmtQty(alloc ? alloc.price : m.price));
+      initNumberCommaInput(priceInput);
+      priceInput.addEventListener('input', function () {
+        var n = parseNumberInput(priceInput.value);
+        var a = rtFindAllocation(it, m.movement_id);
+        if (a) a.price = isNaN(n) ? m.price : n;
+        if (onChange) onChange();
+        updateRtReviewButtonState();
+      });
+
+      row.appendChild(lbl);
+      row.appendChild(qtyInput);
+      row.appendChild(priceInput);
+      allocBox.appendChild(row);
+    });
+
+    var totalRow = document.createElement('div');
+    totalRow.className = 'rt-alloc-total';
+    allocBox.appendChild(totalRow);
+    rtUpdateAllocTotal(it, allocBox);
+  }
+
+  function rtUpdateAllocTotal(it, allocBox) {
+    var totalRow = allocBox.querySelector('.rt-alloc-total');
+    if (!totalRow) return;
+    var allocated = rtAllocatedTotal(it);
+    var need = it.qty || 0;
+    var ok = Math.abs(allocated - need) < 0.005;
+    totalRow.classList.toggle('rt-item-avail-bad', !ok);
+    totalRow.textContent = 'Allocated ' + fmtQty(allocated) + ' of ' + fmtQty(need) + ' requested'
+      + (ok ? '' : ' \u2014 must match exactly before this return can be saved');
+  }
+
+  // ---------- "Which product is this?" (mirrors New Order's picker) ----------
+  function nextRtUnknown() {
+    while (rtUnknownQueue.length && rtUnknownQueue[0].logistic_id) rtUnknownQueue.shift();
+    if (rtUnknownQueue.length) openRtProductPicker(rtUnknownQueue[0]);
+  }
+
+  function openRtProductPicker(item) {
+    rtPickerItem = item;
+    stHideError(rtProductError);
+    rtProductLine.textContent = 'Line: ' + item.line;
+
+    rtProductSelect.innerHTML = '<option value="">-- select product --</option>';
+    rtProducts.forEach(function (p) {
+      var opt = document.createElement('option');
+      opt.value = p.logistic_id;
+      opt.textContent = p.activity_name;
+      rtProductSelect.appendChild(opt);
+    });
+
+    rtProductRememberBox.style.display = item.product_text ? 'block' : 'none';
+    rtProductRemember.checked = true;
+    rtProductWording.textContent = item.product_text || '';
+    show(rtProductOverlay);
+  }
+
+  document.getElementById('btnRtProductSkip').addEventListener('click', function () {
+    hide(rtProductOverlay);
+    if (rtUnknownQueue.length && rtUnknownQueue[0] === rtPickerItem) rtUnknownQueue.shift();
+    rtPickerItem = null;
+    renderRtItems();
+    nextRtUnknown();
+  });
+
+  btnRtProductSave.addEventListener('click', function () {
+    stHideError(rtProductError);
+    var item = rtPickerItem;
+    if (!item) return;
+
+    var lid = rtProductSelect.value;
+    if (!lid) { stShowError(rtProductError, 'Select a product.'); return; }
+    var p = rtProducts.filter(function (x) { return String(x.logistic_id) === lid; })[0];
+    if (!p) { stShowError(rtProductError, 'Product was not found.'); return; }
+
+    var remember = !!item.product_text && rtProductRemember.checked;
+
+    function apply() {
+      var wording = item.product_text;
+      function assign(o) {
+        o.logistic_id = p.logistic_id;
+        o.activity_id = p.activity_id;
+        o.product_name = p.activity_name;
+        o.unit_label = p.unit_label;
+      }
+      assign(item);
+      if (remember) {
+        rtItems.forEach(function (o) {
+          if (!o.logistic_id && o.product_text === wording) assign(o);
+        });
+      }
+      hide(rtProductOverlay);
+      rtPickerItem = null;
+      renderRtItems();
+      nextRtUnknown();
+    }
+
+    if (!remember) { apply(); return; }
+
+    btnRtProductSave.disabled = true;
+    rtPost('ajax/save_order_alias.php', { activity_id: p.activity_id, alias_text: item.product_text })
+      .then(function (res) {
+        btnRtProductSave.disabled = false;
+        if (!res.ok) { stShowError(rtProductError, res.message || 'Could not save the wording.'); return; }
+        apply();
+      })
+      .catch(function () {
+        btnRtProductSave.disabled = false;
+        stShowError(rtProductError, 'Connection error.');
+      });
+  });
+
+  // ---------- Review -> Confirm -> password re-check -> Save ----------
+  function rtBuildPayload(dryRun) {
+    if (!rtCustomer.value) { stShowError(rtReviewError, 'Select a customer.'); return null; }
+    if (!rtItems.length) { stShowError(rtReviewError, 'There are no product lines in this return.'); return null; }
+
+    var items = [];
+    for (var i = 0; i < rtItems.length; i++) {
+      var it = rtItems[i];
+      if (!it.logistic_id) {
+        stShowError(rtReviewError, 'Choose a product for every line, or remove the line.');
+        return null;
+      }
+      if (!it.qty || it.qty <= 0) {
+        stShowError(rtReviewError, 'Enter a quantity for every line.');
+        return null;
+      }
+      var allocs = it.allocations || [];
+      if (!allocs.length) {
+        stShowError(rtReviewError, 'Choose which pickup(s) "' + (it.product_name || 'this line') + '" is returned from.');
+        return null;
+      }
+      if (Math.abs(rtAllocatedTotal(it) - it.qty) >= 0.005) {
+        stShowError(rtReviewError, 'For "' + (it.product_name || 'this line')
+          + '", the pickups allocated must add up to exactly the requested quantity.');
+        return null;
+      }
+      var cleanAllocs = [];
+      for (var j = 0; j < allocs.length; j++) {
+        var a = allocs[j];
+        if (!a.qty || a.qty <= 0) continue;
+        if (!a.price || a.price <= 0) {
+          stShowError(rtReviewError, 'Enter a price above zero for every allocated pickup.');
+          return null;
+        }
+        cleanAllocs.push({ source_movement_id: a.source_movement_id, qty: a.qty, price: a.price });
+      }
+      items.push({ logistic_id: it.logistic_id, allocations: cleanAllocs });
+    }
+    if (!rtReturnDate.value) { stShowError(rtReviewError, 'Select the return date.'); return null; }
+
+    return {
+      customer_id: rtCustomer.value,
+      return_date: rtReturnDate.value,
+      driver_name: rtDriver.value.trim().toUpperCase(),
+      police_number: rtPolice.value.trim().toUpperCase(),
+      items: JSON.stringify(items),
+      dry_run: dryRun ? '1' : '0'
+    };
+  }
+
+  function rtNotReturnableMessage(items) {
+    return (items || []).map(function (m) { return m.reason; }).join('\n');
+  }
+
+  function rtReview() {
+    stHideError(rtReviewError);
+    var payload = rtBuildPayload(true);
+    if (!payload) return;
+
+    btnRtReview.disabled = true;
+    rtPost('ajax/create_return.php', payload)
+      .then(function (res) {
+        btnRtReview.disabled = false;
+        if (res.ok) { showRtConfirm(res.ret); return; }
+        if (res.code === 'not_returnable') {
+          stShowError(rtReviewError, rtNotReturnableMessage(res.items));
+          return;
+        }
+        stShowError(rtReviewError, res.message || 'Could not review the return.');
+      })
+      .catch(function () {
+        btnRtReview.disabled = false;
+        stShowError(rtReviewError, 'Connection error.');
+      });
+  }
+
+  btnRtReview.addEventListener('click', rtReview);
+
+  function showRtConfirm(ret) {
+    stHideError(rtConfirmError);
+    rtConfirmBody.innerHTML = '';
+
+    stAddRow(rtConfirmBody, 'Customer', ret.customer.name);
+    stAddRow(rtConfirmBody, 'Return Date', formatPriceDate(ret.return_date));
+    stAddRow(rtConfirmBody, 'Driver', ret.driver_name || '-');
+    stAddRow(rtConfirmBody, 'Police Number', ret.police_number || '-');
+    stAddRow(rtConfirmBody, 'Invoice', ret.invoice.number + (ret.invoice.is_new ? ' (new)' : ''));
+
+    var lbl = document.createElement('div');
+    lbl.className = 'st-section-label';
+    lbl.textContent = 'Products Returned';
+    rtConfirmBody.appendChild(lbl);
+
+    ret.items.forEach(function (ln) {
+      var box = document.createElement('div');
+      box.className = 'st-mov';
+
+      var top = document.createElement('div');
+      top.className = 'st-mov-top';
+      var nm = document.createElement('div');
+      nm.style.fontWeight = '600';
+      nm.textContent = ln.product_name;
+      var tot = document.createElement('div');
+      tot.textContent = '\u2212 ' + formatIDR(ln.total_price);
+      top.appendChild(nm);
+      top.appendChild(tot);
+
+      var sub = document.createElement('div');
+      sub.className = 'st-mov-sub';
+      sub.textContent = fmtQty(ln.qty) + ' ' + (ln.unit_label || '')
+        + ' \u00b7 stock ' + fmtQty(ln.remaining_before) + ' \u2192 ' + fmtQty(ln.remaining_after);
+
+      box.appendChild(top);
+      box.appendChild(sub);
+
+      (ln.allocations || []).forEach(function (al) {
+        var line = document.createElement('div');
+        line.className = 'st-mov-sub';
+        line.style.paddingLeft = 'var(--space-3, 12px)';
+        line.textContent = '\u2022 ' + fmtQty(al.qty) + ' \u00d7 ' + formatIDR(al.price)
+          + ' from ' + formatPriceDate(al.source_movement_date);
+        box.appendChild(line);
+      });
+
+      rtConfirmBody.appendChild(box);
+    });
+
+    var sep = document.createElement('div');
+    sep.className = 'st-section-label';
+    sep.textContent = 'Total';
+    rtConfirmBody.appendChild(sep);
+    stAddRow(rtConfirmBody, 'This Return', '\u2212 ' + formatIDR(ret.grand_total));
+    stAddRow(rtConfirmBody, 'Invoice Total After', formatIDR(ret.invoice.total_after));
+
+    show(rtConfirmOverlay);
+  }
+
+  document.getElementById('btnRtConfirmCancel').addEventListener('click', function () {
+    hide(rtConfirmOverlay);
+  });
+
+  // Confirm & Save does not write anything by itself — it opens the
+  // password re-check first (returns move goods and money back, treated
+  // like the other sensitive actions in this app), and the actual
+  // create_return.php dry_run=0 call happens only after that succeeds.
+  btnRtConfirmSave.addEventListener('click', function () {
+    if (rtSaving) return;
+    var payload = rtBuildPayload(false);
+    if (!payload) { hide(rtConfirmOverlay); return; }
+    hide(rtConfirmOverlay);
+    rtReverifyPassword.value = '';
+    rtReverifyError.style.display = 'none';
+    show(rtReverifyOverlay);
+    rtReverifyPassword.focus();
+  });
+
+  document.getElementById('btnRtReverifyCancel').addEventListener('click', function () {
+    hide(rtReverifyOverlay);
+  });
+
+  function submitRtReverify() {
+    var pwd = rtReverifyPassword.value;
+    rtReverifyError.style.display = 'none';
+    if (!pwd) {
+      stShowError(rtReverifyError, 'Password is required.');
+      return;
+    }
+    rtPost('ajax/verify_password.php', { password: pwd })
+      .then(function (res) {
+        if (!res.ok) {
+          stShowError(rtReverifyError, res.message || 'Wrong password.');
+          return;
+        }
+        hide(rtReverifyOverlay);
+        rtSaveReturn();
+      })
+      .catch(function () {
+        stShowError(rtReverifyError, 'Connection error.');
+      });
+  }
+
+  document.getElementById('btnRtReverifyConfirm').addEventListener('click', submitRtReverify);
+  rtReverifyPassword.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); submitRtReverify(); }
+  });
+
+  function rtSaveReturn() {
+    if (rtSaving) return;
+    var payload = rtBuildPayload(false);
+    if (!payload) return;
+
+    rtSaving = true;
+    rtPost('ajax/create_return.php', payload)
+      .then(function (res) {
+        rtSaving = false;
+        if (!res.ok) {
+          if (res.code === 'not_returnable') {
+            alert(rtNotReturnableMessage(res.items));
+          } else {
+            alert(res.message || 'Failed to save the return.');
+          }
+          return;
+        }
+        var r = res.ret;
+        var summary = 'Return saved \u2014 ' + r.customer.name
+          + ' \u00b7 Invoice ' + r.invoice.number
+          + ' \u00b7 \u2212' + formatIDR(r.grand_total);
+        resetReturnForm(); // also closes the fly windows
+        rtSuccessBox.textContent = summary;
+        rtSuccessBox.style.display = 'block';
+        loadStCustomers();
+      })
+      .catch(function () {
+        rtSaving = false;
+        alert('Connection error while saving.');
+      });
   }
 
 })();
