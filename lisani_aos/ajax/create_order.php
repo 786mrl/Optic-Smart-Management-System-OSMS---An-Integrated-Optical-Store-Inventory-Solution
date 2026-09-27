@@ -10,11 +10,23 @@
 //
 // POST:
 //   customer_id, order_date (Y-m-d), driver_name, police_number,
-//   items      JSON  [ {"logistic_id": 10, "qty": 30}, ... ]
+//   items      JSON  [ {"logistic_id": 10, "qty": 30, "stock_source": "normal"}, ... ]
+//                    stock_source is optional, "normal" (default) or
+//                    "defective" — see "Kendala #1 & #2" in PROJECT_NOTES.md.
+//                    A product can only have ONE stock_source per order (if
+//                    the same product appears on two lines with different
+//                    stock_source, the request is rejected — split it into
+//                    two separate orders instead).
 //   new_prices JSON  { "10": 145000 }   optional; only for products that have
 //                    no price for this customer yet (saved to
 //                    customer_item_prices with price_date = order_date)
 //   dry_run    "1" | "0"
+//
+// Revised 22 Sep 2026 (defective stock, "Kendala #1 & #2"): a line can now
+// draw from logistics.defective_qty instead of remaining_primary_qty.
+// total_taken_qty (the combined "currently with the customer" balance) rises
+// either way; defective_taken_qty additionally rises only for defective
+// lines, as a sub-tracking of how much of that balance is defective stock.
 //
 // Response contract: { ok, message, ... }
 //   ok: true  -> order { customer, order_date, driver_name, police_number,
@@ -24,8 +36,11 @@
 //                code: "missing_prices", missing: [ {logistic_id, product_name, unit_label} ]
 //
 // Effects when saved (all or nothing):
-//   - logistic_movements: 1 row per product (movement_type 'out') with the price snapshot
-//   - logistics.remaining_primary_qty (-), logistics.total_taken_qty (+)
+//   - logistic_movements: 1 row per product (movement_type 'out') with the price
+//     snapshot and stock_source ('normal' or 'defective')
+//   - stock_source='normal'   : logistics.remaining_primary_qty (-)
+//   - stock_source='defective': logistics.defective_qty (-), logistics.defective_taken_qty (+)
+//   - logistics.total_taken_qty (+) in BOTH cases — combined balance, unchanged behaviour
 //   - customers.total_inflow (+ order value)
 //   - invoices: the customer's open invoice is reused, or a new one is created
 //     ([seq 3 digits]/inv/laj-[INITIALS]-[n]/[MONTH ROMAN]/[YEAR]); total_amount (+)
@@ -135,9 +150,14 @@ function customer_initials(string $name): string
 // initials, this one is. Stable: once a customer has an invoice with these initials,
 // its [n] is reused; a customer's first invoice takes the highest [n] in use + 1
 // (so it starts at 1 and is never reused, even if another customer is deleted).
+// Scans ALL THREE invoice kinds that share the `invoices` table — orders
+// (/inv/), returns (/ret/), and price adjustments (/adj/, added 22 Sep 2026)
+// — so a customer's [n] stays the same no matter which kind of invoice they
+// happen to have first, and two customers with the same initials can never
+// collide regardless of the mix of invoice kinds each has.
 function invoice_initials_index(mysqli $conn, int $customerId, string $initials): int
 {
-    $re = '#/inv/laj-([^/]+)-(\d+)/#u';
+    $re = '#/(?:inv|ret|adj)/laj-([^/]+)-(\d+)/#u';
 
     // 1) This customer already has an invoice with these initials -> same [n].
     $st = $conn->prepare('SELECT invoice_number FROM invoices WHERE customer_id = ? ORDER BY id DESC');
@@ -153,7 +173,7 @@ function invoice_initials_index(mysqli $conn, int $customerId, string $initials)
     $st->close();
 
     // 2) First invoice of this customer -> next free [n] for these initials.
-    $like = '%/inv/laj-' . $initials . '-%';
+    $like = '%/laj-' . $initials . '-%';
     $st = $conn->prepare('SELECT invoice_number FROM invoices WHERE invoice_number LIKE ?');
     $st->bind_param('s', $like);
     $st->execute();
@@ -202,13 +222,21 @@ if (count($rawItems) > 50) {
 }
 
 // Same product on two lines -> one movement with the summed quantity.
-$qtyByLogistic = [];
+// stock_source must be the SAME across every line of the same product
+// (a single logistic_movements row can only carry one bucket).
+$qtyByLogistic         = [];
+$stockSourceByLogistic = [];
 foreach ($rawItems as $it) {
     $lid = isset($it['logistic_id']) ? (int) $it['logistic_id'] : 0;
     $qty = isset($it['qty']) ? clean_number((string) $it['qty']) : null;
     if ($lid <= 0 || $qty === null || $qty <= 0 || $qty > 99999.99) {
         aos_fail('Every product line needs a product and a quantity above zero.');
     }
+    $ss = (isset($it['stock_source']) && $it['stock_source'] === 'defective') ? 'defective' : 'normal';
+    if (isset($stockSourceByLogistic[$lid]) && $stockSourceByLogistic[$lid] !== $ss) {
+        aos_fail('The same product cannot mix normal and defective stock in one order — split it into two orders.');
+    }
+    $stockSourceByLogistic[$lid] = $ss;
     $qtyByLogistic[$lid] = round(($qtyByLogistic[$lid] ?? 0) + $qty, 2);
 }
 
@@ -247,7 +275,8 @@ try {
     sort($ids);
     $marks = implode(',', array_fill(0, count($ids), '?'));
     $st = $lisani_conn->prepare(
-        'SELECT l.id, l.remaining_primary_qty, l.primary_unit_label, a.activity_name
+        'SELECT l.id, l.remaining_primary_qty, l.defective_qty, l.defective_reference_price,
+                l.primary_unit_label, a.activity_name
          FROM logistics l
          JOIN activities a ON a.id = l.activity_id
          WHERE l.id IN (' . $marks . ')
@@ -269,12 +298,20 @@ try {
         }
     }
 
-    // ---- Stock: an order may never take more than what is left ----
+    // ---- Stock: an order may never take more than what is left, checked
+    //      against the bucket (normal / defective) each line asked for ----
     $shortages = [];
     foreach ($ids as $lid) {
-        $remaining = (float) ($logistics[$lid]['remaining_primary_qty'] ?? 0);
+        $ss = $stockSourceByLogistic[$lid];
+        if ($ss === 'defective') {
+            $remaining = (float) ($logistics[$lid]['defective_qty'] ?? 0);
+            $bucketLabel = 'defective stock';
+        } else {
+            $remaining = (float) ($logistics[$lid]['remaining_primary_qty'] ?? 0);
+            $bucketLabel = 'stock';
+        }
         if ($qtyByLogistic[$lid] > $remaining + 0.0001) {
-            $shortages[] = 'Not enough stock for ' . $logistics[$lid]['activity_name']
+            $shortages[] = 'Not enough ' . $bucketLabel . ' for ' . $logistics[$lid]['activity_name']
                 . ': requested ' . fmt_qty($qtyByLogistic[$lid])
                 . ', remaining ' . fmt_qty($remaining) . ' ' . $logistics[$lid]['primary_unit_label'] . '.';
         }
@@ -304,6 +341,16 @@ try {
             $price = (float) $found['price'];
             $priceDate = $found['price_date'];
             $source = 'history';
+        } elseif ($stockSourceByLogistic[$lid] === 'defective'
+            && $logistics[$lid]['defective_reference_price'] !== null
+            && (float) $logistics[$lid]['defective_reference_price'] > 0) {
+            // No price of this customer's own yet — fall back to the
+            // reference price set on the "Defective Stock" tab (same for
+            // every customer by default). A customer's own
+            // customer_item_prices entry, checked above, still always wins.
+            $price = (float) $logistics[$lid]['defective_reference_price'];
+            $priceDate = $orderDate;
+            $source = 'defective_reference';
         } elseif (isset($newPrices[$lid])) {
             $price = $newPrices[$lid];
             $priceDate = $orderDate;
@@ -320,7 +367,10 @@ try {
         $qty   = $qtyByLogistic[$lid];
         $total = round($qty * $price, 2);
         $grand = round($grand + $total, 2);
-        $remainingBefore = (float) ($logistics[$lid]['remaining_primary_qty'] ?? 0);
+        $ss    = $stockSourceByLogistic[$lid];
+        $remainingBefore = $ss === 'defective'
+            ? (float) ($logistics[$lid]['defective_qty'] ?? 0)
+            : (float) ($logistics[$lid]['remaining_primary_qty'] ?? 0);
 
         $lines[] = [
             'logistic_id'      => $lid,
@@ -331,6 +381,11 @@ try {
             'price_date'       => $priceDate,
             'price_source'     => $source,
             'total_price'      => $total,
+            'stock_source'     => $ss,
+            // Available in the OTHER bucket too, so the client can decide
+            // whether to offer a normal<->defective toggle for this line at
+            // all (only worth asking when defective_qty > 0).
+            'defective_qty'    => (float) ($logistics[$lid]['defective_qty'] ?? 0),
             'remaining_before' => $remainingBefore,
             'remaining_after'  => round($remainingBefore - $qty, 2),
         ];
@@ -448,14 +503,24 @@ try {
     );
     $movIns = $lisani_conn->prepare(
         "INSERT INTO logistic_movements
-           (logistic_id, customer_id, movement_type, movement_date, customer_name,
+           (logistic_id, customer_id, movement_type, stock_source, movement_date, customer_name,
             driver_name, police_number, qty_primary_package, price, total_price,
             invoice_id, created_by)
-         VALUES (?, ?, 'out', ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+         VALUES (?, ?, 'out', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     );
-    $logUpd = $lisani_conn->prepare(
+    // Two variants, one per bucket — a single row can only touch one of
+    // remaining_primary_qty / defective_qty, so this stays a plain UPDATE
+    // instead of a CASE (simpler to read, and each is prepared once).
+    $logUpdNormal = $lisani_conn->prepare(
         'UPDATE logistics
          SET remaining_primary_qty = remaining_primary_qty - ?,
+             total_taken_qty = total_taken_qty + ?
+         WHERE id = ?'
+    );
+    $logUpdDefective = $lisani_conn->prepare(
+        'UPDATE logistics
+         SET defective_qty = defective_qty - ?,
+             defective_taken_qty = defective_taken_qty + ?,
              total_taken_qty = total_taken_qty + ?
          WHERE id = ?'
     );
@@ -470,23 +535,30 @@ try {
             $priceIns->execute();
         }
 
-        $q = money($ln['qty']);
-        $p = money($ln['price']);
-        $t = money($ln['total_price']);
+        $q  = money($ln['qty']);
+        $p  = money($ln['price']);
+        $t  = money($ln['total_price']);
+        $ss = $ln['stock_source'];
         $movIns->bind_param(
-            'iisssssssii',
-            $lid, $customerId, $orderDate, $customer['customer_name'],
+            'iissssssssii',
+            $lid, $customerId, $ss, $orderDate, $customer['customer_name'],
             $driverDb, $policeDb, $q, $p, $t, $invoiceId, $userId
         );
         $movIns->execute();
         $movementIds[] = (int) $lisani_conn->insert_id;
 
-        $logUpd->bind_param('ssi', $q, $q, $lid);
-        $logUpd->execute();
+        if ($ss === 'defective') {
+            $logUpdDefective->bind_param('sssi', $q, $q, $q, $lid);
+            $logUpdDefective->execute();
+        } else {
+            $logUpdNormal->bind_param('ssi', $q, $q, $lid);
+            $logUpdNormal->execute();
+        }
     }
     $priceIns->close();
     $movIns->close();
-    $logUpd->close();
+    $logUpdNormal->close();
+    $logUpdDefective->close();
 
     // batch_id = explicit "one order" identifier shared by every row written
     // by this call (lowest movement id of the order). update_order.php reuses

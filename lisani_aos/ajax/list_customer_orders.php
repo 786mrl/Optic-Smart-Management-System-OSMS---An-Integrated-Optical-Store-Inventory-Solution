@@ -54,7 +54,10 @@ mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
 try {
     // ---- Customer totals ----
-    $st = $lisani_conn->prepare('SELECT id, customer_name, total_inflow, total_outflow, total_paid FROM customers WHERE id = ?');
+    $st = $lisani_conn->prepare(
+        'SELECT id, customer_name, total_inflow, total_outflow, total_price_adjustments, total_paid
+         FROM customers WHERE id = ?'
+    );
     $st->bind_param('i', $customerId);
     $st->execute();
     $customer = $st->get_result()->fetch_assoc();
@@ -64,13 +67,18 @@ try {
     }
 
     // ---- Per product (taken vs returned kept separate, so the card can
-    //      show both instead of a single net number) ----
+    //      show both instead of a single net number; discount_value is
+    //      summed the same way so the frontend can subtract it from the net
+    //      "Actual" value, same convention as the customer-level totals
+    //      above — see PROJECT_NOTES.md, "Bugfix: diskon per produk belum
+    //      diterapkan di tab Customer") ----
     $st = $lisani_conn->prepare(
         "SELECT m.logistic_id, a.activity_name, l.primary_unit_label AS unit_label,
                 SUM(CASE WHEN m.movement_type = 'out' THEN m.qty_primary_package ELSE 0 END) AS total_qty,
                 SUM(CASE WHEN m.movement_type = 'out' THEN m.total_price ELSE 0 END) AS total_value,
                 SUM(CASE WHEN m.movement_type = 'in' THEN m.qty_primary_package ELSE 0 END) AS returned_qty,
-                SUM(CASE WHEN m.movement_type = 'in' THEN m.total_price ELSE 0 END) AS returned_value
+                SUM(CASE WHEN m.movement_type = 'in' THEN m.total_price ELSE 0 END) AS returned_value,
+                SUM(CASE WHEN m.movement_type = 'price_adjustment' THEN m.total_price ELSE 0 END) AS discount_value
          FROM logistic_movements m
          JOIN logistics l ON l.id = m.logistic_id
          JOIN activities a ON a.id = l.activity_id
@@ -92,6 +100,7 @@ try {
             'total_value'    => $row['total_value'],
             'returned_qty'   => $row['returned_qty'],
             'returned_value' => $row['returned_value'],
+            'discount_value' => $row['discount_value'],
         ];
     }
     $st->close();
@@ -188,11 +197,20 @@ try {
         'ok'   => true,
         'data' => [
             'customer' => [
-                'id'             => (int) $customer['id'],
-                'customer_name'  => $customer['customer_name'],
-                'total_ordered'  => $customer['total_inflow'],
-                'total_returned' => $customer['total_outflow'],
-                'total_paid'     => $customer['total_paid'],
+                'id'                      => (int) $customer['id'],
+                'customer_name'           => $customer['customer_name'],
+                'total_ordered'           => $customer['total_inflow'],
+                // total_outflow accumulates BOTH physical returns AND price
+                // adjustments (see create_price_adjustment.php — needed so
+                // total_inflow - total_outflow keeps being the correct net
+                // receivable). Split back out here for display: "returned"
+                // should mean goods that physically came back, matching the
+                // per-product breakdown below, which only ever counts
+                // movement_type='in' — it never counted price adjustments in
+                // the first place, so these two now agree.
+                'total_returned'          => round((float) $customer['total_outflow'] - (float) $customer['total_price_adjustments'], 2),
+                'total_price_adjustments' => $customer['total_price_adjustments'],
+                'total_paid'              => $customer['total_paid'],
             ],
             'products' => $products,
             'invoices' => $invoices,

@@ -2780,3 +2780,537 @@ Tab baru "Movements" (nama sementara — tab ke-3, TERPISAH dari
   client — diputuskan setelah lihat skema tabel).
 - Edit `logistic_content.php` — tambah tab ke-3, render nested card pakai
   `stBindCollapsible` yang sudah ada di codebase.
+## Dua kendala baru di Returns: penurunan harga (barang tetap diambil) & stok "bermasalah" terpisah (22 Sep 2026, DISKUSI — BELUM DIKERJAKAN)
+
+User angkat 2 kendala fungsional di luar redesign per-lot yang sudah ada:
+
+### #1 Barang bermasalah tapi tetap diambil customer, solusinya turun harga (bukan retur fisik)
+Kasus: produk cacat/rusak, tapi customer tetap mau ambil, kompensasinya harga
+diturunkan — bukan barang balik ke gudang. Ini beda dari Returns (yang
+mengasumsikan barang fisik kembali & `remaining_primary_qty`/`total_taken_qty`
+ikut berubah).
+
+**Usulan arah desain** (belum difinalkan user):
+- Ini **price adjustment / credit note**, bukan retur — jangan reuse efek stok
+  Returns (jangan sentuh `remaining_primary_qty` maupun `total_taken_qty`,
+  karena barang tetap di tangan customer).
+- Reuse **infrastruktur picker lot-based** yang sudah ada di Returns (pilih
+  customer → produk → source movement `out` mana yang harganya mau
+  disesuaikan, termasuk split ke >1 movement sama seperti retur) — supaya
+  konsisten dan tidak bikin alur baru dari nol.
+- Efek simpan yang beda: insert baris baru ke `logistic_movements` dengan
+  `movement_type` baru (usul: `price_adjustment`), `source_movement_id`
+  menunjuk movement asal, `qty` = qty yang harganya disesuaikan (informational,
+  **tidak** mempengaruhi stok), `price`/`total_price` = **selisih** (harga lama
+  − harga baru, disimpan negatif di sisi invoice sama seperti retur) — supaya
+  tetap auditable & muncul di riwayat Customers, tapi backend (`create_return.php`
+  atau file baru) skip bagian yang update `logistics.remaining_primary_qty` /
+  `total_taken_qty` untuk tipe ini.
+- UI: tambah pilihan **mode** di tab Returns — "Return goods" (alur sekarang,
+  barang balik) vs "Price adjustment" (barang tetap di customer, cuma harga
+  turun) — keduanya pakai picker & split source-movement yang sama, cuma beda
+  label & efek submit.
+- **Perlu dikonfirmasi ke user**: nama tab/mode yang pas, apakah endpoint baru
+  terpisah (`ajax/create_price_adjustment.php`) atau digabung ke
+  `create_return.php` dengan parameter mode, dan apakah histori riwayat
+  Customers perlu badge baru ("PRICE ADJ") mirip badge "RETURN" yang sudah ada.
+
+### #2 Kolom stok terpisah untuk barang "bermasalah" (defective)
+User usul: tambah kolom baru di `logistics` (usul nama: `defective_qty`),
+terpisah total dari `remaining_primary_qty`, supaya tidak ganggu logika stok
+yang sudah ada. Dua mode pemakaian (user minta konfirmasi Claude paham
+maksudnya — sudah dipahami):
+- **Mode gabung ("tidak dibedakan, cukup dihapus")**: barang bermasalah balik
+  ke `remaining_primary_qty` biasa (behavior Returns yang sekarang, tidak ada
+  perubahan) — `defective_qty` tidak dipakai sama sekali di alur ini.
+- **Mode pisah**: barang bermasalah masuk ke `defective_qty`, TIDAK menambah
+  `remaining_primary_qty`. Saat **create order**, tambah **fly window/toggle**
+  supaya staff pilih ambil dari stok normal atau dari stok defective (biasanya
+  dijual lebih murah — nyambung ke kendala #1, defective_qty adalah salah satu
+  sumber barang yang nanti dijual pakai price adjustment/harga turun).
+
+**Usulan arah desain** (belum difinalkan user):
+- Kolom baru `logistics.defective_qty` (default 0), independen dari
+  `remaining_primary_qty` — tidak mengubah kolom/logika lama sama sekali
+  (sesuai permintaan user).
+- Titik masuk ke `defective_qty` = dari Returns: tambah pilihan **kondisi
+  barang kembali** di form/Confirm Returns — "Good" (restock normal, ke
+  `remaining_primary_qty`, default & behavior sekarang) vs "Defective" (masuk
+  `defective_qty`, `remaining_primary_qty` **tidak** bertambah). ini yang jadi
+  saklar antara mode gabung vs mode pisah di atas — dipilih per-baris retur,
+  bukan setting global.
+- Movement `logistic_movements` (`movement_type='in'`) butuh penanda tambahan
+  supaya ketahuan retur itu masuk bucket mana — usul kolom baru, misal
+  `stock_bucket` ENUM('normal','defective') atau boolean `is_defective`,
+  dipakai backend buat nentuin kolom mana yang di-increment (`remaining_primary_qty`
+  vs `defective_qty`).
+- Titik keluar dari `defective_qty` = Create Order: tambah toggle/fly window
+  ("Take from defective stock?") di alur pilih produk New Order — kalau
+  dicentang, validasi & deduct dari `defective_qty` (bukan
+  `remaining_primary_qty`), harga bisa di-default lebih rendah (opsional,
+  perlu dikonfirmasi apakah otomatis atau tetap manual).
+- **Perlu dikonfirmasi ke user**: apakah `total_taken_qty` (saldo "sedang di
+  tangan customer") perlu ikut menghitung barang yang diambil dari
+  `defective_qty` juga (kemungkinan iya, karena tetap barang yang keluar ke
+  customer), dan apakah perlu histori/laporan terpisah untuk lacak berapa
+  defective yang sudah terjual vs masih nganggur di gudang.
+
+### Dokumen yang dibutuhkan sebelum mulai coding (belum diupload user)
+1. `DESCRIBE logistics` / `sql/lisani_aos_logistics.sql` versi terbaru — pastikan
+   kolom sekarang (terutama `remaining_primary_qty`, `total_taken_qty`) supaya
+   tambahan `defective_qty` tidak bentrok nama/tipe.
+2. `DESCRIBE logistic_movements` versi terbaru — cek apakah migrasi
+   `source_movement_id` (dari redesign per-lot Returns) sudah benar-benar
+   dijalankan, karena `stock_bucket`/`is_defective` dan `movement_type` baru
+   (`price_adjustment`) rencananya nambah di tabel yang sama.
+3. `ajax/create_return.php` — **masih belum pernah diupload** sampai sesi ini
+   (lihat catatan redesign per-lot di atas), padahal jadi tempat paling
+   relevan buat nambah logika mode "Defective" restock & kemungkinan reuse
+   buat price adjustment. Wajib dilihat dulu sebelum coding.
+4. `ajax/create_order.php` — pola validasi & deduct stok saat New Order,
+   dibutuhkan buat nambah toggle "ambil dari defective stock".
+5. `transaction_content.php` versi terbaru (New Order + Returns) — buat nambah
+   UI toggle (#2) di New Order dan pilihan mode/kondisi (#1, #2) di Returns.
+6. `ajax/list_return_price_options.php` versi terbaru — kalau price adjustment
+   (#1) jadi reuse picker source-movement yang sama, perlu lihat responsenya
+   dulu supaya tahu field apa yang bisa dipakai ulang.
+
+**Status: masih tahap diskusi desain, belum ada keputusan final dari user
+dan belum ada kode yang ditulis.**
+
+## Kendala #1 & #2 — Keputusan final desain (22 Sep 2026, dikonfirmasi user)
+
+Lanjutan dari diskusi desain di atas. File pendukung sudah diupload & dibaca:
+`create_return.php`, `create_order.php`, `list_return_price_options.php`,
+`transaction_content.php` (bagian `st*`/New Order & `rt*`/Returns), plus
+`DESCRIBE logistics` & `DESCRIBE logistic_movements` terbaru (lihat di bawah).
+
+**Temuan penting dari baca kode** (mengubah sedikit rencana awal): New Order
+(`stItems`) itu **digerakkan dari parsing pesan WA** — qty & baris produk
+otomatis dari teks pesan, dicocokkan produk lewat overlay `stProductOverlay`
+("Which product is this?"). **Bukan** picker manual tempat staff browsing
+produk & isi qty sendiri. Jadi toggle stok normal/defective (#2) TIDAK masuk
+ke `stProductOverlay` (itu cuma untuk pilih produk), tapi jadi **overlay baru**
+di antara review item list dan `stConfirmOverlay` (fly window ringkasan yang
+sudah ada sebelum Save).
+
+### Keputusan user:
+1. **Endpoint price adjustment (#1)**: file **baru terpisah**,
+   `ajax/create_price_adjustment.php` — bukan reuse `create_return.php` dengan
+   parameter mode. Tetap boleh reuse JS picker lot-based yang sama polanya
+   dengan Returns (`rt*`), tapi request ke endpoint beda.
+2. **Toggle stok normal/defective saat New Order (#2)**: overlay baru,
+   muncul **setelah** item list & product-matching selesai (termasuk setelah
+   `stOrderModeOverlay`/`stOrderPickOverlay` kalau ada), **sebelum**
+   `stConfirmOverlay` dibuka. Isinya nanya per baris produk: diambil dari
+   "stock lama" (normal) atau "stock return" (defective) — nama usulan overlay:
+   `stStockSourceOverlay`.
+3. **`total_taken_qty` & kolom baru defective**: kalau order ambil dari
+   `defective_qty`, **kedua-duanya** ikut update — `total_taken_qty` (saldo
+   gabungan normal+defective yang sedang di tangan customer, behavior yang
+   sudah ada, TIDAK berubah) **DAN** kolom baru khusus defective
+   (`defective_taken_qty`) yang jadi sub-tracking saldo defective yang lagi di
+   tangan customer.
+
+### Rencana skema DB (belum dijalankan)
+
+`logistics` — 2 kolom baru:
+- `defective_qty` DECIMAL(12,2) NOT NULL DEFAULT 0.00 — stok defective yang
+  ADA di gudang (siap diambil), independen dari `remaining_primary_qty`.
+- `defective_taken_qty` DECIMAL(12,2) NOT NULL DEFAULT 0.00 — saldo defective
+  yang SEDANG di tangan customer (naik saat order ambil dari `defective_qty`,
+  turun saat movement itu diretur — lihat poin retur di bawah). Sub-tracking
+  dari `total_taken_qty`, bukan pengganti.
+
+`logistic_movements` — 1 kolom baru:
+- `stock_source` ENUM('normal','defective') NOT NULL DEFAULT 'normal' — dicap
+  di movement `out` untuk tandai bucket mana yang dipotong saat pickup. Untuk
+  movement `in` (retur) kolom ini tidak dipakai/diabaikan — retur punya
+  pilihan bucket TUJUAN sendiri (lihat bagian Returns "kondisi barang kembali"
+  Good/Defective yang sudah didiskusikan sebelumnya), independen dari
+  `stock_source` movement asalnya.
+
+### Efek tulis `ajax/create_order.php` (rencana perubahan)
+- Payload `items` tambah field opsional `stock_source` per baris (default
+  `'normal'` kalau tidak dikirim, supaya backward-compatible).
+- Validasi stok: kalau `stock_source='defective'`, cek terhadap
+  `defective_qty` (bukan `remaining_primary_qty`).
+- Saat simpan:
+  - `stock_source='normal'` → `remaining_primary_qty -= qty` (behavior sekarang).
+  - `stock_source='defective'` → `defective_qty -= qty` DAN
+    `defective_taken_qty += qty`.
+  - `total_taken_qty += qty` tetap jalan di KEDUA kasus (saldo gabungan,
+    tidak berubah dari sekarang).
+  - `logistic_movements.stock_source` diisi sesuai baris.
+
+### Efek tulis `ajax/create_return.php` (rencana perubahan, konsisten dengan
+kondisi barang kembali Good/Defective yang sudah didiskusikan sebelumnya)
+- Untuk tiap alokasi retur, lihat `stock_source` dari source movement-nya
+  (`out` asal). Kalau `'defective'` → `defective_taken_qty -= qty` (selain
+  `total_taken_qty -= qty` yang sudah ada).
+- Bucket TUJUAN restock (Good/Defective, dipilih user di form Returns) —
+  independen dari `stock_source` asal:
+  - Good → `remaining_primary_qty += qty`.
+  - Defective → `defective_qty += qty`.
+
+### `ajax/create_price_adjustment.php` (baru, mirror `create_return.php`)
+- Reuse picker lot-based (source movement `out` + split alokasi) — bisa
+  reuse endpoint `list_return_price_options.php` yang sudah ada (tidak perlu
+  duplikat, cukup dipanggil dari mode/tab baru).
+- **Tidak** menyentuh `remaining_primary_qty` / `defective_qty` /
+  `total_taken_qty` / `defective_taken_qty` sama sekali — barang tetap di
+  tangan customer.
+- Insert `logistic_movements` dengan `movement_type` baru (usul:
+  `'price_adjustment'` — perlu ALTER ENUM `movement_type` yang sekarang cuma
+  `('in','out')`), `source_movement_id` menunjuk pickup asal, `qty` =
+  informational, `price`/`total_price` = selisih harga (negatif di invoice,
+  pola sama seperti retur: reuse invoice open kalau ada, baru kalau tidak ada).
+- Efek finansial: sama seperti retur — `customers.total_outflow += selisih`
+  (atau kolom akumulator baru khusus kalau user mau dipisah dari retur asli
+  — **perlu dikonfirmasi**).
+
+### Pertanyaan terbuka yang masih perlu dijawab user sebelum coding
+1. `movement_type` ENUM di `logistic_movements` sekarang cuma `('in','out')`
+   — perlu ditambah `'price_adjustment'` lewat `ALTER TABLE ... MODIFY
+   movement_type ENUM('in','out','price_adjustment')`. Ini migrasi tambahan
+   di luar `source_movement_id`/`stock_source`/kolom `logistics` baru.
+   Perlu dijalankan bareng migrasi lain sebelum kode baru bisa jalan.
+2. `customers.total_outflow` untuk price adjustment: digabung ke kolom yang
+   sama dengan retur asli, atau kolom akumulator baru (mis.
+   `total_price_adjustments`) supaya laporan bisa membedakan retur fisik vs
+   price adjustment?
+3. Badge riwayat di tab Customers untuk price adjustment: nama/warna badge
+   apa (selain "RETURN" yang sudah ada)?
+4. Di overlay `stStockSourceOverlay`, kalau `defective_qty` produk itu 0,
+   opsi "stock return" ditampilkan tapi disabled, atau disembunyikan?
+5. Apakah `stStockSourceOverlay` muncul SELALU (semua order), atau cuma
+   muncul kalau ADA produk di order itu yang punya `defective_qty > 0`
+   (supaya tidak ganggu alur order normal yang tidak pernah pakai stok
+   defective sama sekali)?
+
+**Status: desain sudah final di level konsep, migrasi & kode belum ditulis.**
+Menunggu jawaban 5 poin di atas (terutama #1, karena itu blocker migrasi)
+sebelum mulai implementasi.
+
+## Implementasi tahap 1: backend defective stock + price adjustment + New Order overlay (22 Sep 2026)
+
+Jawaban user atas 5 pertanyaan terbuka sebelumnya:
+1. Setuju nambah `'price_adjustment'` ke `movement_type` ENUM (dikonfirmasi aman —
+   backward-compatible, baris `'in'`/`'out'` lama tidak berubah).
+2. `customers.total_price_adjustments` — kolom baru terpisah untuk pelaporan,
+   TAPI `total_outflow` tetap ikut naik juga di price adjustment (supaya
+   piutang bersih `total_inflow - total_outflow` tetap benar).
+3. Badge riwayat: default **"PRICE ADJ"** (kuning/warning) — belum diimplementasi
+   di UI riwayat Customers, masih placeholder nama.
+4. Overlay stock source: opsi "stock return" (defective) **disembunyikan**
+   total kalau `defective_qty` produk itu 0 (bukan disabled).
+5. Overlay stock source hanya muncul kalau ADA produk di order itu yang
+   `defective_qty > 0`.
+
+### Sudah dikerjakan (kode ditulis, BELUM dites di server user)
+- **Migrasi SQL** (`migration_defective_and_price_adjustment.sql`):
+  - `logistics.defective_qty`, `logistics.defective_taken_qty` (baru)
+  - `logistic_movements.stock_source` ENUM('normal','defective') default
+    'normal' (baru) — dipakai DUA arah: di baris `out` = bucket yang
+    dipotong saat pickup; di baris `in` (retur) = bucket TUJUAN restock
+    (reuse kolom yang sama, bukan bikin kolom terpisah lagi)
+  - `logistic_movements.movement_type` ENUM ditambah `'price_adjustment'`
+  - `customers.total_price_adjustments` (baru)
+  - **Migrasi ini belum dijalankan user** — wajib jalan dulu sebelum kode
+    PHP baru bisa dites.
+- **`list_return_price_options.php`**: tambah `remaining_adjustable` per
+  movement (kurangi jatah retur DAN price-adjustment yang sudah pernah
+  dipakai dari pickup itu — beda dari `remaining` yang cuma kurangi retur
+  fisik, karena price-adjustment tidak menghilangkan barang jadi tidak
+  mengurangi eligibilitas retur).
+- **`create_order.php`**: item sekarang boleh bawa `stock_source`
+  (`'normal'`/`'defective'`, default normal). Validasi stok dicek ke bucket
+  yang benar. Satu produk tidak boleh mixed stock_source dalam 1 order
+  (ditolak, suruh split). Saat simpan: `defective` → potong
+  `defective_qty` + naikkan `defective_taken_qty`; `total_taken_qty` naik di
+  KEDUA kasus. `logistic_movements.stock_source` ikut diisi.
+- **`create_return.php`**: alokasi sekarang boleh bawa `restock_bucket`
+  (`'normal'` default / `'defective'`) — tujuan restock, independen dari
+  `stock_source` movement asalnya. Kalau movement asal `stock_source='defective'`,
+  `defective_taken_qty` ikut dikurangi (terlepas dari restock_bucket yang
+  dipilih user sekarang). `logistic_movements` insert `stock_source` = restock_bucket.
+  **CATATAN: UI (rt*) di transaction_content.php untuk MEMILIH restock_bucket
+  ini BELUM dibuat** — backend siap terima field-nya, tapi belum ada tempat
+  di form Returns buat user pilih Good/Defective saat ini. Defaultnya selalu
+  `'normal'` sampai UI-nya ditambahkan (jadi behavior return utuh sama
+  seperti sebelumnya untuk saat ini).
+- **`create_price_adjustment.php`** (BARU, endpoint terpisah dari
+  create_return.php sesuai keputusan user): reuse pola lot-based
+  create_return.php (dry_run/save, source_movement_id, invoice reuse) tapi
+  TIDAK pernah sentuh stok sama sekali. `movement_type='price_adjustment'`,
+  validasi terhadap `remaining_adjustable`. Update
+  `customers.total_outflow` + `customers.total_price_adjustments`. Invoice
+  baru pakai infix `/adj/`.
+  **CATATAN: belum ada UI (tab/mode di Returns) yang manggil endpoint ini.**
+  Backend siap, frontend belum.
+- **Regex `invoice_initials_index()`** di `create_order.php` DAN
+  `create_return.php` diperluas dari `inv|ret` jadi `inv|ret|adj`, supaya
+  nomor invoice `/adj/` yang baru tidak bentrok indeks `[n]` dengan
+  customer lain yang initial-nya sama.
+- **`transaction_content.php` — New Order overlay `stStockSourceOverlay`**:
+  SUDAH jadi & terpasang di alur. Muncul setelah "Review Order" diklik
+  (dry-run pertama), SEBELUM `stConfirmOverlay`, HANYA kalau ada baris
+  dengan `defective_qty > 0` (baris lain tidak ditawarkan sama sekali).
+  User pilih per baris "Normal stock" / "Defective stock (X left)", lalu
+  `stReview()` dipanggil ulang (dry-run kedua) supaya remaining_before/after
+  di Confirm Order sesuai bucket yang dipilih. State
+  `stStockSourceConfirmed` direset otomatis tiap kali item/qty/tanggal
+  order berubah, supaya re-tanya kalau relevan lagi.
+
+### Belum dikerjakan (scope besar, sengaja ditunda ke sesi berikutnya)
+1. **UI Returns (`rt*` di transaction_content.php)**: belum ada picker untuk
+   pilih `restock_bucket` (Good/Defective) per alokasi retur. File
+   `rtConfirmOverlay`/`rtProductOverlay`/dst. belum disentuh sama sekali.
+2. **UI Price Adjustment**: belum ada tab/mode baru di Returns untuk alur
+   price adjustment (reuse picker lot-based yang sama, panggil
+   `create_price_adjustment.php`). Backend-nya sudah siap dipanggil, tinggal
+   frontend-nya.
+3. **`update_order.php`**: belum diupload/dilihat sama sekali. Kemungkinan
+   perlu perubahan serupa `create_order.php` (dukung `stock_source`) kalau
+   dipakai untuk revisi order yang sudah ada — perlu dicek.
+4. **Badge riwayat Customers** untuk baris `price_adjustment`: belum ada di
+   UI riwayat (kemungkinan di file lain yang belum diupload, mis.
+   `list_customer_orders.php` atau bagian Customers tab di
+   `transaction_content.php`).
+5. **`parse_order_message.php`**: tidak disentuh — desain akhir TIDAK butuh
+   perubahan di file ini (defective_qty availability dikirim lewat dry-run
+   `create_order.php`, bukan lewat parse), jadi ini aman diabaikan.
+
+### File yang sudah diberikan ke user (siap diupload balik ke server, SETELAH migrasi SQL dijalankan)
+- `migration_defective_and_price_adjustment.sql` — jalankan dulu di phpMyAdmin
+- `list_return_price_options.php`
+- `create_order.php`
+- `create_return.php`
+- `create_price_adjustment.php` (baru)
+- `transaction_content.php`
+
+**Status: backend + New Order overlay selesai ditulis (belum dites).
+UI Returns untuk restock_bucket & UI Price Adjustment masih perlu dikerjakan
+sesi berikutnya.**
+
+## Implementasi tahap 2: kondisi barang retur (Good/Defective/Price Adjustment per split), harga acuan defective, tab Defective Stock (22 Sep 2026)
+
+User kasih 2 skenario tambahan yang mengubah desain:
+1. Dari total qty yang "mau dikembalikan" di satu pickup, sebagian bisa jadi
+   Price Adjustment (tetap di customer, harga turun) dan sebagian lain jadi
+   retur fisik Defective — DALAM SATU PICKUP YANG SAMA, harus bisa displit.
+2. Barang defective punya 2 efek lanjutan: (a) dijual dengan harga turun
+   (New Order, stock_source=defective — sudah ada), atau (b) diperbaiki lalu
+   digabung balik ke stok normal. Harganya biasanya SAMA untuk semua
+   customer (harga acuan/reference), tapi tetap bisa beda per customer kalau
+   memang di-override.
+
+### Perubahan desain akibat ini
+- **Returns tab dirombak total**: satu pickup sekarang bisa displit jadi
+  BEBERAPA alokasi sekaligus, masing-masing dengan **disposisi** sendiri:
+  `good` (retur fisik, kondisi baik), `defective` (retur fisik, kondisi
+  rusak), atau `adjust` (TIDAK retur, cuma turun harga — price adjustment).
+  Total qty semua split tetap harus pas sama dengan qty yang diminta di
+  baris itu (aturan lama, tidak berubah).
+- Dua ceiling independen per pickup (BUKAN dijumlah, saling lepas — lihat
+  komentar `rtMovementReturnQty`/`rtMovementAdjustQty` di
+  transaction_content.php untuk penjelasan lengkap kenapa):
+  - qty dengan disposisi `good`+`defective` \u2264 `m.remaining` (jatah retur fisik)
+  - qty dengan disposisi `adjust` \u2264 `m.remaining_adjustable` (jatah adjust)
+  - Unit yang SUDAH pernah di-price-adjust tetap BISA diretur fisik nanti
+    (diskon tidak menghilangkan barangnya) — makanya dua ceiling ini lepas,
+    bukan gabungan.
+- **Satu form Returns sekarang bisa menghasilkan DUA transaksi sekaligus**:
+  create_return.php (untuk split good/defective) DAN
+  create_price_adjustment.php (untuk split adjust) — dikirim SEKUENSIAL,
+  retur dulu baru price adjustment (supaya cek `remaining_adjustable` di
+  price adjustment sudah memperhitungkan retur yang baru saja disimpan,
+  mencegah unit yang sama dihitung dobel). **Ini BUKAN satu transaksi DB
+  atomic** — kalau retur berhasil tapi price adjustment gagal, retur TETAP
+  tersimpan (partial success). UI menampilkan pesan eksplisit soal ini dan
+  MEMAKSA refresh form (tidak retry otomatis), user disuruh cek tab
+  Customers dan ulangi price-adjustment-nya kalau perlu.
+- **Reference price barang defective**: kolom baru
+  `logistics.defective_reference_price` — dipakai `create_order.php`
+  sebagai fallback harga KEDUA (setelah cek `customer_item_prices` milik
+  customer itu sendiri dulu — kalau customer punya harga sendiri, itu tetap
+  menang) saat jual dengan `stock_source='defective'`. Kalau keduanya kosong,
+  baru diminta harga baru manual (flow lama, `stPriceOverlay`).
+- **Tab baru "Defective Stock"**: warehouse-level, tidak terikat customer/order.
+  List semua produk yang punya `defective_qty`/`defective_taken_qty`/
+  `defective_reference_price`. Dua aksi per produk: set/update reference
+  price, dan "Repair to Normal Stock" (pindah qty dari `defective_qty` ke
+  `remaining_primary_qty` — SATU-SATUNYA cara `defective_qty` berkurang
+  selain terjual via stock_source=defective). Endpoint baru:
+  `ajax/manage_defective_stock.php` (actions: list, set_price, repair).
+  Semua aksi dicatat ke tabel audit baru `defective_stock_events`.
+
+### File yang berubah/ditambah di tahap ini
+- `migration_defective_and_price_adjustment.sql` — tambahan:
+  `logistics.defective_reference_price`, tabel `defective_stock_events`
+  (BELUM DIJALANKAN user — masih satu file migrasi yang sama dari tahap 1,
+  cukup jalankan sekali lagi kalau tahap 1 sudah, atau sekali saja kalau
+  belum sama sekali)
+- `create_order.php` — fallback `defective_reference_price` di resolusi harga
+- `create_return.php` — TIDAK berubah lagi dari tahap 1 (sudah terima
+  `restock_bucket` per alokasi sejak tahap 1; tahap 2 cuma nambah UI-nya)
+- `create_price_adjustment.php` — TIDAK berubah dari tahap 1 (backend sudah
+  siap sejak awal; tahap 2 nambah UI yang manggilnya)
+- `manage_defective_stock.php` (BARU) — list/set_price/repair
+- `transaction_content.php`:
+  - Tab baru "Defective Stock" (`stTabPanelDefective`, `loadDsList`, dst.)
+  - Returns tab dirombak: `rtAutoAllocate` (seed disposisi 'good'),
+    `rtSplitsForMovement`/`rtMovementReturnQty`/`rtMovementAdjustQty` (ganti
+    `rtFindAllocation`/`rtSetAllocationQty` lama), `renderRtAllocations` +
+    `rtBuildSplitRow` (multi-split per pickup dengan dropdown disposisi),
+    `rtItemIsValid` (validasi dua-ceiling), `rtBuildPayloads` (ganti
+    `rtBuildPayload` — sekarang hasilkan DUA payload), `rtReview`/
+    `showRtConfirm`/`rtSaveReturn` (dual-endpoint, sekuensial, dengan
+    penanganan partial-failure eksplisit)
+  - Sudah dicek: seluruh isi `<script>` lolos parse JS murni (`new
+    Function()` di Node) — tidak ada syntax error. **BELUM dites jalan
+    beneran di browser/server.**
+
+### Yang masih perlu diperhatikan / risiko
+1. **Migrasi SQL wajib dijalankan dulu** (kalau tahap 1 belum dijalankan,
+   jalankan file migrasi yang sudah digabung ini SEKALI; kalau tahap 1 SUDAH
+   dijalankan sebelumnya, tinggal jalankan bagian baru — kolom
+   `defective_reference_price` + tabel `defective_stock_events` saja, atau
+   re-run seluruh file dengan skip manual pada bagian yang sudah ada).
+2. **Non-atomicity retur+adjustment**: sudah dijelaskan di atas, ini
+   trade-off yang disengaja dari keputusan "endpoint terpisah". Kalau nanti
+   ternyata butuh keduanya beneran atomic, opsi ke depan adalah bikin satu
+   endpoint gabungan `create_return_and_adjustment.php` — tapi ini belum
+   dikerjakan, cuma dicatat sebagai kemungkinan lanjutan.
+3. **`update_order.php` masih belum dilihat sama sekali** — kalau dipakai
+   untuk merevisi order yang sudah ada, kemungkinan perlu dukungan
+   `stock_source` juga seperti `create_order.php`.
+4. **Belum ada testing nyata** di server — semua kode ini ditulis & dicek
+   secara statis (baca ulang, cek `bind_param` count manual, cek sintaks JS
+   dengan Node) tapi belum pernah dijalankan sungguhan terhadap DB asli.
+   Sangat disarankan tes di environment staging/dev dulu sebelum dipakai di
+   data produksi, terutama alur dual-endpoint Returns yang paling kompleks.
+
+**Status: seluruh scope yang diminta (kondisi retur per split, harga acuan
+defective + tab manajemennya, price adjustment selesai terintegrasi UI-nya)
+sudah ditulis. Belum ada yang dites langsung di server user.**
+
+## Bugfix: badge & tanda minus untuk price_adjustment di dua tempat (22 Sep 2026)
+
+User sudah coba fitur Returns/Price Adjustment — record berhasil tersimpan,
+tapi TAMPILANNYA salah di 2 tempat berbeda. Pola bug-nya SAMA di keduanya:
+kode lama cuma cek `movement_type === 'in'` (RETURN) vs else (dianggap
+'out'/Taken), padahal sekarang ada tipe ketiga `'price_adjustment'` yang
+jatuh ke cabang else secara tidak sengaja.
+
+1. **`transaction_content.php`** — Sales Transaction > Customers tab, daftar
+   riwayat movement per invoice group. Diperbaiki:
+   - Badge baru **"DISCOUNT"** (kuning, `badge-warning`) untuk
+     `movement_type='price_adjustment'`, sebelumnya tidak ada badge sama sekali.
+   - Nilai sekarang diberi tanda minus (`\u2212 Rp...`) untuk
+     `price_adjustment` juga, sebelumnya tampil positif.
+   - Baris "from pickup on ..." sekarang juga muncul untuk
+     `price_adjustment` (sebelumnya cuma untuk retur) — **BELUM
+     dikonfirmasi user apakah field `source_movement_date` memang ikut
+     terbawa dari backend untuk tipe ini** (backend listing-nya, kemungkinan
+     `list_customer_orders.php`, belum pernah diupload/dilihat).
+
+2. **`logistic_content.php`** (baru diupload user, sebelumnya belum pernah
+   dilihat sama sekali) — tab Movement di Logistic, fungsi
+   `renderLogMovLine()`. Diperbaiki:
+   - Badge baru **"Discount"** (`badge-danger`, warna beda dari "Taken"
+     `badge-warning` dan "Returned" `badge-success` supaya jelas beda jenis)
+     untuk `movement_type='price_adjustment'` — sebelumnya jatuh ke else
+     dan tertulis "Taken".
+   - Nilai sekarang diberi tanda minus untuk `price_adjustment` saja —
+     sebelumnya TIDAK ADA tanda minus sama sekali di tab ini untuk tipe
+     manapun (termasuk Returned), jadi ini pengecualian yang disengaja,
+     bukan menyamakan konvensi keseluruhan tab.
+   - **Agregat "Taken"/"Returned"/"Actual Taken"** (total per hari/bulan/
+     tahun/keseluruhan) di tab ini datang dari field `total_out`/`total_in`
+     yang sudah dihitung di BACKEND (bukan di `logistic_content.php` ini,
+     kemungkinan file ajax terpisah yang belum pernah saya lihat) — kalau
+     backend itu sudah pakai `CASE WHEN movement_type='out'/'in'` eksplisit
+     (pola yang sudah dipakai di file-file lain), `price_adjustment`
+     otomatis TIDAK ikut ke agregat manapun (benar, karena tidak
+     menggerakkan stok sama sekali). **Belum diverifikasi karena file
+     backend-nya belum pernah diupload** — kalau ternyata agregatnya juga
+     salah (price_adjustment ikut kehitung sebagai Taken atau Returned),
+     perlu file itu untuk diperbaiki.
+
+**Status: kedua fix ini sudah ditulis, dicek sintaks JS-nya (Node `new
+Function()`, lolos), tapi belum dites langsung oleh user.**
+
+## Bugfix akar masalah: agregat Taken/Returned salah hitung price_adjustment (22 Sep 2026)
+
+User kasih contoh nyata: ambil 15 carton \u2192 retur 5 \u2192 price adjustment 5.
+Harusnya Actual Taken (qty riil di tangan customer) = 10 (15 \u2212 5 retur,
+price adjustment TIDAK mengurangi apa yang di tangan customer). Yang
+kejadian: Taken tampil 20, Returned 5, Actual Taken 15 \u2014 salah.
+
+**Akar masalahnya BUKAN di `logistic_content.php`** (yang kemarin saya
+perbaiki cuma tampilan per baris/badge), tapi di
+**`ajax/list_logistic_movements.php`**, fungsi `rt_sum_movements()`:
+
+```php
+$bucket = $mv['movement_type'] === 'in' ? $in : $out;  // <- bug
+```
+
+Ini nganggap "kalau bukan `'in'`, berarti `'out'`" \u2014 jadi baris
+`price_adjustment` (yang tidak menggerakkan stok sama sekali) ikut numpuk ke
+`$out` (Taken), qty DAN value-nya. Diperbaiki jadi 3 cabang eksplisit
+(`'out'` \u2192 $out, `'in'` \u2192 $in, selain itu \u2014 termasuk
+`price_adjustment` \u2014 tidak dihitung ke mana pun, tapi TETAP muncul di
+`movements[]` per hari untuk ditampilkan/diaudit).
+
+Ini juga otomatis memperbaiki badge **Valid/Invalid** (`logMovValidTag` di
+`logistic_content.php`) yang membandingkan Actual Taken vs
+`primary_qty - remaining_primary_qty` \u2014 sebelumnya ikut salah karena
+Actual Taken-nya salah, sekarang seharusnya cocok lagi karena
+`remaining_primary_qty` memang tidak pernah disentuh oleh
+`create_price_adjustment.php`.
+
+**File yang diubah:** `ajax/list_logistic_movements.php` saja (`logistic_content.php`
+dari fix sebelumnya tidak perlu diubah lagi \u2014 tampilan per barisnya sudah benar,
+cuma agregatnya yang salah dan itu dari file ini).
+
+**Status: fix ditulis, belum dites user.** Setelah ini, kombinasi ketiga file
+(`logistic_content.php`, `list_logistic_movements.php`, dan sisi Sales
+Transaction) seharusnya semuanya konsisten menampilkan price_adjustment
+sebagai "Discount" tanpa mempengaruhi hitungan stok sama sekali.
+
+## Cek Customers tab: bukan "dianggap pengambilan baru", tapi tercampur ke "Total Returned" (22 Sep 2026)
+
+User curiga `list_customer_orders.php` punya bug sama seperti
+`list_logistic_movements.php`. Dicek:
+
+- **Query per-produk** (Total Taken/Total Returned/Actual per baris produk)
+  sudah BENAR sejak awal \u2014 pakai `CASE WHEN movement_type = 'out'`/`'in'`
+  eksplisit, bukan pola `else` yang salah seperti di dua file sebelumnya.
+  `price_adjustment` sudah otomatis tidak ikut kehitung di level ini.
+- **Tapi** di level TOTAL CUSTOMER (bukan per-produk), `total_returned`
+  diambil mentah dari `customers.total_outflow` \u2014 dan `total_outflow`
+  memang SENGAJA didesain ikut naik saat ada price adjustment (supaya
+  piutang bersih `total_inflow - total_outflow` tetap benar, lihat
+  `create_price_adjustment.php`). Efeknya: "Total Returned" di card customer
+  kelihatan naik padahal tidak ada barang yang balik \u2014 inilah yang bikin
+  terasa "dianggap aktivitas baru".
+
+**Fix**: pisahkan tampilannya, bukan gabungkan.
+- `list_customer_orders.php`: sekarang juga `SELECT total_price_adjustments`
+  dari `customers`, dan `total_returned` di response dihitung ulang jadi
+  `total_outflow - total_price_adjustments` (murni retur fisik saja,
+  sekarang cocok dengan breakdown per-produk). `total_price_adjustments`
+  dikirim terpisah sebagai field baru.
+- `transaction_content.php` (`renderStCustomerDetail`): baris baru **"Total
+  Discounts"** (cuma muncul kalau > 0) di antara "Total Returned" dan "Total
+  Actual". "Total Actual" tetap dihitung benar secara finansial
+  (`total_ordered - total_returned - total_discounts`, hasilnya sama persis
+  dengan `total_inflow - total_outflow` sebelumnya \u2014 cuma sekarang
+  dipecah jadi 2 baris yang jelas maknanya, bukan digabung diam-diam).
+
+**File yang diubah:** `list_customer_orders.php`, `transaction_content.php`
+(fungsi `renderStCustomerDetail` saja). Badge/sign di riwayat movement per
+invoice (fix sebelumnya) tidak berubah lagi.
+
+**Status: fix ditulis, belum dites user.**

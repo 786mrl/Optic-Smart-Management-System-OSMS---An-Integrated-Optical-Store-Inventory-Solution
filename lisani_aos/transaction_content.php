@@ -683,6 +683,7 @@ $currentYear     = date('Y');
   <div class="tab-group" id="stTabGroup">
     <div class="tab active" data-st-tab="order">New Order</div>
     <div class="tab" data-st-tab="returns">Returns</div>
+    <div class="tab" data-st-tab="defective">Defective Stock</div>
     <div class="tab" data-st-tab="customers">Customers</div>
   </div>
 
@@ -780,6 +781,21 @@ $currentYear     = date('Y');
       <div style="display:flex; justify-content:flex-end; margin-top:var(--space-4);">
         <button type="button" class="btn btn-primary" id="btnRtReview">Review Return</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Tab: Defective Stock — warehouse-level view, not tied to any customer
+       or order. Set the reference price used as the default when a New
+       Order line is sold with stock_source='defective', and repair
+       defective stock back into normal stock. See "Kendala #1 & #2" in
+       PROJECT_NOTES.md, 22 Sep 2026. -->
+  <div id="stTabPanelDefective" style="display:none;">
+    <div class="empty-sub" id="dsSuccessBox" style="display:none; color:var(--success); margin-bottom:var(--space-3);"></div>
+    <div class="empty-sub" id="dsError" style="display:none; color:var(--danger); margin-bottom:var(--space-3);"></div>
+    <div class="accordion-list" id="dsList"></div>
+    <div class="empty-state" id="dsEmpty" style="display:none;">
+      <div class="empty-title">No defective stock</div>
+      <div class="empty-sub">Products show up here once a return is restocked as defective, or once a reference price is set for them.</div>
     </div>
   </div>
 
@@ -1207,6 +1223,32 @@ $currentYear     = date('Y');
   </div>
 </div>
 
+<!-- Sales Transaction — shown after Review Order, BEFORE Confirm Order,
+     ONLY when at least one product line has defective stock on hand (see
+     "Kendala #1 & #2" in PROJECT_NOTES.md, 22 Sep 2026). Lets the user say,
+     per line, whether that line is taken from normal stock or from
+     defective stock. Once confirmed here, the order is reviewed again (a
+     second dry_run) so Confirm Order shows the correct remaining-stock
+     figures for whichever bucket was chosen. -->
+<div class="modal-overlay" id="stStockSourceOverlay" style="display:none;">
+  <div class="modal" style="max-width:460px;">
+    <div class="modal-header">
+      <div class="modal-title">Stock Source</div>
+    </div>
+    <div class="modal-body">
+      <div class="empty-sub" style="margin-bottom:var(--space-3);">
+        Some products in this order have defective stock on hand. Choose which stock each one is taken from.
+      </div>
+      <div id="stStockSourceRows"></div>
+      <div class="empty-sub" id="stStockSourceError" style="display:none; color:var(--danger);"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" id="btnStStockSourceCancel">Cancel</button>
+      <button type="button" class="btn btn-primary" id="btnStStockSourceContinue">Continue</button>
+    </div>
+  </div>
+</div>
+
 <!-- Sales Transaction — order details to confirm. Nothing is saved until
      "Confirm & Save" (the preview comes from create_order.php with dry_run=1). -->
 <div class="modal-overlay" id="stConfirmOverlay" style="display:none;">
@@ -1430,6 +1472,7 @@ $currentYear     = date('Y');
   // Sales Transaction fly windows.
   var stProductOverlay   = document.getElementById('stProductOverlay');
   var stPriceOverlay     = document.getElementById('stPriceOverlay');
+  var stStockSourceOverlay = document.getElementById('stStockSourceOverlay');
   var stConfirmOverlay   = document.getElementById('stConfirmOverlay');
   var stOrderModeOverlay = document.getElementById('stOrderModeOverlay');
   var stOrderPickOverlay = document.getElementById('stOrderPickOverlay');
@@ -1451,7 +1494,7 @@ $currentYear     = date('Y');
     deleteActivityCodeOverlay, itemPriceAddOverlay, itemPriceReverifyOverlay,
     itemPriceEditOverlay, itemPriceDeleteOverlay,
     txnCategoryOverlay, disbDepartmentOverlay, disbActivityOverlay, disbDetailsOverlay,
-    capFieldPickerOverlay, stProductOverlay, stPriceOverlay, stConfirmOverlay,
+    capFieldPickerOverlay, stProductOverlay, stPriceOverlay, stStockSourceOverlay, stConfirmOverlay,
     stOrderModeOverlay, stOrderPickOverlay, stDriverWarnOverlay,
     rtProductOverlay, rtConfirmOverlay, rtReverifyOverlay];
 
@@ -4136,6 +4179,7 @@ $currentYear     = date('Y');
     stTargetOrder = null;
     stMovementIdByLogistic = {};
     stDriverWarnAck = false;
+    stStockSourceConfirmed = false;
   });
   var stReviewError = document.getElementById('stReviewError');
   var btnStReview   = document.getElementById('btnStReview');
@@ -4152,6 +4196,11 @@ $currentYear     = date('Y');
   var stPriceIntro = document.getElementById('stPriceIntro');
   var stPriceRows  = document.getElementById('stPriceRows');
   var stPriceError = document.getElementById('stPriceError');
+
+  var stStockSourceRows  = document.getElementById('stStockSourceRows');
+  var stStockSourceError = document.getElementById('stStockSourceError');
+  var btnStStockSourceCancel   = document.getElementById('btnStStockSourceCancel');
+  var btnStStockSourceContinue = document.getElementById('btnStStockSourceContinue');
 
   var stConfirmBody  = document.getElementById('stConfirmBody');
   var stConfirmError = document.getElementById('stConfirmError');
@@ -4171,9 +4220,16 @@ $currentYear     = date('Y');
   var btnStDriverWarnCancel = document.getElementById('btnStDriverWarnCancel');
   var btnStDriverWarnOk     = document.getElementById('btnStDriverWarnOk');
 
-  var stItems        = []; // [{line, qty, product_text, logistic_id, activity_id, product_name, unit_label, remaining_qty}]
+  var stItems        = []; // [{line, qty, product_text, logistic_id, activity_id, product_name, unit_label, remaining_qty, stock_source}]
   var stProducts     = []; // every orderable product, sent by parse_order_message.php
   var stNewPrices    = {}; // logistic_id -> price typed in the Set Price window
+  // True once the user has gone through stStockSourceOverlay for the
+  // CURRENT set of items (reset to false whenever the items or their
+  // quantities change, so editing the order re-asks). When false and the
+  // dry-run review comes back with at least one line that has defective
+  // stock on hand, stReview() shows stStockSourceOverlay instead of going
+  // straight to Confirm Order.
+  var stStockSourceConfirmed = false;
   var stUnknownQueue = []; // lines still waiting for "which product is this?"
   var stPickerItem   = null;
   var stPriceMissing = [];
@@ -4241,6 +4297,7 @@ $currentYear     = date('Y');
     stTargetOrder = null;
     stMovementIdByLogistic = {};
     stDriverWarnAck = false;
+    stStockSourceConfirmed = false;
     stPendingConfirmOrder = null;
     btnStReview.disabled = false;
     btnStRead.disabled = false;
@@ -4350,7 +4407,8 @@ $currentYear     = date('Y');
         activity_id: it.activity_id,
         product_name: it.product_name,
         unit_label: it.unit_label,
-        remaining_qty: null
+        remaining_qty: null,
+        stock_source: 'normal'
       };
     });
     stItems.forEach(function (it) {
@@ -4571,7 +4629,8 @@ $currentYear     = date('Y');
         activity_id: null,
         product_name: it.activity_name,
         unit_label: it.unit_label,
-        remaining_qty: null
+        remaining_qty: null,
+        stock_source: 'normal'
       });
       stMovementIdByLogistic[it.logistic_id] = it.movement_id;
     });
@@ -4589,9 +4648,14 @@ $currentYear     = date('Y');
     item.product_name = p.activity_name;
     item.unit_label = p.unit_label;
     item.remaining_qty = p.remaining_qty;
+    item.stock_source = 'normal'; // product changed — start over on which bucket to take it from
   }
 
   function renderStItems() {
+    // Items changed (added/removed/product reassigned) — the stock-source
+    // choices made earlier no longer necessarily apply, ask again next
+    // Review Order.
+    stStockSourceConfirmed = false;
     stItemList.innerHTML = '';
     stItemEmpty.style.display = stItems.length ? 'none' : 'block';
 
@@ -4620,6 +4684,7 @@ $currentYear     = date('Y');
         qty.value = qty.value.replace(/[^0-9.]/g, '');
         var n = parseNumberInput(qty.value);
         it.qty = isNaN(n) ? null : n;
+        stStockSourceConfirmed = false; // qty changed — re-check stock source next Review
       });
 
       var unit = document.createElement('span');
@@ -4751,7 +4816,7 @@ $currentYear     = date('Y');
         stShowError(stReviewError, 'Enter a quantity for every line.');
         return null;
       }
-      items.push({ logistic_id: it.logistic_id, qty: it.qty });
+      items.push({ logistic_id: it.logistic_id, qty: it.qty, stock_source: it.stock_source || 'normal' });
     }
     if (!stOrderDate.value) { stShowError(stReviewError, 'Select the order date.'); return null; }
 
@@ -4812,6 +4877,12 @@ $currentYear     = date('Y');
     if (stPendingConfirmOrder) { showStConfirm(stPendingConfirmOrder); stPendingConfirmOrder = null; }
   });
 
+  function stOrderHasDefectiveOptions(order) {
+    return (order.items || []).some(function (ln) {
+      return (ln.defective_qty || 0) > 0.0001;
+    });
+  }
+
   function stReview() {
     stHideError(stReviewError);
     stSuccessBox.style.display = 'none';
@@ -4823,6 +4894,10 @@ $currentYear     = date('Y');
       .then(function (res) {
         btnStReview.disabled = false;
         if (res.ok) {
+          if (!stStockSourceConfirmed && stOrderHasDefectiveOptions(res.order)) {
+            openStStockSource(res.order);
+            return;
+          }
           if (!stDriverWarnAck && stDriverPoliceChanged()) { openStDriverWarn(res.order); return; }
           showStConfirm(res.order);
           return;
@@ -4837,6 +4912,78 @@ $currentYear     = date('Y');
   }
 
   btnStReview.addEventListener('click', stReview);
+
+  // ---------- Stock Source (normal vs defective), only asked when at least
+  // one line has defective stock on hand — see "Kendala #1 & #2" in
+  // PROJECT_NOTES.md, 22 Sep 2026. ----------
+  function openStStockSource(order) {
+    stHideError(stStockSourceError);
+    stStockSourceRows.innerHTML = '';
+
+    (order.items || []).forEach(function (ln) {
+      if (!(ln.defective_qty > 0.0001)) return; // no defective stock for this product — don't even offer it
+
+      var current = 'normal';
+      var it = stItems.filter(function (x) { return x.logistic_id === ln.logistic_id; })[0];
+      if (it && it.stock_source === 'defective') current = 'defective';
+
+      var g = document.createElement('div');
+      g.className = 'form-group';
+      g.setAttribute('data-lid', ln.logistic_id);
+
+      var label = document.createElement('div');
+      label.className = 'label';
+      label.textContent = ln.product_name + ' \u2014 ' + fmtQty(ln.qty) + ' ' + (ln.unit_label || '');
+      g.appendChild(label);
+
+      var name = 'stss_' + ln.logistic_id;
+      [
+        { value: 'normal', text: 'Normal stock' },
+        { value: 'defective', text: 'Defective stock (' + fmtQty(ln.defective_qty) + ' ' + (ln.unit_label || '') + ' left)' }
+      ].forEach(function (opt) {
+        var optLabel = document.createElement('label');
+        optLabel.style.display = 'flex';
+        optLabel.style.alignItems = 'center';
+        optLabel.style.gap = 'var(--space-2)';
+        optLabel.style.fontSize = 'var(--text-sm)';
+        optLabel.style.color = 'var(--text-secondary)';
+        optLabel.style.marginTop = 'var(--space-1)';
+
+        var radio = document.createElement('input');
+        radio.type = 'radio';
+        radio.name = name;
+        radio.value = opt.value;
+        radio.checked = current === opt.value;
+
+        optLabel.appendChild(radio);
+        optLabel.appendChild(document.createTextNode(' ' + opt.text));
+        g.appendChild(optLabel);
+      });
+
+      stStockSourceRows.appendChild(g);
+    });
+
+    show(stStockSourceOverlay);
+  }
+
+  btnStStockSourceCancel.addEventListener('click', function () {
+    hide(stStockSourceOverlay);
+  });
+
+  btnStStockSourceContinue.addEventListener('click', function () {
+    stHideError(stStockSourceError);
+    var groups = stStockSourceRows.querySelectorAll('[data-lid]');
+    for (var i = 0; i < groups.length; i++) {
+      var lid = groups[i].getAttribute('data-lid');
+      var checked = groups[i].querySelector('input[type=radio]:checked');
+      var chosen = checked ? checked.value : 'normal';
+      var it = stItems.filter(function (x) { return String(x.logistic_id) === String(lid); })[0];
+      if (it) it.stock_source = chosen;
+    }
+    stStockSourceConfirmed = true;
+    hide(stStockSourceOverlay);
+    stReview(); // ask the server again, now with the chosen bucket(s)
+  });
 
   // --- Set Price ---
   function openStPrice(missing) {
@@ -4944,8 +5091,11 @@ $currentYear     = date('Y');
       sub.textContent = qtyText + ' \u00d7 ' + formatIDR(ln.price)
         + ' \u00b7 ' + (ln.price_source === 'new'
           ? 'new price, saved for this customer'
-          : 'price of ' + formatPriceDate(ln.price_date))
-        + ' \u00b7 stock ' + fmtQty(ln.remaining_before) + ' \u2192 ' + fmtQty(ln.remaining_after);
+          : ln.price_source === 'defective_reference'
+            ? 'defective stock reference price'
+            : 'price of ' + formatPriceDate(ln.price_date))
+        + ' \u00b7 stock ' + fmtQty(ln.remaining_before) + ' \u2192 ' + fmtQty(ln.remaining_after)
+        + (ln.stock_source === 'defective' ? ' \u00b7 defective stock' : '');
 
       box.appendChild(top);
       box.appendChild(sub);
@@ -5004,6 +5154,7 @@ $currentYear     = date('Y');
   var stTabPanelMap = {
     order:     document.getElementById('stTabPanelOrder'),
     returns:   document.getElementById('stTabPanelReturns'),
+    defective: document.getElementById('stTabPanelDefective'),
     customers: document.getElementById('stTabPanelCustomers')
   };
 
@@ -5021,8 +5172,167 @@ $currentYear     = date('Y');
       var name = t.getAttribute('data-st-tab');
       setActiveStTab(name);
       if (name === 'customers') loadStCustomerCards(); // refresh every visit
+      if (name === 'defective') loadDsList(); // refresh every visit
     });
   });
+
+  // ---------- Tab: Defective Stock ----------
+  var dsList        = document.getElementById('dsList');
+  var dsEmpty       = document.getElementById('dsEmpty');
+  var dsError       = document.getElementById('dsError');
+  var dsSuccessBox  = document.getElementById('dsSuccessBox');
+
+  function dsPost(data) {
+    return fetch('ajax/manage_defective_stock.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(data).toString()
+    }).then(function (r) { return r.json(); });
+  }
+
+  function loadDsList() {
+    stHideError(dsError);
+    dsSuccessBox.style.display = 'none';
+    dsList.innerHTML = '';
+    fetch('ajax/manage_defective_stock.php?action=list', { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (!res.ok) { stShowError(dsError, res.message || 'Could not load defective stock.'); return; }
+        renderDsList(res.data || []);
+      })
+      .catch(function () { stShowError(dsError, 'Connection error.'); });
+  }
+
+  function renderDsList(rows) {
+    dsList.innerHTML = '';
+    dsEmpty.style.display = rows.length ? 'none' : 'block';
+
+    rows.forEach(function (row) {
+      var card = document.createElement('div');
+      card.className = 'rt-line-card'; // reuse existing card styling
+
+      var body = document.createElement('div');
+      body.style.padding = 'var(--space-3)';
+
+      var title = document.createElement('div');
+      title.style.fontWeight = '600';
+      title.style.marginBottom = 'var(--space-2)';
+      title.textContent = row.product_name;
+      body.appendChild(title);
+
+      var qtyLine = document.createElement('div');
+      qtyLine.className = 'empty-sub';
+      qtyLine.style.marginBottom = 'var(--space-3)';
+      qtyLine.textContent = 'On hand: ' + fmtQty(row.defective_qty) + ' ' + (row.unit_label || '')
+        + ' \u00b7 currently with customers: ' + fmtQty(row.defective_taken_qty) + ' ' + (row.unit_label || '');
+      body.appendChild(qtyLine);
+
+      // -- Reference price --
+      var priceGroup = document.createElement('div');
+      priceGroup.className = 'form-group';
+      var priceLabel = document.createElement('div');
+      priceLabel.className = 'label';
+      priceLabel.textContent = 'Reference price (per ' + (row.unit_label || 'unit') + ')';
+      priceGroup.appendChild(priceLabel);
+
+      var priceRow = document.createElement('div');
+      priceRow.style.display = 'flex';
+      priceRow.style.gap = 'var(--space-2)';
+
+      var priceInput = document.createElement('input');
+      priceInput.type = 'text';
+      priceInput.setAttribute('inputmode', 'decimal');
+      priceInput.className = 'input input-number-comma';
+      priceInput.style.flex = '1';
+      if (row.defective_reference_price !== null) {
+        priceInput.value = formatNumberInput(fmtQty(row.defective_reference_price));
+      }
+      initNumberCommaInput(priceInput);
+
+      var priceSaveBtn = document.createElement('button');
+      priceSaveBtn.type = 'button';
+      priceSaveBtn.className = 'btn btn-secondary st-mini-btn';
+      priceSaveBtn.textContent = 'Save';
+      priceSaveBtn.addEventListener('click', function () {
+        var n = parseNumberInput(priceInput.value);
+        if (isNaN(n) || n <= 0) { stShowError(dsError, 'Enter a reference price above zero.'); return; }
+        stHideError(dsError);
+        priceSaveBtn.disabled = true;
+        dsPost({ action: 'set_price', logistic_id: row.logistic_id, price: n })
+          .then(function (res) {
+            priceSaveBtn.disabled = false;
+            if (!res.ok) { stShowError(dsError, res.message || 'Could not save the reference price.'); return; }
+            dsSuccessBox.textContent = 'Reference price saved for ' + row.product_name + '.';
+            dsSuccessBox.style.display = 'block';
+          })
+          .catch(function () {
+            priceSaveBtn.disabled = false;
+            stShowError(dsError, 'Connection error.');
+          });
+      });
+
+      priceRow.appendChild(priceInput);
+      priceRow.appendChild(priceSaveBtn);
+      priceGroup.appendChild(priceRow);
+      body.appendChild(priceGroup);
+
+      // -- Repair to normal stock --
+      var repairGroup = document.createElement('div');
+      repairGroup.className = 'form-group';
+      var repairLabel = document.createElement('div');
+      repairLabel.className = 'label';
+      repairLabel.textContent = 'Repair to normal stock';
+      repairGroup.appendChild(repairLabel);
+
+      var repairRow = document.createElement('div');
+      repairRow.style.display = 'flex';
+      repairRow.style.gap = 'var(--space-2)';
+
+      var repairInput = document.createElement('input');
+      repairInput.type = 'text';
+      repairInput.setAttribute('inputmode', 'decimal');
+      repairInput.className = 'input';
+      repairInput.style.flex = '1';
+      repairInput.placeholder = 'Qty';
+      repairInput.disabled = !(row.defective_qty > 0.0001);
+      repairInput.addEventListener('input', function () {
+        repairInput.value = repairInput.value.replace(/[^0-9.]/g, '');
+      });
+
+      var repairBtn = document.createElement('button');
+      repairBtn.type = 'button';
+      repairBtn.className = 'btn btn-secondary st-mini-btn';
+      repairBtn.textContent = 'Move to Normal Stock';
+      repairBtn.disabled = !(row.defective_qty > 0.0001);
+      repairBtn.addEventListener('click', function () {
+        var n = parseNumberInput(repairInput.value);
+        if (isNaN(n) || n <= 0) { stShowError(dsError, 'Enter a quantity above zero.'); return; }
+        if (n > row.defective_qty + 0.0001) { stShowError(dsError, 'Only ' + fmtQty(row.defective_qty) + ' ' + (row.unit_label || '') + ' is on hand.'); return; }
+        stHideError(dsError);
+        repairBtn.disabled = true;
+        dsPost({ action: 'repair', logistic_id: row.logistic_id, qty: n })
+          .then(function (res) {
+            repairBtn.disabled = false;
+            if (!res.ok) { stShowError(dsError, res.message || 'Could not repair the stock.'); return; }
+            dsSuccessBox.textContent = fmtQty(n) + ' ' + (row.unit_label || '') + ' of ' + row.product_name + ' moved back to normal stock.';
+            dsSuccessBox.style.display = 'block';
+            loadDsList(); // quantities changed — refresh the whole list
+          })
+          .catch(function () {
+            repairBtn.disabled = false;
+            stShowError(dsError, 'Connection error.');
+          });
+      });
+
+      repairRow.appendChild(repairInput);
+      repairRow.appendChild(repairBtn);
+      repairGroup.appendChild(repairRow);
+      body.appendChild(repairGroup);
+
+      card.appendChild(body);
+      dsList.appendChild(card);
+    });
+  }
 
   // ---------- Tab 2: one collapsible card per customer ----------
   function loadStCustomerCards() {
@@ -5085,9 +5395,20 @@ $currentYear     = date('Y');
   function renderStCustomerDetail(container, data, item) {
     container.innerHTML = '';
 
-    var totalActual = round2(parseFloat(data.customer.total_ordered) - parseFloat(data.customer.total_returned));
+    // total_returned here is PHYSICAL returns only (movement_type='in'),
+    // matching the per-product breakdown below. Price adjustment discounts
+    // are shown on their own row instead of folded in — see "Kendala #1 &
+    // #2" in PROJECT_NOTES.md, 22 Sep 2026: a discount doesn't return any
+    // goods, so lumping it into "Total Returned" made it look like a
+    // physical return happened when it didn't.
+    var totalReturned    = parseFloat(data.customer.total_returned);
+    var totalAdjustments = parseFloat(data.customer.total_price_adjustments || 0);
+    var totalActual = round2(parseFloat(data.customer.total_ordered) - totalReturned - totalAdjustments);
     stAddRow(container, 'Total Ordered', formatIDR(data.customer.total_ordered));
-    stAddRow(container, 'Total Returned', formatIDR(data.customer.total_returned));
+    stAddRow(container, 'Total Returned', formatIDR(totalReturned));
+    if (totalAdjustments > 0.0001) {
+      stAddRow(container, 'Total Discounts', formatIDR(totalAdjustments));
+    }
     stAddRow(container, 'Total Actual', formatIDR(totalActual));
     stAddRow(container, 'Total Paid', formatIDR(data.customer.total_paid));
 
@@ -5102,13 +5423,17 @@ $currentYear     = date('Y');
       none.textContent = 'No orders yet.';
       container.appendChild(none);
     }
-    // Three stacked lines per product, top to bottom: the actual net amount
-    // still with the customer (taken minus returned) with its net selling
-    // value, then the gross total taken with its value, then what's been
-    // returned with its value. Per user decision 22 Sep 2026.
+    // Three or four stacked lines per product, top to bottom: the actual net
+    // amount still with the customer (taken minus returned minus discount)
+    // with its net selling value, then the gross total taken with its
+    // value, then what's been returned, then (if any) the discount given —
+    // same convention as the customer-level Total Actual above. Per user
+    // decision 22 Sep 2026; discount subtraction added per PROJECT_NOTES.md,
+    // "Bugfix: diskon per produk belum diterapkan di tab Customer".
     data.products.forEach(function (p) {
+      var discountVal = parseFloat(p.discount_value || 0);
       var netQty = round2(parseFloat(p.total_qty) - parseFloat(p.returned_qty));
-      var netVal = round2(parseFloat(p.total_value) - parseFloat(p.returned_value));
+      var netVal = round2(parseFloat(p.total_value) - parseFloat(p.returned_value) - discountVal);
 
       var card = document.createElement('div');
       card.className = 'st-product-summary-card';
@@ -5153,9 +5478,12 @@ $currentYear     = date('Y');
         body.appendChild(row);
       }
 
-      addLine('Actual (Taken \u2212 Returned)', netQty, netVal);
+      addLine('Actual (Taken \u2212 Returned \u2212 Discount)', netQty, netVal);
       addLine('Total Taken', p.total_qty, p.total_value);
       addLine('Total Returned', p.returned_qty, p.returned_value);
+      if (discountVal > 0.0001) {
+        stAddRow(body, 'Total Discounts', formatIDR(discountVal));
+      }
 
       stBindCollapsible(card, head);
       container.appendChild(card);
@@ -5269,10 +5597,17 @@ $currentYear     = date('Y');
           retBadge.style.marginLeft = 'var(--space-2)';
           retBadge.textContent = 'RETURN';
           left.appendChild(retBadge);
+        } else if (m.movement_type === 'price_adjustment') {
+          var adjBadge = document.createElement('span');
+          adjBadge.className = 'badge badge-warning';
+          adjBadge.style.marginLeft = 'var(--space-2)';
+          adjBadge.textContent = 'DISCOUNT';
+          left.appendChild(adjBadge);
         }
         var right = document.createElement('div');
         right.style.flexShrink = '0';
-        right.textContent = (m.movement_type === 'in' ? '\u2212 ' : '') + formatIDR(m.total_price);
+        var isDeduction = m.movement_type === 'in' || m.movement_type === 'price_adjustment';
+        right.textContent = (isDeduction ? '\u2212 ' : '') + formatIDR(m.total_price);
         mtop.appendChild(left);
         mtop.appendChild(right);
 
@@ -5285,7 +5620,8 @@ $currentYear     = date('Y');
 
         // Lot-based returns (22 Sep 2026 onward) know which pickup they came
         // from; older return rows have no source_movement_id and show nothing.
-        if (m.movement_type === 'in' && m.source_movement_id) {
+        // Price adjustments (also 22 Sep 2026) always carry source_movement_id too.
+        if ((m.movement_type === 'in' || m.movement_type === 'price_adjustment') && m.source_movement_id) {
           var src = document.createElement('div');
           src.className = 'st-mov-sub';
           src.style.opacity = '0.75';
@@ -5489,8 +5825,10 @@ $currentYear     = date('Y');
 
   // FIFO seed: movements arrive newest-first, so walk from the back (oldest)
   // filling each pickup's remaining until the requested qty is covered.
-  // Never touches an allocation the user already typed for a pickup that's
-  // still in range — recomputed fresh every time qty or the product changes.
+  // Always seeds disposition:'good' (plain physical return) — the user
+  // opts into "Defective" or "Price Adjustment" by hand per split, and any
+  // such customization is wiped and reseeded whenever qty or the product
+  // changes (existing behaviour, unchanged).
   function rtAutoAllocate(it) {
     it.allocations = [];
     var need = it.qty || 0;
@@ -5504,48 +5842,52 @@ $currentYear     = date('Y');
         source_movement_id: m.movement_id,
         movement_date: m.movement_date,
         label: m.label,
+        disposition: 'good',
         qty: take,
-        price: m.price
+        price: m.price,
+        new_price: null
       });
       need = Math.round((need - take) * 100) / 100;
     }
   }
 
-  function rtFindAllocation(it, movementId) {
-    for (var i = 0; i < it.allocations.length; i++) {
-      if (it.allocations[i].source_movement_id === movementId) return it.allocations[i];
-    }
-    return null;
-  }
-
-  function rtSetAllocationQty(it, m, qty) {
-    var alloc = rtFindAllocation(it, m.movement_id);
-    if (!qty || qty <= 0) {
-      if (alloc) it.allocations.splice(it.allocations.indexOf(alloc), 1);
-      return;
-    }
-    if (alloc) {
-      alloc.qty = qty;
-    } else {
-      it.allocations.push({
-        source_movement_id: m.movement_id,
-        movement_date: m.movement_date,
-        label: m.label,
-        qty: qty,
-        price: m.price
-      });
-    }
+  // All splits currently allocated against one specific pickup (0, 1, or
+  // several — see "Kendala #1 & #2" in PROJECT_NOTES.md, 22 Sep 2026: one
+  // pickup can be split across Good / Defective / Price Adjustment at once).
+  function rtSplitsForMovement(it, movementId) {
+    return (it.allocations || []).filter(function (a) { return a.source_movement_id === movementId; });
   }
 
   function rtAllocatedTotal(it) {
-    return (it.allocations || []).reduce(function (s, a) { return Math.round((s + a.qty) * 100) / 100; }, 0);
+    return (it.allocations || []).reduce(function (s, a) { return Math.round((s + (a.qty || 0)) * 100) / 100; }, 0);
+  }
+
+  // Sum of qty per disposition-group for one pickup — 'good'/'defective'
+  // compete for m.remaining (physical eligibility); 'adjust' competes
+  // separately for m.remaining_adjustable (see list_return_price_options.php).
+  // The two ceilings are independent, not additive — a unit that was
+  // already price-adjusted earlier can still be physically returned later
+  // (the discount doesn't remove it from the customer), so remaining and
+  // remaining_adjustable are NOT the same pool.
+  function rtMovementReturnQty(it, movementId) {
+    return rtSplitsForMovement(it, movementId)
+      .filter(function (a) { return a.disposition !== 'adjust'; })
+      .reduce(function (s, a) { return Math.round((s + (a.qty || 0)) * 100) / 100; }, 0);
+  }
+
+  function rtMovementAdjustQty(it, movementId) {
+    return rtSplitsForMovement(it, movementId)
+      .filter(function (a) { return a.disposition === 'adjust'; })
+      .reduce(function (s, a) { return Math.round((s + (a.qty || 0)) * 100) / 100; }, 0);
   }
 
   // A line is ready to be marked "Reviewed" only once it resolves to a real
-  // product, has a quantity, and its pickup allocations add up exactly to
-  // that quantity with a price on every allocated row. Mirrors the checks
-  // rtBuildPayload does server-round-trip-side, kept here so the per-card
-  // gate can run instantly without a network call.
+  // product, has a quantity, its pickup allocations add up exactly to that
+  // quantity, every allocated split has a valid price for its disposition,
+  // and no pickup is over-allocated for either of its two independent caps
+  // (m.remaining for good/defective, m.remaining_adjustable for adjust).
+  // Mirrors the checks rtBuildPayloads does server-round-trip-side, kept
+  // here so the per-card gate can run instantly without a network call.
   function rtItemIsValid(it) {
     if (!it.logistic_id) return false;
     if (!it.qty || it.qty <= 0) return false;
@@ -5553,7 +5895,20 @@ $currentYear     = date('Y');
     if (!allocs.length) return false;
     if (Math.abs(rtAllocatedTotal(it) - it.qty) >= 0.005) return false;
     for (var i = 0; i < allocs.length; i++) {
-      if (allocs[i].qty > 0 && (!allocs[i].price || allocs[i].price <= 0)) return false;
+      var a = allocs[i];
+      if (a.qty <= 0) continue;
+      if (a.disposition === 'adjust') {
+        var m = it.movements.filter(function (x) { return x.movement_id === a.source_movement_id; })[0];
+        if (!a.new_price || a.new_price <= 0) return false;
+        if (m && a.new_price >= m.price) return false; // must be a discount
+      } else if (!a.price || a.price <= 0) {
+        return false;
+      }
+    }
+    for (var j = 0; j < it.movements.length; j++) {
+      var mv = it.movements[j];
+      if (rtMovementReturnQty(it, mv.movement_id) > mv.remaining + 0.0001) return false;
+      if (rtMovementAdjustQty(it, mv.movement_id) > mv.remaining_adjustable + 0.0001) return false;
     }
     return true;
   }
@@ -5720,11 +6075,12 @@ $currentYear     = date('Y');
     });
   }
 
-  // One row per pickup: label + remaining, an editable qty (seeded by FIFO,
-  // hand-correctable), an editable price (defaulted to that pickup's price,
-  // shown with thousand-commas via the same .input-number-comma pattern
-  // used elsewhere in this file, so it's unambiguous at a glance).
-  // A running "allocated X of Y requested" note enforces the exact-match rule.
+  // One block per pickup: label + BOTH independent remaining figures, then
+  // one row per split allocated against it (usually one, but "Kendala #1 &
+  // #2" in PROJECT_NOTES.md, 22 Sep 2026 allows several — e.g. half of a
+  // pickup returned Defective, the other half Price Adjustment). Each row's
+  // disposition (Good / Defective / Price Adjustment) picks which fields
+  // apply and which ceiling it's checked against on save.
   function renderRtAllocations(it, allocBox, availNote, onChange) {
     allocBox.innerHTML = '';
     rtUpdateAvailNote(it, availNote);
@@ -5734,57 +6090,192 @@ $currentYear     = date('Y');
     }
 
     it.movements.forEach(function (m) {
-      var alloc = rtFindAllocation(it, m.movement_id);
-      var row = document.createElement('div');
-      row.className = 'rt-alloc-row' + (m.disabled ? ' rt-alloc-disabled' : '');
+      var block = document.createElement('div');
+      block.className = 'rt-alloc-row' + (m.disabled ? ' rt-alloc-disabled' : '');
+      block.style.flexDirection = 'column';
+      block.style.alignItems = 'stretch';
+
+      var head = document.createElement('div');
+      head.style.display = 'flex';
+      head.style.justifyContent = 'space-between';
+      head.style.alignItems = 'center';
+      head.style.gap = 'var(--space-2)';
 
       var lbl = document.createElement('div');
       lbl.className = 'rt-alloc-label';
       lbl.textContent = formatPriceDate(m.movement_date) + (m.label ? ' \u2014 ' + m.label : '')
-        + ' \u00b7 remaining ' + fmtQty(m.remaining) + ' ' + (it.unit_label || '');
+        + ' \u00b7 remaining to return ' + fmtQty(m.remaining)
+        + ' \u00b7 remaining to adjust ' + fmtQty(m.remaining_adjustable) + ' ' + (it.unit_label || '');
+      head.appendChild(lbl);
 
-      var qtyInput = document.createElement('input');
-      qtyInput.type = 'text';
-      qtyInput.setAttribute('inputmode', 'decimal');
-      qtyInput.className = 'input rt-alloc-qty';
-      qtyInput.placeholder = 'Qty';
-      qtyInput.disabled = !!m.disabled;
-      qtyInput.value = alloc ? fmtQty(alloc.qty) : '';
-      qtyInput.addEventListener('input', function () {
-        qtyInput.value = qtyInput.value.replace(/[^0-9.]/g, '');
-        var n = parseNumberInput(qtyInput.value);
-        rtSetAllocationQty(it, m, isNaN(n) ? 0 : n);
-        rtUpdateAllocTotal(it, allocBox);
-        if (onChange) onChange();
-        updateRtReviewButtonState();
+      if (!m.disabled) {
+        var addBtn = document.createElement('button');
+        addBtn.type = 'button';
+        addBtn.className = 'btn btn-secondary st-mini-btn';
+        addBtn.textContent = '+ Split';
+        addBtn.title = 'Add another split against this same pickup (e.g. part Defective, part Price Adjustment)';
+        addBtn.addEventListener('click', function () {
+          it.allocations.push({
+            source_movement_id: m.movement_id,
+            movement_date: m.movement_date,
+            label: m.label,
+            disposition: 'good',
+            qty: 0,
+            price: m.price,
+            new_price: null
+          });
+          renderRtAllocations(it, allocBox, availNote, onChange);
+          if (onChange) onChange();
+          updateRtReviewButtonState();
+        });
+        head.appendChild(addBtn);
+      }
+
+      block.appendChild(head);
+
+      // Always keep at least one editable split per eligible pickup (unless
+      // fully disabled) so the user can type a qty straight away, same as
+      // before this rewrite — "+ Split" above is only needed for a SECOND
+      // (or further) split against the same pickup.
+      if (!m.disabled && rtSplitsForMovement(it, m.movement_id).length === 0) {
+        it.allocations.push({
+          source_movement_id: m.movement_id,
+          movement_date: m.movement_date,
+          label: m.label,
+          disposition: 'good',
+          qty: 0,
+          price: m.price,
+          new_price: null
+        });
+      }
+
+      var splits = rtSplitsForMovement(it, m.movement_id);
+      splits.forEach(function (alloc) {
+        block.appendChild(rtBuildSplitRow(it, m, alloc, allocBox, availNote, onChange));
       });
 
-      var priceInput = document.createElement('input');
-      priceInput.type = 'text';
-      priceInput.setAttribute('inputmode', 'decimal');
-      priceInput.className = 'input rt-alloc-price input-number-comma';
-      priceInput.title = 'Return price for this line \u2014 defaults to the price it was taken at, editable';
-      priceInput.disabled = !!m.disabled;
-      priceInput.value = formatNumberInput(fmtQty(alloc ? alloc.price : m.price));
-      initNumberCommaInput(priceInput);
-      priceInput.addEventListener('input', function () {
-        var n = parseNumberInput(priceInput.value);
-        var a = rtFindAllocation(it, m.movement_id);
-        if (a) a.price = isNaN(n) ? m.price : n;
-        if (onChange) onChange();
-        updateRtReviewButtonState();
-      });
-
-      row.appendChild(lbl);
-      row.appendChild(qtyInput);
-      row.appendChild(priceInput);
-      allocBox.appendChild(row);
+      allocBox.appendChild(block);
     });
 
     var totalRow = document.createElement('div');
     totalRow.className = 'rt-alloc-total';
     allocBox.appendChild(totalRow);
     rtUpdateAllocTotal(it, allocBox);
+  }
+
+  // One split row: disposition select + qty + (return price OR new price,
+  // toggled by disposition) + remove button. Keystrokes mutate the
+  // allocation object directly and only refresh the running totals — a
+  // full renderRtAllocations() only happens on structural changes (+ Split
+  // / remove), so typing never loses focus.
+  function rtBuildSplitRow(it, m, alloc, allocBox, availNote, onChange) {
+    var row = document.createElement('div');
+    row.className = 'rt-alloc-row';
+    row.style.marginLeft = 'var(--space-3, 12px)';
+
+    var dispSel = document.createElement('select');
+    dispSel.className = 'select rt-alloc-disposition';
+    var options = [['good', 'Good (return)'], ['defective', 'Defective (return)']];
+    if (m.remaining_adjustable > 0.0001 || alloc.disposition === 'adjust') {
+      options.push(['adjust', 'Price Adjustment (kept by customer)']);
+    }
+    options.forEach(function (o) {
+      var opt = document.createElement('option');
+      opt.value = o[0];
+      opt.textContent = o[1];
+      dispSel.appendChild(opt);
+    });
+    dispSel.value = alloc.disposition || 'good';
+    dispSel.disabled = !!m.disabled;
+
+    var qtyInput = document.createElement('input');
+    qtyInput.type = 'text';
+    qtyInput.setAttribute('inputmode', 'decimal');
+    qtyInput.className = 'input rt-alloc-qty';
+    qtyInput.placeholder = 'Qty';
+    qtyInput.disabled = !!m.disabled;
+    qtyInput.value = alloc.qty ? fmtQty(alloc.qty) : '';
+
+    var priceInput = document.createElement('input');
+    priceInput.type = 'text';
+    priceInput.setAttribute('inputmode', 'decimal');
+    priceInput.className = 'input rt-alloc-price input-number-comma';
+    priceInput.title = 'Return price for this line \u2014 defaults to the price it was taken at, editable';
+    priceInput.disabled = !!m.disabled;
+    priceInput.value = formatNumberInput(fmtQty(alloc.price || m.price));
+    initNumberCommaInput(priceInput);
+
+    var newPriceInput = document.createElement('input');
+    newPriceInput.type = 'text';
+    newPriceInput.setAttribute('inputmode', 'decimal');
+    newPriceInput.className = 'input rt-alloc-price input-number-comma';
+    newPriceInput.title = 'New (lower) price \u2014 original was ' + formatIDR(m.price);
+    newPriceInput.placeholder = 'New price (was ' + formatIDR(m.price) + ')';
+    newPriceInput.disabled = !!m.disabled;
+    if (alloc.new_price) newPriceInput.value = formatNumberInput(fmtQty(alloc.new_price));
+    initNumberCommaInput(newPriceInput);
+
+    function syncFieldVisibility() {
+      var isAdjust = dispSel.value === 'adjust';
+      priceInput.style.display = isAdjust ? 'none' : '';
+      newPriceInput.style.display = isAdjust ? '' : 'none';
+    }
+    syncFieldVisibility();
+
+    dispSel.addEventListener('change', function () {
+      var wasAdjust = alloc.disposition === 'adjust';
+      alloc.disposition = dispSel.value;
+      if (dispSel.value === 'adjust' && !wasAdjust) {
+        alloc.price = m.price; // keep old_price accurate even if it had been hand-edited as a return price
+      }
+      syncFieldVisibility();
+      if (onChange) onChange();
+      updateRtReviewButtonState();
+    });
+
+    qtyInput.addEventListener('input', function () {
+      qtyInput.value = qtyInput.value.replace(/[^0-9.]/g, '');
+      var n = parseNumberInput(qtyInput.value);
+      alloc.qty = isNaN(n) ? 0 : n;
+      rtUpdateAllocTotal(it, allocBox);
+      if (onChange) onChange();
+      updateRtReviewButtonState();
+    });
+
+    priceInput.addEventListener('input', function () {
+      var n = parseNumberInput(priceInput.value);
+      alloc.price = isNaN(n) ? m.price : n;
+      if (onChange) onChange();
+      updateRtReviewButtonState();
+    });
+
+    newPriceInput.addEventListener('input', function () {
+      var n = parseNumberInput(newPriceInput.value);
+      alloc.new_price = isNaN(n) ? null : n;
+      if (onChange) onChange();
+      updateRtReviewButtonState();
+    });
+
+    var removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'btn btn-secondary st-mini-btn';
+    removeBtn.textContent = '\u00d7';
+    removeBtn.title = 'Remove this split';
+    removeBtn.disabled = !!m.disabled;
+    removeBtn.addEventListener('click', function () {
+      var idx = it.allocations.indexOf(alloc);
+      if (idx >= 0) it.allocations.splice(idx, 1);
+      renderRtAllocations(it, allocBox, availNote, onChange);
+      if (onChange) onChange();
+      updateRtReviewButtonState();
+    });
+
+    row.appendChild(dispSel);
+    row.appendChild(qtyInput);
+    row.appendChild(priceInput);
+    row.appendChild(newPriceInput);
+    row.appendChild(removeBtn);
+    return row;
   }
 
   function rtUpdateAllocTotal(it, allocBox) {
@@ -5879,11 +6370,14 @@ $currentYear     = date('Y');
   });
 
   // ---------- Review -> Confirm -> password re-check -> Save ----------
-  function rtBuildPayload(dryRun) {
+  function rtBuildPayloads(dryRun) {
     if (!rtCustomer.value) { stShowError(rtReviewError, 'Select a customer.'); return null; }
     if (!rtItems.length) { stShowError(rtReviewError, 'There are no product lines in this return.'); return null; }
+    if (!rtReturnDate.value) { stShowError(rtReviewError, 'Select the date.'); return null; }
 
-    var items = [];
+    var returnItems = [];
+    var adjustItems = [];
+
     for (var i = 0; i < rtItems.length; i++) {
       var it = rtItems[i];
       if (!it.logistic_id) {
@@ -5896,35 +6390,79 @@ $currentYear     = date('Y');
       }
       var allocs = it.allocations || [];
       if (!allocs.length) {
-        stShowError(rtReviewError, 'Choose which pickup(s) "' + (it.product_name || 'this line') + '" is returned from.');
+        stShowError(rtReviewError, 'Choose what happens to every unit of "' + (it.product_name || 'this line') + '" (Good / Defective / Price Adjustment).');
         return null;
       }
       if (Math.abs(rtAllocatedTotal(it) - it.qty) >= 0.005) {
         stShowError(rtReviewError, 'For "' + (it.product_name || 'this line')
-          + '", the pickups allocated must add up to exactly the requested quantity.');
+          + '", the allocated splits must add up to exactly the requested quantity.');
         return null;
       }
-      var cleanAllocs = [];
+
+      var cleanReturnAllocs = [];
+      var cleanAdjustAllocs = [];
       for (var j = 0; j < allocs.length; j++) {
         var a = allocs[j];
         if (!a.qty || a.qty <= 0) continue;
-        if (!a.price || a.price <= 0) {
-          stShowError(rtReviewError, 'Enter a price above zero for every allocated pickup.');
-          return null;
+        if (a.disposition === 'adjust') {
+          if (!a.new_price || a.new_price <= 0) {
+            stShowError(rtReviewError, 'Enter a new price above zero for every Price Adjustment split.');
+            return null;
+          }
+          cleanAdjustAllocs.push({
+            source_movement_id: a.source_movement_id,
+            qty: a.qty,
+            old_price: a.price, // the pickup's own price, kept in sync — see the disposition <select>'s change handler
+            new_price: a.new_price
+          });
+        } else {
+          if (!a.price || a.price <= 0) {
+            stShowError(rtReviewError, 'Enter a price above zero for every return split.');
+            return null;
+          }
+          cleanReturnAllocs.push({
+            source_movement_id: a.source_movement_id,
+            qty: a.qty,
+            price: a.price,
+            restock_bucket: a.disposition === 'defective' ? 'defective' : 'normal'
+          });
         }
-        cleanAllocs.push({ source_movement_id: a.source_movement_id, qty: a.qty, price: a.price });
       }
-      items.push({ logistic_id: it.logistic_id, allocations: cleanAllocs });
+      if (cleanReturnAllocs.length) returnItems.push({ logistic_id: it.logistic_id, allocations: cleanReturnAllocs });
+      if (cleanAdjustAllocs.length) adjustItems.push({ logistic_id: it.logistic_id, allocations: cleanAdjustAllocs });
     }
-    if (!rtReturnDate.value) { stShowError(rtReviewError, 'Select the return date.'); return null; }
 
+    if (!returnItems.length && !adjustItems.length) {
+      stShowError(rtReviewError, 'Nothing to save \u2014 every line has zero quantity allocated.');
+      return null;
+    }
+
+    var driver = rtDriver.value.trim().toUpperCase();
+    var police = rtPolice.value.trim().toUpperCase();
+
+    // Two independent payloads, one per endpoint — see "Kendala #1 & #2" in
+    // PROJECT_NOTES.md, 22 Sep 2026: a return and a price adjustment are
+    // deliberately separate transactions (create_return.php /
+    // create_price_adjustment.php), even when both come from splitting the
+    // very same pickup in this one screen. Either can be null if this
+    // return has no lines of that kind at all.
     return {
-      customer_id: rtCustomer.value,
-      return_date: rtReturnDate.value,
-      driver_name: rtDriver.value.trim().toUpperCase(),
-      police_number: rtPolice.value.trim().toUpperCase(),
-      items: JSON.stringify(items),
-      dry_run: dryRun ? '1' : '0'
+      returnPayload: returnItems.length ? {
+        customer_id: rtCustomer.value,
+        return_date: rtReturnDate.value,
+        driver_name: driver,
+        police_number: police,
+        items: JSON.stringify(returnItems),
+        dry_run: dryRun ? '1' : '0'
+      } : null,
+      adjustPayload: adjustItems.length ? {
+        customer_id: rtCustomer.value,
+        adjustment_date: rtReturnDate.value,
+        driver_name: driver,
+        police_number: police,
+        items: JSON.stringify(adjustItems),
+        dry_run: dryRun ? '1' : '0'
+      } : null
     };
   }
 
@@ -5932,85 +6470,157 @@ $currentYear     = date('Y');
     return (items || []).map(function (m) { return m.reason; }).join('\n');
   }
 
+  function rtNotAdjustableMessage(items) {
+    return (items || []).map(function (m) { return m.reason; }).join('\n');
+  }
+
   function rtReview() {
     stHideError(rtReviewError);
-    var payload = rtBuildPayload(true);
-    if (!payload) return;
+    var built = rtBuildPayloads(true);
+    if (!built) return;
 
     btnRtReview.disabled = true;
-    rtPost('ajax/create_return.php', payload)
-      .then(function (res) {
-        btnRtReview.disabled = false;
-        if (res.ok) { showRtConfirm(res.ret); return; }
-        if (res.code === 'not_returnable') {
-          stShowError(rtReviewError, rtNotReturnableMessage(res.items));
-          return;
-        }
-        stShowError(rtReviewError, res.message || 'Could not review the return.');
-      })
-      .catch(function () {
-        btnRtReview.disabled = false;
-        stShowError(rtReviewError, 'Connection error.');
-      });
+    Promise.all([
+      built.returnPayload ? rtPost('ajax/create_return.php', built.returnPayload) : Promise.resolve(null),
+      built.adjustPayload ? rtPost('ajax/create_price_adjustment.php', built.adjustPayload) : Promise.resolve(null)
+    ]).then(function (results) {
+      btnRtReview.disabled = false;
+      var retRes = results[0];
+      var adjRes = results[1];
+
+      if (retRes && !retRes.ok) {
+        if (retRes.code === 'not_returnable') { stShowError(rtReviewError, rtNotReturnableMessage(retRes.items)); return; }
+        stShowError(rtReviewError, retRes.message || 'Could not review the return.');
+        return;
+      }
+      if (adjRes && !adjRes.ok) {
+        if (adjRes.code === 'not_adjustable') { stShowError(rtReviewError, rtNotAdjustableMessage(adjRes.items)); return; }
+        stShowError(rtReviewError, adjRes.message || 'Could not review the price adjustment.');
+        return;
+      }
+
+      showRtConfirm(retRes ? retRes.ret : null, adjRes ? adjRes.adj : null);
+    }).catch(function () {
+      btnRtReview.disabled = false;
+      stShowError(rtReviewError, 'Connection error.');
+    });
   }
 
   btnRtReview.addEventListener('click', rtReview);
 
-  function showRtConfirm(ret) {
+  // ret and/or adj — whichever this return actually has lines for. Shown
+  // as two sections in the SAME confirm window so the user sees the whole
+  // picture (e.g. scenario: 5 units returned Defective + 5 units Price
+  // Adjusted, all from one pickup) before either is saved.
+  function showRtConfirm(ret, adj) {
     stHideError(rtConfirmError);
     rtConfirmBody.innerHTML = '';
 
-    stAddRow(rtConfirmBody, 'Customer', ret.customer.name);
-    stAddRow(rtConfirmBody, 'Return Date', formatPriceDate(ret.return_date));
-    stAddRow(rtConfirmBody, 'Driver', ret.driver_name || '-');
-    stAddRow(rtConfirmBody, 'Police Number', ret.police_number || '-');
-    stAddRow(rtConfirmBody, 'Invoice', ret.invoice.number + (ret.invoice.is_new ? ' (new)' : ''));
+    var head = ret || adj;
+    stAddRow(rtConfirmBody, 'Customer', head.customer.name);
+    stAddRow(rtConfirmBody, 'Date', formatPriceDate(ret ? ret.return_date : adj.adjustment_date));
+    stAddRow(rtConfirmBody, 'Driver', head.driver_name || '-');
+    stAddRow(rtConfirmBody, 'Police Number', head.police_number || '-');
 
-    var lbl = document.createElement('div');
-    lbl.className = 'st-section-label';
-    lbl.textContent = 'Products Returned';
-    rtConfirmBody.appendChild(lbl);
+    var invoiceNumber = ret ? ret.invoice.number : adj.invoice.number;
+    var invoiceIsNew  = ret ? ret.invoice.is_new : adj.invoice.is_new;
+    stAddRow(rtConfirmBody, 'Invoice', invoiceNumber + (invoiceIsNew ? ' (new)' : ''));
 
-    ret.items.forEach(function (ln) {
-      var box = document.createElement('div');
-      box.className = 'st-mov';
+    var totalBefore  = ret ? ret.invoice.total_before : adj.invoice.total_before;
+    var grandReturn  = ret ? ret.grand_total : 0;
+    var grandAdjust  = adj ? adj.grand_discount : 0;
 
-      var top = document.createElement('div');
-      top.className = 'st-mov-top';
-      var nm = document.createElement('div');
-      nm.style.fontWeight = '600';
-      nm.textContent = ln.product_name;
-      var tot = document.createElement('div');
-      tot.textContent = '\u2212 ' + formatIDR(ln.total_price);
-      top.appendChild(nm);
-      top.appendChild(tot);
+    if (ret) {
+      var lbl1 = document.createElement('div');
+      lbl1.className = 'st-section-label';
+      lbl1.textContent = 'Products Returned';
+      rtConfirmBody.appendChild(lbl1);
 
-      var sub = document.createElement('div');
-      sub.className = 'st-mov-sub';
-      sub.textContent = fmtQty(ln.qty) + ' ' + (ln.unit_label || '')
-        + ' \u00b7 stock ' + fmtQty(ln.remaining_before) + ' \u2192 ' + fmtQty(ln.remaining_after);
+      ret.items.forEach(function (ln) {
+        var box = document.createElement('div');
+        box.className = 'st-mov';
 
-      box.appendChild(top);
-      box.appendChild(sub);
+        var top = document.createElement('div');
+        top.className = 'st-mov-top';
+        var nm = document.createElement('div');
+        nm.style.fontWeight = '600';
+        nm.textContent = ln.product_name;
+        var tot = document.createElement('div');
+        tot.textContent = '\u2212 ' + formatIDR(ln.total_price);
+        top.appendChild(nm);
+        top.appendChild(tot);
 
-      (ln.allocations || []).forEach(function (al) {
-        var line = document.createElement('div');
-        line.className = 'st-mov-sub';
-        line.style.paddingLeft = 'var(--space-3, 12px)';
-        line.textContent = '\u2022 ' + fmtQty(al.qty) + ' \u00d7 ' + formatIDR(al.price)
-          + ' from ' + formatPriceDate(al.source_movement_date);
-        box.appendChild(line);
+        var sub = document.createElement('div');
+        sub.className = 'st-mov-sub';
+        sub.textContent = fmtQty(ln.qty) + ' ' + (ln.unit_label || '')
+          + ' \u00b7 stock ' + fmtQty(ln.remaining_before) + ' \u2192 ' + fmtQty(ln.remaining_after);
+
+        box.appendChild(top);
+        box.appendChild(sub);
+
+        (ln.allocations || []).forEach(function (al) {
+          var line = document.createElement('div');
+          line.className = 'st-mov-sub';
+          line.style.paddingLeft = 'var(--space-3, 12px)';
+          line.textContent = '\u2022 ' + fmtQty(al.qty) + ' \u00d7 ' + formatIDR(al.price)
+            + ' from ' + formatPriceDate(al.source_movement_date)
+            + (al.restock_bucket === 'defective' ? ' \u2014 restocked as defective' : '');
+          box.appendChild(line);
+        });
+
+        rtConfirmBody.appendChild(box);
       });
 
-      rtConfirmBody.appendChild(box);
-    });
+      stAddRow(rtConfirmBody, 'This Return', '\u2212 ' + formatIDR(grandReturn));
+    }
+
+    if (adj) {
+      var lbl2 = document.createElement('div');
+      lbl2.className = 'st-section-label';
+      lbl2.textContent = 'Price Adjustments (kept by customer)';
+      rtConfirmBody.appendChild(lbl2);
+
+      adj.items.forEach(function (ln) {
+        var box = document.createElement('div');
+        box.className = 'st-mov';
+
+        var top = document.createElement('div');
+        top.className = 'st-mov-top';
+        var nm = document.createElement('div');
+        nm.style.fontWeight = '600';
+        nm.textContent = ln.product_name;
+        var tot = document.createElement('div');
+        tot.textContent = '\u2212 ' + formatIDR(ln.discount_total);
+        top.appendChild(nm);
+        top.appendChild(tot);
+
+        var sub = document.createElement('div');
+        sub.className = 'st-mov-sub';
+        sub.textContent = fmtQty(ln.qty) + ' ' + (ln.unit_label || '') + ' kept by the customer, price reduced';
+
+        box.appendChild(top);
+        box.appendChild(sub);
+
+        (ln.allocations || []).forEach(function (al) {
+          var line = document.createElement('div');
+          line.className = 'st-mov-sub';
+          line.style.paddingLeft = 'var(--space-3, 12px)';
+          line.textContent = '\u2022 ' + fmtQty(al.qty) + ' \u00d7 (' + formatIDR(al.old_price) + ' \u2192 ' + formatIDR(al.new_price) + ')'
+            + ' from ' + formatPriceDate(al.source_movement_date);
+          box.appendChild(line);
+        });
+
+        rtConfirmBody.appendChild(box);
+      });
+
+      stAddRow(rtConfirmBody, 'This Price Adjustment', '\u2212 ' + formatIDR(grandAdjust));
+    }
 
     var sep = document.createElement('div');
     sep.className = 'st-section-label';
     sep.textContent = 'Total';
     rtConfirmBody.appendChild(sep);
-    stAddRow(rtConfirmBody, 'This Return', '\u2212 ' + formatIDR(ret.grand_total));
-    stAddRow(rtConfirmBody, 'Invoice Total After', formatIDR(ret.invoice.total_after));
+    stAddRow(rtConfirmBody, 'Invoice Total After', formatIDR(totalBefore - grandReturn - grandAdjust));
 
     show(rtConfirmOverlay);
   }
@@ -6020,13 +6630,13 @@ $currentYear     = date('Y');
   });
 
   // Confirm & Save does not write anything by itself — it opens the
-  // password re-check first (returns move goods and money back, treated
-  // like the other sensitive actions in this app), and the actual
-  // create_return.php dry_run=0 call happens only after that succeeds.
+  // password re-check first (returns and price adjustments move goods
+  // and/or money, treated like the other sensitive actions in this app),
+  // and the actual save calls happen only after that succeeds.
   btnRtConfirmSave.addEventListener('click', function () {
     if (rtSaving) return;
-    var payload = rtBuildPayload(false);
-    if (!payload) { hide(rtConfirmOverlay); return; }
+    var built = rtBuildPayloads(false);
+    if (!built) { hide(rtConfirmOverlay); return; }
     hide(rtConfirmOverlay);
     rtReverifyPassword.value = '';
     rtReverifyError.style.display = 'none';
@@ -6064,36 +6674,71 @@ $currentYear     = date('Y');
     if (e.key === 'Enter') { e.preventDefault(); submitRtReverify(); }
   });
 
+  // Two separate endpoints, two separate DB transactions (user decision,
+  // 22 Sep 2026 — create_price_adjustment.php is deliberately its own
+  // endpoint, not a mode flag on create_return.php). Saved SEQUENTIALLY,
+  // return first: if a pickup is split between a return and a price
+  // adjustment, the adjustment's own server-side eligibility check
+  // (remaining_adjustable) needs the return's rows to already exist so it
+  // can't double-allocate the same units. This means the two are NOT
+  // atomic together — if the return succeeds but the adjustment then
+  // fails, the return stays saved. That partial-success case is reported
+  // to the user explicitly below rather than silently swallowed.
   function rtSaveReturn() {
     if (rtSaving) return;
-    var payload = rtBuildPayload(false);
-    if (!payload) return;
+    var built = rtBuildPayloads(false);
+    if (!built) return;
 
     rtSaving = true;
-    rtPost('ajax/create_return.php', payload)
-      .then(function (res) {
+    var retCall = built.returnPayload ? rtPost('ajax/create_return.php', built.returnPayload) : Promise.resolve(null);
+
+    retCall.then(function (retRes) {
+      if (retRes && !retRes.ok) {
         rtSaving = false;
-        if (!res.ok) {
-          if (res.code === 'not_returnable') {
-            alert(rtNotReturnableMessage(res.items));
-          } else {
-            alert(res.message || 'Failed to save the return.');
-          }
+        if (retRes.code === 'not_returnable') {
+          alert(rtNotReturnableMessage(retRes.items));
+        } else {
+          alert(retRes.message || 'Failed to save the return.');
+        }
+        return;
+      }
+
+      var adjCall = built.adjustPayload ? rtPost('ajax/create_price_adjustment.php', built.adjustPayload) : Promise.resolve(null);
+      adjCall.then(function (adjRes) {
+        rtSaving = false;
+
+        if (adjRes && !adjRes.ok) {
+          var prefix = retRes
+            ? 'The RETURN part was saved, but the PRICE ADJUSTMENT part failed: '
+            : 'Failed to save the price adjustment: ';
+          var detail = adjRes.code === 'not_adjustable' ? rtNotAdjustableMessage(adjRes.items) : (adjRes.message || 'unknown error');
+          alert(prefix + detail + (retRes ? '\n\nPlease check the Customers tab, and retry the price adjustment separately if needed.' : ''));
+          resetReturnForm();
+          loadStCustomers();
           return;
         }
-        var r = res.ret;
-        var summary = 'Return saved \u2014 ' + r.customer.name
-          + ' \u00b7 Invoice ' + r.invoice.number
-          + ' \u00b7 \u2212' + formatIDR(r.grand_total);
+
+        var parts = [];
+        if (retRes) parts.push('Return \u2212' + formatIDR(retRes.ret.grand_total));
+        if (adjRes) parts.push('Price Adjustment \u2212' + formatIDR(adjRes.adj.grand_discount));
+        var invoiceNumber = retRes ? retRes.ret.invoice.number : adjRes.adj.invoice.number;
+        var customerName  = retRes ? retRes.ret.customer.name : adjRes.adj.customer.name;
+        var summary = 'Saved \u2014 ' + customerName + ' \u00b7 Invoice ' + invoiceNumber + ' \u00b7 ' + parts.join(' \u00b7 ');
+
         resetReturnForm(); // also closes the fly windows
         rtSuccessBox.textContent = summary;
         rtSuccessBox.style.display = 'block';
         loadStCustomers();
-      })
-      .catch(function () {
+      }).catch(function () {
         rtSaving = false;
-        alert('Connection error while saving.');
+        alert((retRes ? 'The return was saved, but a' : 'A') + ' connection error occurred while saving the price adjustment. Please check the Customers tab and retry if needed.');
+        resetReturnForm();
+        loadStCustomers();
       });
+    }).catch(function () {
+      rtSaving = false;
+      alert('Connection error while saving.');
+    });
   }
 
 })();

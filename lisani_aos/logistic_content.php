@@ -820,18 +820,26 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
   }
 
   // Actual Taken = Taken (out) - Returned (in), same "Actual" convention
-  // already used in Sales Transaction > Customers tab.
-  function logMovActual(totalOut, totalIn) {
+  // already used in Sales Transaction > Customers tab — for QTY. For VALUE,
+  // a price adjustment (discount) also has to be subtracted: it doesn't
+  // move stock, but it does lower what the customer owes for goods already
+  // taken, same as "Total Actual = Total Ordered - Total Returned - Total
+  // Discounts" in transaction_content.php's customer card. Without this,
+  // Actual Taken's value here read higher than the equivalent figure in the
+  // Customers tab for any product that ever had a discount applied.
+  function logMovActual(totalOut, totalIn, totalAdjustment) {
+    var adjValue = totalAdjustment ? totalAdjustment.value : 0;
     return {
       qty:   round2(totalOut.qty - totalIn.qty),
-      value: round2(totalOut.value - totalIn.value)
+      value: round2(totalOut.value - totalIn.value - adjValue)
     };
   }
   function round2(n) { return Math.round((Number(n) || 0) * 100) / 100; }
 
   // "Taken: 12 CTN · Rp 1,200,000" / "Returned: 2 CTN · Rp 200,000" /
-  // "Actual Taken: 10 CTN · Rp 1,000,000"
-  function logMovTotalsEl(totalOut, totalIn, unitLabel) {
+  // "Discount: Rp 100,000" (only shown if > 0) /
+  // "Actual Taken: 10 CTN · Rp 900,000"
+  function logMovTotalsEl(totalOut, totalIn, totalAdjustment, unitLabel) {
     var wrap = document.createElement('div');
     wrap.className = 'log-mov-totals';
     var outLine = document.createElement('div');
@@ -840,12 +848,19 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
     var inLine = document.createElement('div');
     inLine.className = 'log-mov-in';
     inLine.textContent = 'Returned: ' + fmtNum(totalIn.qty) + ' ' + (unitLabel || '') + ' \u00b7 ' + fmtIDR(totalIn.value);
-    var actual = logMovActual(totalOut, totalIn);
+    wrap.appendChild(outLine);
+    wrap.appendChild(inLine);
+    var adjValue = totalAdjustment ? totalAdjustment.value : 0;
+    if (adjValue > 0) {
+      var adjLine = document.createElement('div');
+      adjLine.className = 'log-mov-adj';
+      adjLine.textContent = 'Discount: \u2212 ' + fmtIDR(adjValue);
+      wrap.appendChild(adjLine);
+    }
+    var actual = logMovActual(totalOut, totalIn, totalAdjustment);
     var actualLine = document.createElement('div');
     actualLine.className = 'log-mov-actual';
     actualLine.textContent = 'Actual Taken: ' + fmtNum(actual.qty) + ' ' + (unitLabel || '') + ' \u00b7 ' + fmtIDR(actual.value);
-    wrap.appendChild(outLine);
-    wrap.appendChild(inLine);
     wrap.appendChild(actualLine);
     return wrap;
   }
@@ -863,8 +878,22 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
     var left = document.createElement('div');
     left.className = 'log-mov-line-left';
     var badge = document.createElement('span');
-    badge.className = 'badge ' + (mv.movement_type === 'in' ? 'badge-success' : 'badge-warning');
-    badge.textContent = mv.movement_type === 'in' ? 'Returned' : 'Taken';
+    // 'in' = physically returned, 'price_adjustment' = kept by the customer,
+    // just sold cheaper (no stock movement at all — see "Kendala #1 & #2" in
+    // PROJECT_NOTES.md, 22 Sep 2026), anything else = 'out' (Taken).
+    var badgeClass, badgeText;
+    if (mv.movement_type === 'in') {
+      badgeClass = 'badge-success';
+      badgeText = 'Returned';
+    } else if (mv.movement_type === 'price_adjustment') {
+      badgeClass = 'badge-danger';
+      badgeText = 'Discount';
+    } else {
+      badgeClass = 'badge-warning';
+      badgeText = 'Taken';
+    }
+    badge.className = 'badge ' + badgeClass;
+    badge.textContent = badgeText;
     left.appendChild(badge);
     var sub = document.createElement('div');
     sub.className = 'log-mov-line-sub';
@@ -881,7 +910,14 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
     right.textContent = fmtNum(mv.qty) + ' ' + (unitLabel || '');
     var rightSub = document.createElement('div');
     rightSub.className = 'log-mov-line-sub';
-    rightSub.textContent = mv.total_price !== null ? fmtIDR(mv.total_price) : '';
+    // total_price for 'price_adjustment' is the DISCOUNT amount (a positive
+    // number in the DB, same convention create_price_adjustment.php uses for
+    // total_price/total_outflow) — the minus sign here is purely display,
+    // to read at a glance as "money taken off", same idea as Returned rows
+    // in Sales Transaction > Customers.
+    rightSub.textContent = mv.total_price !== null
+      ? (mv.movement_type === 'price_adjustment' ? '\u2212 ' : '') + fmtIDR(mv.total_price)
+      : '';
     right.appendChild(rightSub);
 
     line.appendChild(left);
@@ -892,21 +928,28 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
   // Simple "Valid" / "Invalid" badge shown right next to the activity name
   // in the main (logistic) card header — visible immediately even while
   // the card is collapsed. Reuses the existing .badge component instead of
-  // a bespoke style. Actual Taken (derived from movement history, out -
-  // in) must equal (primary_qty - remaining_primary_qty) —
-  // remaining_primary_qty is the stored running balance (same value shown
-  // in the Logistic List tab), so primary_qty minus that balance is how
-  // much has net been taken out according to the stored field. Comparing
-  // the two catches a movement that was missed or double-counted.
-  function logMovValidTag(actualQty, primaryQty, remainingQty) {
+  // a bespoke style. Actual Taken (derived from movement history, out - in,
+  // excluding price_adjustment) must equal total_taken_qty — the
+  // source-agnostic "currently with customers" balance kept in sync by
+  // create_order.php (+, both stock_source buckets) and create_return.php
+  // (-, both restock_bucket destinations), and left untouched by
+  // create_price_adjustment.php.
+  //
+  // NOT primary_qty - remaining_primary_qty: since the defective-stock
+  // feature (22 Sep 2026), remaining_primary_qty only ever reflects the
+  // 'normal' bucket, so any product ever taken as stock_source='defective',
+  // or returned with restock_bucket='defective', would show a false
+  // Invalid even when every movement is accounted for correctly. See
+  // PROJECT_NOTES.md, "Bugfix: logMovValidTag pakai field salah (defective
+  // stock)".
+  function logMovValidTag(actualQty, totalTakenQty) {
     var tag = document.createElement('span');
-    if (primaryQty === null || remainingQty === null) {
+    if (totalTakenQty === null) {
       tag.className = 'badge';
       tag.textContent = 'Not validated';
       return tag;
     }
-    var expected = round2(primaryQty - remainingQty);
-    var ok = Math.abs(round2(actualQty) - expected) < 0.01;
+    var ok = Math.abs(round2(actualQty) - round2(totalTakenQty)) < 0.01;
     tag.className = 'badge ' + (ok ? 'badge-success' : 'badge-danger');
     tag.textContent = ok ? 'Valid' : 'Invalid';
     return tag;
@@ -930,8 +973,8 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
       var mainTitleText = document.createElement('span');
       mainTitleText.textContent = lg.activity_name;
       mainTitle.appendChild(mainTitleText);
-      var mainActual = logMovActual(lg.total_out, lg.total_in);
-      mainTitle.appendChild(logMovValidTag(mainActual.qty, lg.primary_qty, lg.remaining_primary_qty));
+      var mainActual = logMovActual(lg.total_out, lg.total_in, lg.total_adjustment);
+      mainTitle.appendChild(logMovValidTag(mainActual.qty, lg.total_taken_qty));
       var mainSub = document.createElement('div');
       mainSub.className = 'log-mov-subtitle';
       mainSub.textContent = 'Activity Code ' + lg.activity_code + ' \u00b7 ' + lg.department;
@@ -939,7 +982,7 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
       mainTitleWrap.appendChild(mainTitle);
       mainTitleWrap.appendChild(mainSub);
       mainHead.appendChild(mainTitleWrap);
-      var mainTotals = logMovTotalsEl(lg.total_out, lg.total_in, unitLabel);
+      var mainTotals = logMovTotalsEl(lg.total_out, lg.total_in, lg.total_adjustment, unitLabel);
       mainHead.appendChild(mainTotals);
       mainHead.appendChild(logMovChevron());
       mainCard.appendChild(mainHead);
@@ -955,7 +998,7 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
         yTitle.className = 'log-mov-title';
         yTitle.textContent = y.year;
         yHead.appendChild(yTitle);
-        yHead.appendChild(logMovTotalsEl(y.total_out, y.total_in, unitLabel));
+        yHead.appendChild(logMovTotalsEl(y.total_out, y.total_in, y.total_adjustment, unitLabel));
         yHead.appendChild(logMovChevron());
         yCard.appendChild(yHead);
 
@@ -970,7 +1013,7 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
           moTitle.className = 'log-mov-title';
           moTitle.textContent = mo.month_label;
           moHead.appendChild(moTitle);
-          moHead.appendChild(logMovTotalsEl(mo.total_out, mo.total_in, unitLabel));
+          moHead.appendChild(logMovTotalsEl(mo.total_out, mo.total_in, mo.total_adjustment, unitLabel));
           moHead.appendChild(logMovChevron());
           moCard.appendChild(moHead);
 
@@ -985,7 +1028,7 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
             dTitle.className = 'log-mov-title';
             dTitle.textContent = d.date_label;
             dHead.appendChild(dTitle);
-            dHead.appendChild(logMovTotalsEl(d.total_out, d.total_in, unitLabel));
+            dHead.appendChild(logMovTotalsEl(d.total_out, d.total_in, d.total_adjustment, unitLabel));
             dHead.appendChild(logMovChevron());
             dCard.appendChild(dHead);
 

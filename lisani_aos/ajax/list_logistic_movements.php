@@ -36,6 +36,7 @@ $result = $lisani_conn->query(
             m.customer_name, m.driver_name, m.police_number,
             m.qty_primary_package, m.price, m.total_price, m.created_at,
             l.activity_id, l.primary_unit_label, l.primary_qty, l.remaining_primary_qty,
+            l.total_taken_qty,
             a.activity_name, a.relative_path
      FROM logistic_movements m
      JOIN logistics l ON l.id = m.logistic_id
@@ -69,6 +70,15 @@ while ($r = $result->fetch_assoc()) {
             'primary_unit_label'     => $r['primary_unit_label'],
             'primary_qty'            => $r['primary_qty'] !== null ? (float) $r['primary_qty'] : null,
             'remaining_primary_qty'  => $r['remaining_primary_qty'] !== null ? (float) $r['remaining_primary_qty'] : null,
+            // Source-agnostic "currently with customers" balance — kept in
+            // sync by create_order.php (+) / create_return.php (-) for BOTH
+            // stock_source buckets (normal + defective), and left untouched
+            // by create_price_adjustment.php. Unlike remaining_primary_qty
+            // (which only ever reflects the 'normal' bucket), this is the
+            // correct thing to validate Actual Taken against — see
+            // PROJECT_NOTES.md, "Bugfix: logMovValidTag pakai field salah
+            // (defective stock)".
+            'total_taken_qty'        => $r['total_taken_qty'] !== null ? (float) $r['total_taken_qty'] : null,
             'years'                  => [], // year(string) => [...]
         ];
     }
@@ -95,7 +105,7 @@ while ($r = $result->fetch_assoc()) {
 
     $dRef['movements'][] = [
         'id'            => (int) $r['id'],
-        'movement_type' => $r['movement_type'], // 'out' = taken, 'in' = returned
+        'movement_type' => $r['movement_type'], // 'out' = taken, 'in' = returned, 'price_adjustment' = kept by customer, price reduced (no stock movement)
         'qty'           => (float) $r['qty_primary_package'],
         'price'         => $r['price'] !== null ? (float) $r['price'] : null,
         'total_price'   => $r['total_price'] !== null ? (float) $r['total_price'] : null,
@@ -111,34 +121,62 @@ while ($r = $result->fetch_assoc()) {
 // ---- Roll totals up from movements -> day -> month -> year -> logistic,
 // then re-sort each level newest-first (query above was ASC so summing
 // naturally follows chronological order first, sort happens after).
+//
+// Only 'out' (Taken) and 'in' (Returned) move stock, so only those two feed
+// total_out/total_in's QTY. 'price_adjustment' (added 22 Sep 2026 — see
+// "Kendala #1 & #2" in PROJECT_NOTES.md) moves NO stock at all: the goods
+// stay with the customer, only the price changes. It must be explicitly
+// excluded from total_out/total_in — treating "not 'in'" as 'out' (the
+// previous bucketing) silently added a price adjustment's qty AND its
+// discount value into Taken, inflating both Taken and Actual Taken
+// (= Taken - Returned) for no real pickup. A price_adjustment row is still
+// returned in each day's `movements` list further down either way.
+//
+// Its VALUE, however, DOES belong in Actual Taken's financial figure: a
+// price adjustment lowers what the customer owes for goods already taken,
+// same as transaction_content.php's Sales Transaction > Customers card does
+// with "Total Actual = Total Ordered - Total Returned - Total Discounts".
+// So price_adjustment value is summed separately here (total_adjustment)
+// and subtracted from Actual Taken's value on the frontend — see
+// logMovActual() in logistic_content.php — while its qty is never summed
+// anywhere (kept 0), since goods never left the customer to begin with.
 function rt_sum_movements(array $movements): array {
     $out = ['qty' => 0.0, 'value' => 0.0];
     $in  = ['qty' => 0.0, 'value' => 0.0];
+    $adj = ['qty' => 0.0, 'value' => 0.0]; // qty always 0 — informational value-only bucket
     foreach ($movements as $mv) {
-        $bucket = $mv['movement_type'] === 'in' ? $in : $out;
-        $bucket['qty']   += $mv['qty'];
-        $bucket['value'] += (float) ($mv['total_price'] ?? 0);
-        if ($mv['movement_type'] === 'in') { $in = $bucket; } else { $out = $bucket; }
+        if ($mv['movement_type'] === 'out') {
+            $out['qty']   += $mv['qty'];
+            $out['value'] += (float) ($mv['total_price'] ?? 0);
+        } elseif ($mv['movement_type'] === 'in') {
+            $in['qty']   += $mv['qty'];
+            $in['value'] += (float) ($mv['total_price'] ?? 0);
+        } elseif ($mv['movement_type'] === 'price_adjustment') {
+            $adj['value'] += (float) ($mv['total_price'] ?? 0);
+        }
     }
-    return ['total_out' => $out, 'total_in' => $in];
+    return ['total_out' => $out, 'total_in' => $in, 'total_adjustment' => $adj];
 }
 
 $data = [];
 foreach ($logistics as $lid => $lg) {
     $logOut = ['qty' => 0.0, 'value' => 0.0];
     $logIn  = ['qty' => 0.0, 'value' => 0.0];
+    $logAdj = ['qty' => 0.0, 'value' => 0.0];
 
     $years = [];
     krsort($lg['years']); // newest year first
     foreach ($lg['years'] as $year => $yData) {
         $yearOut = ['qty' => 0.0, 'value' => 0.0];
         $yearIn  = ['qty' => 0.0, 'value' => 0.0];
+        $yearAdj = ['qty' => 0.0, 'value' => 0.0];
 
         $months = [];
         krsort($yData['months']); // newest month first
         foreach ($yData['months'] as $month => $mData) {
             $monthOut = ['qty' => 0.0, 'value' => 0.0];
             $monthIn  = ['qty' => 0.0, 'value' => 0.0];
+            $monthAdj = ['qty' => 0.0, 'value' => 0.0];
 
             $days = [];
             krsort($mData['days']); // newest day first
@@ -148,17 +186,19 @@ foreach ($logistics as $lid => $lg) {
                 $monthOut['value'] += $sums['total_out']['value'];
                 $monthIn['qty']    += $sums['total_in']['qty'];
                 $monthIn['value']  += $sums['total_in']['value'];
+                $monthAdj['value'] += $sums['total_adjustment']['value'];
 
                 // newest movement first within the day
                 $movs = $dData['movements'];
                 usort($movs, function ($a, $b) { return strcmp($b['created_at'], $a['created_at']); });
 
                 $days[] = [
-                    'day'        => $day,
-                    'date_label' => $dData['date_label'],
-                    'total_out'  => $sums['total_out'],
-                    'total_in'   => $sums['total_in'],
-                    'movements'  => $movs,
+                    'day'              => $day,
+                    'date_label'       => $dData['date_label'],
+                    'total_out'        => $sums['total_out'],
+                    'total_in'         => $sums['total_in'],
+                    'total_adjustment' => $sums['total_adjustment'],
+                    'movements'        => $movs,
                 ];
             }
 
@@ -166,13 +206,15 @@ foreach ($logistics as $lid => $lg) {
             $yearOut['value'] += $monthOut['value'];
             $yearIn['qty']    += $monthIn['qty'];
             $yearIn['value']  += $monthIn['value'];
+            $yearAdj['value'] += $monthAdj['value'];
 
             $months[] = [
-                'month'       => $month,
-                'month_label' => $mData['months_label'],
-                'total_out'   => $monthOut,
-                'total_in'    => $monthIn,
-                'days'        => $days,
+                'month'            => $month,
+                'month_label'      => $mData['months_label'],
+                'total_out'        => $monthOut,
+                'total_in'         => $monthIn,
+                'total_adjustment' => $monthAdj,
+                'days'             => $days,
             ];
         }
 
@@ -180,12 +222,14 @@ foreach ($logistics as $lid => $lg) {
         $logOut['value'] += $yearOut['value'];
         $logIn['qty']    += $yearIn['qty'];
         $logIn['value']  += $yearIn['value'];
+        $logAdj['value'] += $yearAdj['value'];
 
         $years[] = [
-            'year'      => $year,
-            'total_out' => $yearOut,
-            'total_in'  => $yearIn,
-            'months'    => $months,
+            'year'             => $year,
+            'total_out'        => $yearOut,
+            'total_in'         => $yearIn,
+            'total_adjustment' => $yearAdj,
+            'months'           => $months,
         ];
     }
 
@@ -197,8 +241,10 @@ foreach ($logistics as $lid => $lg) {
         'primary_unit_label'    => $lg['primary_unit_label'],
         'primary_qty'           => $lg['primary_qty'],
         'remaining_primary_qty' => $lg['remaining_primary_qty'],
+        'total_taken_qty'       => $lg['total_taken_qty'],
         'total_out'             => $logOut,
         'total_in'              => $logIn,
+        'total_adjustment'      => $logAdj,
         'years'                 => $years,
     ];
 }

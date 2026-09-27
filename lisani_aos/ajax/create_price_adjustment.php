@@ -1,75 +1,71 @@
 <?php
-// lisani_aos/ajax/create_return.php
-// Records ONE Sales Transaction RETURN (one customer, one date, N products)
-// after the WhatsApp message was parsed and the user reviewed it. Mirrors
-// create_order.php's dry-run/save pattern, but for goods coming BACK from a
-// customer, not going out. See "Sales Transaction — Tab Returns" in
-// PROJECT_NOTES.md for the agreed design.
+// lisani_aos/ajax/create_price_adjustment.php
+// Records ONE price adjustment (one customer, one date, N products) — for
+// goods that stay with the customer (e.g. defective, but they took it
+// anyway), compensated with a lower price. This is deliberately NOT a
+// return: goods do not come back, so stock is never touched at all
+// (logistics.remaining_primary_qty, defective_qty, total_taken_qty,
+// defective_taken_qty — none of them change here).
 //
-// Differences from create_order.php, all deliberate (user decisions,
-// 21-22 Sep 2026):
-//   - NOT tied to any specific order/invoice: only requires a customer.
-//   - Price is entered MANUALLY per line by the user (picked from that
-//     product's price history, or typed) — never pulled automatically.
-//   - Reuses the customer's OPEN invoice if one exists (its total_amount is
-//     simply reduced by the return, and may go negative). Only when the
-//     customer has NO open invoice does this create a brand-new one, with
-//     a negative total_amount from the start ("/ret/" instead of "/inv/"
-//     in its number, so it's still obviously a return-only invoice).
-//   - Validated against how much the customer has EVER taken minus what
-//     was already returned (net available). A product never taken at all,
-//     or a qty above what's still available, is rejected outright — no
-//     partial acceptance.
+// New 22 Sep 2026 — see "Kendala #1 & #2" in PROJECT_NOTES.md. Structurally
+// mirrors create_return.php's lot-based allocation pattern (same picker,
+// same source_movement_id traceability, same dry_run/save split), on
+// purpose, for consistency — but is a SEPARATE endpoint (user decision,
+// 22 Sep 2026) rather than a mode flag on create_return.php, so the two
+// stay easy to reason about independently.
 //
 // Two modes, SAME code path so the preview can never differ from what is saved:
 //   dry_run = 1 (default) : computes everything, writes nothing, returns the
-//                           return for the confirm window.
+//                           adjustment for the confirm window.
 //   dry_run = 0           : writes it all in ONE DB transaction.
 //
 // POST:
-//   customer_id, return_date (Y-m-d), driver_name, police_number,
+//   customer_id, adjustment_date (Y-m-d), driver_name, police_number,
 //   items JSON  [ {"logistic_id": 10, "allocations": [
-//                    {"source_movement_id": 55, "qty": 2, "price": 170000,
-//                     "restock_bucket": "normal"},
-//                    {"source_movement_id": 61, "qty": 3, "price": 165000,
-//                     "restock_bucket": "defective"}
+//                    {"source_movement_id": 55, "qty": 2,
+//                     "old_price": 170000, "new_price": 150000},
+//                    ...
 //                  ]}, ... ]
 //   dry_run    "1" | "0"
 //
-// Revised 22 Sep 2026 (defective stock, "Kendala #1 & #2"): each allocation
-// now also carries restock_bucket ("normal" default, or "defective") — the
-// bucket the returned qty goes BACK into. "normal" behaves exactly as
-// before (remaining_primary_qty). "defective" adds to defective_qty instead
-// (goods came back damaged/problematic) and never touches
-// remaining_primary_qty. Independently of restock_bucket: if the SOURCE
-// pickup this allocation returns against was itself taken from defective
-// stock (its own stock_source='defective'), defective_taken_qty is also
-// decremented — that balance always reflects "how much defective stock is
-// currently with customers", regardless of where the returned units end up.
-// The stock_source column on the inserted 'in' row records restock_bucket,
-// reusing the same column 'out' rows use for the bucket they depleted.
+// Each allocation is validated against remaining_adjustable of its source
+// pickup (see list_return_price_options.php) — qty - already returned -
+// already adjusted against that specific pickup. A unit already physically
+// returned, or already adjusted once, cannot be adjusted again. Unlike
+// create_return.php, this is NOT limited by defective_qty/remaining stock —
+// it never checks stock at all, only how much of that pickup is still
+// eligible to be adjusted.
 //
-// Revised 22 Sep 2026 (lot-based returns — see PROJECT_NOTES.md, "Redesign
-// Returns: alokasi per-lot"): a returned qty is no longer validated/priced
-// against a customer/product-wide aggregate. Every unit returned must be
-// allocated against a SPECIFIC pickup (a movement_type='out' row — its
-// "source movement"), and each allocation gets its own price (still
-// defaulted client-side to that pickup's price, but sent here already
-// resolved). One product line commonly carries several allocations when the
-// return is split across pickups (e.g. 2 units from one day, 3 from
-// another) — each allocation becomes its OWN logistic_movements ('in') row,
-// stamped with source_movement_id, so the split stays traceable forever.
+// Effects when saved (all or nothing):
+//   - logistic_movements: 1 row per allocation, movement_type='price_adjustment',
+//     source_movement_id set, qty = qty adjusted (informational — never
+//     changes any stock column), price = new_price, total_price = the
+//     DISCOUNT amount i.e. (old_price - new_price) * qty (positive number;
+//     sign is applied when touching invoice/customer totals, same
+//     convention as create_return.php's grand total).
+//   - invoices: reuse the customer's OPEN invoice if one exists (its
+//     total_amount is reduced by the discount, may go negative); only when
+//     none is open is a new one created, "/adj/" instead of "/inv/" or
+//     "/ret/" in its number so it stays obviously a price-adjustment-only
+//     invoice, negative total_amount from the start.
+//   - customers.total_outflow (+ discount)   — same accumulator returns use,
+//     so net receivable (total_inflow - total_outflow) stays correct.
+//   - customers.total_price_adjustments (+ discount) — separate accumulator,
+//     purely for reporting: how much was given away as price adjustments,
+//     as opposed to physical returns.
+//   - Stock (remaining_primary_qty, defective_qty, total_taken_qty,
+//     defective_taken_qty): UNTOUCHED. The whole point of this endpoint.
 //
 // Response contract: { ok, message, ... }
-//   ok: true  -> ret { customer, return_date, driver_name, police_number,
+//   ok: true  -> adj { customer, adjustment_date, driver_name, police_number,
 //                      invoice{id,number,total_before,total_after},
 //                      items[]: { logistic_id, product_name, unit_label, qty,
-//                        total_price, remaining_before, remaining_after,
-//                        allocations[]: { source_movement_id,
-//                        source_movement_date, qty, price, total_price } },
-//                      grand_total, dry_run, movement_ids? }
+//                        discount_total, allocations[]: { source_movement_id,
+//                        source_movement_date, qty, old_price, new_price,
+//                        discount_total } },
+//                      grand_discount, dry_run, movement_ids? }
 //   ok: false -> message, and for a shortage also
-//                code: "not_returnable", items: [ {logistic_id, product_name,
+//                code: "not_adjustable", items: [ {logistic_id, product_name,
 //                source_movement_id, movement_date, available, requested,
 //                reason} ]
 
@@ -81,7 +77,7 @@ if (session_status() === PHP_SESSION_NONE) {
 }
 
 // A business-rule failure: rolled back and reported to the browser as-is.
-class AosReturnError extends Exception
+class AosPriceAdjustmentError extends Exception
 {
     public $payload;
 
@@ -97,7 +93,7 @@ function aos_json(array $payload): void
 {
     $noise = ob_get_clean();
     if ($noise !== false && trim($noise) !== '') {
-        error_log('create_return.php stray output: ' . $noise);
+        error_log('create_price_adjustment.php stray output: ' . $noise);
     }
     header('Content-Type: application/json; charset=utf-8');
     $json = json_encode($payload, JSON_INVALID_UTF8_SUBSTITUTE);
@@ -170,11 +166,10 @@ function customer_initials(string $name): string
     return $out === '' ? 'X' : $out;
 }
 
-// Same [n] scheme as create_order.php's invoice_initials_index(), but scans
-// ALL THREE invoice kinds that live in the same `invoices` table — "/inv/"
-// (orders), "/ret/" (returns), and "/adj/" (price adjustments, added
-// 22 Sep 2026) — since they must never collide for a customer sharing
-// initials with someone else, whichever kind of invoice each has first.
+// Same [n] scheme as create_order.php / create_return.php's
+// invoice_initials_index() — scans ALL THREE invoice kinds ("/inv/",
+// "/ret/", "/adj/") since they share the same `invoices` table and must
+// never collide for a customer sharing initials with someone else.
 function invoice_initials_index(mysqli $conn, int $customerId, string $initials): int
 {
     $re = '#/(?:inv|ret|adj)/laj-([^/]+)-(\d+)/#u';
@@ -207,19 +202,19 @@ function invoice_initials_index(mysqli $conn, int $customerId, string $initials)
 }
 
 // ---------- Read + validate input ----------
-$customerId = (int) post_str('customer_id');
-$returnDate = post_str('return_date');
-$driver     = mb_strtoupper(post_str('driver_name'));
-$police     = mb_strtoupper(post_str('police_number'));
-$dryRun     = post_str('dry_run') !== '0'; // anything except an explicit "0" is a preview
+$customerId      = (int) post_str('customer_id');
+$adjustmentDate  = post_str('adjustment_date');
+$driver          = mb_strtoupper(post_str('driver_name'));
+$police          = mb_strtoupper(post_str('police_number'));
+$dryRun          = post_str('dry_run') !== '0'; // anything except an explicit "0" is a preview
 
 if ($customerId <= 0) {
     aos_fail('Customer is missing.');
 }
 
-$dateObj = DateTime::createFromFormat('Y-m-d', $returnDate);
-if (!$dateObj || $dateObj->format('Y-m-d') !== $returnDate) {
-    aos_fail('Return date is not valid.');
+$dateObj = DateTime::createFromFormat('Y-m-d', $adjustmentDate);
+if (!$dateObj || $dateObj->format('Y-m-d') !== $adjustmentDate) {
+    aos_fail('Adjustment date is not valid.');
 }
 $periodMonth = (int) $dateObj->format('n');
 $periodYear  = (int) $dateObj->format('Y');
@@ -233,17 +228,14 @@ if (mb_strlen($police) > 30) {
 
 $rawItems = json_decode(post_str('items'), true);
 if (!is_array($rawItems) || count($rawItems) === 0) {
-    aos_fail('The return has no products.');
+    aos_fail('The price adjustment has no products.');
 }
 if (count($rawItems) > 50) {
-    aos_fail('A return can have at most 50 product lines.');
+    aos_fail('A price adjustment can have at most 50 product lines.');
 }
 
-// Allocations are kept as a FLAT list (never merged), because two
-// allocations for the same product routinely carry two different prices —
-// that is the whole point of lot-based returns. Requested qty is summed PER
-// SOURCE MOVEMENT (for the per-pickup remaining check) and PER PRODUCT (for
-// the product-level lines built after the checks pass).
+// Flat list, same reasoning as create_return.php: two allocations for the
+// same product routinely carry different old/new prices.
 $allocations   = [];
 $qtyByLogistic = [];
 foreach ($rawItems as $it) {
@@ -253,49 +245,54 @@ foreach ($rawItems as $it) {
         aos_fail('Every product line needs a product and at least one pickup allocation.');
     }
     foreach ($allocs as $al) {
-        $smid  = isset($al['source_movement_id']) ? (int) $al['source_movement_id'] : 0;
-        $qty   = isset($al['qty']) ? clean_number((string) $al['qty']) : null;
-        $price = isset($al['price']) ? clean_number((string) $al['price']) : null;
+        $smid     = isset($al['source_movement_id']) ? (int) $al['source_movement_id'] : 0;
+        $qty      = isset($al['qty']) ? clean_number((string) $al['qty']) : null;
+        $oldPrice = isset($al['old_price']) ? clean_number((string) $al['old_price']) : null;
+        $newPrice = isset($al['new_price']) ? clean_number((string) $al['new_price']) : null;
         if ($smid <= 0 || $qty === null || $qty <= 0 || $qty > 99999.99) {
             aos_fail('Every allocated line needs a source pickup and a quantity above zero.');
         }
-        if ($price === null || $price <= 0 || $price > 9999999999999.99) {
-            aos_fail('Every allocated line needs a price above zero.');
+        if ($oldPrice === null || $oldPrice <= 0 || $oldPrice > 9999999999999.99) {
+            aos_fail('Every allocated line needs the original price.');
         }
-        $restockBucket = (isset($al['restock_bucket']) && $al['restock_bucket'] === 'defective') ? 'defective' : 'normal';
-        $qty   = round($qty, 2);
-        $price = round($price, 2);
+        if ($newPrice === null || $newPrice < 0 || $newPrice > 9999999999999.99) {
+            aos_fail('Every allocated line needs a new price of zero or above.');
+        }
+        if ($newPrice >= $oldPrice) {
+            aos_fail('The new price must be lower than the original price — that is the point of an adjustment.');
+        }
+        $qty      = round($qty, 2);
+        $oldPrice = round($oldPrice, 2);
+        $newPrice = round($newPrice, 2);
         $allocations[] = [
             'logistic_id'        => $lid,
             'source_movement_id' => $smid,
             'qty'                => $qty,
-            'price'              => $price,
-            'restock_bucket'     => $restockBucket,
+            'old_price'          => $oldPrice,
+            'new_price'          => $newPrice,
         ];
         $qtyByLogistic[$lid] = round(($qtyByLogistic[$lid] ?? 0) + $qty, 2);
     }
 }
 if (count($allocations) > 200) {
-    aos_fail('A return can have at most 200 allocated lines.');
+    aos_fail('A price adjustment can have at most 200 allocated lines.');
 }
 
 $userId = (int) $_SESSION['user_id'];
 
-// Make mysqli throw on failure (default only from PHP 8.1) so the catch below always fires.
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
 try {
     $lisani_conn->begin_transaction();
 
-    // ---- Customer (locked: serializes returns/orders of the same customer,
-    //      keeping invoice numbering and total_outflow consistent) ----
+    // ---- Customer (locked — same reasoning as create_return.php) ----
     $st = $lisani_conn->prepare('SELECT id, customer_name FROM customers WHERE id = ? FOR UPDATE');
     $st->bind_param('i', $customerId);
     $st->execute();
     $customer = $st->get_result()->fetch_assoc();
     $st->close();
     if (!$customer) {
-        throw new AosReturnError('Customer was not found.');
+        throw new AosPriceAdjustmentError('Customer was not found.');
     }
 
     // ---- Products (locked, always in id order) ----
@@ -303,7 +300,7 @@ try {
     sort($ids);
     $marks = implode(',', array_fill(0, count($ids), '?'));
     $st = $lisani_conn->prepare(
-        'SELECT l.id, l.remaining_primary_qty, l.primary_unit_label, a.activity_name
+        'SELECT l.id, l.primary_unit_label, a.activity_name
          FROM logistics l
          JOIN activities a ON a.id = l.activity_id
          WHERE l.id IN (' . $marks . ')
@@ -321,20 +318,16 @@ try {
 
     foreach ($ids as $lid) {
         if (!isset($logistics[$lid])) {
-            throw new AosReturnError('A product in this return was not found.');
+            throw new AosPriceAdjustmentError('A product in this price adjustment was not found.');
         }
     }
 
-    // ---- Lock every source movement this return allocates against, and
-    //      re-verify it belongs to (this customer, the product the client
-    //      claims) and is itself a pickup ('out'). Locked against concurrent
-    //      returns of the same customer via the customer row lock above —
-    //      same pattern create_order.php relies on for invoice numbering. ----
+    // ---- Lock every source movement this adjustment allocates against ----
     $smIds = array_values(array_unique(array_column($allocations, 'source_movement_id')));
     sort($smIds);
     $smMarks = implode(',', array_fill(0, count($smIds), '?'));
     $st = $lisani_conn->prepare(
-        "SELECT id, logistic_id, movement_date, qty_primary_package, stock_source
+        "SELECT id, logistic_id, movement_date, qty_primary_package
          FROM logistic_movements
          WHERE id IN ($smMarks) AND customer_id = ? AND movement_type = 'out'
          FOR UPDATE"
@@ -352,35 +345,33 @@ try {
 
     foreach ($smIds as $smid) {
         if (!isset($sourceMovements[$smid])) {
-            // Not a pickup of this customer at all — stale UI or tampering,
-            // not a normal "not enough stock" situation.
-            throw new AosReturnError('One of the selected pickups could not be found. Please reload and try again.');
+            throw new AosPriceAdjustmentError('One of the selected pickups could not be found. Please reload and try again.');
         }
     }
     foreach ($allocations as $al) {
         if ((int) $sourceMovements[$al['source_movement_id']]['logistic_id'] !== $al['logistic_id']) {
-            throw new AosReturnError('A selected pickup does not match its product. Please reload and try again.');
+            throw new AosPriceAdjustmentError('A selected pickup does not match its product. Please reload and try again.');
         }
     }
 
-    // ---- Already-returned qty per source movement, so far. ----
+    // ---- Already returned + already adjusted qty per source movement, so
+    //      far — both reduce how much of that pickup is still adjustable
+    //      (see list_return_price_options.php's remaining_adjustable). ----
     $st = $lisani_conn->prepare(
-        "SELECT source_movement_id, COALESCE(SUM(qty_primary_package), 0) AS returned
+        "SELECT source_movement_id, COALESCE(SUM(qty_primary_package), 0) AS consumed
          FROM logistic_movements
-         WHERE source_movement_id IN ($smMarks) AND movement_type = 'in'
+         WHERE source_movement_id IN ($smMarks) AND movement_type IN ('in', 'price_adjustment')
          GROUP BY source_movement_id"
     );
     $st->bind_param(str_repeat('i', count($smIds)), ...$smIds);
     $st->execute();
-    $alreadyReturned = [];
+    $alreadyConsumed = [];
     $res = $st->get_result();
     while ($row = $res->fetch_assoc()) {
-        $alreadyReturned[(int) $row['source_movement_id']] = (float) $row['returned'];
+        $alreadyConsumed[(int) $row['source_movement_id']] = (float) $row['consumed'];
     }
     $st->close();
 
-    // ---- Requested qty per source movement (an allocation could in theory
-    //      repeat a source id if the client sent two lines for it) ----
     $requestedBySource = [];
     foreach ($allocations as $al) {
         $smid = $al['source_movement_id'];
@@ -391,7 +382,7 @@ try {
     foreach ($requestedBySource as $smid => $requested) {
         $sm        = $sourceMovements[$smid];
         $lid       = (int) $sm['logistic_id'];
-        $remaining = round((float) $sm['qty_primary_package'] - ($alreadyReturned[$smid] ?? 0), 2);
+        $remaining = round((float) $sm['qty_primary_package'] - ($alreadyConsumed[$smid] ?? 0), 2);
         if ($requested > $remaining + 0.0001) {
             $shortages[] = [
                 'logistic_id'        => $lid,
@@ -402,63 +393,52 @@ try {
                 'requested'          => $requested,
                 'reason'             => 'Only ' . fmt_qty($remaining) . ' ' . $logistics[$lid]['primary_unit_label']
                     . ' of ' . $logistics[$lid]['activity_name'] . ' from the pickup on ' . $sm['movement_date']
-                    . ' is still available to return (requested ' . fmt_qty($requested) . ').',
+                    . ' is still eligible for a price adjustment (already returned or adjusted, requested '
+                    . fmt_qty($requested) . ').',
             ];
         }
     }
 
     if ($shortages) {
-        throw new AosReturnError(
-            'Some products cannot be returned as entered.',
-            ['code' => 'not_returnable', 'items' => $shortages]
+        throw new AosPriceAdjustmentError(
+            'Some products cannot be adjusted as entered.',
+            ['code' => 'not_adjustable', 'items' => $shortages]
         );
     }
 
-    // ---- Build product-level lines (grouping allocations back by product,
-    //      for the invoice total and the confirm-window display), + grand
-    //      total (price comes straight from the client; already validated
-    //      > 0 above, per allocation) ----
+    // ---- Build product-level lines + grand discount ----
     $byLid = [];
     $grand = 0.0;
     foreach ($allocations as $al) {
-        $lid   = $al['logistic_id'];
-        $total = round($al['qty'] * $al['price'], 2);
-        $grand = round($grand + $total, 2);
+        $lid      = $al['logistic_id'];
+        $discount = round(($al['old_price'] - $al['new_price']) * $al['qty'], 2);
+        $grand    = round($grand + $discount, 2);
 
         if (!isset($byLid[$lid])) {
             $byLid[$lid] = [
-                'logistic_id'  => $lid,
-                'product_name' => $logistics[$lid]['activity_name'],
-                'unit_label'   => $logistics[$lid]['primary_unit_label'],
-                'qty'          => 0.0,
-                'total_price'  => 0.0,
-                'allocations'  => [],
+                'logistic_id'    => $lid,
+                'product_name'   => $logistics[$lid]['activity_name'],
+                'unit_label'     => $logistics[$lid]['primary_unit_label'],
+                'qty'            => 0.0,
+                'discount_total' => 0.0,
+                'allocations'    => [],
             ];
         }
-        $byLid[$lid]['qty']         = round($byLid[$lid]['qty'] + $al['qty'], 2);
-        $byLid[$lid]['total_price'] = round($byLid[$lid]['total_price'] + $total, 2);
+        $byLid[$lid]['qty']            = round($byLid[$lid]['qty'] + $al['qty'], 2);
+        $byLid[$lid]['discount_total'] = round($byLid[$lid]['discount_total'] + $discount, 2);
         $byLid[$lid]['allocations'][] = [
             'source_movement_id'   => $al['source_movement_id'],
             'source_movement_date' => $sourceMovements[$al['source_movement_id']]['movement_date'],
             'qty'                  => $al['qty'],
-            'price'                => $al['price'],
-            'total_price'          => $total,
-            'restock_bucket'       => $al['restock_bucket'],
+            'old_price'            => $al['old_price'],
+            'new_price'            => $al['new_price'],
+            'discount_total'       => $discount,
         ];
     }
+    $outLines = array_values($byLid);
 
-    $outLines = [];
-    foreach ($byLid as $lid => $row) {
-        $remainingBefore    = (float) ($logistics[$lid]['remaining_primary_qty'] ?? 0);
-        $row['remaining_before'] = $remainingBefore;
-        $row['remaining_after']  = round($remainingBefore + $row['qty'], 2);
-        $outLines[] = $row;
-    }
-
-    // ---- Invoice: reuse the customer's open invoice if one exists (same
-    //      rule as create_order.php); only create a new one, with a
-    //      NEGATIVE total, when the customer has none open. Never creates a
-    //      second open invoice alongside an existing one. ----
+    // ---- Invoice: reuse the customer's open invoice if one exists, same
+    //      rule as create_order.php / create_return.php ----
     $st = $lisani_conn->prepare(
         "SELECT id, invoice_number, total_amount
          FROM invoices
@@ -497,7 +477,7 @@ try {
 
         $initials      = customer_initials($customer['customer_name']);
         $initialsIndex = invoice_initials_index($lisani_conn, $customerId, $initials);
-        $invoiceNumber = sprintf('%03d', $invoiceSeq) . '/ret/laj-' . $initials . '-' . $initialsIndex
+        $invoiceNumber = sprintf('%03d', $invoiceSeq) . '/adj/laj-' . $initials . '-' . $initialsIndex
             . '/' . roman_month($periodMonth) . '/' . $periodYear;
 
         $chk = $lisani_conn->prepare('SELECT 1 FROM invoices WHERE invoice_number = ? LIMIT 1');
@@ -506,34 +486,34 @@ try {
         $taken = $chk->get_result()->fetch_assoc() !== null;
         $chk->close();
         if ($taken) {
-            throw new AosReturnError('Could not create a new invoice number.');
+            throw new AosPriceAdjustmentError('Could not create a new invoice number.');
         }
         if ($invoiceSeq > 65535) {
-            throw new AosReturnError('Could not create a new invoice number.');
+            throw new AosPriceAdjustmentError('Could not create a new invoice number.');
         }
     }
 
-    $ret = [
-        'dry_run'       => $dryRun,
-        'customer'      => ['id' => $customerId, 'name' => $customer['customer_name']],
-        'return_date'   => $returnDate,
-        'driver_name'   => $driver !== '' ? $driver : null,
-        'police_number' => $police !== '' ? $police : null,
-        'invoice'       => [
+    $adj = [
+        'dry_run'         => $dryRun,
+        'customer'        => ['id' => $customerId, 'name' => $customer['customer_name']],
+        'adjustment_date' => $adjustmentDate,
+        'driver_name'     => $driver !== '' ? $driver : null,
+        'police_number'   => $police !== '' ? $police : null,
+        'invoice'         => [
             'id'           => $invoiceId,
             'number'       => $invoiceNumber,
             'is_new'       => $invoiceIsNew,
             'total_before' => $totalBefore,
             'total_after'  => round($totalBefore - $grand, 2),
         ],
-        'items'         => $outLines,
-        'grand_total'   => $grand,
+        'items'           => $outLines,
+        'grand_discount'  => $grand,
     ];
 
     // ---- Preview only: nothing was written, release the locks ----
     if ($dryRun) {
         $lisani_conn->rollback();
-        aos_json(['ok' => true, 'message' => 'Return is ready to be saved.', 'ret' => $ret]);
+        aos_json(['ok' => true, 'message' => 'Price adjustment is ready to be saved.', 'adj' => $adj]);
     }
 
     // ================= WRITES =================
@@ -553,69 +533,42 @@ try {
         $invoiceId = (int) $lisani_conn->insert_id;
         $st->close();
     } else {
-        $negGrand = money(0 - $grand); // subtract: total_amount = total_amount + (-grand)
+        $negGrand = money(0 - $grand);
         $st = $lisani_conn->prepare('UPDATE invoices SET total_amount = total_amount + ? WHERE id = ?');
         $st->bind_param('si', $negGrand, $invoiceId);
         $st->execute();
         $st->close();
     }
 
-    // One row per ALLOCATION now (not per product) — that's what makes each
-    // split traceable back to the exact pickup it came from. stock_source on
-    // this 'in' row records restock_bucket (which bucket it was restocked
-    // into), reusing the same column 'out' rows use for the bucket depleted.
+    // One row per ALLOCATION, movement_type='price_adjustment'. Stock is
+    // NEVER touched here — no logistics UPDATE anywhere in this file.
     $movIns = $lisani_conn->prepare(
         "INSERT INTO logistic_movements
-           (logistic_id, customer_id, movement_type, stock_source, movement_date, customer_name,
+           (logistic_id, customer_id, movement_type, movement_date, customer_name,
             driver_name, police_number, qty_primary_package, price, total_price,
             invoice_id, created_by, source_movement_id)
-         VALUES (?, ?, 'in', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+         VALUES (?, ?, 'price_adjustment', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     );
 
     $movementIds = [];
     foreach ($allocations as $al) {
-        $lid     = $al['logistic_id'];
-        $q       = money($al['qty']);
-        $p       = money($al['price']);
-        $t       = money(round($al['qty'] * $al['price'], 2));
-        $smid    = $al['source_movement_id'];
-        $restock = $al['restock_bucket']; // 'normal' | 'defective' — where this return is restocked TO
-        $fromDefective = $sourceMovements[$smid]['stock_source'] === 'defective'; // where the pickup was taken FROM
-
+        $lid  = $al['logistic_id'];
+        $q    = money($al['qty']);
+        $p    = money($al['new_price']);
+        $t    = money(round(($al['old_price'] - $al['new_price']) * $al['qty'], 2));
+        $smid = $al['source_movement_id'];
         $movIns->bind_param(
-            'iissssssssiii',
-            $lid, $customerId, $restock, $returnDate, $customer['customer_name'],
+            'iisssssssiii',
+            $lid, $customerId, $adjustmentDate, $customer['customer_name'],
             $driverDb, $policeDb, $q, $p, $t, $invoiceId, $userId, $smid
         );
         $movIns->execute();
         $movementIds[] = (int) $lisani_conn->insert_id;
-
-        // Destination bucket (restock_bucket) and the defective_taken_qty
-        // drawdown (fromDefective) are independent of each other, so build
-        // the UPDATE per allocation instead of assuming they always match —
-        // e.g. a unit originally taken from defective stock can still come
-        // back "Good" and restock to remaining_primary_qty, and vice versa.
-        $destCol = $restock === 'defective' ? 'defective_qty' : 'remaining_primary_qty';
-        $sql = "UPDATE logistics SET $destCol = $destCol + ?, total_taken_qty = GREATEST(total_taken_qty - ?, 0)";
-        $types  = 'ss';
-        $params = [$q, $q];
-        if ($fromDefective) {
-            $sql .= ', defective_taken_qty = GREATEST(defective_taken_qty - ?, 0)';
-            $types .= 's';
-            $params[] = $q;
-        }
-        $sql .= ' WHERE id = ?';
-        $types .= 'i';
-        $params[] = $lid;
-        $logUpd = $lisani_conn->prepare($sql);
-        $logUpd->bind_param($types, ...$params);
-        $logUpd->execute();
-        $logUpd->close();
     }
     $movIns->close();
 
-    // batch_id groups this return's rows into one card, same convention as
-    // create_order.php (lowest movement id of the batch).
+    // batch_id groups this adjustment's rows into one card, same convention
+    // as create_order.php / create_return.php.
     if ($movementIds) {
         $batchId = min($movementIds);
         $stampMarks = implode(',', array_fill(0, count($movementIds), '?'));
@@ -628,22 +581,30 @@ try {
     }
 
     $g = money($grand);
-    $st = $lisani_conn->prepare('UPDATE customers SET total_outflow = total_outflow + ? WHERE id = ?');
-    $st->bind_param('si', $g, $customerId);
+    // total_outflow: same accumulator physical returns use, so net
+    // receivable (total_inflow - total_outflow) stays correct.
+    // total_price_adjustments: separate, purely for reporting.
+    $st = $lisani_conn->prepare(
+        'UPDATE customers
+         SET total_outflow = total_outflow + ?,
+             total_price_adjustments = total_price_adjustments + ?
+         WHERE id = ?'
+    );
+    $st->bind_param('ssi', $g, $g, $customerId);
     $st->execute();
     $st->close();
 
     $lisani_conn->commit();
 
-    $ret['invoice']['id'] = $invoiceId;
-    $ret['movement_ids']  = $movementIds;
+    $adj['invoice']['id'] = $invoiceId;
+    $adj['movement_ids']  = $movementIds;
 
-    aos_json(['ok' => true, 'message' => 'Return saved.', 'ret' => $ret]);
-} catch (AosReturnError $e) {
+    aos_json(['ok' => true, 'message' => 'Price adjustment saved.', 'adj' => $adj]);
+} catch (AosPriceAdjustmentError $e) {
     $lisani_conn->rollback();
     aos_json($e->payload);
 } catch (Throwable $e) {
     $lisani_conn->rollback();
-    error_log('create_return.php: ' . $e->getMessage());
-    aos_fail('Failed to save the return.');
+    error_log('create_price_adjustment.php: ' . $e->getMessage());
+    aos_fail('Failed to save the price adjustment.');
 }
