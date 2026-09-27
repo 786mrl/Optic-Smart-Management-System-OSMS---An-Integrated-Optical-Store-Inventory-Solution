@@ -296,6 +296,44 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
         flex-basis: 100%;
       }
     }
+    /* Defective Stock row (Logistic List tab) — clickable/"push"able row
+       that expands into a return history list, same visual language as the
+       accordion-row it sits next to. */
+    .accordion-row-clickable { cursor: pointer; }
+    .accordion-row-value-wrap {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+    }
+    .accordion-row-expandable .log-mov-chevron {
+      flex-shrink: 0;
+      transition: transform 0.15s ease;
+    }
+    .accordion-row-expandable.open .log-mov-chevron { transform: rotate(180deg); }
+    .defective-history {
+      display: none;
+      padding: var(--space-2) 0 var(--space-2) var(--space-3);
+      border-bottom: 1px dashed rgba(255,255,255,0.06);
+    }
+    .accordion-row-expandable.open .defective-history { display: block; }
+    .defective-history-empty {
+      font-size: var(--text-xs);
+      color: var(--text-muted);
+    }
+    .defective-history-line {
+      display: flex;
+      justify-content: space-between;
+      gap: var(--space-2);
+      font-size: var(--text-xs);
+      padding: 2px 0;
+    }
+    .defective-history-who { min-width: 0; word-break: break-word; }
+    .defective-history-meta { flex-shrink: 0; color: var(--text-muted); text-align: right; }
+
+    @media (max-width: 640px) {
+      .defective-history-line { flex-direction: column; }
+      .defective-history-meta { text-align: left; }
+    }
   </style>
 
   <div class="tab-group" id="logTabGroup">
@@ -623,6 +661,41 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
   </div>
 </div>
 
+<!-- Defective Stock return history: opened by clicking the "Defective
+     Stock" row inside a Logistic List accordion item. Read-only — just
+     shows who returned the goods and when, no actions. -->
+<div class="modal-overlay" id="logDefectiveHistoryOverlay" style="display:none;">
+  <div class="modal">
+    <div class="modal-header"><div class="modal-title">Defective Stock — Return History</div></div>
+    <div class="modal-body">
+      <div class="accordion-row" style="padding-bottom:var(--space-3); margin-bottom:var(--space-2); border-bottom:1px dashed rgba(255,255,255,0.06);">
+        <span class="accordion-row-label">Defective Stock</span>
+        <span class="accordion-row-value" id="logDefectiveHistoryQty">-</span>
+      </div>
+      <div id="logDefectiveHistoryList"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" id="btnLogDefectiveHistoryClose">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Remaining Primary Qty (normal stock) ledger: opened by clicking the
+     "Remaining Primary Qty" row. Running-balance view — initial stock,
+     then (for every normal return) how much was still out right before
+     that return plus the return itself, then the current balance. -->
+<div class="modal-overlay" id="logNormalLedgerOverlay" style="display:none;">
+  <div class="modal">
+    <div class="modal-header"><div class="modal-title">Remaining Primary Qty — History</div></div>
+    <div class="modal-body">
+      <div id="logNormalLedgerList"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" id="btnLogNormalLedgerClose">Close</button>
+    </div>
+  </div>
+</div>
+
 </div>
 
 <script>
@@ -760,9 +833,169 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
     return row;
   }
 
+  // Same look as accordionRow(), but clickable ("push") to open a fly
+  // window (modal) with the return history — who returned it and when —
+  // instead of expanding inline. Kept as its own small row so future
+  // "click to see more" rows can reuse the same pattern.
+  function accordionRowClickable(label, value, onClick) {
+    var row = document.createElement('div');
+    row.className = 'accordion-row accordion-row-clickable';
+    row.setAttribute('tabindex', '0');
+
+    var l = document.createElement('span');
+    l.className = 'accordion-row-label';
+    l.textContent = label;
+
+    var right = document.createElement('span');
+    right.className = 'accordion-row-value-wrap';
+    var v = document.createElement('span');
+    v.className = 'accordion-row-value';
+    v.textContent = value;
+    var chevron = document.createElement('i');
+    chevron.className = 'ti ti-chevron-right log-mov-chevron';
+    right.appendChild(v);
+    right.appendChild(chevron);
+
+    row.appendChild(l);
+    row.appendChild(right);
+
+    row.addEventListener('click', function (e) { e.stopPropagation(); onClick(); });
+    row.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onClick(); }
+    });
+
+    return row;
+  }
+
+  // ---------- Defective Stock fly window (return history) ----------
+  var logDefectiveHistoryOverlay = document.getElementById('logDefectiveHistoryOverlay');
+  var logDefectiveHistoryQty     = document.getElementById('logDefectiveHistoryQty');
+  var logDefectiveHistoryList    = document.getElementById('logDefectiveHistoryList');
+  var btnLogDefectiveHistoryClose = document.getElementById('btnLogDefectiveHistoryClose');
+
+  function openDefectiveHistory(l) {
+    logDefectiveHistoryQty.textContent = fmtNum(l.defective_qty) + ' ' + (l.primary_unit_label || '');
+    logDefectiveHistoryList.innerHTML = '';
+
+    var historyItems = l.defective_history || [];
+    if (!historyItems.length) {
+      var empty = document.createElement('div');
+      empty.className = 'defective-history-empty';
+      empty.textContent = 'No return history yet.';
+      logDefectiveHistoryList.appendChild(empty);
+    } else {
+      historyItems.forEach(function (h) {
+        var line = document.createElement('div');
+        line.className = 'defective-history-line';
+        var who = document.createElement('span');
+        who.className = 'defective-history-who';
+        who.textContent = h.customer_name || 'Unknown customer';
+        var meta = document.createElement('span');
+        meta.className = 'defective-history-meta';
+        meta.textContent = fmtNum(h.qty) + ' ' + (l.primary_unit_label || '') + ' \u00b7 ' + (h.movement_date || '-');
+        line.appendChild(who);
+        line.appendChild(meta);
+        logDefectiveHistoryList.appendChild(line);
+      });
+    }
+
+    show(logDefectiveHistoryOverlay);
+  }
+
+  btnLogDefectiveHistoryClose.addEventListener('click', function () { hide(logDefectiveHistoryOverlay); });
+  logDefectiveHistoryOverlay.addEventListener('click', function (e) {
+    if (e.target === logDefectiveHistoryOverlay) hide(logDefectiveHistoryOverlay);
+  });
+
+  // ---------- Remaining Primary Qty fly window (normal-stock ledger) ----------
+  var logNormalLedgerOverlay = document.getElementById('logNormalLedgerOverlay');
+  var logNormalLedgerList    = document.getElementById('logNormalLedgerList');
+  var btnLogNormalLedgerClose = document.getElementById('btnLogNormalLedgerClose');
+
+  // "2026-09-27" + "2026-09-27 16:45:00" -> "2026-09-27, 16:45" (falls back
+  // gracefully if either half is missing — e.g. the very first "Initial
+  // Stock" step never has a time).
+  function fmtLedgerWhen(date, time) {
+    if (!date) return '-';
+    var hhmm = logMovFormatTime(time);
+    return hhmm ? (date + ', ' + hhmm) : date;
+  }
+
+  function ledgerLine(label, badgeClass, badgeText, qtyText, whenText, subText) {
+    var line = document.createElement('div');
+    line.className = 'defective-history-line ledger-line';
+
+    var left = document.createElement('span');
+    left.className = 'defective-history-who';
+    var lbl = document.createElement('div');
+    lbl.textContent = label;
+    left.appendChild(lbl);
+    if (badgeText) {
+      var badge = document.createElement('span');
+      badge.className = 'badge ' + badgeClass;
+      badge.style.marginTop = '2px';
+      badge.style.display = 'inline-block';
+      badge.textContent = badgeText;
+      left.appendChild(badge);
+    }
+    if (subText) {
+      var sub = document.createElement('div');
+      sub.style.cssText = 'font-size:var(--text-xs); color:var(--text-muted); margin-top:2px;';
+      sub.textContent = subText;
+      left.appendChild(sub);
+    }
+
+    var right = document.createElement('span');
+    right.className = 'defective-history-meta';
+    var qtyEl = document.createElement('div');
+    qtyEl.style.fontWeight = '600';
+    qtyEl.textContent = qtyText;
+    right.appendChild(qtyEl);
+    var whenEl = document.createElement('div');
+    whenEl.textContent = whenText;
+    right.appendChild(whenEl);
+    right.appendChild(document.createElement('div'));
+
+    line.appendChild(left);
+    line.appendChild(right);
+    return line;
+  }
+
+  function openNormalLedger(l) {
+    logNormalLedgerList.innerHTML = '';
+    var unit = l.primary_unit_label || '';
+    var steps = l.normal_stock_ledger || [];
+
+    steps.forEach(function (s) {
+      var qtyText = fmtNum(s.qty) + ' ' + unit;
+      var whenText = fmtLedgerWhen(s.date, s.time);
+      var el;
+      if (s.type === 'initial') {
+        el = ledgerLine('Initial Stock', null, null, qtyText, whenText);
+      } else if (s.type === 'taken_so_far') {
+        el = ledgerLine('Taken (outstanding, before the return below)', 'badge-warning', null, qtyText, whenText);
+      } else if (s.type === 'return') {
+        el = ledgerLine(s.customer_name || 'Unknown customer', 'badge-success', 'RETURN \u00b7 NORMAL', qtyText, whenText);
+      } else { // 'final'
+        el = ledgerLine('Current Stock', null, null, qtyText, whenText);
+        el.style.borderBottom = 'none';
+        el.style.fontWeight = '600';
+      }
+      logNormalLedgerList.appendChild(el);
+    });
+
+    show(logNormalLedgerOverlay);
+  }
+
+  btnLogNormalLedgerClose.addEventListener('click', function () { hide(logNormalLedgerOverlay); });
+  logNormalLedgerOverlay.addEventListener('click', function (e) {
+    if (e.target === logNormalLedgerOverlay) hide(logNormalLedgerOverlay);
+  });
+
   // ---------- Tab 1: Logistic List ----------
   var logPreviewList  = document.getElementById('logPreviewList');
   var logPreviewEmpty = document.getElementById('logPreviewEmpty');
+  var logPreviewEmptyDefaultHtml = logPreviewEmpty.innerHTML; // saved once so error states can be reverted later
 
   function fmtNum(v) {
     if (v === null || v === undefined || v === '') return '-';
@@ -773,6 +1006,7 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
 
   function renderLogisticList(list) {
     logPreviewList.innerHTML = '';
+    logPreviewEmpty.innerHTML = logPreviewEmptyDefaultHtml; // restore default text in case a previous load failed and overwrote it
     logPreviewEmpty.style.display = list.length ? 'none' : 'block';
 
     list.forEach(function (l) {
@@ -802,7 +1036,9 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
       bodyInner.appendChild(accordionRow('Department', l.department));
       bodyInner.appendChild(accordionRow('Incoming Date', l.incoming_date || 'Not set yet'));
       bodyInner.appendChild(accordionRow('Primary Packaging', fmtNum(l.primary_qty) + ' ' + (l.primary_unit_label || '') + '  (' + fmtNum(l.primary_total_weight_kg) + ' KG)'));
-      bodyInner.appendChild(accordionRow('Remaining Primary Qty', fmtNum(l.remaining_primary_qty) + ' / ' + fmtNum(l.primary_qty)));
+      bodyInner.appendChild(accordionRowClickable('Remaining Primary Qty', fmtNum(l.remaining_primary_qty) + ' / ' + fmtNum(l.primary_qty), function () { openNormalLedger(l); }));
+      bodyInner.appendChild(accordionRowClickable('Defective Stock', fmtNum(l.defective_qty), function () { openDefectiveHistory(l); }));
+      bodyInner.appendChild(accordionRow('Total All Stock', fmtNum(l.total_all_stock) + ' ' + (l.primary_unit_label || '')));
       bodyInner.appendChild(accordionRow('Secondary Packaging', fmtNum(l.secondary_qty) + ' ' + (l.secondary_unit_label || '') + '  (' + fmtNum(l.secondary_total_weight_kg) + ' KG)'));
       bodyInner.appendChild(accordionRow('Documents', 'Shipper: ' + l.documents.shipper + ' · Custom: ' + l.documents.custom + ' · Consignee: ' + l.documents.consignee));
 
@@ -856,11 +1092,20 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
       .then(function (r) { return r.json(); })
       .then(function (res) {
         if (res.ok) renderLogisticList(res.data);
-        else console.warn(res.message);
+        else {
+          console.warn(res.message);
+          logPreviewList.innerHTML = '';
+          logPreviewEmpty.textContent = res.message || 'Failed to load the logistic list.';
+          logPreviewEmpty.style.display = 'block';
+        }
       })
-      .catch(function (e) { console.error(e); });
+      .catch(function (e) {
+        console.error(e);
+        logPreviewList.innerHTML = '';
+        logPreviewEmpty.textContent = 'Failed to load the logistic list (invalid server response).';
+        logPreviewEmpty.style.display = 'block';
+      });
   }
-
   // ---------- Tab 2: Movements ----------
   // Same collapsible click/dblclick behaviour as stBindCollapsible() in
   // transaction_content.php, reimplemented here (own class names

@@ -52,6 +52,17 @@ if ($customerId <= 0) {
 
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
+// stock_source is from a migration that may not have run yet on this DB — checked once via SHOW COLUMNS so the SELECT below never
+// even mentions a column that isn't there (see the same fix in
+// list_logistics.php for why a caught exception mid-query isn't enough).
+function aosColumnExists(mysqli $conn, string $table, string $column): bool
+{
+    $t = str_replace('`', '', $table);
+    $res = $conn->query("SHOW COLUMNS FROM `$t` LIKE '" . $conn->real_escape_string($column) . "'");
+    return $res instanceof mysqli_result && $res->num_rows > 0;
+}
+$hasStockSource   = aosColumnExists($lisani_conn, 'logistic_movements', 'stock_source');
+
 try {
     // ---- Customer totals ----
     $st = $lisani_conn->prepare(
@@ -139,7 +150,8 @@ try {
     // here even though nothing else in this endpoint uses it.
     $st = $lisani_conn->prepare(
         "SELECT m.id, m.invoice_id, m.movement_type, m.movement_date, m.created_at, m.batch_id, m.driver_name, m.police_number,
-                m.qty_primary_package, m.price, m.total_price,
+                m.qty_primary_package, m.price, m.total_price,"
+                . ($hasStockSource ? ' m.stock_source,' : ' NULL AS stock_source,') . "
                 m.source_movement_id, sm.movement_date AS source_movement_date,
                 a.activity_name, l.primary_unit_label AS unit_label
          FROM logistic_movements m
@@ -167,6 +179,13 @@ try {
             'total_price'   => $row['total_price'],
             'driver_name'   => $row['driver_name'],
             'police_number' => $row['police_number'],
+            // Which bucket this movement touched. 'out' rows: taken from
+            // normal/defective stock. 'in' rows: restocked to normal/
+            // defective — create_return.php reuses this SAME column for
+            // that (there is no separate restock_bucket column in the DB).
+            // Frontend uses this to show a Normal/Defective badge next to
+            // the RETURN/taken line.
+            'stock_source'    => $row['stock_source'],
             // Only set for movement_type='in' rows created by the lot-based
             // return flow (22 Sep 2026 onward) — null for everything older.
             'source_movement_id'   => $row['source_movement_id'] === null ? null : (int) $row['source_movement_id'],

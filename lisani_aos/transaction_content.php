@@ -5597,6 +5597,17 @@ $currentYear     = date('Y');
           retBadge.style.marginLeft = 'var(--space-2)';
           retBadge.textContent = 'RETURN';
           left.appendChild(retBadge);
+
+          // Which bucket the return landed in — older rows (before the
+          // defective-stock feature) have no stock_source at all, so no
+          // badge is shown for those instead of guessing.
+          if (m.stock_source === 'normal' || m.stock_source === 'defective') {
+            var bucketBadge = document.createElement('span');
+            bucketBadge.className = 'badge ' + (m.stock_source === 'defective' ? 'badge-danger' : 'badge-success');
+            bucketBadge.style.marginLeft = 'var(--space-2)';
+            bucketBadge.textContent = m.stock_source === 'defective' ? 'DEFECTIVE' : 'NORMAL';
+            left.appendChild(bucketBadge);
+          }
         } else if (m.movement_type === 'price_adjustment') {
           var adjBadge = document.createElement('span');
           adjBadge.className = 'badge badge-warning';
