@@ -3314,3 +3314,348 @@ User curiga `list_customer_orders.php` punya bug sama seperti
 invoice (fix sebelumnya) tidak berubah lagi.
 
 **Status: fix ditulis, belum dites user.**
+
+## Bugfix: badge Valid/Invalid di tab Logistic Movements pakai field yang salah sejak ada defective stock (27 Sep 2026)
+
+User curiga ada yang salah: produk yang punya kombinasi retur + price
+adjustment tetap tampil **Invalid** di tab Logistic > Movements, padahal
+angka Actual Taken-nya (dari movement history) sudah benar dan sudah cocok
+dengan Total Actual per-produk di tab Sales Transaction > Customers.
+
+**Akar masalah:** `logMovValidTag()` di `logistic_content.php` masih
+membandingkan Actual Taken terhadap `primary_qty - remaining_primary_qty`
+— formula dari SEBELUM fitur defective stock ada (`create_order.php`,
+`create_return.php`, "Kendala #1 & #2", 22 Sep 2026). Sejak fitur itu ada,
+`remaining_primary_qty` cuma pernah disentuh untuk baris dengan
+`stock_source`/`restock_bucket` = `'normal'`. Baris dengan bucket
+`'defective'` mengubah `defective_qty` (bukan `remaining_primary_qty`), tapi
+tetap ikut terhitung penuh di Actual Taken (movement `'out'`/`'in'` dijumlah
+tanpa peduli bucket). Hasilnya: kalau sebuah produk PERNAH punya baris
+`stock_source='defective'` (di pengambilan) atau `restock_bucket='defective'`
+(di retur), `remaining_primary_qty` tidak pernah mencerminkan qty itu →
+`primary_qty - remaining_primary_qty` ≠ Actual Taken yang sebenarnya benar →
+badge salah nampilkan Invalid.
+
+Field yang seharusnya dipakai: **`total_taken_qty`** — balance "sedang di
+tangan customer" yang digabung dari kedua bucket, dijaga konsisten oleh:
+- `create_order.php`: naik untuk KEDUA `stock_source` (normal maupun
+  defective).
+- `create_return.php`: turun untuk KEDUA `restock_bucket` tujuan (baris
+  599, `total_taken_qty = GREATEST(total_taken_qty - ?, 0)`, dieksekusi
+  independen dari bucket asal maupun bucket tujuan retur).
+- `create_price_adjustment.php`: dikonfirmasi TIDAK PERNAH menyentuh field
+  stok apa pun (`remaining_primary_qty`, `defective_qty`, `total_taken_qty`,
+  `defective_taken_qty`) — sesuai desainnya sejak awal.
+
+**Fix:**
+- `list_logistic_movements.php`: tambah `l.total_taken_qty` ke SELECT utama,
+  disimpan di meta per-logistic, diteruskan ke tiap item di response JSON
+  (`total_taken_qty`).
+- `logistic_content.php`: `logMovValidTag(actualQty, primaryQty,
+  remainingQty)` diganti jadi `logMovValidTag(actualQty, totalTakenQty)` —
+  `expected` sekarang langsung `totalTakenQty`, bukan
+  `primaryQty - remainingQty`.
+
+**File yang diubah:** `list_logistic_movements.php`, `logistic_content.php`.
+
+**Status: fix ditulis, belum dites user.**
+
+## Bugfix: diskon (price_adjustment) belum dikurangkan dari NILAI Actual Taken (27 Sep 2026)
+
+Masih di tab Logistic Movements: setelah fix qty di atas, user sadar
+**nilai** (Rupiah) Actual Taken untuk SEMUA produk (bukan cuma yang
+Invalid) tetap beda dari Total Actual di tab Customer.
+
+**Akar masalah:** `rt_sum_movements()` di `list_logistic_movements.php`
+mengecualikan `price_adjustment` TOTAL — baik qty maupun value — dari
+`total_out`/`total_in`. Mengecualikan qty memang benar (diskon tidak
+menggerakkan stok), tapi mengecualikan VALUE salah: diskon tetap mengurangi
+uang yang harus dibayar customer untuk barang yang sudah diambil, persis
+seperti "Total Actual = Total Ordered - Total Returned - Total Discounts"
+di `transaction_content.php`. Tanpa dikurangi, nilai Actual Taken di tab
+Logistic Movements selalu lebih besar dari yang di tab Customer untuk
+produk mana pun yang pernah dapat diskon.
+
+**Fix:**
+- `list_logistic_movements.php`: `rt_sum_movements()` sekarang punya bucket
+  ketiga, `total_adjustment` — qty-nya sengaja selalu 0 (barang tidak pernah
+  pindah), value-nya dijumlah dari baris `price_adjustment`. Di-roll-up di
+  4 level yang sama seperti `total_out`/`total_in` (hari → bulan → tahun →
+  logistic), dikirim sebagai field `total_adjustment` di tiap level output.
+- `logistic_content.php`: `logMovActual(totalOut, totalIn, totalAdjustment)`
+  — qty tetap `out.qty - in.qty` (tidak berubah), value jadi
+  `out.value - in.value - totalAdjustment.value`. `logMovTotalsEl()` juga
+  menampilkan baris "Discount" (cuma kalau > 0) di semua 4 level tampilan.
+  Semua titik panggil (main/tahun/bulan/hari) diteruskan `total_adjustment`.
+  **Catatan CSS**: baris Discount pakai class baru `.log-mov-adj`, belum ada
+  definisi warnanya di `theme.css` (belum sempat ditambahkan karena
+  `theme.css` tidak ikut diupload sesi ini) — tanpa itu barisnya tampil
+  dengan warna teks default.
+
+**File yang diubah:** `list_logistic_movements.php`, `logistic_content.php`.
+
+**Status: fix ditulis, belum dites user.**
+
+## Bugfix: diskon PER PRODUK belum diterapkan di tab Customer (27 Sep 2026)
+
+Fix di atas menyelesaikan sisi Logistic Movements. Tapi user sadar tab
+Sales Transaction > Customers sendiri juga punya lubang yang sama, satu
+level lebih dalam: **Total Actual di level CUSTOMER** (baris ringkasan di
+atas daftar Products) sudah benar mengurangi diskon (fix 22 Sep 2026, lihat
+section di atas), tapi **Actual per PRODUK** (di dalam tiap
+`st-product-summary-card`) belum — karena diskon (`total_price_adjustments`)
+cuma pernah diakumulasi per CUSTOMER di tabel `customers`, tidak pernah
+dipecah per `logistic_id` di query manapun.
+
+**Fix:**
+- `list_customer_orders.php`: query per-produk sekarang juga
+  `SUM(CASE WHEN movement_type = 'price_adjustment' THEN total_price ELSE 0
+  END) AS discount_value`, dikirim sebagai field baru `discount_value` per
+  produk (qty tidak ditambah kolom apa pun — diskon tetap tidak
+  menggerakkan stok, sama seperti fix-fix sebelumnya).
+- `transaction_content.php` (`renderStCustomerDetail`): `netVal` per produk
+  jadi `total_value - returned_value - discount_value`. Label baris
+  "Actual" diperjelas jadi "Actual (Taken \u2212 Returned \u2212 Discount)".
+  Baris baru **"Total Discounts"** (pakai `stAddRow`, sama seperti di level
+  customer) muncul di body tiap produk kalau `discount_value` > 0.
+
+**File yang diubah:** `list_customer_orders.php`, `transaction_content.php`
+(fungsi `renderStCustomerDetail` saja).
+
+**Status: fix ditulis, belum dites user.**
+
+**Setelah 3 fix di atas**, tiga tempat ini seharusnya sudah konsisten:
+tab Logistic Movements (per activity code, lintas customer), tab Customer
+level produk, dan tab Customer level total customer — semuanya
+qty = out - in (diskon tidak mengurangi qty), value = out - in - diskon.
+
+## UI: badge Valid/Invalid di tab Logistic Movements — per item + card Validation di atas (27 Sep 2026)
+
+Setelah fix rumus di atas, user minta ubah tampilannya (bukan logikanya):
+
+1. Sempat diminta: hapus badge Valid/Invalid per item, ganti SATU card di
+   paling atas berisi validasi gabungan (grand total semua activity code
+   dijadikan satu angka).
+2. Dikoreksi lagi: badge Valid/Invalid per item (activity code) harus tetap
+   ADA di card masing-masing (jangan cuma di satu tempat gabungan).
+3. Dikoreksi sekali lagi: card di paling atas itu bukan menggabungkan semua
+   activity code jadi satu angka besar, tapi tetap **per activity code**
+   juga — cuma dikumpulkan semua dalam satu card supaya bisa di-scan cepat
+   tanpa expand satu-satu card di bawahnya.
+
+**Hasil akhir (`logistic_content.php`):**
+- `logMovValidTag(actualQty, totalTakenQty)` — badge Valid/Invalid,
+  fungsinya sendiri tidak berubah dari fix rumus sebelumnya, cuma sekarang
+  dipakai di DUA tempat.
+- Badge ini tetap muncul di title tiap `log-mov-logistic-card` (satu badge
+  per activity code, seperti semula).
+- Fungsi baru `logMovSummaryCard(list)` — card baru di paling atas
+  (`renderLogisticMovements()` memanggilnya sebelum loop per-logistic),
+  isinya satu baris PER activity code (bukan satu angka gabungan), tiap
+  baris pakai ulang `logMovActual()` + `logMovValidTag()` +
+  `logMovTotalsEl()` yang sama persis dengan yang dipakai card di bawahnya
+  — supaya angka di card ringkasan ini tidak mungkin "ketinggalan" atau beda
+  dari yang ditampilkan card detailnya sendiri.
+  **Catatan CSS**: card ini pakai class `.card.log-mov-summary-card`, tiap
+  barisnya `.log-mov-summary-row` — belum ada definisi keduanya di
+  `theme.css` (sama seperti catatan `.log-mov-adj` di atas, belum sempat
+  ditambahkan sesi ini).
+
+**File yang diubah:** `logistic_content.php` saja.
+
+**Status: fix ditulis, belum dites user.**
+
+## UI: Card Validation dipindah ke DALAM tiap activity code + 2 validasi baru (27 Sep 2026)
+
+User minta 3 hal sekaligus, hasil diskusi panjang untuk meluruskan level data
+tiap validasi sebelum nulis kode (banyak asumsi awal ternyata salah setelah
+baca `list_logistic_movements.php` & `list_customer_orders.php` asli):
+
+### 1. Restrukturisasi posisi Card Validation
+`logMovSummaryCard()` (card ringkasan di paling atas, per activity code,
+dari fix 27 Sep 2026 sebelumnya) **tetap ada apa adanya** di posisi
+teratas — TIDAK dihapus. Yang baru: setiap `log-mov-logistic-card` (card
+per activity code) sekarang punya **dua sub-card collapsible di
+dalamnya**, urutan tetap:
+1. **Card Validation** (`logMovValidationCard()`, class `.log-mov-sub-card`) — di atas
+2. **Card Detail Movement** (bungkus hierarki years→months→days→movements
+   yang sudah ada, sekarang dikasih head+judul "Detail Movement" sendiri,
+   juga `.log-mov-sub-card`) — di bawahnya
+
+Keduanya dibind lewat `logMovBindCollapsible()` yang sama seperti level
+lain, jadi otomatis **exclusive** satu sama lain (buka salah satu, yang
+lain nutup) — konsisten dengan perilaku year/month/day yang sudah ada,
+sengaja tidak dibikin independen.
+
+Badge Valid/Invalid di title card activity code (`mainTitle`, existing)
+**tetap ada** di situ juga — tidak dihapus, cuma sekarang direplikasi juga
+di title Card Validation.
+
+### 2. Validasi baru #1: Actual Taken (normal-only) vs remaining_primary_qty
+**Ini BUKAN pengganti** badge `logMovValidTag` yang sudah ada (yang
+membandingkan Actual Taken gabungan normal+defective terhadap
+`total_taken_qty` — itu masih benar dan tidak diubah). Ini validasi
+**terpisah**, khusus untuk `remaining_primary_qty`.
+
+**Kenapa perlu terpisah** (klarifikasi penting dari user, karena awalnya
+sempat disangka `defective_qty` itu subset dari `remaining_primary_qty`
+dengan flag — TERNYATA SALAH, sudah dicek ulang ke bagian notes
+"Kolom stok terpisah untuk barang bermasalah" 22 Sep 2026):
+`defective_qty` itu kolom **independen**, betul-betul terpisah dari
+`remaining_primary_qty`:
+- Barang defective (dari Returns, kondisi rusak) masuk `defective_qty`,
+  **`remaining_primary_qty` TIDAK bertambah**.
+- Barang dijual dari stok defective (`stock_source='defective'`) memotong
+  `defective_qty`, **bukan** `remaining_primary_qty`.
+- Satu-satunya jalan `defective_qty` → `remaining_primary_qty` adalah aksi
+  manual "Repair to Normal Stock" di tab Defective Stock.
+
+Jadi `remaining_primary_qty` **murni mencerminkan bucket 'normal'
+selamanya** (bukan sekadar "belum sempat diupdate" seperti dugaan awal).
+Konsekuensinya: `primary_qty - remaining_primary_qty` **tidak boleh**
+dibandingkan ke Actual Taken **gabungan** (itu bug lama yang sudah
+diperbaiki 27 Sep), tapi juga **tidak boleh** disamakan begitu saja ke nol
+selisih kalau ada transaksi defective — yang benar, harus dibandingkan ke
+**qty movement bucket 'normal' saja** (exclude baris
+`stock_source`/`restock_bucket = 'defective'`).
+
+**Fix:**
+- `list_logistic_movements.php`: field `stock_source` per baris movement
+  sekarang ikut di-SELECT dan diteruskan ke tiap movement di response JSON.
+  Satu kolom ini dipakai untuk KEDUA arah: baris `movement_type='out'`
+  isinya sumber pengambilan (`normal`/`defective`), baris
+  `movement_type='in'` isinya `restock_bucket` yang dipilih user saat retur
+  (`create_return.php` insert `stock_source` = `restock_bucket`, lihat
+  notes 22 Sep 2026 line ~3036) — jadi field yang sama, beda makna
+  tergantung `movement_type`, tidak perlu kolom terpisah.
+  `rt_sum_movements()` sekarang juga menghitung `total_out_normal_qty` /
+  `total_in_normal_qty` (qty saja, stock_source='normal' saja), di-roll-up
+  di 4 level yang sama seperti bucket lain (hari→bulan→tahun→logistic),
+  dikirim sebagai field `total_out_normal_qty`/`total_in_normal_qty` di
+  tiap level output.
+- `logistic_content.php`: fungsi baru `logMovNormalValidTag(outNormalQty,
+  inNormalQty, primaryQty, remainingPrimaryQty)` — badge Valid/Invalid
+  kedua, expected = `primaryQty - remainingPrimaryQty`, actual =
+  `outNormalQty - inNormalQty`. Dipasang di dalam Card Validation, baris
+  "Remaining Primary Qty (normal stock)".
+
+### 3. Validasi baru #2: rekonsiliasi per-customer vs tab Customer
+Awalnya user minta "Taken/Returned/Discount/Actual Taken per activity code
+dibandingkan ke tab Customer" — setelah ditelusuri ke query aslinya,
+ternyata **level agregasinya penting** dan sempat salah paham beberapa
+putaran sebelum ketemu bentuk yang benar-benar dimaksud user:
+- Awal disangka bisa dibandingkan sebagai satu angka gabungan per activity
+  code (SEMUA customer dijumlah jadi satu) vs kolom akumulator
+  `customers.total_inflow` dkk — **ternyata tidak masuk akal**, karena
+  kolom itu akumulator **per customer**, tidak bisa dipecah balik ke
+  `logistic_id`.
+- Maksud user sebenarnya: **rekonsiliasi per pasangan (activity code ×
+  customer)** — untuk SETIAP customer yang pernah mengambil di activity
+  code tsb, Taken/Returned/Discount/Actual movement history-nya (dilihat
+  dari sisi tab Movements) harus selaras dengan yang akan tampil untuk
+  customer itu di tab Customer, untuk produk (activity code) yang sama.
+
+Kedua tab (`list_logistic_movements.php` dan `list_customer_orders.php`)
+sama-sama baca dari tabel `logistic_movements` yang sama, cuma beda
+`WHERE` (`logistic_id` vs `customer_id`) — dicek tidak ada baris
+`customer_id` NULL yang mungkin bikin keduanya beda (user konfirmasi
+`customer_id` wajib diisi sejak awal, tidak ada baris legacy tanpa itu).
+Jadi validasi ini secara matematis **akan selalu Valid** kalau semua
+bekerja benar — nilainya bukan "menangkap kesalahan aritmatika baru",
+tapi **jaminan bahwa dua tab yang dibangun terpisah (beda waktu, beda
+file) tidak diam-diam berbeda angka**, dan otomatis ketahuan kalau nanti
+salah satu query berubah tanpa mengubah yang lain.
+
+**Fix:**
+- `list_logistic_movements.php`: fungsi baru `rt_sum_by_customer($lg)` —
+  jalan dari struktur `$logistics[$lid]` yang sudah dikumpulkan (bukan
+  query kedua), grouping ulang seluruh movements di activity code itu per
+  `customer_id`, hasil array `by_customer` (tiap entri: `customer_id`,
+  `customer_name`, `total_out`, `total_in`, `total_adjustment` — bentuk
+  sama seperti level lain), disortir nama customer A-Z. Disisipkan sebagai
+  field `by_customer` di tiap entri logistic pada response JSON.
+- `logistic_content.php`: fungsi baru `logMovByCustomerEl(byCustomer,
+  unitLabel)` — render satu baris per customer (nama + badge Valid/Invalid
+  dari `logMovValidTag` + `logMovTotalsEl`), dipasang di Card Validation
+  di bawah baris Remaining Primary Qty.
+
+### Ringkasan struktur akhir Card Validation (`logMovValidationCard()`)
+Di dalam TIAP activity code, urutan dari atas:
+1. Title "Validation" + badge Valid/Invalid (Actual Taken gabungan vs
+   `total_taken_qty` — badge lama, `logMovValidTag`)
+2. `logMovTotalsEl()` — Taken/Returned/Discount/Actual Taken activity code
+   ini (angka sama persis dengan yang di title card & summary card di
+   atas, tidak dihitung ulang terpisah)
+3. Baris "Remaining Primary Qty (normal stock)" + badge Valid/Invalid baru
+   (`logMovNormalValidTag`)
+4. Heading "Per customer (vs Sales Transaction > Customers)" + list per
+   customer, masing-masing baris Taken/Returned/Discount/Actual + badge
+   Valid/Invalid (`logMovByCustomerEl`)
+
+**Catatan CSS**: kelas baru `.log-mov-sub-card` (bungkus Card Validation &
+Card Detail Movement), `.log-mov-customer-row` (baris per customer/baris
+Remaining Primary Qty), plus definisi warna untuk `.log-mov-adj` dan
+`.log-mov-summary-card`/`.log-mov-summary-row` yang catatan sebelumnya
+bilang belum sempat ditambahkan — **sudah ditambahkan** semuanya di sesi
+ini ke `<style>` block `logistic_content.php` (bukan `theme.css` terpisah,
+karena `theme.css` masih belum ikut diupload sesi ini juga; kalau nanti
+mau dipindah ke `theme.css` supaya reusable, class-nya sudah siap
+disalin).
+
+**File yang diubah:** `list_logistic_movements.php`, `logistic_content.php`.
+
+**Status: fix ditulis, belum dites user (termasuk belum pernah dijalankan
+lewat PHP CLI sungguhan — container kerja sesi ini tidak punya `php`
+terinstall, jadi validasi cuma manual review + parse JS syntax check).**
+
+## UI: hapus top summary card, per-customer collapsible, sembunyikan detail kalau Valid, fix layar kecil (27 Sep 2026)
+
+Revisi atas fix di atas (di hari yang sama), 4 hal dari user setelah
+melihat hasilnya:
+
+1. **`logMovSummaryCard()` (card ringkasan teratas) dihapus total** —
+   sudah redundan sejak Card Validation dipindah ke dalam tiap activity
+   code (fix sebelumnya di hari ini), jadi menampilkan ringkasan yang sama
+   dua kali. Fungsi & pemanggilannya di `renderLogisticMovements()`
+   dihapus. CSS `.log-mov-summary-card`/`.log-mov-summary-row` (yang baru
+   ditambahkan sesi sebelumnya, belum sempat dipakai lama) juga dihapus
+   karena jadi dead code.
+
+2. **Per-customer breakdown jadi collapsible per baris, DAN cuma yang
+   Invalid yang ditampilkan.** Kalau semua customer di suatu activity
+   code valid, baris `"Per customer (vs Sales Transaction >
+   Customers)"` cuma nampilkan teks ringkas `"All N customers valid."`,
+   tidak ada list sama sekali. Kalau ada yang Invalid, HANYA customer yang
+   Invalid itu yang dirender sebagai baris — masing-masing baris punya
+   head (nama + badge) yang bisa diklik untuk expand body (Taken/Returned/
+   Discount/Actual, `logMovTotalsEl()`), pakai mekanisme
+   `logMovBindCollapsible()` yang sama seperti level lain (exclusive antar
+   sibling, double-click untuk non-exclusive).
+
+3. **Baris "Actual Taken" dan "Remaining Primary Qty" di Card Validation
+   sendiri juga disembunyikan detailnya kalau Valid** — badge tetap selalu
+   tampil, tapi `logMovTotalsEl()`/angka remaining cuma dirender kalau
+   check itu Invalid. Jadi activity code yang semuanya valid, Card
+   Validation-nya kalau di-expand cuma nampilkan 2 baris label + badge
+   hijau + "All N customers valid.", tanpa angka apapun — jauh lebih
+   ringkas dibanding sebelumnya yang selalu nampilkan
+   Taken/Returned/Discount/Actual untuk semua activity code termasuk yang
+   tidak bermasalah.
+
+4. **Layar kecil kacau** — sebelumnya tidak ada `@media` query sama
+   sekali di file ini padahal `.log-mov-head` pakai flex row dengan title
+   di kiri dan totals rata-kanan `white-space:nowrap`, yang di viewport
+   sempit saling tabrakan/overflow horizontal. Ditambahkan
+   `@media (max-width: 640px)` di akhir `<style>` block: head jadi
+   `flex-wrap:wrap`, `.log-mov-totals` pindah ke rata-kiri +
+   `white-space:normal` (boleh wrap), padding card dikecilkan, dan
+   `.log-mov-line` (baris movement individual di Detail Movement) juga di-
+   stack vertikal. Breakpoint 640px dipilih manual di file ini sendiri
+   (bukan lewat `responsive.css`, karena file itu tidak ikut diupload sesi
+   ini — kalau nanti mau dipindah biar konsisten dengan breakpoint
+   desktop/tablet-rail/mobile-bottom-nav yang sudah ada di sana, tinggal
+   pindahkan blok `@media` ini).
+
+**File yang diubah:** `logistic_content.php` saja.
+
+**Status: fix ditulis, belum dites user.**

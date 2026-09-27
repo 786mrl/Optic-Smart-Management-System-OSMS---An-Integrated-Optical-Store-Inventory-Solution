@@ -33,8 +33,9 @@ foreach ($departmentsData['departments'] as $d) {
 // small (movement history, not raw transactional volume).
 $result = $lisani_conn->query(
     "SELECT m.id, m.logistic_id, m.movement_type, m.movement_date,
-            m.customer_name, m.driver_name, m.police_number,
+            m.customer_id, m.customer_name, m.driver_name, m.police_number,
             m.qty_primary_package, m.price, m.total_price, m.created_at,
+            m.stock_source,
             l.activity_id, l.primary_unit_label, l.primary_qty, l.remaining_primary_qty,
             l.total_taken_qty,
             a.activity_name, a.relative_path
@@ -109,6 +110,15 @@ while ($r = $result->fetch_assoc()) {
         'qty'           => (float) $r['qty_primary_package'],
         'price'         => $r['price'] !== null ? (float) $r['price'] : null,
         'total_price'   => $r['total_price'] !== null ? (float) $r['total_price'] : null,
+        // For 'out' rows this is the pick source ('normal'/'defective'); for
+        // 'in' rows create_return.php stores the chosen restock_bucket in
+        // this same column (see PROJECT_NOTES.md, "Bugfix: logMovValidTag
+        // pakai field salah (defective stock)", line ~3036). Used to derive
+        // total_out_normal/total_in_normal below, which is the only figure
+        // remaining_primary_qty can validly be checked against — that
+        // column only ever reflects the 'normal' bucket.
+        'stock_source'  => $r['stock_source'],
+        'customer_id'   => $r['customer_id'] !== null ? (int) $r['customer_id'] : null,
         'customer_name' => $r['customer_name'],
         'driver_name'   => $r['driver_name'],
         'police_number' => $r['police_number'],
@@ -144,18 +154,69 @@ function rt_sum_movements(array $movements): array {
     $out = ['qty' => 0.0, 'value' => 0.0];
     $in  = ['qty' => 0.0, 'value' => 0.0];
     $adj = ['qty' => 0.0, 'value' => 0.0]; // qty always 0 — informational value-only bucket
+    // Qty-only, 'normal' bucket alone — the only thing remaining_primary_qty
+    // can be validated against (see comment on 'stock_source' above and
+    // logMovNormalValidTag() in logistic_content.php).
+    $outNormal = 0.0;
+    $inNormal  = 0.0;
     foreach ($movements as $mv) {
         if ($mv['movement_type'] === 'out') {
             $out['qty']   += $mv['qty'];
             $out['value'] += (float) ($mv['total_price'] ?? 0);
+            if (($mv['stock_source'] ?? 'normal') === 'normal') $outNormal += $mv['qty'];
         } elseif ($mv['movement_type'] === 'in') {
             $in['qty']   += $mv['qty'];
             $in['value'] += (float) ($mv['total_price'] ?? 0);
+            if (($mv['stock_source'] ?? 'normal') === 'normal') $inNormal += $mv['qty'];
         } elseif ($mv['movement_type'] === 'price_adjustment') {
             $adj['value'] += (float) ($mv['total_price'] ?? 0);
         }
     }
-    return ['total_out' => $out, 'total_in' => $in, 'total_adjustment' => $adj];
+    return [
+        'total_out' => $out, 'total_in' => $in, 'total_adjustment' => $adj,
+        'total_out_normal_qty' => $outNormal, 'total_in_normal_qty' => $inNormal,
+    ];
+}
+
+// Per (logistic_id, customer_id) breakdown — lets the UI show, inside each
+// activity code's Validation card, a Taken/Returned/Discount/Actual line
+// per customer alongside a Valid/Invalid badge for that pair. Built from
+// the same $logistics structure above (no second query), so it can never
+// disagree with the day/month/year totals already computed from the same
+// rows. Kept in insertion order (first-seen = earliest movement date, per
+// the ASC query), re-sorted below by name for display.
+function rt_sum_by_customer(array $logisticEntry): array {
+    $byCustomer = []; // customer_id => ['customer_name'=>, 'total_out'=>, 'total_in'=>, 'total_adjustment'=>]
+    foreach ($logisticEntry['years'] as $yData) {
+        foreach ($yData['months'] as $mData) {
+            foreach ($mData['days'] as $dData) {
+                foreach ($dData['movements'] as $mv) {
+                    $cid = $mv['customer_id'] !== null ? $mv['customer_id'] : 0; // 0 = no customer_id (legacy/edge rows, if any)
+                    if (!isset($byCustomer[$cid])) {
+                        $byCustomer[$cid] = [
+                            'customer_id'   => $mv['customer_id'],
+                            'customer_name' => $mv['customer_name'],
+                            'total_out'        => ['qty' => 0.0, 'value' => 0.0],
+                            'total_in'         => ['qty' => 0.0, 'value' => 0.0],
+                            'total_adjustment' => ['qty' => 0.0, 'value' => 0.0],
+                        ];
+                    }
+                    if ($mv['movement_type'] === 'out') {
+                        $byCustomer[$cid]['total_out']['qty']   += $mv['qty'];
+                        $byCustomer[$cid]['total_out']['value'] += (float) ($mv['total_price'] ?? 0);
+                    } elseif ($mv['movement_type'] === 'in') {
+                        $byCustomer[$cid]['total_in']['qty']   += $mv['qty'];
+                        $byCustomer[$cid]['total_in']['value'] += (float) ($mv['total_price'] ?? 0);
+                    } elseif ($mv['movement_type'] === 'price_adjustment') {
+                        $byCustomer[$cid]['total_adjustment']['value'] += (float) ($mv['total_price'] ?? 0);
+                    }
+                }
+            }
+        }
+    }
+    $list = array_values($byCustomer);
+    usort($list, function ($a, $b) { return strcasecmp($a['customer_name'] ?? '', $b['customer_name'] ?? ''); });
+    return $list;
 }
 
 $data = [];
@@ -163,6 +224,8 @@ foreach ($logistics as $lid => $lg) {
     $logOut = ['qty' => 0.0, 'value' => 0.0];
     $logIn  = ['qty' => 0.0, 'value' => 0.0];
     $logAdj = ['qty' => 0.0, 'value' => 0.0];
+    $logOutNormal = 0.0;
+    $logInNormal  = 0.0;
 
     $years = [];
     krsort($lg['years']); // newest year first
@@ -171,12 +234,17 @@ foreach ($logistics as $lid => $lg) {
         $yearIn  = ['qty' => 0.0, 'value' => 0.0];
         $yearAdj = ['qty' => 0.0, 'value' => 0.0];
 
+        $yearOutNormal = 0.0;
+        $yearInNormal  = 0.0;
+
         $months = [];
         krsort($yData['months']); // newest month first
         foreach ($yData['months'] as $month => $mData) {
             $monthOut = ['qty' => 0.0, 'value' => 0.0];
             $monthIn  = ['qty' => 0.0, 'value' => 0.0];
             $monthAdj = ['qty' => 0.0, 'value' => 0.0];
+            $monthOutNormal = 0.0;
+            $monthInNormal  = 0.0;
 
             $days = [];
             krsort($mData['days']); // newest day first
@@ -187,18 +255,22 @@ foreach ($logistics as $lid => $lg) {
                 $monthIn['qty']    += $sums['total_in']['qty'];
                 $monthIn['value']  += $sums['total_in']['value'];
                 $monthAdj['value'] += $sums['total_adjustment']['value'];
+                $monthOutNormal    += $sums['total_out_normal_qty'];
+                $monthInNormal     += $sums['total_in_normal_qty'];
 
                 // newest movement first within the day
                 $movs = $dData['movements'];
                 usort($movs, function ($a, $b) { return strcmp($b['created_at'], $a['created_at']); });
 
                 $days[] = [
-                    'day'              => $day,
-                    'date_label'       => $dData['date_label'],
-                    'total_out'        => $sums['total_out'],
-                    'total_in'         => $sums['total_in'],
-                    'total_adjustment' => $sums['total_adjustment'],
-                    'movements'        => $movs,
+                    'day'                  => $day,
+                    'date_label'           => $dData['date_label'],
+                    'total_out'            => $sums['total_out'],
+                    'total_in'             => $sums['total_in'],
+                    'total_adjustment'     => $sums['total_adjustment'],
+                    'total_out_normal_qty' => $sums['total_out_normal_qty'],
+                    'total_in_normal_qty'  => $sums['total_in_normal_qty'],
+                    'movements'            => $movs,
                 ];
             }
 
@@ -207,14 +279,18 @@ foreach ($logistics as $lid => $lg) {
             $yearIn['qty']    += $monthIn['qty'];
             $yearIn['value']  += $monthIn['value'];
             $yearAdj['value'] += $monthAdj['value'];
+            $yearOutNormal    += $monthOutNormal;
+            $yearInNormal     += $monthInNormal;
 
             $months[] = [
-                'month'            => $month,
-                'month_label'      => $mData['months_label'],
-                'total_out'        => $monthOut,
-                'total_in'         => $monthIn,
-                'total_adjustment' => $monthAdj,
-                'days'             => $days,
+                'month'                => $month,
+                'month_label'          => $mData['months_label'],
+                'total_out'            => $monthOut,
+                'total_in'             => $monthIn,
+                'total_adjustment'     => $monthAdj,
+                'total_out_normal_qty' => $monthOutNormal,
+                'total_in_normal_qty'  => $monthInNormal,
+                'days'                 => $days,
             ];
         }
 
@@ -223,13 +299,17 @@ foreach ($logistics as $lid => $lg) {
         $logIn['qty']    += $yearIn['qty'];
         $logIn['value']  += $yearIn['value'];
         $logAdj['value'] += $yearAdj['value'];
+        $logOutNormal    += $yearOutNormal;
+        $logInNormal     += $yearInNormal;
 
         $years[] = [
-            'year'             => $year,
-            'total_out'        => $yearOut,
-            'total_in'         => $yearIn,
-            'total_adjustment' => $yearAdj,
-            'months'           => $months,
+            'year'                 => $year,
+            'total_out'            => $yearOut,
+            'total_in'             => $yearIn,
+            'total_adjustment'     => $yearAdj,
+            'total_out_normal_qty' => $yearOutNormal,
+            'total_in_normal_qty'  => $yearInNormal,
+            'months'               => $months,
         ];
     }
 
@@ -245,6 +325,14 @@ foreach ($logistics as $lid => $lg) {
         'total_out'             => $logOut,
         'total_in'              => $logIn,
         'total_adjustment'      => $logAdj,
+        // Qty moved through the 'normal' bucket only — the figure
+        // remaining_primary_qty can actually be checked against (see
+        // logMovNormalValidTag() in logistic_content.php).
+        'total_out_normal_qty'  => $logOutNormal,
+        'total_in_normal_qty'   => $logInNormal,
+        // Per-customer breakdown for the activity code's Validation card —
+        // see rt_sum_by_customer() above.
+        'by_customer'           => rt_sum_by_customer($lg),
         'years'                 => $years,
     ];
 }

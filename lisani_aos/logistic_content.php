@@ -132,6 +132,7 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
     }
     .log-mov-collapsible .log-mov-totals .log-mov-out { color: var(--text-secondary); }
     .log-mov-collapsible .log-mov-totals .log-mov-in { color: var(--accent); }
+    .log-mov-collapsible .log-mov-totals .log-mov-adj { color: var(--danger, #e5697b); }
     .log-mov-collapsible .log-mov-totals .log-mov-actual { color: var(--text-primary); font-weight: 600; }
     .log-mov-collapsible .log-mov-chevron { flex-shrink: 0; transition: transform 0.15s ease; }
     .log-mov-collapsible.log-mov-open .log-mov-chevron { transform: rotate(180deg); }
@@ -161,6 +162,56 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
       font-size: var(--text-xs);
       color: var(--text-muted);
       margin-top: 2px;
+    }
+
+    /* Sub-cards nested inside each log-mov-logistic-card: Validation (on
+       top) and Detail Movement (below it), both collapsible via the same
+       .log-mov-collapsible mechanism as everything else. Slightly recessed
+       compared to the year/month/day cards so it reads as "inside the
+       activity code card" rather than another level of the same hierarchy. */
+    .log-mov-sub-card {
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: var(--radius-sm, 8px);
+      padding: var(--space-3);
+      margin-bottom: var(--space-3);
+      background: rgba(255,255,255,0.02);
+    }
+    .log-mov-sub-card:last-child { margin-bottom: 0; }
+    .log-mov-sub-card.log-mov-open { border-color: rgba(107,138,253,0.4); }
+    .log-mov-sub-card .log-mov-title { font-weight: 600; color: var(--text-primary); font-size: var(--text-sm); }
+
+    .log-mov-customer-row {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: var(--space-2);
+      flex-wrap: wrap;
+      padding: var(--space-2) 0;
+      border-top: 1px solid rgba(255,255,255,0.06);
+    }
+    .log-mov-customer-row:first-of-type { border-top: none; }
+    .log-mov-customer-row .log-mov-customer-name {
+      font-size: var(--text-sm);
+      color: var(--text-primary);
+      font-weight: 500;
+    }
+    /* Collapsible variant (only Invalid customers get one — see
+       logMovByCustomerEl()): overrides the flex-row layout above so the
+       .log-mov-head/.log-mov-body pair from the generic collapsible
+       mechanics can stack normally instead of fighting the row's own
+       flexbox. */
+    .log-mov-customer-row.log-mov-collapsible {
+      display: block;
+      cursor: pointer;
+    }
+    .log-mov-customer-row.log-mov-collapsible > .log-mov-head {
+      padding: 0;
+    }
+    .log-mov-customer-row.log-mov-collapsible > .log-mov-head > div:first-child {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      flex-wrap: wrap;
     }
 
     .log-mov-year-card,
@@ -208,6 +259,43 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
       word-break: break-word;
     }
     .log-mov-line-right { flex-shrink: 0; text-align: right; }
+
+    /* Small screens: the head row (title/totals/chevron side by side) is
+       what overflowed and collided before — title text, the right-aligned
+       totals block, and the chevron all fighting for width on a ~360px
+       viewport. Below this breakpoint every collapsible head stacks
+       vertically instead, and totals switch from right-aligned/nowrap to
+       left-aligned/wrapping so long lines (e.g. "Actual Taken: 12 CTN ·
+       Rp 1,200,000") wrap onto their own line rather than clipping or
+       forcing horizontal scroll. */
+    @media (max-width: 640px) {
+      .log-mov-collapsible .log-mov-head {
+        flex-wrap: wrap;
+      }
+      .log-mov-collapsible .log-mov-totals {
+        text-align: left;
+        white-space: normal;
+        flex-basis: 100%;
+      }
+      .log-mov-customer-row.log-mov-collapsible > .log-mov-head > div:first-child {
+        flex-basis: 100%;
+      }
+      .log-mov-customer-row .log-mov-totals {
+        text-align: left;
+        white-space: normal;
+      }
+      .log-mov-logistic-card,
+      .log-mov-sub-card {
+        padding: var(--space-2);
+      }
+      .log-mov-line {
+        flex-wrap: wrap;
+      }
+      .log-mov-line-right {
+        text-align: left;
+        flex-basis: 100%;
+      }
+    }
   </style>
 
   <div class="tab-group" id="logTabGroup">
@@ -925,14 +1013,18 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
     return line;
   }
 
-  // Simple "Valid" / "Invalid" badge shown right next to the activity name
-  // in the main (logistic) card header — visible immediately even while
-  // the card is collapsed. Reuses the existing .badge component instead of
-  // a bespoke style. Actual Taken (derived from movement history, out - in,
-  // excluding price_adjustment) must equal total_taken_qty — the
-  // source-agnostic "currently with customers" balance kept in sync by
-  // create_order.php (+, both stock_source buckets) and create_return.php
-  // (-, both restock_bucket destinations), and left untouched by
+  // Per-item "Valid" / "Invalid" badge, shown right next to the activity
+  // name in EACH logistic (= activity code) card header — visible
+  // immediately even while that card is collapsed, so a problem can be
+  // narrowed down to a specific product at a glance instead of having to
+  // expand every card to find it. Reuses the existing .badge component
+  // instead of a bespoke style.
+  //
+  // Actual Taken (derived from movement history, out - in, excluding
+  // price_adjustment) must equal total_taken_qty — the source-agnostic
+  // "currently with customers" balance kept in sync by create_order.php
+  // (+, both stock_source buckets) and create_return.php (-, both
+  // restock_bucket destinations), and left untouched by
   // create_price_adjustment.php.
   //
   // NOT primary_qty - remaining_primary_qty: since the defective-stock
@@ -955,6 +1047,190 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
     return tag;
   }
 
+  // Second, separate badge: normal-bucket qty (out_normal - in_normal,
+  // stock_source/restock_bucket = 'normal' only) vs what
+  // remaining_primary_qty implies (primary_qty - remaining_primary_qty).
+  // This is NOT the same check as logMovValidTag above — that one validates
+  // total_taken_qty (normal+defective combined) against Actual Taken (also
+  // combined). This one validates remaining_primary_qty specifically,
+  // which the fix on 27 Sep 2026 established only ever reflects the
+  // 'normal' bucket, so it must be compared against normal-only movement,
+  // never against the combined total (that was the original bug).
+  function logMovNormalValidTag(outNormalQty, inNormalQty, primaryQty, remainingPrimaryQty) {
+    var tag = document.createElement('span');
+    if (primaryQty === null || remainingPrimaryQty === null) {
+      tag.className = 'badge';
+      tag.textContent = 'Not validated';
+      return tag;
+    }
+    var normalNet = round2(outNormalQty - inNormalQty);
+    var expected  = round2(primaryQty - remainingPrimaryQty);
+    var ok = Math.abs(normalNet - expected) < 0.01;
+    tag.className = 'badge ' + (ok ? 'badge-success' : 'badge-danger');
+    tag.textContent = ok ? 'Valid' : 'Invalid';
+    return tag;
+  }
+
+  // Per-customer breakdown, rendered inside each activity code's Validation
+  // card. Reconciles what this activity code's movement history says about
+  // each customer against what Sales Transaction > Customers would compute
+  // for that same (logistic, customer) pair — both ultimately read from the
+  // same logistic_movements rows, so this is less "catches arithmetic bugs"
+  // and more "guarantees the two independently-built tabs never silently
+  // drift apart" (e.g. if one query's WHERE clause changes later and the
+  // other doesn't). Reuses logMovActual/logMovTotalsEl/logMovValidTag so a
+  // real mismatch, if one ever appears, is computed identically here and in
+  // every other card.
+  //
+  // Only INVALID customers are listed — a fully-valid activity code (the
+  // common case) would otherwise force-render one row per customer just to
+  // say "fine" over and over, which is noise, not signal, and was the
+  // direct cause of the cramped/cluttered mobile layout reported after the
+  // first version of this card. Each listed customer's row is itself
+  // collapsible (name = header, Taken/Returned/Discount/Actual = body) so
+  // even the flagged rows stay compact until opened.
+  function logMovByCustomerEl(byCustomer, unitLabel) {
+    var wrap = document.createElement('div');
+    var list = byCustomer || [];
+    var invalid = list.filter(function (c) {
+      var actual = logMovActual(c.total_out, c.total_in, c.total_adjustment);
+      return Math.abs(round2(actual.qty) - round2(c.total_out.qty - c.total_in.qty)) >= 0.01;
+    });
+
+    if (!list.length) {
+      var empty = document.createElement('div');
+      empty.className = 'log-mov-subtitle';
+      empty.textContent = 'No customer movements yet.';
+      wrap.appendChild(empty);
+      return wrap;
+    }
+    if (!invalid.length) {
+      var ok = document.createElement('div');
+      ok.className = 'log-mov-subtitle';
+      ok.textContent = 'All ' + list.length + ' customer' + (list.length === 1 ? '' : 's') + ' valid.';
+      wrap.appendChild(ok);
+      return wrap;
+    }
+
+    invalid.forEach(function (c) {
+      var row = document.createElement('div');
+      row.className = 'log-mov-customer-row log-mov-collapsible';
+
+      var head = document.createElement('div');
+      var left = document.createElement('div');
+      var name = document.createElement('div');
+      name.className = 'log-mov-customer-name';
+      name.textContent = c.customer_name || '(Unknown customer)';
+      left.appendChild(name);
+      var actual = logMovActual(c.total_out, c.total_in, c.total_adjustment);
+      left.appendChild(logMovValidTag(actual.qty, round2(c.total_out.qty - c.total_in.qty)));
+      head.appendChild(left);
+      head.appendChild(logMovChevron());
+      row.appendChild(head);
+
+      var body = document.createElement('div');
+      body.className = 'log-mov-body';
+      body.appendChild(logMovTotalsEl(c.total_out, c.total_in, c.total_adjustment, unitLabel));
+      row.appendChild(body);
+
+      logMovBindCollapsible(row, head);
+      wrap.appendChild(row);
+    });
+    return wrap;
+  }
+
+  // Card Validation — nested INSIDE each activity code's own
+  // log-mov-logistic-card, positioned above the Detail Movement card, both
+  // collapsible. Contains this activity code's own Valid/Invalid badge (top
+  // — Actual Taken vs total_taken_qty), the normal-bucket-vs-
+  // remaining_primary_qty badge, and the per-customer breakdown — but only
+  // shows each check's Taken/Returned/Discount/Actual figures when that
+  // check is Invalid. A fully-valid activity code (the common case) renders
+  // as three badges and nothing else; expanding it isn't needed to confirm
+  // everything is fine, and there's nothing to dig into anyway.
+  function logMovValidationCard(lg, unitLabel) {
+    var card = document.createElement('div');
+    card.className = 'log-mov-sub-card';
+
+    var head = document.createElement('div');
+    var titleWrap = document.createElement('div');
+    var title = document.createElement('div');
+    title.className = 'log-mov-title';
+    title.style.cssText = 'display:flex; align-items:center; gap:var(--space-2); flex-wrap:wrap;';
+    var titleText = document.createElement('span');
+    titleText.textContent = 'Validation';
+    title.appendChild(titleText);
+    var actual = logMovActual(lg.total_out, lg.total_in, lg.total_adjustment);
+    var actualOk = Math.abs(round2(actual.qty) - round2(lg.total_taken_qty)) < 0.01;
+    title.appendChild(logMovValidTag(actual.qty, lg.total_taken_qty));
+    titleWrap.appendChild(title);
+    head.appendChild(titleWrap);
+    head.appendChild(logMovChevron());
+    card.appendChild(head);
+
+    var body = document.createElement('div');
+    body.className = 'log-mov-body';
+
+    var actualRow = document.createElement('div');
+    actualRow.className = 'log-mov-customer-row';
+    var actualLeft = document.createElement('div');
+    var actualLabel = document.createElement('div');
+    actualLabel.className = 'log-mov-customer-name';
+    actualLabel.textContent = 'Actual Taken';
+    actualLeft.appendChild(actualLabel);
+    actualRow.appendChild(actualLeft);
+    body.appendChild(actualRow);
+    // Taken/Returned/Discount/Actual figures only shown when this specific
+    // check is Invalid — see function doc comment above.
+    if (!actualOk) {
+      body.appendChild(logMovTotalsEl(lg.total_out, lg.total_in, lg.total_adjustment, unitLabel));
+    }
+
+    var normalOk = lg.primary_qty !== null && lg.remaining_primary_qty !== null &&
+      Math.abs(round2(lg.total_out_normal_qty - lg.total_in_normal_qty) - round2(lg.primary_qty - lg.remaining_primary_qty)) < 0.01;
+    var remRow = document.createElement('div');
+    remRow.className = 'log-mov-customer-row';
+    var remLeft = document.createElement('div');
+    var remLabel = document.createElement('div');
+    remLabel.className = 'log-mov-customer-name';
+    remLabel.textContent = 'Remaining Primary Qty (normal stock)';
+    remLeft.appendChild(remLabel);
+    remLeft.appendChild(logMovNormalValidTag(
+      lg.total_out_normal_qty, lg.total_in_normal_qty, lg.primary_qty, lg.remaining_primary_qty
+    ));
+    remRow.appendChild(remLeft);
+    if (!normalOk) {
+      var remRight = document.createElement('div');
+      remRight.className = 'log-mov-totals';
+      remRight.textContent = lg.remaining_primary_qty !== null
+        ? (fmtNum(lg.remaining_primary_qty) + ' / ' + fmtNum(lg.primary_qty) + ' ' + (unitLabel || ''))
+        : '\u2014';
+      remRow.appendChild(remRight);
+    }
+    body.appendChild(remRow);
+
+    var custHeading = document.createElement('div');
+    custHeading.className = 'log-mov-subtitle';
+    custHeading.style.marginTop = 'var(--space-3)';
+    custHeading.textContent = 'Per customer (vs Sales Transaction > Customers)';
+    body.appendChild(custHeading);
+    body.appendChild(logMovByCustomerEl(lg.by_customer, unitLabel));
+
+    card.appendChild(body);
+    logMovBindCollapsible(card, head);
+    return card;
+  }
+
+  // Top-of-page validation card — sits ABOVE the per-item cards, one row
+  // per activity code (same unit as the cards below), NOT one combined
+  // grand total. Lets the user scan every activity code's Valid/Invalid
+  // status and its Taken/Returned/Discount/Actual/Expected numbers in one
+  // place without expanding each card individually — the per-item badge in
+  // each card's own title (logMovValidTag above) still exists side by side
+  // with this, so a problem found here can be jumped to and audited in
+  // detail below. Deliberately reuses logMovActual/logMovValidTag/
+  // logMovTotalsEl instead of re-deriving the same numbers, so this card
+  // can never drift out of sync with what each item's own card shows.
   function renderLogisticMovements(list) {
     var container = document.getElementById('logMovementsList');
     var empty = document.getElementById('logMovementsEmpty');
@@ -989,6 +1265,26 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
 
       var mainBody = document.createElement('div');
       mainBody.className = 'log-mov-body';
+
+      // Card Validation sits first, above Card Detail Movement — see
+      // logMovValidationCard() above.
+      mainBody.appendChild(logMovValidationCard(lg, unitLabel));
+
+      // Card Detail Movement wraps the existing year/month/day hierarchy,
+      // now nested one level deeper (inside mainBody, alongside the
+      // Validation card) instead of being mainBody's only content.
+      var detailCard = document.createElement('div');
+      detailCard.className = 'log-mov-sub-card';
+      var detailHead = document.createElement('div');
+      var detailTitle = document.createElement('div');
+      detailTitle.className = 'log-mov-title';
+      detailTitle.textContent = 'Detail Movement';
+      detailHead.appendChild(detailTitle);
+      detailHead.appendChild(logMovChevron());
+      detailCard.appendChild(detailHead);
+
+      var detailBody = document.createElement('div');
+      detailBody.className = 'log-mov-body';
 
       lg.years.forEach(function (y) {
         var yCard = document.createElement('div');
@@ -1048,8 +1344,12 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
 
         yCard.appendChild(yBody);
         logMovBindCollapsible(yCard, yHead);
-        mainBody.appendChild(yCard);
+        detailBody.appendChild(yCard);
       });
+
+      detailCard.appendChild(detailBody);
+      logMovBindCollapsible(detailCard, detailHead);
+      mainBody.appendChild(detailCard);
 
       mainCard.appendChild(mainBody);
       logMovBindCollapsible(mainCard, mainHead);
