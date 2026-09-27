@@ -683,7 +683,6 @@ $currentYear     = date('Y');
   <div class="tab-group" id="stTabGroup">
     <div class="tab active" data-st-tab="order">New Order</div>
     <div class="tab" data-st-tab="returns">Returns</div>
-    <div class="tab" data-st-tab="defective">Defective Stock</div>
     <div class="tab" data-st-tab="customers">Customers</div>
   </div>
 
@@ -784,20 +783,6 @@ $currentYear     = date('Y');
     </div>
   </div>
 
-  <!-- Tab: Defective Stock — warehouse-level view, not tied to any customer
-       or order. Set the reference price used as the default when a New
-       Order line is sold with stock_source='defective', and repair
-       defective stock back into normal stock. See "Kendala #1 & #2" in
-       PROJECT_NOTES.md, 22 Sep 2026. -->
-  <div id="stTabPanelDefective" style="display:none;">
-    <div class="empty-sub" id="dsSuccessBox" style="display:none; color:var(--success); margin-bottom:var(--space-3);"></div>
-    <div class="empty-sub" id="dsError" style="display:none; color:var(--danger); margin-bottom:var(--space-3);"></div>
-    <div class="accordion-list" id="dsList"></div>
-    <div class="empty-state" id="dsEmpty" style="display:none;">
-      <div class="empty-title">No defective stock</div>
-      <div class="empty-sub">Products show up here once a return is restocked as defective, or once a reference price is set for them.</div>
-    </div>
-  </div>
 
   <!-- Tab 2: Customers — one collapsible card per customer, loaded when opened -->
   <div id="stTabPanelCustomers" style="display:none;">
@@ -5000,7 +4985,29 @@ $currentYear     = date('Y');
 
       var label = document.createElement('div');
       label.className = 'label';
-      label.textContent = m.product_name + ' (per ' + (m.unit_label || 'unit') + ')';
+      label.textContent = m.product_name + ' (per ' + (m.unit_label || 'unit') + ')'
+        + (m.stock_source === 'defective' ? ' \u2014 defective stock' : '');
+      g.appendChild(label);
+
+      // Defective lines always need a fresh price (never pulled from
+      // history — see create_order.php), but we still show the last price
+      // this product's defective stock actually sold for, to any customer,
+      // as a non-binding suggestion. Prefilled into the input so the staff
+      // can just confirm it, but it stays fully editable/overridable.
+      if (m.stock_source === 'defective') {
+        var hint = document.createElement('div');
+        hint.className = 'empty-sub';
+        hint.style.marginBottom = 'var(--space-1)';
+        if (m.suggested_price) {
+          hint.textContent = 'Last given: ' + formatIDR(m.suggested_price)
+            + (m.suggested_customer_name ? ' to ' + m.suggested_customer_name : '')
+            + (m.suggested_price_date ? ' on ' + formatPriceDate(m.suggested_price_date) : '')
+            + '. Confirm or change it below.';
+        } else {
+          hint.textContent = 'No previous defective-stock price for this product yet.';
+        }
+        g.appendChild(hint);
+      }
 
       var inp = document.createElement('input');
       inp.type = 'text';
@@ -5008,10 +5015,13 @@ $currentYear     = date('Y');
       inp.className = 'input input-number-comma';
       inp.placeholder = 'Price';
       inp.setAttribute('data-lid', m.logistic_id);
-      if (stNewPrices[m.logistic_id]) inp.value = formatNumberInput(String(stNewPrices[m.logistic_id]));
+      if (stNewPrices[m.logistic_id]) {
+        inp.value = formatNumberInput(String(stNewPrices[m.logistic_id]));
+      } else if (m.stock_source === 'defective' && m.suggested_price) {
+        inp.value = formatNumberInput(fmtQty(m.suggested_price));
+      }
       initNumberCommaInput(inp);
 
-      g.appendChild(label);
       g.appendChild(inp);
       stPriceRows.appendChild(g);
     });
@@ -5091,8 +5101,8 @@ $currentYear     = date('Y');
       sub.textContent = qtyText + ' \u00d7 ' + formatIDR(ln.price)
         + ' \u00b7 ' + (ln.price_source === 'new'
           ? 'new price, saved for this customer'
-          : ln.price_source === 'defective_reference'
-            ? 'defective stock reference price'
+          : ln.price_source === 'defective_manual'
+            ? 'entered for this defective sale'
             : 'price of ' + formatPriceDate(ln.price_date))
         + ' \u00b7 stock ' + fmtQty(ln.remaining_before) + ' \u2192 ' + fmtQty(ln.remaining_after)
         + (ln.stock_source === 'defective' ? ' \u00b7 defective stock' : '');
@@ -5154,7 +5164,6 @@ $currentYear     = date('Y');
   var stTabPanelMap = {
     order:     document.getElementById('stTabPanelOrder'),
     returns:   document.getElementById('stTabPanelReturns'),
-    defective: document.getElementById('stTabPanelDefective'),
     customers: document.getElementById('stTabPanelCustomers')
   };
 
@@ -5172,167 +5181,18 @@ $currentYear     = date('Y');
       var name = t.getAttribute('data-st-tab');
       setActiveStTab(name);
       if (name === 'customers') loadStCustomerCards(); // refresh every visit
-      if (name === 'defective') loadDsList(); // refresh every visit
     });
   });
 
-  // ---------- Tab: Defective Stock ----------
-  var dsList        = document.getElementById('dsList');
-  var dsEmpty       = document.getElementById('dsEmpty');
-  var dsError       = document.getElementById('dsError');
-  var dsSuccessBox  = document.getElementById('dsSuccessBox');
-
-  function dsPost(data) {
-    return fetch('ajax/manage_defective_stock.php', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams(data).toString()
-    }).then(function (r) { return r.json(); });
-  }
-
-  function loadDsList() {
-    stHideError(dsError);
-    dsSuccessBox.style.display = 'none';
-    dsList.innerHTML = '';
-    fetch('ajax/manage_defective_stock.php?action=list', { cache: 'no-store' })
-      .then(function (r) { return r.json(); })
-      .then(function (res) {
-        if (!res.ok) { stShowError(dsError, res.message || 'Could not load defective stock.'); return; }
-        renderDsList(res.data || []);
-      })
-      .catch(function () { stShowError(dsError, 'Connection error.'); });
-  }
-
-  function renderDsList(rows) {
-    dsList.innerHTML = '';
-    dsEmpty.style.display = rows.length ? 'none' : 'block';
-
-    rows.forEach(function (row) {
-      var card = document.createElement('div');
-      card.className = 'rt-line-card'; // reuse existing card styling
-
-      var body = document.createElement('div');
-      body.style.padding = 'var(--space-3)';
-
-      var title = document.createElement('div');
-      title.style.fontWeight = '600';
-      title.style.marginBottom = 'var(--space-2)';
-      title.textContent = row.product_name;
-      body.appendChild(title);
-
-      var qtyLine = document.createElement('div');
-      qtyLine.className = 'empty-sub';
-      qtyLine.style.marginBottom = 'var(--space-3)';
-      qtyLine.textContent = 'On hand: ' + fmtQty(row.defective_qty) + ' ' + (row.unit_label || '')
-        + ' \u00b7 currently with customers: ' + fmtQty(row.defective_taken_qty) + ' ' + (row.unit_label || '');
-      body.appendChild(qtyLine);
-
-      // -- Reference price --
-      var priceGroup = document.createElement('div');
-      priceGroup.className = 'form-group';
-      var priceLabel = document.createElement('div');
-      priceLabel.className = 'label';
-      priceLabel.textContent = 'Reference price (per ' + (row.unit_label || 'unit') + ')';
-      priceGroup.appendChild(priceLabel);
-
-      var priceRow = document.createElement('div');
-      priceRow.style.display = 'flex';
-      priceRow.style.gap = 'var(--space-2)';
-
-      var priceInput = document.createElement('input');
-      priceInput.type = 'text';
-      priceInput.setAttribute('inputmode', 'decimal');
-      priceInput.className = 'input input-number-comma';
-      priceInput.style.flex = '1';
-      if (row.defective_reference_price !== null) {
-        priceInput.value = formatNumberInput(fmtQty(row.defective_reference_price));
-      }
-      initNumberCommaInput(priceInput);
-
-      var priceSaveBtn = document.createElement('button');
-      priceSaveBtn.type = 'button';
-      priceSaveBtn.className = 'btn btn-secondary st-mini-btn';
-      priceSaveBtn.textContent = 'Save';
-      priceSaveBtn.addEventListener('click', function () {
-        var n = parseNumberInput(priceInput.value);
-        if (isNaN(n) || n <= 0) { stShowError(dsError, 'Enter a reference price above zero.'); return; }
-        stHideError(dsError);
-        priceSaveBtn.disabled = true;
-        dsPost({ action: 'set_price', logistic_id: row.logistic_id, price: n })
-          .then(function (res) {
-            priceSaveBtn.disabled = false;
-            if (!res.ok) { stShowError(dsError, res.message || 'Could not save the reference price.'); return; }
-            dsSuccessBox.textContent = 'Reference price saved for ' + row.product_name + '.';
-            dsSuccessBox.style.display = 'block';
-          })
-          .catch(function () {
-            priceSaveBtn.disabled = false;
-            stShowError(dsError, 'Connection error.');
-          });
-      });
-
-      priceRow.appendChild(priceInput);
-      priceRow.appendChild(priceSaveBtn);
-      priceGroup.appendChild(priceRow);
-      body.appendChild(priceGroup);
-
-      // -- Repair to normal stock --
-      var repairGroup = document.createElement('div');
-      repairGroup.className = 'form-group';
-      var repairLabel = document.createElement('div');
-      repairLabel.className = 'label';
-      repairLabel.textContent = 'Repair to normal stock';
-      repairGroup.appendChild(repairLabel);
-
-      var repairRow = document.createElement('div');
-      repairRow.style.display = 'flex';
-      repairRow.style.gap = 'var(--space-2)';
-
-      var repairInput = document.createElement('input');
-      repairInput.type = 'text';
-      repairInput.setAttribute('inputmode', 'decimal');
-      repairInput.className = 'input';
-      repairInput.style.flex = '1';
-      repairInput.placeholder = 'Qty';
-      repairInput.disabled = !(row.defective_qty > 0.0001);
-      repairInput.addEventListener('input', function () {
-        repairInput.value = repairInput.value.replace(/[^0-9.]/g, '');
-      });
-
-      var repairBtn = document.createElement('button');
-      repairBtn.type = 'button';
-      repairBtn.className = 'btn btn-secondary st-mini-btn';
-      repairBtn.textContent = 'Move to Normal Stock';
-      repairBtn.disabled = !(row.defective_qty > 0.0001);
-      repairBtn.addEventListener('click', function () {
-        var n = parseNumberInput(repairInput.value);
-        if (isNaN(n) || n <= 0) { stShowError(dsError, 'Enter a quantity above zero.'); return; }
-        if (n > row.defective_qty + 0.0001) { stShowError(dsError, 'Only ' + fmtQty(row.defective_qty) + ' ' + (row.unit_label || '') + ' is on hand.'); return; }
-        stHideError(dsError);
-        repairBtn.disabled = true;
-        dsPost({ action: 'repair', logistic_id: row.logistic_id, qty: n })
-          .then(function (res) {
-            repairBtn.disabled = false;
-            if (!res.ok) { stShowError(dsError, res.message || 'Could not repair the stock.'); return; }
-            dsSuccessBox.textContent = fmtQty(n) + ' ' + (row.unit_label || '') + ' of ' + row.product_name + ' moved back to normal stock.';
-            dsSuccessBox.style.display = 'block';
-            loadDsList(); // quantities changed — refresh the whole list
-          })
-          .catch(function () {
-            repairBtn.disabled = false;
-            stShowError(dsError, 'Connection error.');
-          });
-      });
-
-      repairRow.appendChild(repairInput);
-      repairRow.appendChild(repairBtn);
-      repairGroup.appendChild(repairRow);
-      body.appendChild(repairGroup);
-
-      card.appendChild(body);
-      dsList.appendChild(card);
-    });
-  }
+  // NOTE (27 Sep 2026): the "Defective Stock" tab that used to live here
+  // (reference price + Repair to Normal Stock) was removed — see
+  // PROJECT_NOTES.md, "Redesain besar: hapus tab Defective Stock...".
+  // Repair to Normal Stock now lives in the Logistic menu's Logistic List
+  // tab, inside the "Defective Stock — Return History" fly window
+  // (logistic_content.php), next to the pickup history for that same
+  // activity code. The reference price concept is gone entirely; a
+  // defective sale's price is always typed fresh in stPriceOverlay below,
+  // with a "last given" suggestion as a hint only.
 
   // ---------- Tab 2: one collapsible card per customer ----------
   function loadStCustomerCards() {

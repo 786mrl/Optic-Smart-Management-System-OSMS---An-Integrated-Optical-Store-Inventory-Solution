@@ -28,6 +28,16 @@
 // either way; defective_taken_qty additionally rises only for defective
 // lines, as a sub-tracking of how much of that balance is defective stock.
 //
+// Revised 27 Sep 2026 ("Redesain besar: hapus tab Defective Stock..."): a
+// defective line's price is now ALWAYS a fresh manual entry (new_prices),
+// never looked up from customer_item_prices (that table isn't
+// stock_source-aware, so it can't tell a normal price from a defective one
+// for the same customer+product) and never saved back into it either. A
+// "suggested_price" (the last price this product's defective stock actually
+// sold for, to any customer) is returned as a hint only, taken from
+// logistic_movements — logistics.defective_reference_price is no longer
+// used anywhere in this file.
+//
 // Response contract: { ok, message, ... }
 //   ok: true  -> order { customer, order_date, driver_name, police_number,
 //                        invoice{id,number,is_new,total_before,total_after},
@@ -275,7 +285,7 @@ try {
     sort($ids);
     $marks = implode(',', array_fill(0, count($ids), '?'));
     $st = $lisani_conn->prepare(
-        'SELECT l.id, l.remaining_primary_qty, l.defective_qty, l.defective_reference_price,
+        'SELECT l.id, l.remaining_primary_qty, l.defective_qty,
                 l.primary_unit_label, a.activity_name
          FROM logistics l
          JOIN activities a ON a.id = l.activity_id
@@ -320,7 +330,22 @@ try {
         throw new AosOrderError(implode("\n", $shortages));
     }
 
-    // ---- Prices: latest price_date that is still <= the order date ----
+    // ---- Prices ----
+    // 'normal' lines: latest customer_item_prices entry with price_date <=
+    // the order date (unchanged behaviour).
+    // 'defective' lines: customer_item_prices is deliberately NEVER consulted
+    // — that table has no stock_source column, so it mixes normal and
+    // defective prices for the same customer+product. Trusting it for a
+    // defective line risked silently reusing that customer's NORMAL price
+    // (the bug reported 27 Sep 2026 — see PROJECT_NOTES.md, "Redesain besar:
+    // hapus tab Defective Stock..."), and saving a defective price INTO it
+    // would just as silently corrupt future normal-price lookups the other
+    // way. So a defective line always needs a fresh manual price via
+    // new_prices (source 'defective_manual', never written back to
+    // customer_item_prices — see the WRITES section below). A "suggested"
+    // price is offered as a hint only — the LAST price this activity code's
+    // defective stock was actually sold at, to ANY customer — computed from
+    // logistic_movements, never auto-applied.
     $priceStmt = $lisani_conn->prepare(
         'SELECT price, price_date
          FROM customer_item_prices
@@ -328,46 +353,72 @@ try {
          ORDER BY price_date DESC, created_at DESC, id DESC
          LIMIT 1'
     );
+    $suggestStmt = $lisani_conn->prepare(
+        "SELECT price, movement_date, customer_name
+         FROM logistic_movements
+         WHERE logistic_id = ? AND movement_type = 'out' AND stock_source = 'defective'
+         ORDER BY movement_date DESC, created_at DESC, id DESC
+         LIMIT 1"
+    );
 
     $lines   = [];
     $missing = [];
     $grand   = 0.0;
     foreach ($ids as $lid) {
-        $priceStmt->bind_param('iis', $customerId, $lid, $orderDate);
-        $priceStmt->execute();
-        $found = $priceStmt->get_result()->fetch_assoc();
+        $ss = $stockSourceByLogistic[$lid];
 
-        if ($found) {
-            $price = (float) $found['price'];
-            $priceDate = $found['price_date'];
-            $source = 'history';
-        } elseif ($stockSourceByLogistic[$lid] === 'defective'
-            && $logistics[$lid]['defective_reference_price'] !== null
-            && (float) $logistics[$lid]['defective_reference_price'] > 0) {
-            // No price of this customer's own yet — fall back to the
-            // reference price set on the "Defective Stock" tab (same for
-            // every customer by default). A customer's own
-            // customer_item_prices entry, checked above, still always wins.
-            $price = (float) $logistics[$lid]['defective_reference_price'];
-            $priceDate = $orderDate;
-            $source = 'defective_reference';
-        } elseif (isset($newPrices[$lid])) {
-            $price = $newPrices[$lid];
-            $priceDate = $orderDate;
-            $source = 'new';
+        if ($ss === 'normal') {
+            $priceStmt->bind_param('iis', $customerId, $lid, $orderDate);
+            $priceStmt->execute();
+            $found = $priceStmt->get_result()->fetch_assoc();
+
+            if ($found) {
+                $price = (float) $found['price'];
+                $priceDate = $found['price_date'];
+                $source = 'history';
+            } elseif (isset($newPrices[$lid])) {
+                $price = $newPrices[$lid];
+                $priceDate = $orderDate;
+                $source = 'new';
+            } else {
+                $missing[] = [
+                    'logistic_id'  => $lid,
+                    'product_name' => $logistics[$lid]['activity_name'],
+                    'unit_label'   => $logistics[$lid]['primary_unit_label'],
+                ];
+                continue;
+            }
         } else {
-            $missing[] = [
-                'logistic_id'  => $lid,
-                'product_name' => $logistics[$lid]['activity_name'],
-                'unit_label'   => $logistics[$lid]['primary_unit_label'],
-            ];
-            continue;
+            // Defective: figure out the suggestion regardless (used both in
+            // the "missing" hint and kept on the saved line for reference).
+            $suggestStmt->bind_param('i', $lid);
+            $suggestStmt->execute();
+            $sg = $suggestStmt->get_result()->fetch_assoc();
+            $suggestedPrice        = $sg ? (float) $sg['price'] : null;
+            $suggestedPriceDate    = $sg ? $sg['movement_date'] : null;
+            $suggestedCustomerName = $sg ? $sg['customer_name'] : null;
+
+            if (isset($newPrices[$lid])) {
+                $price = $newPrices[$lid];
+                $priceDate = $orderDate;
+                $source = 'defective_manual';
+            } else {
+                $missing[] = [
+                    'logistic_id'             => $lid,
+                    'product_name'            => $logistics[$lid]['activity_name'],
+                    'unit_label'              => $logistics[$lid]['primary_unit_label'],
+                    'stock_source'            => 'defective',
+                    'suggested_price'         => $suggestedPrice,
+                    'suggested_price_date'    => $suggestedPriceDate,
+                    'suggested_customer_name' => $suggestedCustomerName,
+                ];
+                continue;
+            }
         }
 
         $qty   = $qtyByLogistic[$lid];
         $total = round($qty * $price, 2);
         $grand = round($grand + $total, 2);
-        $ss    = $stockSourceByLogistic[$lid];
         $remainingBefore = $ss === 'defective'
             ? (float) ($logistics[$lid]['defective_qty'] ?? 0)
             : (float) ($logistics[$lid]['remaining_primary_qty'] ?? 0);
@@ -391,6 +442,7 @@ try {
         ];
     }
     $priceStmt->close();
+    $suggestStmt->close();
 
     if ($missing) {
         throw new AosOrderError(
@@ -529,6 +581,11 @@ try {
     foreach ($lines as $ln) {
         $lid = $ln['logistic_id'];
 
+        // Only a NORMAL manual price is saved to customer_item_prices.
+        // 'defective_manual' is deliberately never written here — see the
+        // big comment above the price-resolution loop for why mixing
+        // defective prices into that table would corrupt future normal
+        // price lookups for the same customer+product.
         if ($ln['price_source'] === 'new') {
             $p = money($ln['price']);
             $priceIns->bind_param('iisss', $customerId, $lid, $p, $orderDate, $ln['unit_label']);

@@ -1,30 +1,54 @@
 <?php
 // lisani_aos/ajax/manage_defective_stock.php
-// Backs the "Defective Stock" tab (see "Kendala #1 & #2" in
-// PROJECT_NOTES.md, 22 Sep 2026). Three actions, all against `logistics`
-// directly — this is warehouse-level housekeeping, not a customer
-// transaction, so it never touches logistic_movements or any customer.
+// Backs the "Defective Stock — Return History" fly window inside the
+// Logistic menu's Logistic List tab (logistic_content.php). Warehouse-level,
+// scoped to ONE activity code (logistic_id) at a time — opened by clicking
+// that product's "Defective Stock" row.
 //
-// GET  ?action=list
-//   Every product that currently has defective stock, or has ever had a
-//   reference price set for it (so the row doesn't disappear the moment
-//   defective_qty hits 0 — the reference price is still worth keeping).
-//   Response: { ok, data: [ { logistic_id, product_name, unit_label,
-//     defective_qty, defective_taken_qty, defective_reference_price } ] }
+// Revised 27 Sep 2026 ("Redesain besar: hapus tab Defective Stock..."): the
+// old warehouse-wide tab (`action=list`) and its static reference price
+// (`action=set_price`, logistics.defective_reference_price) are GONE — price
+// for a defective sale is now always typed fresh in New Order (see
+// create_order.php), with a "last given" suggestion computed on the fly from
+// logistic_movements instead of a stored column. `action=repair` is
+// unchanged and is now the only action left in this file besides the new
+// `action=history`.
 //
-// POST action=set_price   logistic_id, price
-//   Sets logistics.defective_reference_price. Logged to
-//   defective_stock_events (event_type='reference_price_set').
-//   This is a FALLBACK default only — create_order.php checks a customer's
-//   own customer_item_prices entry first, so a customer-specific price
-//   always still wins over this reference price.
+// GET  ?action=history   logistic_id
+//   Everything the fly window needs for one product: current defective_qty/
+//   defective_taken_qty (so "Repair" can be validated client-side too), and
+//   the full pickup history — every logistic_movements row for this
+//   logistic_id with movement_type='out' AND stock_source='defective'
+//   (i.e. actually sold from defective stock, NOT goods returned in
+//   defective condition — that is a separate, incoming direction and is not
+//   what this list is for). One entry per movement: customer_name,
+//   movement_date, qty, price, total_price.
+//   Response: { ok, data: { logistic_id, product_name, unit_label,
+//     defective_qty, defective_taken_qty, history: [ {customer_name,
+//     movement_date, qty, price, total_price} ] } }
+//
+// GET  ?action=return_history   logistic_id
+//   Added 27 Sep 2026 alongside the fly window's second button ("Returned
+//   In"). Mirrors action=history but the OPPOSITE direction: every
+//   logistic_movements row for this logistic_id with movement_type='in' AND
+//   stock_source='defective' (create_return.php writes stock_source =
+//   restock_bucket on the 'in' row it inserts — see that file's header —
+//   so restock_bucket='defective' at return time is what lands here). These
+//   are customer returns restocked INTO the defective bucket, NOT repairs
+//   (repairs are logged in defective_stock_events, a different table, and
+//   are not movement rows at all). Same response shape as action=history —
+//   just a different `history` array — so the client can swap the list
+//   under the same header when the user switches tabs.
+//   Response: { ok, data: { logistic_id, product_name, unit_label,
+//     defective_qty, defective_taken_qty, history: [ {customer_name,
+//     movement_date, qty, price, total_price} ] } }
 //
 // POST action=repair   logistic_id, qty
-//   Moves qty from defective_qty to remaining_primary_qty (goods were
-//   fixed and are sellable as normal again). Cannot exceed defective_qty.
-//   Logged to defective_stock_events (event_type='repaired_to_normal').
-//   Deliberately the ONLY way defective_qty decreases other than being sold
-//   with stock_source='defective' in a New Order.
+//   Moves qty from defective_qty to remaining_primary_qty (goods were fixed
+//   and are sellable as normal again). Cannot exceed defective_qty. Logged
+//   to defective_stock_events (event_type='repaired_to_normal'). Still the
+//   ONLY way defective_qty decreases other than being sold with
+//   stock_source='defective' in a New Order.
 
 ini_set('display_errors', '0');
 ob_start();
@@ -81,76 +105,60 @@ $action = $_SERVER['REQUEST_METHOD'] === 'GET' ? ($_GET['action'] ?? '') : ($_PO
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
 try {
-    if ($action === 'list') {
-        $st = $lisani_conn->prepare(
-            "SELECT l.id AS logistic_id, a.activity_name AS product_name, l.primary_unit_label AS unit_label,
-                    l.defective_qty, l.defective_taken_qty, l.defective_reference_price
-             FROM logistics l
-             JOIN activities a ON a.id = l.activity_id
-             WHERE l.defective_qty > 0 OR l.defective_taken_qty > 0 OR l.defective_reference_price IS NOT NULL
-             ORDER BY a.activity_name ASC"
-        );
-        $st->execute();
-        $rows = [];
-        $res = $st->get_result();
-        while ($row = $res->fetch_assoc()) {
-            $rows[] = [
-                'logistic_id'               => (int) $row['logistic_id'],
-                'product_name'              => $row['product_name'],
-                'unit_label'                => $row['unit_label'],
-                'defective_qty'             => (float) $row['defective_qty'],
-                'defective_taken_qty'       => (float) $row['defective_taken_qty'],
-                'defective_reference_price' => $row['defective_reference_price'] === null ? null : (float) $row['defective_reference_price'],
-            ];
-        }
-        $st->close();
-        aos_json(['ok' => true, 'data' => $rows]);
-    }
-
-    if ($action === 'set_price') {
-        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-            aos_fail('Invalid request.');
-        }
-        $lid   = (int) ($_POST['logistic_id'] ?? 0);
-        $price = isset($_POST['price']) ? clean_number((string) $_POST['price']) : null;
+    // Shared by action=history and action=return_history: only the
+    // movement_type differs ('out' = taken by a customer, 'in' = returned
+    // by a customer back into the defective bucket) — everything else
+    // about the product header + row shape is identical.
+    if ($action === 'history' || $action === 'return_history') {
+        $lid = (int) ($_GET['logistic_id'] ?? 0);
         if ($lid <= 0) {
             aos_fail('Product is missing.');
         }
-        if ($price === null || $price <= 0 || $price > 9999999999999.99) {
-            aos_fail('Enter a reference price above zero.');
-        }
-        $price = round($price, 2);
 
-        $lisani_conn->begin_transaction();
-
-        $st = $lisani_conn->prepare('SELECT defective_reference_price FROM logistics WHERE id = ? FOR UPDATE');
+        $st = $lisani_conn->prepare(
+            'SELECT l.defective_qty, l.defective_taken_qty, l.primary_unit_label, a.activity_name
+             FROM logistics l
+             JOIN activities a ON a.id = l.activity_id
+             WHERE l.id = ?'
+        );
         $st->bind_param('i', $lid);
         $st->execute();
         $row = $st->get_result()->fetch_assoc();
         $st->close();
         if (!$row) {
-            $lisani_conn->rollback();
             aos_fail('Product was not found.');
         }
-        $oldPrice = $row['defective_reference_price'] === null ? null : (float) $row['defective_reference_price'];
 
-        $p = money($price);
-        $st = $lisani_conn->prepare('UPDATE logistics SET defective_reference_price = ? WHERE id = ?');
-        $st->bind_param('si', $p, $lid);
-        $st->execute();
-        $st->close();
-
-        $oldP = $oldPrice === null ? null : money($oldPrice);
+        $movementType = $action === 'history' ? 'out' : 'in';
         $st = $lisani_conn->prepare(
-            "INSERT INTO defective_stock_events (logistic_id, event_type, old_price, new_price, created_by)
-             VALUES (?, 'reference_price_set', ?, ?, ?)"
+            "SELECT customer_name, movement_date, qty_primary_package AS qty, price, total_price
+             FROM logistic_movements
+             WHERE logistic_id = ? AND movement_type = ? AND stock_source = 'defective'
+             ORDER BY movement_date DESC, created_at DESC, id DESC"
         );
-        $st->bind_param('issi', $lid, $oldP, $p, $userId);
+        $st->bind_param('is', $lid, $movementType);
         $st->execute();
+        $history = [];
+        $res = $st->get_result();
+        while ($h = $res->fetch_assoc()) {
+            $history[] = [
+                'customer_name' => $h['customer_name'],
+                'movement_date' => $h['movement_date'],
+                'qty'           => (float) $h['qty'],
+                'price'         => $h['price'] === null ? null : (float) $h['price'],
+                'total_price'   => $h['total_price'] === null ? null : (float) $h['total_price'],
+            ];
+        }
         $st->close();
 
-        $lisani_conn->commit();
-        aos_json(['ok' => true, 'message' => 'Reference price saved.']);
+        aos_json(['ok' => true, 'data' => [
+            'logistic_id'         => $lid,
+            'product_name'        => $row['activity_name'],
+            'unit_label'          => $row['primary_unit_label'],
+            'defective_qty'       => (float) $row['defective_qty'],
+            'defective_taken_qty' => (float) $row['defective_taken_qty'],
+            'history'             => $history,
+        ]]);
     }
 
     if ($action === 'repair') {

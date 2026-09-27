@@ -3659,3 +3659,323 @@ melihat hasilnya:
 **File yang diubah:** `logistic_content.php` saja.
 
 **Status: fix ditulis, belum dites user.**
+## Redesain besar: hapus tab Defective Stock, harga defective jadi input manual per order + harga saran dinamis, fly window Return History di Logistic List (27 Sep 2026)
+
+User laporan 2 masalah dari fitur defective stock yang sudah ditulis (tahap 1–2,
+22 Sep) plus 1 pertanyaan:
+
+1. **Bug**: saat order ambil dari defective stock, harga yang kepakai masih
+   harga normal, bukan `defective_reference_price` — padahal menurut notes
+   tahap 2, `create_order.php` seharusnya sudah fallback ke situ. Karena kode
+   ini memang belum pernah dites jalan beneran di server (dicatat eksplisit di
+   notes tahap 1 & 2), ini kemungkinan bug resolusi harga yang belum ketahuan
+   sampai sekarang.
+2. User memutuskan **desainnya diubah**, bukan cuma di-fix:
+   - Harga defective **tidak lagi kolom statis** (`logistics.defective_reference_price`)
+     yang diatur manual per produk di tab terpisah — user anggap ini tidak valid
+     karena harga defective **bisa beda per customer** (sama seperti harga
+     normal).
+   - Harga defective harus **diinput manual saat order** (flow `stPriceOverlay`
+     yang sudah ada, sama seperti harga normal), TAPI tetap tampilkan **harga
+     saran** = harga TERAKHIR yang pernah diberikan untuk defective stock dari
+     activity code (produk) itu — dihitung dinamis dari riwayat
+     `logistic_movements` (`stock_source='defective'`), **bukan** dari kolom
+     statis. Ingat satu produk defective bisa berasal dari lebih dari 1
+     activity code — harga saran per activity code, bukan digabung.
+   - **Tab "Defective Stock" dihapus total** (list warehouse-level + aksi
+     "set/update reference price" yang menyertainya).
+   - Riwayat "produk defective ini sudah dijual ke siapa" tetap harus ada,
+     tapi pindah ke **Logistic List** (menu Logistic): bagian atas fly window
+     (defective stock - return history) yang sudah menampilkan **total
+     defective stock** dibuat bisa **diklik/push lagi** untuk membuka fly
+     window KEDUA berisi riwayat pengambilan oleh customer, dengan detail:
+     tanggal pengambilan, jumlah (qty), dan harga.
+   - Pengambilan dari defective stock (baik di Logistic List maupun di
+     Movements) **harus ada tanda/badge yang jelas** — sekarang polos, tidak
+     ada keterangan sama sekali, jadi baris defective dan normal terlihat
+     identik di list.
+3. **Pertanyaan user**: kalau qty yang diorder MELEBIHI `defective_qty` yang
+   tersisa, bagaimana behavior yang sudah ada? **Jawaban** (dari logika
+   `create_order.php` tahap 1–2): divalidasi ke bucket-nya sendiri, sama
+   seperti stok normal — kalau qty > `defective_qty` tersisa, baris itu
+   **ditolak** (error stok tidak cukup), **tidak ada** auto-fallback/auto-split
+   ke stok normal. Satu produk tidak boleh mixed `stock_source` dalam satu
+   baris order (aturan lama, tidak berubah) — kalau mau sebagian normal
+   sebagian defective, harus jadi 2 baris terpisah di order yang sama,
+   masing-masing baris divalidasi ke bucket-nya sendiri secara independen.
+   Tidak ada mekanisme auto-split otomatis yang menyarankan/mengisi sisa qty
+   dari bucket lain — itu scope baru kalau diinginkan, belum didesain.
+
+### Scope kerja sesi berikutnya (belum dikerjakan, masih tahap requirement)
+1. `create_order.php` — audit ulang & fix resolusi harga defective (cek urutan
+   `customer_item_prices` → harga saran terakhir dari movement history →
+   manual input; hilangkan referensi ke `defective_reference_price` kalau
+   kolom ini jadi dihapus/tidak dipakai lagi).
+2. Query "harga saran" baru: ambil harga dari movement `logistic_movements`
+   ter-akhir dengan `stock_source='defective'` untuk `logistic_id` (activity
+   code) yang sama — perlu ditentukan di endpoint mana query ini hidup (dry-run
+   `create_order.php`? endpoint terpisah dipanggil overlay `stStockSourceOverlay`
+   saat load harga?).
+3. `transaction_content.php` — hapus tab "Defective Stock" (`stTabPanelDefective`,
+   `loadDsList`, dst.) beserta pemanggilannya; sesuaikan `stStockSourceOverlay`/
+   `stPriceOverlay` supaya munculkan harga saran di atas sebagai hint (bukan
+   auto-fill wajib, staff tetap bisa override).
+4. `manage_defective_stock.php` — endpoint ini historinya punya 2 aksi:
+   `set_price` (akan dibuang, karena reference price statis dihapus) dan
+   `repair` (Repair to Normal Stock, pindah qty `defective_qty` →
+   `remaining_primary_qty`). **Belum diputuskan** aksi `repair` ini pindah ke
+   mana setelah tab Defective Stock hilang — opsi yang diajukan ke user:
+   (a) jadi bagian dari fly window Return History baru di Logistic List, atau
+   (b) jadi aksi per-baris langsung di accordion Logistic List (sejajar
+   Edit/Delete/Add Document yang sudah ada). **Menunggu jawaban user.**
+5. `logistic_content.php` — fly window total defective stock yang sudah ada
+   dibuat clickable/pushable untuk membuka fly window kedua "Return History":
+   list riwayat pengambilan customer (tanggal, qty, harga) untuk activity code
+   itu, sumber data dari `logistic_movements` (`stock_source='defective'`,
+   `customer_id`, tanggal, qty, harga per baris).
+6. `logistic_content.php` (dan kemungkinan `list_logistic_movements.php`) —
+   tambah badge/tanda visual pada baris yang sumbernya defective (baik di
+   accordion Logistic List maupun di tab Movements) supaya tidak lagi terlihat
+   seolah-olah normal.
+7. Migrasi SQL: kemungkinan `DROP COLUMN logistics.defective_reference_price`
+   (atau dibiarkan tapi tidak dipakai lagi — perlu didiskusikan, karena drop
+   kolom itu ireversibel) dan keputusan soal tabel audit `defective_stock_events`
+   (masih relevan untuk histori `repair`? atau ikut didesain ulang tergantung
+   jawaban poin 4).
+
+### Dokumen yang diminta ke user (belum diupload di sesi ini)
+`create_order.php`, `transaction_content.php`, `manage_defective_stock.php`,
+`logistic_content.php`, `list_logistic_movements.php`, `create_return.php`,
+dan file/skema migrasi SQL yang terakhir benar-benar dijalankan di server user
+(supaya kolom yang dianggap ada di notes bisa dicocokkan ke kondisi DB
+sungguhan — mengingat bug harga di atas menunjukkan ada gap antara yang
+ditulis di kode dan yang sudah tervalidasi jalan).
+
+**Status: requirement gathering, belum ada kode yang ditulis/diubah sesi ini.**
+
+## Implementasi redesain defective stock: fix bug harga, hapus tab, fly window history+repair di Logistic List (27 Sep 2026)
+
+Lanjutan dari requirement gathering di sesi sebelumnya ("Redesain besar: hapus
+tab Defective Stock..."). User upload 6 file (`create_order.php`,
+`create_return.php`, `list_logistic_movements.php`, `logistic_content.php`,
+`transaction_content.php`, `manage_defective_stock.php`) + hasil `DESCRIBE`
+3 tabel terkait (`logistics`, `logistic_movements`, `defective_stock_events`)
+dari phpMyAdmin. User juga menjawab pertanyaan penempatan **Repair to Normal
+Stock** → opsi (a): ditaruh di fly window "Return History" yang sama di
+Logistic List.
+
+### Root cause bug harga (ketemu, bukan cuma dugaan)
+Di `create_order.php` lama, resolusi harga SELALU cek `customer_item_prices`
+lebih dulu untuk `customer_id + logistic_id`, **tanpa peduli `stock_source`**
+— tabel itu tidak punya kolom `stock_source` sama sekali. Jadi kalau customer
+itu sudah pernah beli produk yang sama di harga normal sebelumnya, harga itu
+langsung kepakai lagi walau order sekarang `stock_source='defective'`,
+mendahului fallback `defective_reference_price` yang seharusnya baru dicek
+setelahnya. Reference price itu jadi seolah tidak pernah kepakai kalau
+customer sudah punya histori harga.
+
+### Perubahan desain final (sesuai keputusan user)
+1. **Line normal**: resolusi harga TIDAK berubah — tetap
+   `customer_item_prices` (histori) → `new_prices` (manual, disimpan ke
+   histori) → missing.
+2. **Line defective**: `customer_item_prices` **tidak pernah dicek sama
+   sekali** (root cause di atas dihindari dari akarnya, bukan ditambal) —
+   selalu wajib `new_prices` (manual per order), source baru
+   `'defective_manual'`. Harga manual defective **tidak pernah ditulis balik**
+   ke `customer_item_prices` (supaya tidak mencemari histori harga NORMAL
+   customer itu untuk order berikutnya — risiko dua arah yang sama
+   pentingnya dengan bug awal).
+3. **Harga saran** (bukan reference price statis lagi): dihitung dinamis di
+   `create_order.php` dari `logistic_movements` — baris `movement_type='out'
+   AND stock_source='defective'` TERAKHIR untuk `logistic_id` itu (siapapun
+   customernya), diambil price + movement_date + customer_name. Dikirim di
+   response `missing` (field `suggested_price`/`suggested_price_date`/
+   `suggested_customer_name`) supaya `stPriceOverlay` bisa menampilkan hint
+   "Last given: Rp X to [customer] on [tanggal]" — input tetap **prefilled
+   tapi bisa diedit/dioverride**, bukan auto-terkunci.
+4. **Tab "Defective Stock" dihapus total** dari `transaction_content.php`:
+   tombol tab, panel `stTabPanelDefective`, entry di `stTabPanelMap`, branch
+   `if (name === 'defective')`, dan seluruh blok `loadDsList`/`renderDsList`
+   (± 155 baris JS) — semuanya dibuang bersih.
+5. **`manage_defective_stock.php`** ditulis ulang: `action=list` dan
+   `action=set_price` (backing tab yang dihapus) dibuang. `action=repair`
+   dipertahankan **tanpa perubahan logic**. `action=history` (BARU,
+   scoped per `logistic_id`) — data untuk fly window Logistic List: qty
+   defective saat ini + riwayat pengambilan (`out` + `stock_source=
+   'defective'`): customer_name, movement_date, qty, price, total_price.
+6. **`logistic_content.php`** — fly window "Defective Stock — Return
+   History" (yang SEBELUMNYA sudah ada tapi datanya dari field
+   `l.defective_history` embedded di response `list_logistics.php`, tanpa
+   harga, dan sumbernya tidak jelas apakah "returned in" atau "taken out")
+   diganti total:
+   - Sekarang **fetch on-demand** ke `manage_defective_stock.php?
+     action=history&logistic_id=...` setiap kali dibuka — TIDAK lagi
+     bergantung pada `list_logistics.php` sama sekali (file itu tidak
+     disentuh/diminta sesi ini; field `defective_history` di responsnya jadi
+     dead code tapi harmless, bisa dibersihkan nanti kalau mau).
+   - List riwayat sekarang tampilkan **harga** per baris (qty × harga ·
+     tanggal), sumber datanya eksplisit "taken out" (`stock_source=
+     'defective'`, `movement_type='out'`) — sesuai maksud asli user
+     ("riwayat pengambilan", bukan riwayat retur-masuk).
+   - **Form Repair to Normal Stock dipindah ke sini** (opsi a yang dipilih
+     user) — qty input + tombol "Move to Normal Stock", manggil
+     `action=repair` yang sama seperti sebelumnya, refresh
+     `loadLogisticList()` setelah sukses supaya baris Logistic List di
+     baliknya ikut update.
+7. **Tanda/badge defective di Movements**: `renderLogMovLine()` di
+   `logistic_content.php` sekarang tambahkan badge kedua **"DEFECTIVE"**
+   (`badge-danger`) di samping badge Taken/Returned/Discount, kalau
+   `mv.stock_source === 'defective'`. Sebelumnya baris movement defective
+   terlihat identik dengan normal — sekarang selalu ada tandanya. Data
+   `stock_source` sudah ada dari dulu di response `list_logistic_movements.php`
+   (tidak perlu diubah), cuma belum dipakai di render sisi client.
+8. Header comment `create_order.php` diperbarui menjelaskan alasan
+   `customer_item_prices` sengaja diskip untuk `stock_source='defective'`.
+
+### File migrasi baru
+`migration_remove_defective_reference_price.sql` — **OPSIONAL**, isinya
+`ALTER TABLE logistics DROP COLUMN defective_reference_price` (dikomentari,
+tidak auto-run) karena kolom ini sudah tidak dibaca/ditulis oleh kode manapun
+lagi setelah perubahan di atas, tapi drop kolom sifatnya ireversibel jadi
+tidak dipaksa. Kolom `old_price`/`new_price` dan nilai ENUM
+`'reference_price_set'` di `defective_stock_events` **dibiarkan** (histori
+lama tetap valid dibaca, cuma tidak ada lagi kode yang insert event_type itu
+— `manage_defective_stock.php` sekarang cuma pernah insert
+`'repaired_to_normal'`).
+
+### File yang TIDAK diubah sesi ini (dicek dulu, dipastikan aman)
+- `create_return.php` — dicek, tidak ada referensi ke
+  `defective_reference_price`/`manage_defective_stock.php` sama sekali, jadi
+  tidak perlu perubahan.
+- `list_logistic_movements.php` — sudah punya `stock_source` per movement
+  dari dulu (dipakai fitur validasi lain), tidak perlu diubah untuk badge
+  DEFECTIVE (itu murni perubahan render sisi client).
+- `list_logistics.php` — **tidak diupload user sesi ini, tidak disentuh**.
+  Field `defective_history` di responsnya (kalau ada) sekarang jadi tidak
+  terpakai di client, tapi tidak berbahaya dibiarkan.
+
+### Validasi yang sudah dilakukan
+Seluruh `<script>` di `logistic_content.php` dan `transaction_content.php`
+lolos parse murni (`new Function()` via Node — sama seperti sesi-sesi
+sebelumnya, container ini tidak punya `php` terinstall jadi `php -l`
+sungguhan belum bisa dijalankan). Brace/paren di file PHP yang diubah
+dicek seimbang secara manual. **Belum ada yang dites jalan beneran di server
+user** — migrasi opsional di atas belum dijalankan, dan flow New Order dengan
+defective stock (harga saran + input manual) belum pernah dicoba end-to-end.
+
+### Yang masih perlu diperhatikan / risiko
+1. Alur harga saran baru bergantung pada urutan tombol "Stock Source" →
+   dry-run kedua → server balikin `missing_prices` (karena defective SELALU
+   dianggap missing sampai staff isi manual) → `stPriceOverlay` muncul
+   dengan hint. Ini flow yang sudah ada sebelumnya (untuk kasus produk baru
+   tanpa harga sama sekali), sekarang defective SELALU lewat jalur ini setiap
+   order — belum dites apakah pengalaman stafnya terasa wajar/tidak
+   mengganggu di pemakaian nyata.
+2. Kalau ternyata staff ingin harga defective per customer TETAP diingat
+   untuk order berikutnya ke customer yang sama (bukan cuma "harga saran
+   generik terakhir ke siapapun"), desain saat ini belum mendukung itu
+   (sengaja, supaya tidak mencemari `customer_item_prices`) — perlu tabel
+   terpisah kalau nanti diminta (mis. `customer_item_prices` dengan kolom
+   `stock_source`, atau tabel baru khusus).
+3. Sama seperti sesi-sesi sebelumnya: **belum ada testing nyata di server**.
+   Sangat disarankan tes di staging/dev dulu, terutama alur New Order dengan
+   defective stock dan fly window Repair yang baru.
+
+**Status: seluruh scope yang diminta (fix bug harga, hapus tab Defective
+Stock, harga saran dinamis + input manual per order, fly window Return
+History dengan harga + Repair to Normal Stock di Logistic List, badge
+DEFECTIVE di Movements) sudah ditulis. Belum ada yang dites langsung di
+server user.**
+
+## Update 27 Sep 2026 (lanjutan) — dua tombol di fly window Return History
+Sesi ini menambahkan riwayat kedua ke fly window "Defective Stock — Return
+History" (Logistic List) yang sesi sebelumnya baru punya satu arah
+(pengambilan/"taken out" saja). Sekarang ada **dua tombol tab** di dalam
+window yang sama:
+1. **"Taken Out"** — riwayat pengambilan defective stock oleh customer
+   (`movement_type='out'`, `stock_source='defective'`) — ini yang sudah ada
+   sebelumnya, tidak diubah datanya, cuma dipindah ke bawah tombol tab.
+2. **"Returned In"** (BARU) — riwayat pengembalian barang defective oleh
+   customer, direstock KE bucket defective (`movement_type='in'`,
+   `stock_source='defective'` — ditulis oleh `create_return.php` sebagai
+   `restock_bucket='defective'` saat insert baris `'in'`, lihat komentar di
+   file itu bagian "this 'in' row records restock_bucket").
+
+Form "Repair to Normal Stock" di bagian bawah **tetap satu, dipakai bersama**
+oleh kedua tab (dia beraksi ke `defective_qty` yang sama, tidak spesifik ke
+salah satu arah).
+
+### Perubahan file
+- **`ajax/manage_defective_stock.php`**: `action=history` (lama) dan
+  `action=return_history` (BARU) sekarang berbagi satu blok kode — bedanya
+  cuma `movement_type` yang di-bind ('out' vs 'in'), query lain
+  (`stock_source='defective'`, kolom yang di-SELECT, response shape) persis
+  sama. Tidak ada perubahan skema/tabel baru — keduanya baca dari
+  `logistic_movements` yang sudah ada.
+- **`logistic_content.php`**:
+  - Tambah `.tab-group` (`#logDefectiveHistoryTabGroup`) berisi 2 `.tab`:
+    `data-defective-history-tab="history"` (default active) dan
+    `="return_history"`, pakai class tab yang sudah ada di `theme.css` (tidak
+    ada CSS baru).
+  - Label di atas list (`#logDefectiveHistoryListLabel`) dan teks
+    empty-state ikut berubah per tab lewat `DEFECTIVE_HISTORY_TAB_META`
+    (`history` → "Taken by customers" / "No defective-stock pickups yet.",
+    `return_history` → "Returned by customers" / "No defective-stock returns
+    yet.").
+  - Fetch logic dipecah jadi `loadDefectiveHistory(l)` yang generic (dipakai
+    saat window dibuka MAUPUN saat ganti tab), memakai
+    `defectiveHistoryTab` (state global window ini) sebagai nama `action`
+    query string — jadi `action=history` atau `action=return_history` yang
+    dipanggil tergantung tab aktif.
+  - Klik tab: listener delegasi di `#logDefectiveHistoryTabGroup`, toggle
+    class `active`, update label, lalu `loadDefectiveHistory()` ulang untuk
+    `logistic_id` yang sama (window tidak ditutup/dibuka lagi, cuma isi list
+    yang di-refresh).
+  - Saat window dibuka (`openDefectiveHistory`), tab selalu direset ke
+    `history` (Taken Out) dulu — konsisten dengan behavior lama sebelum ada
+    tab kedua.
+
+### File yang TIDAK diubah sesi ini
+- `create_return.php` — hanya dibaca untuk konfirmasi nama kolom
+  (`restock_bucket` → `stock_source` pada baris 'in'), tidak ada perubahan.
+- Tidak ada migrasi SQL baru — `logistic_movements` sudah lengkap untuk
+  kedua arah dari sebelumnya (dipakai fitur validasi return per-lot).
+
+### Belum dites
+Sama seperti sebelumnya: belum ada testing nyata di server user. Perlu
+dicoba: buka fly window pada produk yang punya riwayat pengambilan DAN
+riwayat pengembalian defective, pastikan kedua tab menampilkan baris yang
+benar dan tidak tertukar arah, serta Repair tetap berfungsi dari tab
+manapun sedang aktif.
+
+### Follow-up: list dibatasi tinggi + scroll sendiri
+User khawatir kalau riwayatnya panjang, fly window ikut memanjang terus.
+Ditambahkan CSS `#logDefectiveHistoryList { max-height: 260px; overflow-y:
+auto; }` — jadi cuma list-nya yang scroll, header/qty/tab/form Repair tetap
+di tempat (tidak perlu scroll dulu buat lihat form Repair kalau list-nya
+panjang). Berlaku sama untuk kedua tab (Taken Out & Returned In) karena
+keduanya pakai container `#logDefectiveHistoryList` yang sama, cuma isinya
+di-swap. Tidak ada perubahan lain.
+
+### Follow-up: form Repair disembunyikan di 0 + qty default = sisa defective
+Dua perilaku baru untuk form "Repair to Normal Stock" (`#logDefectiveRepairSection`,
+dibungkus id baru — sebelumnya `.form-group` tanpa id):
+1. **Disembunyikan total** (`display:none`) kalau `defective_qty` produk itu
+   0 — tidak ada gunanya nawarin repair kalau tidak ada stok defective sama
+   sekali. Muncul lagi otomatis begitu ada stok defective (mis. setelah
+   customer lain mengembalikan barang defective, dites lewat tab "Returned
+   In").
+2. Input qty **prefilled ke seluruh `defective_qty` yang tersisa** setiap
+   kali angka itu diketahui/berubah (buka window, ganti tab, atau selesai
+   repair) — tapi tetap input teks biasa, staff bisa timpa dengan angka lebih
+   kecil untuk partial repair.
+
+Implementasi: fungsi baru `syncDefectiveRepairUI()` — satu tempat yang
+nge-toggle visibility section + isi ulang `logDefectiveRepairQty.value`
+berdasar `defectiveHistoryCurrent.defective_qty`. Dipanggil di 3 titik:
+setelah `openDefectiveHistory` set `defective_qty` awal, di akhir
+`loadDefectiveHistory()` (dipakai baik saat buka window maupun ganti tab),
+dan di akhir handler sukses `btnLogDefectiveRepair` (defective_qty sudah
+dikurangi). Tidak ada perubahan di `manage_defective_stock.php` — ini murni
+UI, data `defective_qty` sudah dikirim balik dari `action=history`/
+`action=return_history` seperti biasa.

@@ -330,6 +330,17 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
     .defective-history-who { min-width: 0; word-break: break-word; }
     .defective-history-meta { flex-shrink: 0; color: var(--text-muted); text-align: right; }
 
+    /* Return History fly window's list (#logDefectiveHistoryList, both the
+       Taken Out and Returned In tabs) — capped height + its own scrollbar,
+       so a product with lots of history rows doesn't stretch the whole fly
+       window taller; the tab buttons and the Repair form below stay put and
+       visible without scrolling past a long list first. */
+    #logDefectiveHistoryList {
+      max-height: 260px;
+      overflow-y: auto;
+      padding-right: var(--space-1);
+    }
+
     @media (max-width: 640px) {
       .defective-history-line { flex-direction: column; }
       .defective-history-meta { text-align: left; }
@@ -661,9 +672,18 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
   </div>
 </div>
 
-<!-- Defective Stock return history: opened by clicking the "Defective
-     Stock" row inside a Logistic List accordion item. Read-only — just
-     shows who returned the goods and when, no actions. -->
+<!-- Defective Stock — Return History: opened by clicking the "Defective
+     Stock" row inside a Logistic List accordion item. Fetched fresh on open
+     (ajax/manage_defective_stock.php?action=history / return_history)
+     rather than embedded in the Logistic List response, so it can carry
+     price per row. Two tab buttons switch which movement direction is shown
+     for this same product — "Taken Out" (movement_type='out', customer
+     bought from defective stock) vs "Returned In" (movement_type='in',
+     customer's return was restocked into the defective bucket) — plus a
+     "Repair to Normal Stock" action for the qty still on hand, shared by
+     both tabs since it acts on defective_qty regardless of which list is
+     showing. Revised 27 Sep 2026, see PROJECT_NOTES.md "Redesain besar:
+     hapus tab Defective Stock..." and the later "tambah Returned In" entry. -->
 <div class="modal-overlay" id="logDefectiveHistoryOverlay" style="display:none;">
   <div class="modal">
     <div class="modal-header"><div class="modal-title">Defective Stock — Return History</div></div>
@@ -672,7 +692,24 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
         <span class="accordion-row-label">Defective Stock</span>
         <span class="accordion-row-value" id="logDefectiveHistoryQty">-</span>
       </div>
+
+      <div class="empty-sub" id="logDefectiveHistoryError" style="display:none; color:var(--danger); margin-bottom:var(--space-2);"></div>
+      <div class="empty-sub" id="logDefectiveHistorySuccess" style="display:none; color:var(--success); margin-bottom:var(--space-2);"></div>
+
+      <div class="tab-group" id="logDefectiveHistoryTabGroup" style="margin-top:var(--space-2);">
+        <div class="tab active" data-defective-history-tab="history">Taken Out</div>
+        <div class="tab" data-defective-history-tab="return_history">Returned In</div>
+      </div>
+      <div class="label" style="margin-top:var(--space-2);" id="logDefectiveHistoryListLabel">Taken by customers</div>
       <div id="logDefectiveHistoryList"></div>
+
+      <div class="form-group" id="logDefectiveRepairSection" style="margin-top:var(--space-4); padding-top:var(--space-3); border-top:1px dashed rgba(255,255,255,0.06); display:none;">
+        <div class="label">Repair to Normal Stock</div>
+        <div style="display:flex; gap:var(--space-2);">
+          <input type="text" inputmode="decimal" class="input" id="logDefectiveRepairQty" placeholder="Qty" style="flex:1;">
+          <button type="button" class="btn btn-secondary" id="btnLogDefectiveRepair">Move to Normal Stock</button>
+        </div>
+      </div>
     </div>
     <div class="modal-footer">
       <button type="button" class="btn btn-secondary" id="btnLogDefectiveHistoryClose">Close</button>
@@ -867,40 +904,159 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
     return row;
   }
 
-  // ---------- Defective Stock fly window (return history) ----------
-  var logDefectiveHistoryOverlay = document.getElementById('logDefectiveHistoryOverlay');
-  var logDefectiveHistoryQty     = document.getElementById('logDefectiveHistoryQty');
-  var logDefectiveHistoryList    = document.getElementById('logDefectiveHistoryList');
-  var btnLogDefectiveHistoryClose = document.getElementById('btnLogDefectiveHistoryClose');
+  // ---------- Defective Stock fly window (return history + repair) ----------
+  var logDefectiveHistoryOverlay   = document.getElementById('logDefectiveHistoryOverlay');
+  var logDefectiveHistoryQty       = document.getElementById('logDefectiveHistoryQty');
+  var logDefectiveHistoryList      = document.getElementById('logDefectiveHistoryList');
+  var logDefectiveHistoryListLabel = document.getElementById('logDefectiveHistoryListLabel');
+  var logDefectiveHistoryTabGroup  = document.getElementById('logDefectiveHistoryTabGroup');
+  var logDefectiveHistoryError     = document.getElementById('logDefectiveHistoryError');
+  var logDefectiveHistorySuccess   = document.getElementById('logDefectiveHistorySuccess');
+  var logDefectiveRepairQty        = document.getElementById('logDefectiveRepairQty');
+  var logDefectiveRepairSection    = document.getElementById('logDefectiveRepairSection');
+  var btnLogDefectiveRepair        = document.getElementById('btnLogDefectiveRepair');
+  var btnLogDefectiveHistoryClose  = document.getElementById('btnLogDefectiveHistoryClose');
+  var defectiveHistoryCurrent      = null; // { logistic_id, unit_label, defective_qty } of the open product
+  var defectiveHistoryTab          = 'history'; // 'history' (Taken Out) | 'return_history' (Returned In) — which list is showing
+  // Labels shown above the list per tab, and per-tab empty-state text.
+  var DEFECTIVE_HISTORY_TAB_META = {
+    history:        { label: 'Taken by customers', empty: 'No defective-stock pickups yet.' },
+    return_history: { label: 'Returned by customers', empty: 'No defective-stock returns yet.' }
+  };
 
-  function openDefectiveHistory(l) {
-    logDefectiveHistoryQty.textContent = fmtNum(l.defective_qty) + ' ' + (l.primary_unit_label || '');
+  function dsShowError(msg) {
+    logDefectiveHistorySuccess.style.display = 'none';
+    logDefectiveHistoryError.textContent = msg;
+    logDefectiveHistoryError.style.display = 'block';
+  }
+  function dsHideMessages() {
+    logDefectiveHistoryError.style.display = 'none';
+    logDefectiveHistorySuccess.style.display = 'none';
+  }
+
+  function renderDefectiveHistoryList(data) {
     logDefectiveHistoryList.innerHTML = '';
-
-    var historyItems = l.defective_history || [];
+    var historyItems = data.history || [];
     if (!historyItems.length) {
       var empty = document.createElement('div');
       empty.className = 'defective-history-empty';
-      empty.textContent = 'No return history yet.';
+      empty.textContent = DEFECTIVE_HISTORY_TAB_META[defectiveHistoryTab].empty;
       logDefectiveHistoryList.appendChild(empty);
-    } else {
-      historyItems.forEach(function (h) {
-        var line = document.createElement('div');
-        line.className = 'defective-history-line';
-        var who = document.createElement('span');
-        who.className = 'defective-history-who';
-        who.textContent = h.customer_name || 'Unknown customer';
-        var meta = document.createElement('span');
-        meta.className = 'defective-history-meta';
-        meta.textContent = fmtNum(h.qty) + ' ' + (l.primary_unit_label || '') + ' \u00b7 ' + (h.movement_date || '-');
-        line.appendChild(who);
-        line.appendChild(meta);
-        logDefectiveHistoryList.appendChild(line);
-      });
+      return;
     }
-
-    show(logDefectiveHistoryOverlay);
+    historyItems.forEach(function (h) {
+      var line = document.createElement('div');
+      line.className = 'defective-history-line';
+      var who = document.createElement('span');
+      who.className = 'defective-history-who';
+      who.textContent = h.customer_name || 'Unknown customer';
+      var meta = document.createElement('span');
+      meta.className = 'defective-history-meta';
+      meta.textContent = fmtNum(h.qty) + ' ' + (data.unit_label || '')
+        + (h.price !== null ? ' \u00d7 ' + fmtIDR(h.price) : '')
+        + ' \u00b7 ' + (h.movement_date || '-');
+      line.appendChild(who);
+      line.appendChild(meta);
+      logDefectiveHistoryList.appendChild(line);
+    });
   }
+
+  // Repair form only makes sense while there's actually defective stock on
+  // hand — hidden entirely at 0 (nothing to move back). While shown, the
+  // qty input defaults to the full remaining defective_qty (the common
+  // case: repairing everything that's left) but stays a plain editable
+  // input, not read-only, so staff can still type a smaller partial qty.
+  function syncDefectiveRepairUI() {
+    var qty = defectiveHistoryCurrent ? defectiveHistoryCurrent.defective_qty : 0;
+    if (qty > 0.0001) {
+      logDefectiveRepairSection.style.display = '';
+      logDefectiveRepairQty.value = fmtNum(qty);
+    } else {
+      logDefectiveRepairSection.style.display = 'none';
+      logDefectiveRepairQty.value = '';
+    }
+  }
+
+  // Fetches fresh from the server every time it opens/switches tab (rather
+  // than reusing whatever list_logistics.php sent for the row), because
+  // this is the only place that needs price per row — see
+  // manage_defective_stock.php. `action` is 'history' (Taken Out) or
+  // 'return_history' (Returned In) — same response shape either way.
+  function loadDefectiveHistory(l) {
+    logDefectiveHistoryList.innerHTML = '';
+    fetch('ajax/manage_defective_stock.php?action=' + defectiveHistoryTab + '&logistic_id=' + encodeURIComponent(l.id), { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (!res.ok) { dsShowError(res.message || 'Could not load defective stock history.'); return; }
+        var data = res.data;
+        defectiveHistoryCurrent.defective_qty = data.defective_qty;
+        logDefectiveHistoryQty.textContent = fmtNum(data.defective_qty) + ' ' + (data.unit_label || '');
+        renderDefectiveHistoryList(data);
+        syncDefectiveRepairUI();
+      })
+      .catch(function () { dsShowError('Connection error.'); });
+  }
+
+  function openDefectiveHistory(l) {
+    dsHideMessages();
+    logDefectiveHistoryQty.textContent = fmtNum(l.defective_qty) + ' ' + (l.primary_unit_label || '');
+    logDefectiveHistoryList.innerHTML = '';
+    defectiveHistoryCurrent = { logistic_id: l.id, unit_label: l.primary_unit_label, defective_qty: l.defective_qty };
+    syncDefectiveRepairUI();
+    defectiveHistoryTab = 'history';
+    logDefectiveHistoryTabGroup.querySelectorAll('.tab').forEach(function (t) {
+      t.classList.toggle('active', t.getAttribute('data-defective-history-tab') === 'history');
+    });
+    logDefectiveHistoryListLabel.textContent = DEFECTIVE_HISTORY_TAB_META.history.label;
+    show(logDefectiveHistoryOverlay);
+    loadDefectiveHistory(l);
+  }
+
+  logDefectiveHistoryTabGroup.addEventListener('click', function (e) {
+    var tabEl = e.target.closest('[data-defective-history-tab]');
+    if (!tabEl || !defectiveHistoryCurrent) return;
+    var tab = tabEl.getAttribute('data-defective-history-tab');
+    if (tab === defectiveHistoryTab) return;
+    defectiveHistoryTab = tab;
+    logDefectiveHistoryTabGroup.querySelectorAll('.tab').forEach(function (t) {
+      t.classList.toggle('active', t === tabEl);
+    });
+    logDefectiveHistoryListLabel.textContent = DEFECTIVE_HISTORY_TAB_META[tab].label;
+    dsHideMessages();
+    loadDefectiveHistory({ id: defectiveHistoryCurrent.logistic_id });
+  });
+
+  btnLogDefectiveRepair.addEventListener('click', function () {
+    dsHideMessages();
+    if (!defectiveHistoryCurrent) return;
+    var n = parseNumberInput(logDefectiveRepairQty.value);
+    if (isNaN(n) || n <= 0) { dsShowError('Enter a quantity above zero.'); return; }
+    if (n > defectiveHistoryCurrent.defective_qty + 0.0001) {
+      dsShowError('Only ' + fmtNum(defectiveHistoryCurrent.defective_qty) + ' ' + (defectiveHistoryCurrent.unit_label || '') + ' is on hand.');
+      return;
+    }
+    btnLogDefectiveRepair.disabled = true;
+    fetch('ajax/manage_defective_stock.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ action: 'repair', logistic_id: defectiveHistoryCurrent.logistic_id, qty: n }).toString()
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        btnLogDefectiveRepair.disabled = false;
+        if (!res.ok) { dsShowError(res.message || 'Could not repair the stock.'); return; }
+        logDefectiveHistorySuccess.textContent = fmtNum(n) + ' ' + (defectiveHistoryCurrent.unit_label || '') + ' moved back to normal stock.';
+        logDefectiveHistorySuccess.style.display = 'block';
+        defectiveHistoryCurrent.defective_qty -= n;
+        logDefectiveHistoryQty.textContent = fmtNum(defectiveHistoryCurrent.defective_qty) + ' ' + (defectiveHistoryCurrent.unit_label || '');
+        syncDefectiveRepairUI(); // hides the form at 0, or re-defaults qty to what's left
+        loadLogisticList(); // remaining_primary_qty / defective_qty changed — refresh the row underneath
+      })
+      .catch(function () {
+        btnLogDefectiveRepair.disabled = false;
+        dsShowError('Connection error.');
+      });
+  });
 
   btnLogDefectiveHistoryClose.addEventListener('click', function () { hide(logDefectiveHistoryOverlay); });
   logDefectiveHistoryOverlay.addEventListener('click', function (e) {
@@ -1228,6 +1384,18 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
     badge.className = 'badge ' + badgeClass;
     badge.textContent = badgeText;
     left.appendChild(badge);
+    // Tag the bucket a pickup/restock actually touched, so a defective-stock
+    // movement never looks identical to a normal one in this list — added
+    // 27 Sep 2026, see PROJECT_NOTES.md "Redesain besar: hapus tab
+    // Defective Stock...". Only shown for 'defective' — 'normal' is the
+    // silent default and doesn't need its own badge.
+    if (mv.stock_source === 'defective') {
+      var srcBadge = document.createElement('span');
+      srcBadge.className = 'badge badge-danger';
+      srcBadge.style.marginLeft = 'var(--space-1)';
+      srcBadge.textContent = 'DEFECTIVE';
+      left.appendChild(srcBadge);
+    }
     var sub = document.createElement('div');
     sub.className = 'log-mov-line-sub';
     var subParts = [];
