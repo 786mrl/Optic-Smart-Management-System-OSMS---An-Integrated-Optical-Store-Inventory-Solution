@@ -3979,3 +3979,68 @@ dan di akhir handler sukses `btnLogDefectiveRepair` (defective_qty sudah
 dikurangi). Tidak ada perubahan di `manage_defective_stock.php` — ini murni
 UI, data `defective_qty` sudah dikirim balik dari `action=history`/
 `action=return_history` seperti biasa.
+## Bug: "Loading pickup history…" tidak pernah selesai di Returns (28 Sep 2026)
+**Gejala:** di tab Returns, setelah pesan return dibaca dan qty muncul, catatan
+di bawah qty stuck di "Loading pickup history…" — daftar pickup (sumber retur)
+tidak pernah terbuka.
+
+**Penyebab:** isi `ajax/list_return_price_options.php` (yang diupload user, dan
+sesuai gejala juga yang ada di server) ternyata **kode `list_logistic_movements.php`**
+(header komentarnya pun masih "list_logistic_movements.php"; respons-nya array
+logistic per tahun/bulan/hari). UI Returns (`rtLoadMovements()` → `rtFillAllocations()`
+di `transaction_content.php`) membaca `res.data.available` dan `res.data.movements`,
+yang tidak ada di respons itu → `it.available` jadi `undefined`,
+`rtUpdateAvailNote()` langsung return, dan teks loading tidak pernah diganti.
+Tidak ada hubungannya dengan perubahan fly window Defective (sesi ini hanya
+menyentuh `manage_defective_stock.php` dan `logistic_content.php`).
+
+**Perbaikan:** `ajax/list_return_price_options.php` dikembalikan ke versi asli
+dari GitHub (revisi 22 Sep 2026, lot-based returns), ditambah SATU perubahan:
+field `remaining_adjustable` per pickup. (Sempat ditulis ulang dari nol dulu di
+sesi yang sama, lalu diganti versi GitHub karena itu file aslinya.)
+GET `customer_id, logistic_id` → `{ ok, data: { available, total_taken,
+total_returned, movements: [ {movement_id, movement_date, qty, price, remaining,
+remaining_adjustable, disabled, label} ] } }`, movements terbaru dulu.
+- `remaining = qty − SUM(in dengan source_movement_id = pickup ini)`
+- `remaining_adjustable = qty − SUM(in + price_adjustment dengan source_movement_id = pickup ini)`
+  (SATU LEFT JOIN dengan `movement_type IN ('in','price_adjustment')` + SUM CASE,
+  supaya tidak terjadi fan-out baris dua kali)
+- `available = total_taken − total_returned` (agregat customer+produk, seperti aslinya)
+- `disabled = remaining <= 0.0001`; `label` = "Pickup #N of the day" hanya kalau
+  ada >1 pickup di tanggal yang sama.
+
+**Catatan:**
+- Versi GitHub 22 Sep TIDAK punya `remaining_adjustable`, padahal UI Returns
+  (`m.remaining_adjustable`, validasi `rtMovementAdjustQty`) membacanya — versi
+  yang benar-benar terbaru ada di sini, jadi pastikan yang di-commit ke GitHub
+  juga versi ini.
+- `list_logistic_movements.php` (tab Movements) tidak ikut diupload sesi ini —
+  pastikan file itu di server masih ada dan benar.
+- Belum dites di server user.
+
+## Customers tab: Return + Discount yang disimpan bersamaan jadi SATU card (28 Sep 2026)
+**Keluhan:** di Sales Transaction > Customers, return dan discount (price
+adjustment) yang disimpan di waktu yang sama tampil sebagai dua card terpisah.
+
+**Penyebab:** card dikelompokkan per `batch_id` (`buildStInvoiceItem()`,
+`transaction_content.php`), dan `rtSaveReturn()` memanggil dua endpoint
+berurutan (`create_return.php` lalu `create_price_adjustment.php`) yang masing-
+masing menstempel `batch_id` sendiri → dua batch → dua card.
+
+**Percobaan pertama (DIBATALKAN):** meneruskan `join_batch_id` dari return ke
+`create_price_adjustment.php` supaya batch_id-nya sama. Dibatalkan atas
+masukan user: masalahnya cuma di TAMPILAN list pengambilan customer, jadi
+tidak perlu mengubah data yang ditulis. Kode `join_batch_id` di
+`create_price_adjustment.php` dan `rtSaveReturn()` sudah dicabut;
+`create_price_adjustment.php` kembali persis seperti aslinya.
+
+**Perbaikan final (display-only, `transaction_content.php`):** setelah baris
+movement dikelompokkan per batch di `buildStInvoiceItem()`, grup yang HANYA
+berisi `price_adjustment` digabung ke grup yang HANYA berisi `in` (return)
+kalau: invoice sama (sudah pasti, dikerjakan per invoice), `movement_date`
+sama, `driver_name` dan `police_number` sama, dan `created_at` keduanya
+berselisih ≤ 60 detik (`MERGE_WINDOW_MS`). Card gabungan menampilkan baris
+RETURN dulu lalu DISCOUNT. Return/discount yang disimpan terpisah di waktu
+lain (>60 detik) tetap card sendiri. Tidak ada data yang diubah, jadi data
+lama yang sudah terpisah pun ikut tergabung selama selisih waktunya ≤ 60
+detik. Belum dites di server user.

@@ -5424,6 +5424,39 @@ $currentYear     = date('Y');
       g.items.push(m);
     });
 
+    // A Return and a Discount (price adjustment) saved from the Returns tab
+    // in ONE click are written by two separate requests, so they carry two
+    // different batch_ids and would show as two cards. Display-only merge
+    // (no data is changed, old rows are fixed too): an all-'in' group and an
+    // all-'price_adjustment' group of this invoice with the same date,
+    // driver and police number, created within MERGE_WINDOW_MS of each
+    // other, are shown as ONE card (returns first, then discounts). A return
+    // (or discount) saved separately, later, does not merge.
+    var MERGE_WINDOW_MS = 60 * 1000;
+    function grpTime(g) { return Date.parse(String(g.created_at || '').replace(' ', 'T')); }
+    function grpOnly(g, type) { return g.items.every(function (x) { return x.movement_type === type; }); }
+    var mergedAway = [];
+    groups.forEach(function (adj) {
+      if (mergedAway.indexOf(adj) !== -1 || !grpOnly(adj, 'price_adjustment')) return;
+      var ta = grpTime(adj);
+      if (isNaN(ta)) return;
+      for (var k = 0; k < groups.length; k++) {
+        var ret = groups[k];
+        if (ret === adj || mergedAway.indexOf(ret) !== -1 || !grpOnly(ret, 'in')) continue;
+        var tr = grpTime(ret);
+        if (isNaN(tr) || Math.abs(ta - tr) > MERGE_WINDOW_MS) continue;
+        if (ret.movement_date !== adj.movement_date
+            || (ret.driver_name || '') !== (adj.driver_name || '')
+            || (ret.police_number || '') !== (adj.police_number || '')) continue;
+        ret.items = ret.items.concat(adj.items);
+        mergedAway.push(adj);
+        break;
+      }
+    });
+    if (mergedAway.length) {
+      groups = groups.filter(function (g) { return mergedAway.indexOf(g) === -1; });
+    }
+
     groups.forEach(function (g) {
       var card = document.createElement('div');
       card.className = 'st-order-group-card';
