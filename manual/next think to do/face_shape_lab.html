@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Face Shape Lab</title>
+<style>
+  :root { --bg:#1a1c1d; --card:#25282a; --line:#3a3d40; --txt:#e8e8e8; --mut:#8a8f94; --ok:#00ff88; --acc:#00cfff; --bad:#ff4d4d; }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--txt); font:14px/1.5 system-ui,sans-serif; }
+  h1 { font-size:1.15rem; margin:0 0 4px; }
+  h2 { font-size:0.95rem; margin:22px 0 8px; color:var(--acc); }
+  .note { color:var(--mut); font-size:0.8rem; margin:0 0 14px; max-width:70ch; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:14px; }
+  .btn, select { background:var(--card); color:var(--txt); border:1px solid var(--line); border-radius:8px; padding:8px 12px; font:inherit; cursor:pointer; }
+  .btn.main { border-color:var(--ok); color:var(--ok); }
+  .btn:disabled { opacity:0.4; cursor:default; }
+  #status { color:var(--mut); font-size:0.8rem; }
+  .wrap { overflow-x:auto; border:1px solid var(--line); border-radius:10px; }
+  table { border-collapse:collapse; width:100%; min-width:760px; font-size:0.8rem; }
+  th, td { padding:6px 8px; border-bottom:1px solid var(--line); text-align:center; white-space:nowrap; }
+  th { color:var(--mut); font-weight:600; background:var(--card); }
+  td.num { font-family:ui-monospace,monospace; }
+  td img { width:48px; height:48px; object-fit:cover; border-radius:6px; display:block; }
+  .good { color:var(--ok); } .wrong { color:var(--bad); } .warn { color:#ffaa00; } .dim { color:var(--mut); }
+  .sum { font-size:0.85rem; margin:0 0 8px; }
+</style>
+</head>
+<body>
+<h1>Face Shape Lab</h1>
+<p class="note">Halaman riset terpisah, tidak mengubah invoice.php. Logika analisis disalin apa adanya dari analyzeFaceShape (MediaPipe FaceMesh), ditambah satu metrik pembanding H/W(10) yang memakai titik dahi atas landmark 10. Foto diproses di browser dan tidak diunggah ke server.</p>
+
+<div class="bar">
+  <label class="btn main">Pilih Foto<input type="file" id="files" accept="image/*" multiple hidden></label>
+  <select id="batchLabel" title="Label untuk foto yang baru dipilih"></select>
+  <button class="btn" id="runBtn" disabled>Analisis Semua</button>
+  <button class="btn" id="csvBtn" disabled>Ekspor CSV</button>
+  <button class="btn" id="clearBtn" disabled>Kosongkan</button>
+  <span id="status"></span>
+</div>
+
+<div id="summary"></div>
+<h2>Hasil per foto</h2>
+<div class="wrap">
+  <table>
+    <thead><tr>
+      <th>Foto</th><th>Label</th><th>Prediksi</th><th>Top 2</th>
+      <th>H/W</th><th>H/W(10)</th><th>Dahi</th><th>Pipi</th><th>Rahang</th><th>Dagu</th><th>Sudut dagu</th><th>Pose</th><th>Cocok</th>
+    </tr></thead>
+    <tbody id="rows"><tr><td colspan="13" class="dim">Belum ada foto. Pilih beberapa foto tampak depan.</td></tr></tbody>
+  </table>
+</div>
+
+<script>
+// ---------- Constants (same landmark indices as invoice.php) ----------
+const SHAPES = ["OVAL","ROUND","SQUARE","OBLONG","HEART","DIAMOND","TRIANGLE"];
+const LM = { JAW_LEFT:234, JAW_RIGHT:454, JAW_L2:136, JAW_R2:365, CHIN:152, CHIN_L:176, CHIN_R:400,
+  TEMPLE_L:162, TEMPLE_R:389, FOREHEAD_TOP:10, FOREHEAD_MID:9, CHEEK_L:123, CHEEK_R:352,
+  BROW_L:70, BROW_R:300, BROW_L_TOP:52, EYE_L_TOP:159, EYE_L_OUTER:33, EYE_R_OUTER:263, NOSE_TIP:4 };
+const METRICS = ["faceRatio","faceRatioTop","foreheadRatio","cheekRatio","jawRatio","chinRatio","chinAngle"];
+
+// ---------- Analysis (copied from invoice.php, plus faceRatioTop) ----------
+function estimateForehead(lm) {
+  const browL = lm[LM.BROW_L_TOP] || lm[LM.BROW_L];
+  const eyeL = lm[LM.EYE_L_TOP] || lm[LM.EYE_L_OUTER];
+  const fhMid = lm[LM.FOREHEAD_MID];
+  if (!browL || !eyeL) return null;
+  const offset = Math.abs(browL.y - eyeL.y) * 1.65;
+  const browY = Math.min(lm[LM.BROW_L].y, lm[LM.BROW_R] ? lm[LM.BROW_R].y : lm[LM.BROW_L].y);
+  const estY = browY - offset;
+  return fhMid ? estY * 0.6 + fhMid.y * 0.4 : estY;
+}
+function analyzeFaceShape(lm, W, H) {
+  function dist3D(a, b) {
+    const dx = (a.x-b.x)*W, dy = (a.y-b.y)*H, dz = (a.z-b.z)*W;
+    return Math.sqrt(dx*dx + dy*dy + dz*dz);
+  }
+  const p = lm;
+  const faceWidth = dist3D(p[LM.JAW_LEFT], p[LM.JAW_RIGHT]);
+  const fhY = estimateForehead(lm);
+  const faceHeight = fhY !== null
+    ? Math.abs(p[LM.CHIN].y - fhY) * H
+    : Math.abs(p[LM.CHIN].y - (Math.min(p[LM.BROW_L].y, p[LM.BROW_R].y) - (p[LM.CHIN].y - Math.min(p[LM.BROW_L].y, p[LM.BROW_R].y)) * 0.18)) * H;
+  const foreheadWidth = dist3D(p[LM.TEMPLE_L], p[LM.TEMPLE_R]);
+  const cheekWidth = dist3D(p[LM.CHEEK_L], p[LM.CHEEK_R]);
+  const jawWidth = dist3D(p[LM.JAW_L2], p[LM.JAW_R2]);
+  const chinWidth = dist3D(p[LM.CHIN_L], p[LM.CHIN_R]);
+  function angle3D(c, a, b) {
+    const v1 = {x:(a.x-c.x)*W, y:(a.y-c.y)*H, z:(a.z-c.z)*W};
+    const v2 = {x:(b.x-c.x)*W, y:(b.y-c.y)*H, z:(b.z-c.z)*W};
+    const dot = v1.x*v2.x + v1.y*v2.y + v1.z*v2.z;
+    const m1 = Math.hypot(v1.x, v1.y, v1.z), m2 = Math.hypot(v2.x, v2.y, v2.z);
+    if (m1 === 0 || m2 === 0) return 90;
+    return Math.acos(Math.max(-1, Math.min(1, dot/(m1*m2)))) * 180 / Math.PI;
+  }
+  const chinAngle = angle3D(p[LM.CHIN], p[LM.CHIN_L], p[LM.CHIN_R]);
+  const upperFaceRatio = foreheadWidth / (cheekWidth + 0.001);
+  const lowerTaper = chinWidth / (cheekWidth + 0.001);
+  const faceRatio = faceHeight / (faceWidth + 0.001);
+  const faceRatioTop = Math.abs(p[LM.CHIN].y - p[LM.FOREHEAD_TOP].y) * H / (faceWidth + 0.001); // comparison metric (landmark 10)
+  const foreheadRatio = foreheadWidth / (faceWidth + 0.001);
+  const cheekRatio = cheekWidth / (faceWidth + 0.001);
+  const jawRatio = jawWidth / (faceWidth + 0.001);
+  const chinRatio = chinWidth / (jawWidth + 0.001);
+  const jawForeRatio = jawWidth / (foreheadWidth + 0.001);
+  const scores = {
+    OVAL: calcOval(faceRatio, foreheadRatio, cheekRatio, jawRatio, chinAngle, upperFaceRatio, lowerTaper),
+    ROUND: calcRound(faceRatio, cheekRatio, jawRatio, chinAngle, lowerTaper),
+    SQUARE: calcSquare(faceRatio, jawRatio, chinAngle, chinRatio),
+    OBLONG: calcOblong(faceRatio, foreheadRatio, jawRatio, chinRatio),
+    HEART: calcHeart(foreheadRatio, jawRatio, chinAngle, jawForeRatio, lowerTaper),
+    DIAMOND: calcDiamond(foreheadRatio, cheekRatio, jawRatio, chinAngle, upperFaceRatio),
+    TRIANGLE: calcTriangle(foreheadRatio, jawRatio, jawForeRatio, lowerTaper)
+  };
+  const total = Object.values(scores).reduce((a, b) => a + b, 0);
+  const percentages = {};
+  for (const [k, v] of Object.entries(scores)) percentages[k] = total > 0 ? Math.round((v/total)*100) : 0;
+  const shape = Object.entries(scores).reduce((a, b) => b[1] > a[1] ? b : a)[0];
+  return { shape, confidence: percentages[shape], percentages,
+    metrics: { faceRatio, faceRatioTop, foreheadRatio, cheekRatio, jawRatio, chinRatio, chinAngle, upperFaceRatio, lowerTaper } };
+}
+function calcOval(fr,fore,cheek,jaw,chinA,ufr,lt){let s=0;if(fr>=1.25&&fr<=1.65)s+=3.0;if(cheek>jaw&&cheek>fore)s+=2.5;if(fore>jaw)s+=1.0;if(jaw>=0.58&&jaw<=0.80)s+=1.5;if(chinA>=65&&chinA<=115)s+=1.0;if(lt>=0.45&&lt<=0.70)s+=1.0;if(ufr>=0.88&&ufr<=1.05)s+=0.5;return s;}
+function calcRound(fr,cheek,jaw,chinA,lt){let s=0;if(fr<1.2)s+=4.0;if(cheek>=0.85)s+=2.0;if(jaw>=0.72)s+=1.5;if(chinA>=125)s+=2.5;if(lt>=0.60)s+=1.5;return s;}
+function calcSquare(fr,jaw,chinA,chinR){let s=0;if(fr>=0.90&&fr<=1.25)s+=2.5;if(jaw>=0.82)s+=4.5;if(chinA>=110)s+=2.5;if(chinR>=0.75)s+=1.5;return s;}
+function calcOblong(fr,fore,jaw,chinR){let s=0;if(fr>=1.60)s+=5.0;if(fore<0.82)s+=1.5;if(jaw<0.72)s+=2.0;if(chinR<0.55)s+=1.5;return s;}
+function calcHeart(fore,jaw,chinA,jawFore,lt){let s=0;if(fore>=0.92)s+=3.0;if(jaw<0.68)s+=3.0;if(chinA<80)s+=3.0;if(jawFore<0.75)s+=1.0;if(lt<0.40)s+=1.5;return s;}
+function calcDiamond(fore,cheek,jaw,chinA,ufr){let s=0;if(cheek>fore&&cheek>jaw)s+=5.0;if(fore<0.82)s+=1.5;if(jaw<0.68)s+=1.5;if(chinA<95)s+=2.0;if(ufr<0.88)s+=1.0;return s;}
+function calcTriangle(fore,jaw,jawFore,lt){let s=0;if(jawFore>=1.12)s+=5.0;if(jaw>=0.85)s+=3.0;if(fore<0.80)s+=2.0;if(lt>=0.65)s+=1.0;return s;}
+
+function yawRatio(lm, W, H) {
+  const d = (a, b) => Math.hypot((a.x-b.x)*W, (a.y-b.y)*H);
+  const l = d(lm[LM.NOSE_TIP], lm[LM.EYE_L_OUTER]), r = d(lm[LM.NOSE_TIP], lm[LM.EYE_R_OUTER]);
+  return Math.min(l, r) / (Math.max(l, r) + 0.001);
+}
+
+// ---------- State ----------
+const items = [];
+let nextId = 1, mesh = null, current = null;
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const labelOptions = sel => '<option value="">(tanpa label)</option>' + SHAPES.map(s => `<option value="${s}"${s===sel?' selected':''}>${s}</option>`).join('');
+$('batchLabel').innerHTML = labelOptions('');
+
+// ---------- MediaPipe ----------
+function loadScript(src) {
+  return new Promise((ok, fail) => {
+    const s = document.createElement('script');
+    s.src = src; s.onload = ok; s.onerror = () => fail(new Error('Gagal memuat ' + src));
+    document.head.appendChild(s);
+  });
+}
+async function ensureMesh() {
+  if (mesh) return mesh;
+  await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js');
+  mesh = new FaceMesh({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}` });
+  mesh.setOptions({ maxNumFaces:1, refineLandmarks:true, minDetectionConfidence:0.65, minTrackingConfidence:0.65 });
+  mesh.onResults(r => { if (current) current.lm = (r.multiFaceLandmarks && r.multiFaceLandmarks[0]) || null; });
+  return mesh;
+}
+async function analyzeItem(it) {
+  const m = await ensureMesh();
+  const scale = Math.min(1, 960 / Math.max(it.img.naturalWidth, it.img.naturalHeight));
+  const c = document.createElement('canvas');
+  c.width = Math.round(it.img.naturalWidth * scale); c.height = Math.round(it.img.naturalHeight * scale);
+  c.getContext('2d').drawImage(it.img, 0, 0, c.width, c.height);
+  try { if (m.reset) m.reset(); } catch (e) {}
+  current = it; it.lm = null;
+  await m.send({ image: c });
+  if (!it.lm) { it.result = null; it.state = 'noface'; return; }
+  it.result = analyzeFaceShape(it.lm, c.width, c.height);
+  it.yaw = yawRatio(it.lm, c.width, c.height);
+  it.state = 'done';
+}
+
+// ---------- Actions ----------
+$('files').addEventListener('change', e => {
+  const label = $('batchLabel').value;
+  for (const file of e.target.files) {
+    const img = new Image();
+    img.onload = render;
+    img.src = URL.createObjectURL(file);
+    items.push({ id: nextId++, file, img, url: img.src, label, state: 'new', result: null });
+  }
+  e.target.value = '';
+  render();
+});
+$('runBtn').addEventListener('click', async () => {
+  const todo = items.filter(i => i.state === 'new');
+  $('runBtn').disabled = true;
+  try {
+    for (let k = 0; k < todo.length; k++) {
+      $('status').textContent = `Menganalisis ${k+1}/${todo.length}...`;
+      await analyzeItem(todo[k]);
+      render();
+    }
+    $('status').textContent = 'Selesai.';
+  } catch (err) {
+    $('status').textContent = 'Error: ' + err.message;
+  }
+  render();
+});
+$('clearBtn').addEventListener('click', () => { items.length = 0; $('status').textContent = ''; render(); });
+$('rows').addEventListener('change', e => {
+  if (!e.target.dataset.id) return;
+  const it = items.find(i => i.id === +e.target.dataset.id);
+  if (it) { it.label = e.target.value; render(); }
+});
+$('csvBtn').addEventListener('click', () => {
+  const head = ['file','label','predicted','confidence','yaw', ...METRICS, 'upperFaceRatio','lowerTaper'];
+  const lines = [head.join(',')];
+  items.filter(i => i.result).forEach(i => {
+    const m = i.result.metrics;
+    lines.push([`"${i.file.name.replace(/"/g,'')}"`, i.label, i.result.shape, i.result.confidence, i.yaw.toFixed(3),
+      ...METRICS.map(k => m[k].toFixed(3)), m.upperFaceRatio.toFixed(3), m.lowerTaper.toFixed(3)].join(','));
+  });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([lines.join('\n')], { type:'text/csv' }));
+  a.download = 'face_shape_lab.csv'; a.click();
+});
+
+// ---------- Rendering ----------
+const f2 = v => v.toFixed(2);
+function render() {
+  $('runBtn').disabled = !items.some(i => i.state === 'new');
+  $('csvBtn').disabled = !items.some(i => i.result);
+  $('clearBtn').disabled = !items.length;
+  if (!items.length) {
+    $('rows').innerHTML = '<tr><td colspan="13" class="dim">Belum ada foto. Pilih beberapa foto tampak depan.</td></tr>';
+    $('summary').innerHTML = ''; return;
+  }
+  $('rows').innerHTML = items.map(i => {
+    const head = `<td><img src="${i.url}" alt="${esc(i.file.name)}" title="${esc(i.file.name)}"></td><td><select data-id="${i.id}">${labelOptions(i.label)}</select></td>`;
+    if (!i.result) {
+      const msg = i.state === 'noface' ? '<span class="wrong">Wajah tidak terdeteksi</span>' : '<span class="dim">Belum dianalisis</span>';
+      return `<tr>${head}<td colspan="11">${msg}</td></tr>`;
+    }
+    const r = i.result, m = r.metrics;
+    const top2 = Object.entries(r.percentages).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([k, v]) => `${k} ${v}%`).join(' · ');
+    const pose = i.yaw >= 0.75 ? '<span class="good">lurus</span>' : '<span class="warn">miring</span>';
+    const hit = !i.label ? '<span class="dim">-</span>' : (r.shape === i.label ? '<span class="good">✓</span>' : '<span class="wrong">✗</span>');
+    return `<tr>${head}<td><b>${r.shape}</b></td><td>${top2}</td>` +
+      [m.faceRatio, m.faceRatioTop, m.foreheadRatio, m.cheekRatio, m.jawRatio, m.chinRatio].map(v => `<td class="num">${f2(v)}</td>`).join('') +
+      `<td class="num">${m.chinAngle.toFixed(0)}°</td><td>${pose}</td><td>${hit}</td></tr>`;
+  }).join('');
+  renderSummary();
+}
+function renderSummary() {
+  const done = items.filter(i => i.result);
+  if (!done.length) { $('summary').innerHTML = ''; return; }
+  const labelled = done.filter(i => i.label);
+  const correct = labelled.filter(i => i.result.shape === i.label).length;
+  const dist = {}; done.forEach(i => dist[i.result.shape] = (dist[i.result.shape] || 0) + 1);
+  const distTxt = Object.entries(dist).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(' · ');
+  let html = `<h2>Ringkasan</h2><p class="sum">Distribusi prediksi semua foto (${done.length}): <b>${distTxt}</b></p>`;
+  html += labelled.length
+    ? `<p class="sum">Akurasi pada foto berlabel: <b>${correct}/${labelled.length} (${Math.round(correct/labelled.length*100)}%)</b></p>`
+    : '<p class="sum dim">Beri label pada foto untuk melihat akurasi dan rata-rata metrik per bentuk.</p>';
+  const rowsHtml = SHAPES.map(s => {
+    const g = labelled.filter(i => i.label === s);
+    if (!g.length) return '';
+    const ok = g.filter(i => i.result.shape === s).length;
+    const pred = {}; g.forEach(i => pred[i.result.shape] = (pred[i.result.shape] || 0) + 1);
+    const predTxt = Object.entries(pred).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(', ');
+    const avg = k => g.reduce((t, i) => t + i.result.metrics[k], 0) / g.length;
+    return `<tr><td><b>${s}</b></td><td>${g.length}</td><td>${ok}</td><td>${predTxt}</td>` +
+      METRICS.map(k => `<td class="num">${k === 'chinAngle' ? avg(k).toFixed(0) : f2(avg(k))}</td>`).join('') + '</tr>';
+  }).join('');
+  if (rowsHtml) {
+    html += `<div class="wrap"><table><thead><tr><th>Label</th><th>n</th><th>Benar</th><th>Diprediksi sebagai</th>
+      <th>H/W</th><th>H/W(10)</th><th>Dahi</th><th>Pipi</th><th>Rahang</th><th>Dagu</th><th>Sudut dagu</th></tr></thead><tbody>${rowsHtml}</tbody></table></div>`;
+  }
+  $('summary').innerHTML = html;
+}
+</script>
+</body>
+</html>
