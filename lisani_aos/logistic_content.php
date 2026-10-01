@@ -2923,6 +2923,23 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
       });
   });
 
+  // ---------- Live refresh when returning to this section ----------
+  // footer.php only shows/hides .menu-section divs (no page reload), and
+  // this whole file is one IIFE that otherwise only fetches its data once —
+  // so switching away (e.g. to place an order in Transactions) and back
+  // used to leave Logistic List / Movements showing stale data until a
+  // manual page refresh. footer.php fires 'aos:section-shown' on every
+  // switch; when it's this section, re-fetch whichever tab is currently
+  // active (same data each tab already loads on its own tab click).
+  document.addEventListener('aos:section-shown', function (e) {
+    if (!e.detail || e.detail.target !== 'logistic') return;
+    var activeTab = logTabGroup.querySelector('.tab.active');
+    var name = activeTab ? activeTab.getAttribute('data-log-tab') : 'list';
+    if (name === 'list') loadLogisticList();
+    if (name === 'movements') loadLogisticMovements();
+    if (name === 'create') loadActivityCodes(); // refresh has_logistic/existing_products in the dropdown
+  });
+
   // ---------- Init ----------
   refreshUnitSelects();
   resetProductBlocks(); // one empty (disabled, until an activity is picked) product block, like the old single-product fields

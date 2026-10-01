@@ -61,8 +61,11 @@ optic_pos/
   `max-height=scrollHeight`: kalau isinya berubah saat terbuka, **re-sync max-height** (hanya jika sedang
   terbuka). (3) Klik card exclusive per parent (`closest('.accordion-list')`). (4) Modal didaftarkan ke
   `flexOverlays` supaya `show()`/`hide()` dan MutationObserver bekerja.
-- **Menu**: sidebar = Dashboard, Transactions, Logistic, Report. Settings & Exit di dropdown avatar.
-  Ganti section lewat `[data-target]` (footer.php). Report masih kosong.
+- **Menu**: sidebar = Dashboard, Transactions, Logistic, Report (Logistic = teks saja, tanpa ikon; menu
+  lain pakai ikon Tabler). Settings & Exit di dropdown avatar. Ganti section lewat `[data-target]`
+  (footer.php) → `setActive()` juga `dispatchEvent('aos:section-shown', {detail:{target}})` tiap ganti
+  section (lihat §8) supaya section yang IIFE-nya cuma fetch sekali bisa listen & refresh live. Report
+  masih kosong.
 
 ## 4. Model data (kolom penting — cocokkan dengan `DESCRIBE` sebelum menulis query baru)
 - **activities**: id, activity_name, cashflow(inflow/outflow/in-out), relative_path (UNIQUE,
@@ -214,14 +217,17 @@ kategori Other, pencatatan pembayaran customer, print invoice, Report.
   movement_date, qty, price, total_price}]}}`; POST `action=repair` `logistic_id, qty` (≤ defective_qty).
 
 ## 8. Log terbaru (1 Okt 2026)
-- **Multi-produk per activity code** (sudah dites user, bekerja): migrasi DB + `logistics.product_name`,
-  Create New Logistic jadi form "+ Add Product", semua tempat yang dulu pakai `a.activity_name` sebagai
-  nama produk (New Order, Pricing, Retur, Discount, Defective Stock, Movements) diganti ke
-  `l.product_name`. Alias order WA pindah kunci ke `logistic_id` (lihat §4, §7). Detail lengkap di §4/§6/§7.
-- Bugfix sesudahnya: sisa kode lama di `logistic_content.php` (`getElementById('logPrimaryInfoIcon')` dkk,
-  elemen itu sudah dihapus saat form diganti) masih dipanggil `.addEventListener` → `TypeError` yang
-  menghentikan SELURUH script di file itu → Logistic List kosong + tab Movements/Create tidak merespon
-  sama sekali. Sudah dihapus, user konfirmasi "sudah ok".
+- **Live refresh antar section** (belum dites user): dulu tiap `*_content.php` cuma fetch sekali saat load,
+  sementara ganti menu lewat `footer.php` cuma show/hide div (bukan reload) → pindah ke Logistic setelah
+  input order di Transactions tetap nampilin data lama sampai refresh manual. Perbaikan: `footer.php`
+  (`setActive()`) sekarang `document.dispatchEvent(new CustomEvent('aos:section-shown', {detail:{target}}))`
+  tiap kali section diganti. `logistic_content.php` listen event ini, kalau `target==='logistic'` re-fetch
+  tab yang sedang aktif (`list`→`loadLogisticList`, `movements`→`loadLogisticMovements`,
+  `create`→`loadActivityCodes`). Pola event ini generik — kalau menu lain nanti butuh live refresh juga,
+  tinggal tambah listener serupa di file masing-masing, tidak perlu ubah `footer.php` lagi.
+- **Hapus ikon SVG "Logistic" di sidebar**: tombol Logistic (`sidebar.php` desktop + `bottom-nav` mobile)
+  sekarang teks saja ("Logistic"), tanpa `<svg>`/`<i>` di depannya — konsisten dipermintaan user, item sidebar
+  lain (Dashboard/Transactions/Report) tetap pakai ikon Tabler seperti biasa.
 
 ## 9. Belum dites / terbuka
 - **Belum dites**: Logistic List & Movements dengan >1 produk dalam satu activity code (tampilan masih per
