@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Sep 29, 2026 at 05:59 PM
+-- Generation Time: Oct 01, 2026 at 02:39 AM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -42,7 +42,8 @@ CREATE TABLE `activities` (
 
 INSERT INTO `activities` (`id`, `activity_name`, `cashflow`, `relative_path`, `created_by`, `created_at`) VALUES
 (1, 'SAYYER I', 'outflow', 'input/2026/dates/001/', 1, '2026-09-14 17:49:48'),
-(4, 'SUKKARI LISANI', 'outflow', 'input/2026/dates/002/', 1, '2026-09-18 20:03:48');
+(4, 'SUKKARI LISANI', 'outflow', 'input/2026/dates/002/', 1, '2026-09-18 20:03:48'),
+(5, 'SUKKARI AL-QASSIM & AJWA', 'outflow', 'input/2026/dates/003/', 1, '2026-09-29 23:16:02');
 
 -- --------------------------------------------------------
 
@@ -95,7 +96,7 @@ CREATE TABLE `customers` (
 --
 
 INSERT INTO `customers` (`id`, `year`, `customer_name`, `phone_number`, `total_inflow`, `total_outflow`, `total_price_adjustments`, `total_paid`, `profit`, `created_at`) VALUES
-(1, 2026, 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', '+6281265472547', 45175000.00, 6350000.00, 725000.00, 0.00, 0.00, '2026-09-18 10:55:33'),
+(1, 2026, 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', '+6281265472547', 54790000.00, 7025000.00, 860000.00, 0.00, 0.00, '2026-09-18 10:55:33'),
 (2, 2026, 'RAIS', '+6281267646916', 5510000.00, 770000.00, 120000.00, 0.00, 0.00, '2026-09-21 04:36:37');
 
 -- --------------------------------------------------------
@@ -125,7 +126,9 @@ INSERT INTO `customer_item_prices` (`id`, `customer_id`, `logistic_id`, `price`,
 (3, 1, 2, 145000.00, '2026-09-18', 'MASTER CARTON', '2026-09-18 13:26:42', '2026-09-18 13:26:42'),
 (4, 2, 2, 140000.00, '2026-09-21', 'MASTER CARTON', '2026-09-21 04:47:41', '2026-09-21 04:47:41'),
 (5, 2, 2, 130000.00, '2026-09-21', 'MASTER CARTON', '2026-09-21 09:58:51', '2026-09-21 09:58:51'),
-(6, 2, 3, 260000.00, '2026-09-21', 'MASTER CARTON', '2026-09-21 10:49:43', '2026-09-21 10:49:43');
+(6, 2, 3, 260000.00, '2026-09-21', 'MASTER CARTON', '2026-09-21 10:49:43', '2026-09-21 10:49:43'),
+(7, 1, 4, 125000.00, '2026-10-01', 'MASTER CARTON', '2026-10-01 00:20:52', '2026-10-01 00:20:52'),
+(8, 1, 5, 450000.00, '2026-10-01', 'MASTER CARTON', '2026-10-01 00:20:52', '2026-10-01 00:20:52');
 
 -- --------------------------------------------------------
 
@@ -178,7 +181,7 @@ CREATE TABLE `invoices` (
 --
 
 INSERT INTO `invoices` (`id`, `customer_id`, `invoice_number`, `sequence_number`, `period_month`, `period_year`, `status`, `total_amount`, `paid_amount`, `paid_at`, `created_at`, `updated_at`) VALUES
-(1, 1, '001/inv/laj-TAHKP-1/IX/2026', 1, 9, 2026, 'open', 38825000.00, 0.00, NULL, '2026-09-21 04:39:50', '2026-09-26 03:09:49'),
+(1, 1, '001/inv/laj-TAHKP-1/IX/2026', 1, 9, 2026, 'open', 47765000.00, 0.00, NULL, '2026-09-21 04:39:50', '2026-10-01 00:32:55'),
 (2, 2, '001/inv/laj-R-1/IX/2026', 1, 9, 2026, 'open', 4740000.00, 0.00, NULL, '2026-09-21 04:47:41', '2026-09-28 10:22:10');
 
 -- --------------------------------------------------------
@@ -190,6 +193,7 @@ INSERT INTO `invoices` (`id`, `customer_id`, `invoice_number`, `sequence_number`
 CREATE TABLE `logistics` (
   `id` int(10) UNSIGNED NOT NULL,
   `activity_id` int(10) UNSIGNED NOT NULL,
+  `product_name` varchar(150) NOT NULL,
   `incoming_date` date DEFAULT NULL,
   `primary_qty` decimal(12,2) DEFAULT NULL,
   `primary_unit_label` varchar(100) DEFAULT NULL,
@@ -211,9 +215,11 @@ CREATE TABLE `logistics` (
 -- Dumping data for table `logistics`
 --
 
-INSERT INTO `logistics` (`id`, `activity_id`, `incoming_date`, `primary_qty`, `primary_unit_label`, `primary_unit_weight_kg`, `remaining_primary_qty`, `defective_qty`, `total_taken_qty`, `defective_taken_qty`, `defective_reference_price`, `secondary_unit_label`, `secondary_unit_weight_kg`, `secondary_ratio_per_primary`, `created_by`, `created_at`, `updated_at`) VALUES
-(2, 4, NULL, 1500.00, 'MASTER CARTON', 12.000, 1354.00, 1.00, 145.00, 0.00, NULL, 'BABY CARTON', 3.000, 4.000, 1, '2026-09-18 20:06:51', '2026-09-28 17:22:09'),
-(3, 1, NULL, 5000.00, 'MASTER CARTON', 10.000, 4928.00, 1.00, 71.00, 2.00, 200000.00, 'NO PRIMARY CARTON', 10.000, 1.000, 1, '2026-09-18 20:25:26', '2026-09-28 17:22:09');
+INSERT INTO `logistics` (`id`, `activity_id`, `product_name`, `incoming_date`, `primary_qty`, `primary_unit_label`, `primary_unit_weight_kg`, `remaining_primary_qty`, `defective_qty`, `total_taken_qty`, `defective_taken_qty`, `defective_reference_price`, `secondary_unit_label`, `secondary_unit_weight_kg`, `secondary_ratio_per_primary`, `created_by`, `created_at`, `updated_at`) VALUES
+(2, 4, 'SUKKARI LISANI', NULL, 1500.00, 'MASTER CARTON', 12.000, 1339.00, 0.00, 161.00, 3.00, NULL, 'BABY CARTON', 3.000, 4.000, 1, '2026-09-18 20:06:51', '2026-10-01 07:32:55'),
+(3, 1, 'SAYYER I', NULL, 5000.00, 'MASTER CARTON', 10.000, 4922.00, 0.00, 78.00, 3.00, 200000.00, 'NO PRIMARY CARTON', 10.000, 1.000, 1, '2026-09-18 20:25:26', '2026-10-01 07:32:55'),
+(4, 5, 'SUKKARI AL-QASSIM', NULL, 1500.00, 'MASTER CARTON', 12.000, 1481.00, 0.00, 19.00, 1.00, NULL, 'BABY CARTON', 3.000, 4.000, 1, '2026-10-01 07:10:53', '2026-10-01 07:32:55'),
+(5, 5, 'AJWA', NULL, 500.00, 'MASTER CARTON', 10.000, 495.00, 0.00, 5.00, 0.00, NULL, 'NO PRIMARY CARTON', 10.000, 1.000, 1, '2026-10-01 07:10:53', '2026-10-01 07:20:52');
 
 -- --------------------------------------------------------
 
@@ -295,7 +301,20 @@ INSERT INTO `logistic_movements` (`id`, `logistic_id`, `source_movement_id`, `cu
 (23, 3, 21, 2, 'in', 'defective', '2026-09-28', 'RAIS', 'PAK FADLUN', 'BK 1241 FAF', 1.00, 260000.00, 260000.00, 2, 22, 1, '2026-09-28 17:22:09'),
 (24, 2, 20, 2, 'in', 'defective', '2026-09-28', 'RAIS', 'PAK FADLUN', 'BK 1241 FAF', 1.00, 130000.00, 130000.00, 2, 22, 1, '2026-09-28 17:22:09'),
 (25, 3, 21, 2, 'price_adjustment', 'normal', '2026-09-28', 'RAIS', 'PAK FADLUN', 'BK 1241 FAF', 1.00, 200000.00, 60000.00, 2, 25, 1, '2026-09-28 17:22:10'),
-(26, 2, 20, 2, 'price_adjustment', 'normal', '2026-09-28', 'RAIS', 'PAK FADLUN', 'BK 1241 FAF', 2.00, 100000.00, 60000.00, 2, 25, 1, '2026-09-28 17:22:10');
+(26, 2, 20, 2, 'price_adjustment', 'normal', '2026-09-28', 'RAIS', 'PAK FADLUN', 'BK 1241 FAF', 2.00, 100000.00, 60000.00, 2, 25, 1, '2026-09-28 17:22:10'),
+(27, 2, NULL, 1, 'out', 'normal', '2026-10-01', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BL 2414 CAS', 15.00, 145000.00, 2175000.00, 1, 27, 1, '2026-10-01 07:20:52'),
+(28, 3, NULL, 1, 'out', 'normal', '2026-10-01', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BL 2414 CAS', 6.00, 345000.00, 2070000.00, 1, 27, 1, '2026-10-01 07:20:52'),
+(29, 4, NULL, 1, 'out', 'normal', '2026-10-01', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BL 2414 CAS', 20.00, 125000.00, 2500000.00, 1, 27, 1, '2026-10-01 07:20:52'),
+(30, 5, NULL, 1, 'out', 'normal', '2026-10-01', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BL 2414 CAS', 5.00, 450000.00, 2250000.00, 1, 27, 1, '2026-10-01 07:20:52'),
+(31, 2, 14, 1, 'in', 'defective', '2026-10-01', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BK 4124 ASA', 2.00, 145000.00, 290000.00, 1, 31, 1, '2026-10-01 07:25:59'),
+(32, 4, 29, 1, 'in', 'normal', '2026-10-01', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BK 4124 ASA', 1.00, 125000.00, 125000.00, 1, 31, 1, '2026-10-01 07:25:59'),
+(33, 4, 29, 1, 'in', 'defective', '2026-10-01', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BK 4124 ASA', 1.00, 125000.00, 125000.00, 1, 31, 1, '2026-10-01 07:25:59'),
+(34, 4, 29, 1, 'price_adjustment', 'normal', '2026-10-01', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BK 4124 ASA', 1.00, 100000.00, 25000.00, 1, 34, 1, '2026-10-01 07:26:00'),
+(35, 5, 30, 1, 'price_adjustment', 'normal', '2026-10-01', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BK 4124 ASA', 1.00, 400000.00, 50000.00, 1, 34, 1, '2026-10-01 07:26:00'),
+(36, 3, 2, 1, 'price_adjustment', 'normal', '2026-10-01', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BK 4124 ASA', 1.00, 285000.00, 60000.00, 1, 34, 1, '2026-10-01 07:26:00'),
+(37, 2, NULL, 1, 'out', 'defective', '2026-10-01', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BK 5121 ASF', 3.00, 110000.00, 330000.00, 1, 37, 1, '2026-10-01 07:32:55'),
+(38, 3, NULL, 1, 'out', 'defective', '2026-10-01', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BK 5121 ASF', 1.00, 200000.00, 200000.00, 1, 37, 1, '2026-10-01 07:32:55'),
+(39, 4, NULL, 1, 'out', 'defective', '2026-10-01', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BK 5121 ASF', 1.00, 90000.00, 90000.00, 1, 37, 1, '2026-10-01 07:32:55');
 
 -- --------------------------------------------------------
 
@@ -379,7 +398,7 @@ CREATE TABLE `users` (
 --
 
 INSERT INTO `users` (`user_id`, `username`, `password_hash`, `role`, `is_approved`, `created_at`, `last_login`, `session_token`, `session_expires`) VALUES
-(1, 'Rais786', '$2y$10$QciWVGPK9aGHjy05rBoXgOWfCAesfocowc0vt4QCMHVeVzsVuGDS6', 'admin', 1, '2026-09-10 21:34:57', '2026-09-28 13:04:39', NULL, NULL);
+(1, 'Rais786', '$2y$10$QciWVGPK9aGHjy05rBoXgOWfCAesfocowc0vt4QCMHVeVzsVuGDS6', 'admin', 1, '2026-09-10 21:34:57', '2026-10-01 02:01:11', NULL, NULL);
 
 --
 -- Indexes for dumped tables
@@ -436,7 +455,8 @@ ALTER TABLE `invoices`
 --
 ALTER TABLE `logistics`
   ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `uniq_activity` (`activity_id`);
+  ADD UNIQUE KEY `uniq_activity_product` (`activity_id`,`product_name`),
+  ADD KEY `idx_logistics_activity` (`activity_id`);
 
 --
 -- Indexes for table `logistic_documents`
@@ -487,7 +507,7 @@ ALTER TABLE `users`
 -- AUTO_INCREMENT for table `activities`
 --
 ALTER TABLE `activities`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
 
 --
 -- AUTO_INCREMENT for table `company_documents`
@@ -505,7 +525,7 @@ ALTER TABLE `customers`
 -- AUTO_INCREMENT for table `customer_item_prices`
 --
 ALTER TABLE `customer_item_prices`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=9;
 
 --
 -- AUTO_INCREMENT for table `defective_stock_events`
@@ -523,7 +543,7 @@ ALTER TABLE `invoices`
 -- AUTO_INCREMENT for table `logistics`
 --
 ALTER TABLE `logistics`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
 
 --
 -- AUTO_INCREMENT for table `logistic_documents`
@@ -535,7 +555,7 @@ ALTER TABLE `logistic_documents`
 -- AUTO_INCREMENT for table `logistic_movements`
 --
 ALTER TABLE `logistic_movements`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=27;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=40;
 
 --
 -- AUTO_INCREMENT for table `transactions`

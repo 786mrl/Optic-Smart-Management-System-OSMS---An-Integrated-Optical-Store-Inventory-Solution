@@ -1,6 +1,6 @@
 # PROJECT_NOTES — lisani_aos
 
-> Versi ringkas (28 Sep 2026): hanya **kondisi sekarang, aturan bisnis, peta file**. Riwayat lengkap
+> Versi ringkas (1 Okt 2026): hanya **kondisi sekarang, aturan bisnis, peta file**. Riwayat lengkap
 > per sesi ada di `NOTES_ARCHIVE.md` (jangan diupload kecuali perlu tahu ALASAN sebuah keputusan lama).
 > **Aturan merawat file ini:** tiap pekerjaan baru cukup ±10 baris di bagian "Log terbaru". Kalau sudah
 > selesai & dites, lebur ringkasannya ke bagian modul terkait lalu hapus dari log. Jaga total < 600 baris.
@@ -73,8 +73,11 @@ optic_pos/
   (akumulator diskon, khusus laporan), total_paid, profit.
 - **customer_item_prices**: customer_id, logistic_id, price, price_date, unit — harga jual per produk per
   customer (riwayat; dipakai New Order: harga terbaru dengan `price_date ≤ tanggal order`).
-- **logistics** (1 baris per activity code, UNIQUE activity_id): primary_qty, primary_unit_label,
-  primary_unit_weight_kg, secondary_unit_label/_weight_kg/_ratio_per_primary, incoming_date,
+- **logistics** (sejak 1 Okt 2026: **banyak baris per activity code**, satu baris = satu produk;
+  UNIQUE(activity_id, product_name), activity_id sendiri TIDAK unique lagi): **product_name** (nama
+  tampilan produk — `activity_name` di `activities` TIDAK lagi dipakai sebagai nama produk di mana pun),
+  primary_qty, primary_unit_label, primary_unit_weight_kg,
+  secondary_unit_label/_weight_kg/_ratio_per_primary, incoming_date,
   **remaining_primary_qty** (stok NORMAL saja), **defective_qty** (stok defective di gudang),
   **total_taken_qty** (saldo yang SEDANG di tangan customer, normal+defective; naik saat order, turun saat
   retur, tidak berubah oleh diskon), **defective_taken_qty** (sub-saldo defective di tangan customer).
@@ -91,10 +94,16 @@ optic_pos/
 - **defective_stock_events**: logistic_id, event_type (kini hanya `repaired_to_normal`), qty, created_by.
   Kolom lama `logistics.defective_reference_price` **tidak dipakai lagi** (drop opsional:
   `migration_remove_defective_reference_price.sql`).
-- Lain: `logistic_documents` (key activity_id), `transactions`+tabel bantu (Disbursement), company
-  documents/bank accounts (Settings).
+- Lain: `logistic_documents` (key activity_id — **tetap milik activity code, dibagi oleh semua produk**
+  di dalamnya, bukan per-produk), `transactions`+tabel bantu (Disbursement), company documents/bank
+  accounts (Settings).
 - Migrasi yang dibutuhkan fitur berjalan (sudah terpakai di server user): `migration_batch_id.sql`,
-  `migration_add_source_movement_id.sql`, `migration_defective_and_price_adjustment.sql`.
+  `migration_add_source_movement_id.sql`, `migration_defective_and_price_adjustment.sql`,
+  `migration_multi_product_logistics.sql` (tambah `logistics.product_name`, isi dari `activity_name`
+  lama, ganti UNIQUE(activity_id) → UNIQUE(activity_id, product_name)).
+- Alias order WA pindah kunci dari `activity_id` ke **`logistic_id`**: file di `json_file/order_patterns/`
+  sekarang bernama `{logistic_id}.json` (bukan `{activity_id}.json`); isi tiap file juga simpan
+  `logistic_id` + `activity_id`.
 
 ## 5. Aturan bisnis (invarian — jangan dilanggar)
 1. **Stok dua bucket independen**: `remaining_primary_qty` = normal, `defective_qty` = defective. Satu-satunya
@@ -161,18 +170,33 @@ kategori Other, pencatatan pembayaran customer, print invoice, Report.
   **Card Validation** per activity code (3 badge Valid/Invalid): (1) Actual Taken gabungan vs `total_taken_qty`;
   (2) Actual Taken bucket normal vs `primary_qty − remaining_primary_qty`; (3) rekonsiliasi per customer vs tab
   Customers. Detail disembunyikan bila Valid. Baris defective punya badge DEFECTIVE.
-- *Create New Logistic*: pilih activity code (`<select>`, yang sudah punya logistic disabled), qty primary/secondary
-  dua arah (yang diisi duluan jadi sumber), satuan dikelola via `manage_packaging_units.php`.
+- *Create New Logistic*: pilih activity code (`<select>` — **sejak 1 Okt 2026 TIDAK disabled lagi** walau
+  sudah punya produk; opsi menampilkan daftar produk yang sudah ada), lalu **isi satu atau lebih blok
+  produk** (tombol **+ Add Product**): tiap blok = nama produk + qty primary/secondary dua arah sendiri
+  (yang diisi duluan jadi sumber), satuan dikelola via `manage_packaging_units.php`. Incoming Date & Import
+  Document dipakai bersama oleh semua produk dalam satu kali simpan (satu activity code, satu `incoming_date`,
+  satu set dokumen). Satu kali Save → `create_logistic.php` menyimpan semua baris `logistics` sekaligus
+  dalam satu transaction (all-or-nothing). Nama produk wajib unik dalam satu activity code.
 
 ## 7. Peta endpoint (`ajax/`) — kontrak inti
 - **Auth/util**: `verify_password.php`, `_require_reverify.php`, `_order_patterns.php`.
 - **Activity/Customer/Settings**: `create|update|delete|list|preview_activity_code`, `manage_departments`,
   `create|update|delete|list_customers`, `*_customer_item_price(s)`, `list_priceable_products`,
   `upload|update|delete|download|share|list_documents`, `list|save_bank_account(s)`, `create_disbursement`.
-- **Logistic**: `create|update|delete_logistic`, `list_logistics`, `list_logistic_activities`,
-  `upload_logistic_document`, `manage_packaging_units?kind=primary|secondary`,
-  `list_logistic_movements` (nested tahun/bulan/hari + `total_out/in/adjustment`, `*_normal_qty`,
-  `total_taken_qty`, `by_customer`).
+- **Logistic**: `list_logistics`, `list_logistic_activities` (sekarang balikin `has_logistic` +
+  `existing_products[]` per activity code, tidak lagi dipakai untuk disable opsi), `upload_logistic_document`,
+  `manage_packaging_units?kind=primary|secondary`, `list_logistic_movements` (nested tahun/bulan/hari +
+  `total_out/in/adjustment`, `*_normal_qty`, `total_taken_qty`, `by_customer`).
+  - **`create_logistic.php`** (diubah 1 Okt 2026) POST `activity_id, incoming_date, products` (products =
+    JSON array `[{product_name, primary_qty, primary_unit_label, primary_unit_weight_kg,
+    secondary_unit_label, secondary_unit_weight_kg, secondary_ratio_per_primary}]`, maks 50 produk per
+    panggilan) → satu transaction, insert semua baris sekaligus → `{ok, data:{ids, count}}`. Tolak kalau
+    `product_name` dobel dalam satu activity code (client + `uniq_activity_product` di DB).
+  - **`update_logistic.php`** sekarang juga terima & validasi `product_name` (unik per activity code,
+    kecuali baris itu sendiri).
+  - **`delete_logistic.php`**: dokumen (`logistic_documents`) & folder `import_documents/` hanya ikut
+    dihapus/dipindah kalau produk yang dihapus adalah **produk terakhir** di activity code itu — produk
+    lain yang berbagi activity code tidak kehilangan dokumennya.
 - **Sales**: `parse_order_message`, `save_order_alias`, `check_existing_orders`, `create_order`, `update_order`,
   `list_customer_orders` (per invoice movements + `batch_id`, `source_movement_id`, `discount_value` per produk).
 - **`list_return_price_options.php`** GET `customer_id, logistic_id` → `{ok,data:{available,total_taken,
@@ -189,16 +213,26 @@ kategori Other, pencatatan pembayaran customer, print invoice, Report.
   `logistic_id` → `{data:{product_name, unit_label, defective_qty, defective_taken_qty, history:[{customer_name,
   movement_date, qty, price, total_price}]}}`; POST `action=repair` `logistic_id, qty` (≤ defective_qty).
 
-## 8. Log terbaru (28 Sep 2026)
-- Fly window Return History punya 2 tab (Taken Out / Returned In), list scroll, Repair tersembunyi di 0 + qty default.
-- Bug "Loading pickup history…": `list_return_price_options.php` di server salah isi → dipulihkan dari GitHub
-  + `remaining_adjustable`. `list_logistic_movements.php` dicek benar & terbaru.
-- Card Return + Discount digabung di tab Customers (display-only, ≤ 60 detik). Percobaan `join_batch_id` di
-  `create_price_adjustment.php` dibatalkan (file itu kembali seperti asli).
+## 8. Log terbaru (1 Okt 2026)
+- **Multi-produk per activity code** (sudah dites user, bekerja): migrasi DB + `logistics.product_name`,
+  Create New Logistic jadi form "+ Add Product", semua tempat yang dulu pakai `a.activity_name` sebagai
+  nama produk (New Order, Pricing, Retur, Discount, Defective Stock, Movements) diganti ke
+  `l.product_name`. Alias order WA pindah kunci ke `logistic_id` (lihat §4, §7). Detail lengkap di §4/§6/§7.
+- Bugfix sesudahnya: sisa kode lama di `logistic_content.php` (`getElementById('logPrimaryInfoIcon')` dkk,
+  elemen itu sudah dihapus saat form diganti) masih dipanggil `.addEventListener` → `TypeError` yang
+  menghentikan SELURUH script di file itu → Logistic List kosong + tab Movements/Create tidak merespon
+  sama sekali. Sudah dihapus, user konfirmasi "sudah ok".
 
 ## 9. Belum dites / terbuka
-- **Belum dites di server user**: `list_return_price_options.php` versi baru (flow Returns end-to-end, termasuk
-  Price Adjustment split), penggabungan card Return+Discount, tab Returned In, Repair default qty.
+- **Belum dites**: Logistic List & Movements dengan >1 produk dalam satu activity code (tampilan masih per
+  baris produk, BELUM dikelompokkan di bawah satu header activity code — kalau user merasa berantakan,
+  pertimbangkan pengelompokan). Edit/Delete logistic untuk kasus multi-produk (delete bukan produk
+  terakhir → dokumen activity code harus tetap ada, lihat §7).
+- Fitur pembayaran bersama (disebut user saat desain form Create New Logistic) — **belum dibangun**,
+  placeholder saja di form (Incoming Date & dokumen sudah dibagi, payment belum ada kolom/fiturnya sama sekali).
+- `list_return_price_options.php` versi baru (flow Returns end-to-end, termasuk Price Adjustment split),
+  penggabungan card Return+Discount, tab Returned In, Repair default qty — carry-over dari sesi 28 Sep,
+  belum dikonfirmasi user.
 - Data lama order yang sudah terlanjur terpecah (sebelum `batch_id`) tetap terpisah; skrip migrasi belum dibuat.
 - Ditunda: filter/pagination Movements, retention `storage/recycle/`, `customers.profit`, Report, pembayaran,
   print invoice, edit/hapus alias & order, aturan stok minus, uppercase server di `manage_packaging_units.php`.
