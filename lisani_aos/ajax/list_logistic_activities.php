@@ -1,9 +1,11 @@
 <?php
 // lisani_aos/ajax/list_logistic_activities.php
 // Returns activity codes for one department (usually "dates", the only
-// department Logistic currently supports), each flagged has_logistic so the
-// Create New Logistic form can grey out / disable codes that already have a
-// logistic record (UNIQUE(activity_id) in `logistics`).
+// department Logistic currently supports), each flagged has_logistic (and
+// with its existing product names) so the Create New Logistic form can
+// still show which codes already have products, WITHOUT disabling them —
+// since 28 Sep 2026 one activity code can hold several products, so a code
+// already having logistics no longer blocks adding another product to it.
 session_start();
 header('Content-Type: application/json');
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
@@ -29,10 +31,11 @@ if (!in_array($department, $validDeptKeys, true)) {
 
 $stmt = $lisani_conn->prepare(
     "SELECT a.id, a.activity_name, a.relative_path,
-            (l.id IS NOT NULL) AS has_logistic
+            GROUP_CONCAT(l.product_name ORDER BY l.id SEPARATOR ', ') AS existing_products
      FROM activities a
      LEFT JOIN logistics l ON l.activity_id = a.id
      WHERE a.relative_path LIKE CONCAT('input/%/', ?, '/%')
+     GROUP BY a.id
      ORDER BY a.id DESC"
 );
 $stmt->bind_param('s', $department);
@@ -48,12 +51,13 @@ while ($r = $result->fetch_assoc()) {
         $code = $m[2];
     }
     $rows[] = [
-        'id'            => (int) $r['id'],
-        'activity_code' => $code ?? '-',
-        'activity_name' => $r['activity_name'],
-        'relative_path' => $r['relative_path'],
-        'year'          => $year ?? '-',
-        'has_logistic'  => (bool) $r['has_logistic'],
+        'id'                => (int) $r['id'],
+        'activity_code'     => $code ?? '-',
+        'activity_name'     => $r['activity_name'],
+        'relative_path'     => $r['relative_path'],
+        'year'              => $year ?? '-',
+        'has_logistic'      => $r['existing_products'] !== null,
+        'existing_products' => $r['existing_products'] !== null ? explode(', ', $r['existing_products']) : [],
     ];
 }
 $stmt->close();

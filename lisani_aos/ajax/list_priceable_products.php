@@ -19,10 +19,9 @@ if (!isset($_SESSION['app']) || $_SESSION['app'] !== 'lisani_aos' || !isset($_SE
 require_once __DIR__ . '/../db_config.php'; // -> $lisani_conn
 
 $result = $lisani_conn->query(
-    'SELECT l.id AS logistic_id, a.activity_name, l.primary_unit_label
+    'SELECT l.id AS logistic_id, l.product_name AS activity_name, l.primary_unit_label
      FROM logistics l
-     JOIN activities a ON a.id = l.activity_id
-     ORDER BY a.activity_name ASC'
+     ORDER BY l.product_name ASC'
 );
 
 if (!$result) {

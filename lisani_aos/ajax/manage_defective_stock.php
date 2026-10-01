@@ -116,7 +116,7 @@ try {
         }
 
         $st = $lisani_conn->prepare(
-            'SELECT l.defective_qty, l.defective_taken_qty, l.primary_unit_label, a.activity_name
+            'SELECT l.defective_qty, l.defective_taken_qty, l.primary_unit_label, l.product_name AS activity_name
              FROM logistics l
              JOIN activities a ON a.id = l.activity_id
              WHERE l.id = ?'

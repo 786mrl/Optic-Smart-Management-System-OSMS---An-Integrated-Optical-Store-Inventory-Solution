@@ -23,7 +23,7 @@ if ($customerId <= 0) {
 
 $stmt = $lisani_conn->prepare(
     'SELECT cip.id, cip.customer_id, cip.logistic_id, cip.price, cip.price_date,
-            cip.unit_label, cip.created_at, cip.updated_at, a.activity_name
+            cip.unit_label, cip.created_at, cip.updated_at, l.product_name AS activity_name
      FROM customer_item_prices cip
      JOIN logistics l ON l.id = cip.logistic_id
      JOIN activities a ON a.id = l.activity_id

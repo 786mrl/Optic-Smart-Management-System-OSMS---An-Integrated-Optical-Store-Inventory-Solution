@@ -1,8 +1,16 @@
 <?php
 // lisani_aos/ajax/delete_logistic.php
-// Deletes a logistics row and ALL its import documents. Deleting a logistic
-// does NOT delete the activity code itself — only the logistics row and
-// logistic_documents rows tied to it, plus their physical files.
+// Deletes a logistics row (= ONE product of an activity code). Deleting a
+// logistic does NOT delete the activity code itself.
+//
+// Import documents belong to the ACTIVITY CODE (logistic_documents.activity_id)
+// and are shared by every product under it (since 28 Sep 2026 one activity
+// code can hold several products). So:
+//   - other products still exist under this activity code -> ONLY the
+//     logistics row is deleted; documents + import_documents/ folder stay.
+//   - this was the LAST product of the activity code -> the logistics row,
+//     all logistic_documents rows and the physical files go, as described
+//     below.
 //
 // Physical import_documents/ folder for this activity code is moved
 // (not deleted) to:
@@ -61,6 +69,15 @@ if (!$row) {
 $activityId   = (int) $row['activity_id'];
 $relativePath = $row['relative_path'];
 
+// Other products still sharing this activity code's documents?
+$sibStmt = $lisani_conn->prepare('SELECT COUNT(*) FROM logistics WHERE activity_id = ? AND id <> ?');
+$sibStmt->bind_param('ii', $activityId, $logisticId);
+$sibStmt->execute();
+$sibStmt->bind_result($siblingCount);
+$sibStmt->fetch();
+$sibStmt->close();
+$isLastProduct = ((int) $siblingCount === 0);
+
 // Snapshot the documents list BEFORE deleting rows — needed for the
 // notes.txt summary regardless of whether the physical move succeeds.
 $docStmt = $lisani_conn->prepare(
@@ -79,10 +96,12 @@ $docStmt->close();
 // If either fails, bail before touching the filesystem.
 $lisani_conn->begin_transaction();
 try {
-    $delDocsStmt = $lisani_conn->prepare('DELETE FROM logistic_documents WHERE activity_id = ?');
-    $delDocsStmt->bind_param('i', $activityId);
-    $delDocsStmt->execute();
-    $delDocsStmt->close();
+    if ($isLastProduct) {
+        $delDocsStmt = $lisani_conn->prepare('DELETE FROM logistic_documents WHERE activity_id = ?');
+        $delDocsStmt->bind_param('i', $activityId);
+        $delDocsStmt->execute();
+        $delDocsStmt->close();
+    }
 
     $delLogisticStmt = $lisani_conn->prepare('DELETE FROM logistics WHERE id = ?');
     $delLogisticStmt->bind_param('i', $logisticId);
@@ -104,7 +123,10 @@ $folderFull     = rtrim(AOS_STORAGE_BASE, '/') . '/' . $folderRelative;
 
 $folderAction = 'none';
 
-if (is_dir($folderFull)) {
+if (!$isLastProduct) {
+    // Documents + folder are shared with the remaining products — leave them.
+    $folderAction = 'kept_shared';
+} elseif (is_dir($folderFull)) {
     $recycleFull = rtrim(AOS_STORAGE_BASE, '/') . '/recycle/' . $folderRelative;
     $recycleParent = dirname($recycleFull);
 
@@ -133,6 +155,7 @@ if (is_dir($folderFull)) {
         $notesLines[] = '';
         $notesLines[] = 'Activity code : ' . $relativePath;
         $notesLines[] = 'Activity name : ' . $row['activity_name'];
+        $notesLines[] = 'Product name  : ' . ($row['product_name'] ?? '-');
         $notesLines[] = 'Logistic ID   : ' . $logisticId;
         $notesLines[] = 'Incoming date : ' . ($row['incoming_date'] ?? '-');
         $notesLines[] = '';

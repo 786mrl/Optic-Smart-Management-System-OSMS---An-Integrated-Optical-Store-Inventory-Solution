@@ -38,7 +38,7 @@ $result = $lisani_conn->query(
             m.stock_source,
             l.activity_id, l.primary_unit_label, l.primary_qty, l.remaining_primary_qty,
             l.total_taken_qty,
-            a.activity_name, a.relative_path
+            l.product_name AS activity_name, a.relative_path
      FROM logistic_movements m
      JOIN logistics l ON l.id = m.logistic_id
      JOIN activities a ON a.id = l.activity_id

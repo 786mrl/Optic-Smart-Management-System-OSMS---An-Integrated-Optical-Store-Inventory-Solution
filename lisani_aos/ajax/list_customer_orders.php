@@ -84,7 +84,7 @@ try {
     //      above — see PROJECT_NOTES.md, "Bugfix: diskon per produk belum
     //      diterapkan di tab Customer") ----
     $st = $lisani_conn->prepare(
-        "SELECT m.logistic_id, a.activity_name, l.primary_unit_label AS unit_label,
+        "SELECT m.logistic_id, l.product_name AS activity_name, l.primary_unit_label AS unit_label,
                 SUM(CASE WHEN m.movement_type = 'out' THEN m.qty_primary_package ELSE 0 END) AS total_qty,
                 SUM(CASE WHEN m.movement_type = 'out' THEN m.total_price ELSE 0 END) AS total_value,
                 SUM(CASE WHEN m.movement_type = 'in' THEN m.qty_primary_package ELSE 0 END) AS returned_qty,
@@ -94,9 +94,9 @@ try {
          JOIN logistics l ON l.id = m.logistic_id
          JOIN activities a ON a.id = l.activity_id
          WHERE m.customer_id = ?
-         GROUP BY m.logistic_id, a.activity_name, l.primary_unit_label
+         GROUP BY m.logistic_id, l.product_name, l.primary_unit_label
          HAVING total_qty > 0
-         ORDER BY total_value DESC, a.activity_name ASC"
+         ORDER BY total_value DESC, l.product_name ASC"
     );
     $st->bind_param('i', $customerId);
     $st->execute();
@@ -153,7 +153,7 @@ try {
                 m.qty_primary_package, m.price, m.total_price,"
                 . ($hasStockSource ? ' m.stock_source,' : ' NULL AS stock_source,') . "
                 m.source_movement_id, sm.movement_date AS source_movement_date,
-                a.activity_name, l.primary_unit_label AS unit_label
+                l.product_name AS activity_name, l.primary_unit_label AS unit_label
          FROM logistic_movements m
          JOIN logistics l ON l.id = m.logistic_id
          JOIN activities a ON a.id = l.activity_id

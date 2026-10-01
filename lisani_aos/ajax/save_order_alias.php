@@ -1,10 +1,10 @@
 <?php
 // lisani_aos/ajax/save_order_alias.php
 // Saves one new product wording (alias) into
-// json_file/order_patterns/{activity_id}.json after the user answered
+// json_file/order_patterns/{logistic_id}.json after the user answered
 // "what does this line mean?" in Sales Transaction.
 //
-// POST: activity_id, alias_text   (alias_text = product wording WITHOUT the quantity)
+// POST: logistic_id, alias_text   (alias_text = product wording WITHOUT the quantity)
 // Response contract: { ok, message, alias }
 //
 // No password re-verification: this only ADDS a wording, it never edits or
@@ -50,10 +50,10 @@ require_once dirname(__DIR__) . '/db_config.php'; // provides $lisani_conn (mysq
 require_once __DIR__ . '/_order_patterns.php';
 
 // ---------- Input ----------
-$activityId = isset($_POST['activity_id']) ? (int) $_POST['activity_id'] : 0;
+$logisticId = isset($_POST['logistic_id']) ? (int) $_POST['logistic_id'] : 0;
 $aliasText  = isset($_POST['alias_text']) ? trim((string) $_POST['alias_text']) : '';
 
-if ($activityId <= 0) {
+if ($logisticId <= 0) {
     aos_fail('Product is missing.');
 }
 if ($aliasText === '') {
@@ -63,7 +63,7 @@ if ($aliasText === '') {
 // ---------- Save ----------
 try {
     $products = aos_load_products($lisani_conn);
-    $result   = aos_save_alias($activityId, $aliasText, $products);
+    $result   = aos_save_alias($logisticId, $aliasText, $products);
 } catch (Throwable $e) {
     error_log('save_order_alias.php: ' . $e->getMessage());
     aos_fail('Failed to save the wording.');

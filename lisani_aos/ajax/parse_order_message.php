@@ -9,8 +9,8 @@
 // POST: message
 // Response contract: { ok, message, ... }
 //   ok: true  -> driver_name, police_number, items[], ignored[], products[]
-//   items[]: { line, qty, product_text, status, activity_id,
-//              logistic_id, product_name, unit_label }
+//   items[]: { line, qty, product_text, status,
+//              logistic_id, activity_id, product_name, unit_label }
 //     status: matched | unknown_product | missing_qty | missing_product
 //   ignored[]: { line, reason }
 //     reason: unrecognized_text | no_quantity | duplicate_driver |
@@ -76,10 +76,11 @@ try {
     aos_fail('Failed to read the order message.');
 }
 
-// Attach product info to matched lines.
+// Attach product info to matched lines (items are keyed by logistic_id now,
+// since one activity code can hold several products).
 foreach ($parsed['items'] as &$item) {
-    $product = $item['activity_id'] !== null ? ($products[$item['activity_id']] ?? null) : null;
-    $item['logistic_id']  = $product ? $product['logistic_id'] : null;
+    $product = $item['logistic_id'] !== null ? ($products[$item['logistic_id']] ?? null) : null;
+    $item['activity_id']  = $product ? $product['activity_id'] : null;
     $item['product_name'] = $product ? $product['activity_name'] : null;
     $item['unit_label']   = $product ? $product['unit_label'] : null;
 }

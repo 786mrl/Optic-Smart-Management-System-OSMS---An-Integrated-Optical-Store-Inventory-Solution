@@ -6,12 +6,13 @@
 //   - aos_parse_order_message() : pure parser (no DB, no session) -> driver,
 //                                 police number, product lines + quantities
 //   - aos_load_products()       : logistics JOIN activities (valid products)
-//   - aos_load_alias_map()      : reads json_file/order_patterns/{activity_id}.json
+//   - aos_load_alias_map()      : reads json_file/order_patterns/{logistic_id}.json
 //   - aos_save_alias()          : appends one alias to a product's JSON file
 //
-// Pattern file format (one file per activity_id, because activity code numbers
-// reset per department + year):
-//   { "activity_id": 1, "aliases": ["SMALL DEGLET", "DEGLET KECIL"] }
+// Pattern file format (one file per logistic_id — a product's own id, since
+// 28 Sep 2026 one activity code can hold several products and activity_id
+// alone no longer identifies a single product):
+//   { "logistic_id": 3, "activity_id": 1, "aliases": ["SMALL DEGLET", "DEGLET KECIL"] }
 //
 // Aliases are the product wording WITHOUT the quantity, stored in the
 // normalized uppercase form produced by aos_norm_product_text().
@@ -181,7 +182,7 @@ function aos_looks_like_name(string $text): bool
 // Pure parser
 // ---------------------------------------------------------------------------
 
-// $aliasMap: [ normalized alias => activity_id ]
+// $aliasMap: [ normalized alias => logistic_id ]
 //
 // LINE ORDER DOES NOT MATTER. Driver, police number and product lines may appear in
 // any order, with or without blank lines between them. Two passes:
@@ -196,7 +197,7 @@ function aos_looks_like_name(string $text): bool
 // Returns:
 //   driver_name   ?string
 //   police_number ?string
-//   items         [ { line, qty, product_text, status, activity_id } ]
+//   items         [ { line, qty, product_text, status, logistic_id } ]
 //       status: matched | unknown_product | missing_qty | missing_product
 //   ignored       [ { line, reason } ]   (chatter, duplicates, lines with no quantity)
 //
@@ -281,7 +282,7 @@ function aos_parse_order_message(string $message, array $aliasMap): array
         if ($key === '') {
             $items[] = [
                 'line' => $original, 'qty' => $qty, 'product_text' => '',
-                'status' => 'missing_product', 'activity_id' => null,
+                'status' => 'missing_product', 'logistic_id' => null,
             ];
             continue;
         }
@@ -290,7 +291,7 @@ function aos_parse_order_message(string $message, array $aliasMap): array
             $items[] = [
                 'line' => $original, 'qty' => $qty, 'product_text' => $key,
                 'status' => $qty === null ? 'missing_qty' : 'matched',
-                'activity_id' => (int) $aliasMap[$key],
+                'logistic_id' => (int) $aliasMap[$key],
             ];
             continue;
         }
@@ -298,7 +299,7 @@ function aos_parse_order_message(string $message, array $aliasMap): array
         if ($qty !== null) {
             $items[] = [
                 'line' => $original, 'qty' => $qty, 'product_text' => $key,
-                'status' => 'unknown_product', 'activity_id' => null,
+                'status' => 'unknown_product', 'logistic_id' => null,
             ];
             continue;
         }
@@ -350,19 +351,20 @@ function aos_parse_order_message(string $message, array $aliasMap): array
 // ---------------------------------------------------------------------------
 
 // Every product that can be ordered: one row per `logistics` record.
-// Returns [ activity_id => [logistic_id, activity_id, activity_name, unit_label, remaining_qty] ].
+// Returns [ logistic_id => [logistic_id, activity_id, activity_name, unit_label, remaining_qty] ].
+// Keyed by logistic_id (a single product), not activity_id, since one
+// activity code can now hold several products.
 function aos_load_products(mysqli $conn): array
 {
     $result = $conn->query(
-        'SELECT l.id AS logistic_id, l.activity_id, a.activity_name, l.primary_unit_label,
+        'SELECT l.id AS logistic_id, l.activity_id, l.product_name AS activity_name, l.primary_unit_label,
                 l.remaining_primary_qty
-         FROM logistics l
-         JOIN activities a ON a.id = l.activity_id'
+         FROM logistics l'
     );
 
     $products = [];
     while ($row = $result->fetch_assoc()) {
-        $products[(int) $row['activity_id']] = [
+        $products[(int) $row['logistic_id']] = [
             'logistic_id'   => (int) $row['logistic_id'],
             'activity_id'   => (int) $row['activity_id'],
             'activity_name' => $row['activity_name'],
@@ -373,15 +375,15 @@ function aos_load_products(mysqli $conn): array
     return $products;
 }
 
-function aos_pattern_file(int $activityId): string
+function aos_pattern_file(int $logisticId): string
 {
-    return AOS_ORDER_PATTERNS_DIR . '/' . $activityId . '.json';
+    return AOS_ORDER_PATTERNS_DIR . '/' . $logisticId . '.json';
 }
 
 // Reads the aliases of one product. Missing/broken file -> empty list.
-function aos_read_aliases(int $activityId): array
+function aos_read_aliases(int $logisticId): array
 {
-    $file = aos_pattern_file($activityId);
+    $file = aos_pattern_file($logisticId);
     if (!is_file($file)) {
         return [];
     }
@@ -399,18 +401,18 @@ function aos_read_aliases(int $activityId): array
     return array_values(array_unique($out));
 }
 
-// [ normalized alias => activity_id ] for the given activity ids only, so pattern
-// files of deleted products are ignored.
-function aos_load_alias_map(array $validActivityIds): array
+// [ normalized alias => logistic_id ] for the given logistic ids only, so
+// pattern files of deleted products are ignored.
+function aos_load_alias_map(array $validLogisticIds): array
 {
     $map = [];
-    foreach ($validActivityIds as $activityId) {
-        $activityId = (int) $activityId;
-        foreach (aos_read_aliases($activityId) as $key) {
+    foreach ($validLogisticIds as $logisticId) {
+        $logisticId = (int) $logisticId;
+        foreach (aos_read_aliases($logisticId) as $key) {
             if (!isset($map[$key])) {
-                $map[$key] = $activityId;
-            } elseif ($map[$key] !== $activityId) {
-                error_log('order_patterns: alias "' . $key . '" is used by activity ' . $map[$key] . ' and ' . $activityId);
+                $map[$key] = $logisticId;
+            } elseif ($map[$key] !== $logisticId) {
+                error_log('order_patterns: alias "' . $key . '" is used by logistic ' . $map[$key] . ' and ' . $logisticId);
             }
         }
     }
@@ -419,7 +421,7 @@ function aos_load_alias_map(array $validActivityIds): array
 
 // Adds one alias to a product's file.
 // Returns ['ok' => bool, 'message' => string, 'alias' => string].
-function aos_save_alias(int $activityId, string $aliasText, array $products): array
+function aos_save_alias(int $logisticId, string $aliasText, array $products): array
 {
     $key = aos_norm_product_text($aliasText);
     if ($key === '') {
@@ -428,13 +430,13 @@ function aos_save_alias(int $activityId, string $aliasText, array $products): ar
     if (mb_strlen($key) > 100) {
         return ['ok' => false, 'message' => 'Product wording is too long (max 100 characters).', 'alias' => $key];
     }
-    if (!isset($products[$activityId])) {
+    if (!isset($products[$logisticId])) {
         return ['ok' => false, 'message' => 'Product was not found.', 'alias' => $key];
     }
 
     // The same wording must never point to two different products.
     $map = aos_load_alias_map(array_keys($products));
-    if (isset($map[$key]) && $map[$key] !== $activityId) {
+    if (isset($map[$key]) && $map[$key] !== $logisticId) {
         $other = $products[$map[$key]]['activity_name'] ?? 'another product';
         return ['ok' => false, 'message' => 'This wording is already used by ' . $other . '.', 'alias' => $key];
     }
@@ -452,15 +454,15 @@ function aos_save_alias(int $activityId, string $aliasText, array $products): ar
         return ['ok' => false, 'message' => 'Could not lock the patterns folder.', 'alias' => $key];
     }
 
-    $aliases   = aos_read_aliases($activityId); // re-read inside the lock
+    $aliases   = aos_read_aliases($logisticId); // re-read inside the lock
     $aliases[] = $key;
 
     $json = json_encode(
-        ['activity_id' => $activityId, 'aliases' => array_values(array_unique($aliases))],
+        ['logistic_id' => $logisticId, 'activity_id' => $products[$logisticId]['activity_id'], 'aliases' => array_values(array_unique($aliases))],
         JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
     );
 
-    $file = aos_pattern_file($activityId);
+    $file = aos_pattern_file($logisticId);
     $tmp  = $file . '.tmp';
     $ok   = $json !== false
         && file_put_contents($tmp, $json) !== false

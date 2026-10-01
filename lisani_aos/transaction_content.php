@@ -1160,7 +1160,7 @@ $currentYear     = date('Y');
 
 <!-- Sales Transaction — "Which product is this?" for a line the parser did not
      recognize. Saving with "Remember" adds the wording to
-     json_file/order_patterns/{activity_id}.json (ajax/save_order_alias.php). -->
+     json_file/order_patterns/{logistic_id}.json (ajax/save_order_alias.php). -->
 <div class="modal-overlay" id="stProductOverlay" style="display:none;">
   <div class="modal" style="max-width:420px;">
     <div class="modal-header">
@@ -4773,7 +4773,7 @@ $currentYear     = date('Y');
     if (!remember) { apply(); return; }
 
     btnStProductSave.disabled = true;
-    stPost('ajax/save_order_alias.php', { activity_id: p.activity_id, alias_text: item.product_text })
+    stPost('ajax/save_order_alias.php', { logistic_id: p.logistic_id, alias_text: item.product_text })
       .then(function (res) {
         btnStProductSave.disabled = false;
         if (!res.ok) { stShowError(stProductError, res.message || 'Could not save the wording.'); return; }
@@ -6261,7 +6261,7 @@ $currentYear     = date('Y');
     if (!remember) { apply(); return; }
 
     btnRtProductSave.disabled = true;
-    rtPost('ajax/save_order_alias.php', { activity_id: p.activity_id, alias_text: item.product_text })
+    rtPost('ajax/save_order_alias.php', { logistic_id: p.logistic_id, alias_text: item.product_text })
       .then(function (res) {
         btnRtProductSave.disabled = false;
         if (!res.ok) { stShowError(rtProductError, res.message || 'Could not save the wording.'); return; }

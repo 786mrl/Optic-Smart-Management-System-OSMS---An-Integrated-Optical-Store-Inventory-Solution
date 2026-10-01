@@ -303,7 +303,7 @@ try {
     sort($ids);
     $marks = implode(',', array_fill(0, count($ids), '?'));
     $st = $lisani_conn->prepare(
-        'SELECT l.id, l.remaining_primary_qty, l.primary_unit_label, a.activity_name
+        'SELECT l.id, l.remaining_primary_qty, l.primary_unit_label, l.product_name AS activity_name
          FROM logistics l
          JOIN activities a ON a.id = l.activity_id
          WHERE l.id IN (' . $marks . ')

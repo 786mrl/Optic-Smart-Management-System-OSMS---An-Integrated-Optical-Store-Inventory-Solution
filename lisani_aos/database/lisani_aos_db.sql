@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Sep 27, 2026 at 03:22 PM
+-- Generation Time: Sep 29, 2026 at 05:59 PM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -96,7 +96,7 @@ CREATE TABLE `customers` (
 
 INSERT INTO `customers` (`id`, `year`, `customer_name`, `phone_number`, `total_inflow`, `total_outflow`, `total_price_adjustments`, `total_paid`, `profit`, `created_at`) VALUES
 (1, 2026, 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', '+6281265472547', 45175000.00, 6350000.00, 725000.00, 0.00, 0.00, '2026-09-18 10:55:33'),
-(2, 2026, 'RAIS', '+6281267646916', 3170000.00, 0.00, 0.00, 0.00, 0.00, '2026-09-21 04:36:37');
+(2, 2026, 'RAIS', '+6281267646916', 5510000.00, 770000.00, 120000.00, 0.00, 0.00, '2026-09-21 04:36:37');
 
 -- --------------------------------------------------------
 
@@ -179,7 +179,7 @@ CREATE TABLE `invoices` (
 
 INSERT INTO `invoices` (`id`, `customer_id`, `invoice_number`, `sequence_number`, `period_month`, `period_year`, `status`, `total_amount`, `paid_amount`, `paid_at`, `created_at`, `updated_at`) VALUES
 (1, 1, '001/inv/laj-TAHKP-1/IX/2026', 1, 9, 2026, 'open', 38825000.00, 0.00, NULL, '2026-09-21 04:39:50', '2026-09-26 03:09:49'),
-(2, 2, '001/inv/laj-R-1/IX/2026', 1, 9, 2026, 'open', 3170000.00, 0.00, NULL, '2026-09-21 04:47:41', '2026-09-27 11:48:43');
+(2, 2, '001/inv/laj-R-1/IX/2026', 1, 9, 2026, 'open', 4740000.00, 0.00, NULL, '2026-09-21 04:47:41', '2026-09-28 10:22:10');
 
 -- --------------------------------------------------------
 
@@ -212,8 +212,8 @@ CREATE TABLE `logistics` (
 --
 
 INSERT INTO `logistics` (`id`, `activity_id`, `incoming_date`, `primary_qty`, `primary_unit_label`, `primary_unit_weight_kg`, `remaining_primary_qty`, `defective_qty`, `total_taken_qty`, `defective_taken_qty`, `defective_reference_price`, `secondary_unit_label`, `secondary_unit_weight_kg`, `secondary_ratio_per_primary`, `created_by`, `created_at`, `updated_at`) VALUES
-(2, 4, NULL, 1500.00, 'MASTER CARTON', 12.000, 1360.00, 0.00, 140.00, 0.00, NULL, 'BABY CARTON', 3.000, 4.000, 1, '2026-09-18 20:06:51', '2026-09-26 10:08:00'),
-(3, 1, NULL, 5000.00, 'MASTER CARTON', 10.000, 4933.00, 0.00, 67.00, 2.00, 200000.00, 'NO PRIMARY CARTON', 10.000, 1.000, 1, '2026-09-18 20:25:26', '2026-09-27 18:48:43');
+(2, 4, NULL, 1500.00, 'MASTER CARTON', 12.000, 1354.00, 1.00, 145.00, 0.00, NULL, 'BABY CARTON', 3.000, 4.000, 1, '2026-09-18 20:06:51', '2026-09-28 17:22:09'),
+(3, 1, NULL, 5000.00, 'MASTER CARTON', 10.000, 4928.00, 1.00, 71.00, 2.00, 200000.00, 'NO PRIMARY CARTON', 10.000, 1.000, 1, '2026-09-18 20:25:26', '2026-09-28 17:22:09');
 
 -- --------------------------------------------------------
 
@@ -288,7 +288,14 @@ INSERT INTO `logistic_movements` (`id`, `logistic_id`, `source_movement_id`, `cu
 (16, 3, 15, 1, 'in', 'normal', '2026-09-26', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BK 4145 BK', 3.00, 345000.00, 1035000.00, 1, 16, 1, '2026-09-26 10:09:48'),
 (17, 3, 15, 1, 'in', 'defective', '2026-09-26', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BK 4145 BK', 2.00, 345000.00, 690000.00, 1, 16, 1, '2026-09-26 10:09:48'),
 (18, 3, 15, 1, 'price_adjustment', 'normal', '2026-09-26', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BK 4145 BK', 5.00, 200000.00, 725000.00, 1, 18, 1, '2026-09-26 10:09:49'),
-(19, 3, NULL, 2, 'out', 'defective', '2026-09-27', 'RAIS', 'PAK FADLUN', 'BA 1687 ASF', 2.00, 260000.00, 520000.00, 2, 19, 1, '2026-09-27 18:48:43');
+(19, 3, NULL, 2, 'out', 'defective', '2026-09-27', 'RAIS', 'PAK FADLUN', 'BA 1687 ASF', 2.00, 260000.00, 520000.00, 2, 19, 1, '2026-09-27 18:48:43'),
+(20, 2, NULL, 2, 'out', 'normal', '2026-09-28', 'RAIS', 'PAK FADLUN', 'BK 523 AF', 6.00, 130000.00, 780000.00, 2, 20, 1, '2026-09-28 17:02:15'),
+(21, 3, NULL, 2, 'out', 'normal', '2026-09-28', 'RAIS', 'PAK FADLUN', 'BK 523 AF', 6.00, 260000.00, 1560000.00, 2, 20, 1, '2026-09-28 17:02:15'),
+(22, 3, 21, 2, 'in', 'normal', '2026-09-28', 'RAIS', 'PAK FADLUN', 'BK 1241 FAF', 1.00, 260000.00, 260000.00, 2, 22, 1, '2026-09-28 17:22:09'),
+(23, 3, 21, 2, 'in', 'defective', '2026-09-28', 'RAIS', 'PAK FADLUN', 'BK 1241 FAF', 1.00, 260000.00, 260000.00, 2, 22, 1, '2026-09-28 17:22:09'),
+(24, 2, 20, 2, 'in', 'defective', '2026-09-28', 'RAIS', 'PAK FADLUN', 'BK 1241 FAF', 1.00, 130000.00, 130000.00, 2, 22, 1, '2026-09-28 17:22:09'),
+(25, 3, 21, 2, 'price_adjustment', 'normal', '2026-09-28', 'RAIS', 'PAK FADLUN', 'BK 1241 FAF', 1.00, 200000.00, 60000.00, 2, 25, 1, '2026-09-28 17:22:10'),
+(26, 2, 20, 2, 'price_adjustment', 'normal', '2026-09-28', 'RAIS', 'PAK FADLUN', 'BK 1241 FAF', 2.00, 100000.00, 60000.00, 2, 25, 1, '2026-09-28 17:22:10');
 
 -- --------------------------------------------------------
 
@@ -372,7 +379,7 @@ CREATE TABLE `users` (
 --
 
 INSERT INTO `users` (`user_id`, `username`, `password_hash`, `role`, `is_approved`, `created_at`, `last_login`, `session_token`, `session_expires`) VALUES
-(1, 'Rais786', '$2y$10$QciWVGPK9aGHjy05rBoXgOWfCAesfocowc0vt4QCMHVeVzsVuGDS6', 'admin', 1, '2026-09-10 21:34:57', '2026-09-27 15:11:05', 'd239900b14f057a14e64eae498270353939b3b58b40767553c3820c781a56598', '2026-09-27 23:11:05');
+(1, 'Rais786', '$2y$10$QciWVGPK9aGHjy05rBoXgOWfCAesfocowc0vt4QCMHVeVzsVuGDS6', 'admin', 1, '2026-09-10 21:34:57', '2026-09-28 13:04:39', NULL, NULL);
 
 --
 -- Indexes for dumped tables
@@ -528,7 +535,7 @@ ALTER TABLE `logistic_documents`
 -- AUTO_INCREMENT for table `logistic_movements`
 --
 ALTER TABLE `logistic_movements`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=20;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=27;
 
 --
 -- AUTO_INCREMENT for table `transactions`

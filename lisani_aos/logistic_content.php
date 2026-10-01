@@ -445,35 +445,63 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
     </div>
 
     <div class="form-group">
-      <div class="label" style="display:flex; align-items:center; gap:var(--space-2);">
-        Primary Packaging
-        <span class="info-icon" id="logPrimaryInfoIcon" tabindex="0">!</span>
+      <div class="label" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:var(--space-2);">
+        <span>Products</span>
+        <span style="display:flex; gap:var(--space-2);">
+          <button type="button" class="btn btn-secondary" id="btnManagePrimaryUnits">Manage Primary Units</button>
+          <button type="button" class="btn btn-secondary" id="btnManageSecondaryUnits">Manage Secondary Units</button>
+        </span>
       </div>
-      <div style="display:flex; gap:var(--space-2); flex-wrap:wrap; align-items:center;">
-        <input type="text" inputmode="decimal" class="input input-number-comma" id="logPrimaryQty" placeholder="Qty" style="flex:1; min-width:100px;">
-        <select class="select" id="logPrimaryUnit" style="flex:2; min-width:200px;">
-          <option value="">-- select unit --</option>
-        </select>
-        <input type="text" class="input" id="logPrimaryWeight" placeholder="Total weight (KG)" disabled style="flex:1; min-width:150px;">
-        <button type="button" class="btn btn-secondary" id="btnManagePrimaryUnits">Edit</button>
-      </div>
-      <div class="info-tooltip" id="logPrimaryInfoTooltip">Fill in either Primary or Secondary Qty — the other one is calculated automatically from the selected unit's ratio.</div>
+      <div class="empty-sub">One activity code can hold several products — add one block per product. Incoming Date, Import Document and (later) payment are shared by all products below.</div>
     </div>
 
-    <div class="form-group">
-      <div class="label" style="display:flex; align-items:center; gap:var(--space-2);">
-        Secondary Packaging
-        <span class="info-icon" id="logSecondaryInfoIcon" tabindex="0">!</span>
+    <!-- One .logProductBlock per product; built by createProductBlock() in JS. -->
+    <div id="logProductsContainer"></div>
+
+    <template id="logProductBlockTemplate">
+      <div class="neo-inset logProductBlock" style="border-radius:var(--radius-md); padding:var(--space-4); margin-bottom:var(--space-3);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:var(--space-3);">
+          <div class="label" style="margin:0;">Product Name</div>
+          <button type="button" class="btn btn-secondary logProdRemove">Remove</button>
+        </div>
+        <div class="form-group">
+          <input type="text" class="input input-uppercase logProdName" placeholder="e.g. SAYER, SUKKARI, MEDJOOL">
+        </div>
+
+        <div class="form-group">
+          <div class="label" style="display:flex; align-items:center; gap:var(--space-2);">
+            Primary Packaging
+            <span class="info-icon logProdPrimaryInfoIcon" tabindex="0">!</span>
+          </div>
+          <div style="display:flex; gap:var(--space-2); flex-wrap:wrap; align-items:center;">
+            <input type="text" inputmode="decimal" class="input input-number-comma logProdPrimaryQty" placeholder="Qty" style="flex:1; min-width:100px;">
+            <select class="select logProdPrimaryUnit" style="flex:2; min-width:200px;">
+              <option value="">-- select unit --</option>
+            </select>
+            <input type="text" class="input logProdPrimaryWeight" placeholder="Total weight (KG)" disabled style="flex:1; min-width:150px;">
+          </div>
+          <div class="info-tooltip logProdPrimaryInfoTooltip">Fill in either Primary or Secondary Qty — the other one is calculated automatically from the selected unit's ratio.</div>
+        </div>
+
+        <div class="form-group" style="margin-bottom:0;">
+          <div class="label" style="display:flex; align-items:center; gap:var(--space-2);">
+            Secondary Packaging
+            <span class="info-icon logProdSecondaryInfoIcon" tabindex="0">!</span>
+          </div>
+          <div style="display:flex; gap:var(--space-2); flex-wrap:wrap; align-items:center;">
+            <input type="text" inputmode="decimal" class="input input-number-comma logProdSecondaryQty" placeholder="Qty" style="flex:1; min-width:100px;">
+            <select class="select logProdSecondaryUnit" style="flex:2; min-width:200px;">
+              <option value="">-- select unit --</option>
+            </select>
+            <input type="text" class="input logProdSecondaryWeight" placeholder="Total weight (KG)" disabled style="flex:1; min-width:150px;">
+          </div>
+          <div class="info-tooltip logProdSecondaryInfoTooltip">Fill in either Primary or Secondary Qty — the other one is calculated automatically from the selected unit's ratio.</div>
+        </div>
       </div>
-      <div style="display:flex; gap:var(--space-2); flex-wrap:wrap; align-items:center;">
-        <input type="text" inputmode="decimal" class="input input-number-comma" id="logSecondaryQty" placeholder="Qty" style="flex:1; min-width:100px;">
-        <select class="select" id="logSecondaryUnit" style="flex:2; min-width:200px;">
-          <option value="">-- select unit --</option>
-        </select>
-        <input type="text" class="input" id="logSecondaryWeight" placeholder="Total weight (KG)" disabled style="flex:1; min-width:150px;">
-        <button type="button" class="btn btn-secondary" id="btnManageSecondaryUnits">Edit</button>
-      </div>
-      <div class="info-tooltip" id="logSecondaryInfoTooltip">Fill in either Primary or Secondary Qty — the other one is calculated automatically from the selected unit's ratio.</div>
+    </template>
+
+    <div style="display:flex; justify-content:flex-start; margin-bottom:var(--space-4);">
+      <button type="button" class="btn btn-secondary" id="btnLogAddProduct">+ Add Product</button>
     </div>
 
     <div class="empty-sub" id="logCreateError" style="display:none; color:var(--danger);"></div>
@@ -800,16 +828,6 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
       var pos = el.selectionStart;
       el.value = el.value.toUpperCase();
       if (pos !== null) el.setSelectionRange(pos, pos);
-    });
-  });
-
-  // ---------- Info icons (Primary/Secondary Packaging) ----------
-  [['logPrimaryInfoIcon', 'logPrimaryInfoTooltip'], ['logSecondaryInfoIcon', 'logSecondaryInfoTooltip']].forEach(function (pair) {
-    var icon = document.getElementById(pair[0]);
-    var tooltip = document.getElementById(pair[1]);
-    icon.addEventListener('click', function () { tooltip.classList.toggle('open'); });
-    icon.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); tooltip.classList.toggle('open'); }
     });
   });
 
@@ -1792,7 +1810,7 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
     selectedActivity = null;
     activityById = {};
     logActivityCode.innerHTML = '<option value="">Select activity code…</option>';
-    updatePackagingAvailability();
+    updateAllProductBlocksAvailability();
     loadUploadedDocuments();
 
     var deptOption = logDepartment.selectedOptions[0];
@@ -1815,8 +1833,8 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
           activityById[a.id] = a;
           var opt = document.createElement('option');
           opt.value = a.id;
-          opt.textContent = a.year + ' — ' + a.activity_code + ' — ' + a.activity_name + (a.has_logistic ? ' (logistic already exists)' : '');
-          if (a.has_logistic) opt.disabled = true;
+          opt.textContent = a.year + ' — ' + a.activity_code + ' — ' + a.activity_name
+            + (a.has_logistic ? ' (has: ' + a.existing_products.join(', ') + ')' : '');
           logActivityCode.appendChild(opt);
         });
       })
@@ -1827,7 +1845,7 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
 
   logActivityCode.addEventListener('change', function () {
     selectedActivity = activityById[logActivityCode.value] || null;
-    updatePackagingAvailability();
+    updateAllProductBlocksAvailability();
     loadUploadedDocuments();
   });
 
@@ -2056,13 +2074,17 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
       });
   });
 
-  // ---------- Primary / Secondary units: loaded live from the server ----------
-  var logPrimaryQty      = document.getElementById('logPrimaryQty');
-  var logPrimaryUnit     = document.getElementById('logPrimaryUnit');
-  var logPrimaryWeight   = document.getElementById('logPrimaryWeight');
-  var logSecondaryQty    = document.getElementById('logSecondaryQty');
-  var logSecondaryUnit   = document.getElementById('logSecondaryUnit');
-  var logSecondaryWeight = document.getElementById('logSecondaryWeight');
+  // ---------- Products: one .logProductBlock per product ----------
+  // Since 28 Sep 2026 one activity code can hold several products, so the
+  // Create form holds a repeatable list of product blocks instead of a
+  // single set of Primary/Secondary Packaging fields. Each block owns its
+  // own qty-source lock (Primary drives Secondary, or vice versa) via
+  // block._qtySource — same logic as before, just scoped per block instead
+  // of to one global pair of fields.
+  var logProductsContainer = document.getElementById('logProductsContainer');
+  var cachedPrimaryUnits   = [];
+  var cachedSecondaryUnits = [];
+  var logProdBlockSeq = 0;
 
   function fillUnitSelect(select, units, kind) {
     var prevValue = select.value;
@@ -2084,6 +2106,8 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
     if (units.some(function (u) { return String(u.id) === prevValue; })) select.value = prevValue;
   }
 
+  // Used by the Edit Logistic modal (single product, id-based selects) —
+  // still needed as-is, kept separate from the Create form's per-block cache.
   function loadUnits(kind, select, callback) {
     fetch('ajax/manage_packaging_units.php?kind=' + kind + '&action=list')
       .then(function (r) { return r.json(); })
@@ -2096,89 +2120,163 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
       .catch(function (e) { console.error(e); });
   }
 
-  function updatePackagingAvailability() {
-    var enabled = !!selectedActivity;
-    [logPrimaryQty, logPrimaryUnit, logSecondaryQty, logSecondaryUnit].forEach(function (el) { el.disabled = !enabled; });
-    if (enabled) updateQtySourceLock(); // re-apply whichever qty is currently the source
-  }
+  function recalcProductBlock(block) {
+    var qtyEl        = block.querySelector('.logProdPrimaryQty');
+    var unitEl       = block.querySelector('.logProdPrimaryUnit');
+    var weightEl     = block.querySelector('.logProdPrimaryWeight');
+    var secQtyEl     = block.querySelector('.logProdSecondaryQty');
+    var secUnitEl    = block.querySelector('.logProdSecondaryUnit');
+    var secWeightEl  = block.querySelector('.logProdSecondaryWeight');
 
-  // Qty can now flow either direction: Primary → Secondary (default) or
-  // Secondary → Primary. Whichever field the user starts typing into
-  // becomes the "source" and locks (disables) the other qty field for as
-  // long as it has a value, so there's never ambiguity about which one
-  // drives the calculation. Clearing the source field unlocks both again.
-  var qtySource = null; // 'primary' | 'secondary' | null
-
-  function updateQtySourceLock() {
-    if (qtySource === 'primary') {
-      logSecondaryQty.disabled = true;
-    } else if (qtySource === 'secondary') {
-      logPrimaryQty.disabled = true;
-    } else {
-      logPrimaryQty.disabled = !selectedActivity;
-      logSecondaryQty.disabled = !selectedActivity;
-    }
-  }
-
-  function recalcPackaging() {
-    var pOpt = logPrimaryUnit.selectedOptions[0];
+    var pOpt = unitEl.selectedOptions[0];
     var pWeight = pOpt ? parseFloat(pOpt.getAttribute('data-weight')) : NaN;
 
-    var sOpt = logSecondaryUnit.selectedOptions[0];
+    var sOpt = secUnitEl.selectedOptions[0];
     var ratio = sOpt ? parseFloat(sOpt.getAttribute('data-ratio')) : NaN;
     var sWeight = sOpt ? parseFloat(sOpt.getAttribute('data-weight')) : NaN;
 
     var primaryQty, secondaryQty;
 
-    if (qtySource === 'secondary') {
-      var secQtyInput = parseNumberInput(logSecondaryQty.value);
-      if (!isNaN(secQtyInput) && !isNaN(ratio) && ratio !== 0 && logSecondaryUnit.value !== '') {
+    if (block._qtySource === 'secondary') {
+      var secQtyInput = parseNumberInput(secQtyEl.value);
+      if (!isNaN(secQtyInput) && !isNaN(ratio) && ratio !== 0 && secUnitEl.value !== '') {
         secondaryQty = secQtyInput;
         primaryQty = secQtyInput / ratio;
-        logPrimaryQty.value = formatNumberInput(primaryQty.toFixed(3).replace(/\.?0+$/, ''));
+        qtyEl.value = formatNumberInput(primaryQty.toFixed(3).replace(/\.?0+$/, ''));
       } else {
         primaryQty = NaN;
         secondaryQty = secQtyInput;
-        logPrimaryQty.value = '';
+        qtyEl.value = '';
       }
     } else {
       // qtySource is 'primary' or null — Primary drives Secondary, same as before.
-      var priQtyInput = parseNumberInput(logPrimaryQty.value);
+      var priQtyInput = parseNumberInput(qtyEl.value);
       primaryQty = priQtyInput;
-      if (!isNaN(priQtyInput) && !isNaN(ratio) && logSecondaryUnit.value !== '') {
+      if (!isNaN(priQtyInput) && !isNaN(ratio) && secUnitEl.value !== '') {
         secondaryQty = priQtyInput * ratio;
-        logSecondaryQty.value = formatNumberInput(secondaryQty.toFixed(2).replace(/\.?0+$/, ''));
+        secQtyEl.value = formatNumberInput(secondaryQty.toFixed(2).replace(/\.?0+$/, ''));
       } else {
         secondaryQty = NaN;
-        logSecondaryQty.value = '';
+        secQtyEl.value = '';
       }
     }
 
-    if (!isNaN(primaryQty) && !isNaN(pWeight) && logPrimaryUnit.value !== '') {
-      logPrimaryWeight.value = formatNumberInput((primaryQty * pWeight).toFixed(3).replace(/\.?0+$/, ''));
-    } else {
-      logPrimaryWeight.value = '';
-    }
+    weightEl.value = (!isNaN(primaryQty) && !isNaN(pWeight) && unitEl.value !== '')
+      ? formatNumberInput((primaryQty * pWeight).toFixed(3).replace(/\.?0+$/, '')) : '';
+    secWeightEl.value = (!isNaN(secondaryQty) && !isNaN(sWeight) && secUnitEl.value !== '')
+      ? formatNumberInput((secondaryQty * sWeight).toFixed(3).replace(/\.?0+$/, '')) : '';
+  }
 
-    if (!isNaN(secondaryQty) && !isNaN(sWeight) && logSecondaryUnit.value !== '') {
-      logSecondaryWeight.value = formatNumberInput((secondaryQty * sWeight).toFixed(3).replace(/\.?0+$/, ''));
+  function updateProductBlockAvailability(block) {
+    var enabled = !!selectedActivity;
+    block.querySelectorAll('.logProdName, .logProdPrimaryUnit, .logProdSecondaryUnit').forEach(function (el) { el.disabled = !enabled; });
+    if (block._qtySource === 'primary') {
+      block.querySelector('.logProdPrimaryQty').disabled = !enabled;
+      block.querySelector('.logProdSecondaryQty').disabled = true;
+    } else if (block._qtySource === 'secondary') {
+      block.querySelector('.logProdPrimaryQty').disabled = true;
+      block.querySelector('.logProdSecondaryQty').disabled = !enabled;
     } else {
-      logSecondaryWeight.value = '';
+      block.querySelector('.logProdPrimaryQty').disabled = !enabled;
+      block.querySelector('.logProdSecondaryQty').disabled = !enabled;
     }
   }
 
-  logPrimaryQty.addEventListener('input', function () {
-    qtySource = logPrimaryQty.value.trim() === '' ? null : 'primary';
-    updateQtySourceLock();
-    recalcPackaging();
+  function updateAllProductBlocksAvailability() {
+    logProductsContainer.querySelectorAll('.logProductBlock').forEach(updateProductBlockAvailability);
+  }
+
+  var logProdBlockTpl = document.getElementById('logProductBlockTemplate');
+
+  function createProductBlock() {
+    var block = logProdBlockTpl.content.firstElementChild.cloneNode(true);
+    logProdBlockSeq += 1;
+    block._qtySource = null; // 'primary' | 'secondary' | null — mirrors old global qtySource, scoped to this block
+
+    var nameEl       = block.querySelector('.logProdName');
+    var qtyEl        = block.querySelector('.logProdPrimaryQty');
+    var unitEl       = block.querySelector('.logProdPrimaryUnit');
+    var secQtyEl     = block.querySelector('.logProdSecondaryQty');
+    var secUnitEl    = block.querySelector('.logProdSecondaryUnit');
+    var infoIcon     = block.querySelector('.logProdPrimaryInfoIcon');
+    var infoTooltip  = block.querySelector('.logProdPrimaryInfoTooltip');
+    var secInfoIcon  = block.querySelector('.logProdSecondaryInfoIcon');
+    var secInfoTooltip = block.querySelector('.logProdSecondaryInfoTooltip');
+    var removeBtn    = block.querySelector('.logProdRemove');
+
+    fillUnitSelect(unitEl, cachedPrimaryUnits, 'primary');
+    fillUnitSelect(secUnitEl, cachedSecondaryUnits, 'secondary');
+    initNumberCommaInput(qtyEl);
+    initNumberCommaInput(secQtyEl);
+
+    // Same uppercase-as-you-type behaviour as the page's static .input-uppercase
+    // fields (wired once at load for elements that exist then — this one is
+    // created later, so it needs its own listener).
+    nameEl.addEventListener('input', function () {
+      var pos = nameEl.selectionStart;
+      nameEl.value = nameEl.value.toUpperCase();
+      if (pos !== null) nameEl.setSelectionRange(pos, pos);
+    });
+
+    qtyEl.addEventListener('input', function () {
+      block._qtySource = qtyEl.value.trim() === '' ? null : 'primary';
+      updateProductBlockAvailability(block);
+      recalcProductBlock(block);
+    });
+    secQtyEl.addEventListener('input', function () {
+      block._qtySource = secQtyEl.value.trim() === '' ? null : 'secondary';
+      updateProductBlockAvailability(block);
+      recalcProductBlock(block);
+    });
+    unitEl.addEventListener('change', function () { recalcProductBlock(block); });
+    secUnitEl.addEventListener('change', function () { recalcProductBlock(block); });
+
+    infoIcon.addEventListener('click', function () { infoTooltip.classList.toggle('open'); });
+    infoIcon.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); infoTooltip.classList.toggle('open'); }
+    });
+    secInfoIcon.addEventListener('click', function () { secInfoTooltip.classList.toggle('open'); });
+    secInfoIcon.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); secInfoTooltip.classList.toggle('open'); }
+    });
+
+    removeBtn.addEventListener('click', function () {
+      // Always keep at least one block — remove just clears it instead of
+      // leaving the form with no product at all.
+      if (logProductsContainer.querySelectorAll('.logProductBlock').length <= 1) {
+        nameEl.value = '';
+        qtyEl.value = ''; secQtyEl.value = '';
+        block._qtySource = null;
+        updateProductBlockAvailability(block);
+        recalcProductBlock(block);
+        return;
+      }
+      block.remove();
+    });
+
+    updateProductBlockAvailability(block);
+    return block;
+  }
+
+  function addProductBlock() {
+    var block = createProductBlock();
+    logProductsContainer.appendChild(block);
+    return block;
+  }
+
+  document.getElementById('btnLogAddProduct').addEventListener('click', function () {
+    if (!selectedActivity) {
+      logCreateError.textContent = 'Select an Activity Code first.';
+      logCreateError.style.display = 'block';
+      return;
+    }
+    addProductBlock();
   });
-  logSecondaryQty.addEventListener('input', function () {
-    qtySource = logSecondaryQty.value.trim() === '' ? null : 'secondary';
-    updateQtySourceLock();
-    recalcPackaging();
-  });
-  logPrimaryUnit.addEventListener('change', recalcPackaging);
-  logSecondaryUnit.addEventListener('change', recalcPackaging);
+
+  function resetProductBlocks() {
+    logProductsContainer.innerHTML = '';
+    addProductBlock();
+  }
 
   // ---------- Manage Primary/Secondary Units fly windows ----------
   var managePrimaryUnitsOverlay   = document.getElementById('managePrimaryUnitsOverlay');
@@ -2359,8 +2457,29 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
   }
 
   function refreshUnitSelects() {
-    loadUnits('primary', logPrimaryUnit, recalcPackaging);
-    loadUnits('secondary', logSecondaryUnit, recalcPackaging);
+    fetch('ajax/manage_packaging_units.php?kind=primary&action=list')
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (!res.ok) return;
+        cachedPrimaryUnits = res.units;
+        logProductsContainer.querySelectorAll('.logProductBlock').forEach(function (block) {
+          fillUnitSelect(block.querySelector('.logProdPrimaryUnit'), cachedPrimaryUnits, 'primary');
+          recalcProductBlock(block);
+        });
+      })
+      .catch(function (e) { console.error(e); });
+
+    fetch('ajax/manage_packaging_units.php?kind=secondary&action=list')
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (!res.ok) return;
+        cachedSecondaryUnits = res.units;
+        logProductsContainer.querySelectorAll('.logProductBlock').forEach(function (block) {
+          fillUnitSelect(block.querySelector('.logProdSecondaryUnit'), cachedSecondaryUnits, 'secondary');
+          recalcProductBlock(block);
+        });
+      })
+      .catch(function (e) { console.error(e); });
   }
 
   // ---------- Logistic List: Edit / Delete (reverify-gated) ----------
@@ -2727,12 +2846,9 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
     logDocName.value = ''; logDocDate.value = ''; logDocFile.value = '';
     logDocUploadedList.innerHTML = '';
     logDocOpen = false; logDocChevron.style.transform = 'rotate(0deg)'; logDocBody.style.maxHeight = '0px';
-    logPrimaryQty.value = ''; logPrimaryUnit.value = ''; logPrimaryWeight.value = '';
-    logSecondaryUnit.value = ''; logSecondaryQty.value = ''; logSecondaryWeight.value = '';
-    qtySource = null;
-    updateQtySourceLock();
+    resetProductBlocks();
     logCreateError.style.display = 'none';
-    updatePackagingAvailability();
+    updateAllProductBlocksAvailability();
     loadActivityCodes();
   }
 
@@ -2745,24 +2861,45 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
       return;
     }
 
-    var pOpt = logPrimaryUnit.selectedOptions[0];
-    var sOpt = logSecondaryUnit.selectedOptions[0];
+    var blocks = Array.prototype.slice.call(logProductsContainer.querySelectorAll('.logProductBlock'));
+    if (blocks.length === 0) {
+      logCreateError.textContent = 'Add at least one product.';
+      logCreateError.style.display = 'block';
+      return;
+    }
 
     // Only rates are sent — totals (weight, secondary qty) are calculated
     // by the server when the Logistic List is loaded, never stored as-is.
-    // primary_qty is read through parseNumberInput() to strip the comma
-    // grouping the field displays while typing — create_logistic.php's
+    // qty fields are read through parseNumberInput() to strip the comma
+    // grouping they display while typing — create_logistic.php's
     // is_numeric() check would otherwise reject "1,234.5".
-    var primaryQtyClean = parseNumberInput(logPrimaryQty.value);
+    var products = [];
+    for (var i = 0; i < blocks.length; i++) {
+      var block = blocks[i];
+      var name = block.querySelector('.logProdName').value.trim();
+      if (name === '') {
+        logCreateError.textContent = 'Fill in the product name for every product block (or remove the empty one).';
+        logCreateError.style.display = 'block';
+        return;
+      }
+      var pOpt = block.querySelector('.logProdPrimaryUnit').selectedOptions[0];
+      var sOpt = block.querySelector('.logProdSecondaryUnit').selectedOptions[0];
+      var primaryQtyClean = parseNumberInput(block.querySelector('.logProdPrimaryQty').value);
+      products.push({
+        product_name: name,
+        primary_qty: isNaN(primaryQtyClean) ? '' : String(primaryQtyClean),
+        primary_unit_label: pOpt ? (pOpt.getAttribute('data-label') || '') : '',
+        primary_unit_weight_kg: pOpt ? (pOpt.getAttribute('data-weight') || '') : '',
+        secondary_unit_label: sOpt ? (sOpt.getAttribute('data-label') || '') : '',
+        secondary_unit_weight_kg: sOpt ? (sOpt.getAttribute('data-weight') || '') : '',
+        secondary_ratio_per_primary: sOpt ? (sOpt.getAttribute('data-ratio') || '') : ''
+      });
+    }
+
     var payload = new URLSearchParams({
       activity_id: selectedActivity.id,
       incoming_date: document.getElementById('logIncomingDate').value,
-      primary_qty: isNaN(primaryQtyClean) ? '' : String(primaryQtyClean),
-      primary_unit_label: pOpt ? (pOpt.getAttribute('data-label') || '') : '',
-      primary_unit_weight_kg: pOpt ? (pOpt.getAttribute('data-weight') || '') : '',
-      secondary_unit_label: sOpt ? (sOpt.getAttribute('data-label') || '') : '',
-      secondary_unit_weight_kg: sOpt ? (sOpt.getAttribute('data-weight') || '') : '',
-      secondary_ratio_per_primary: sOpt ? (sOpt.getAttribute('data-ratio') || '') : ''
+      products: JSON.stringify(products)
     });
 
     fetch('ajax/create_logistic.php', {
@@ -2788,6 +2925,7 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
 
   // ---------- Init ----------
   refreshUnitSelects();
+  resetProductBlocks(); // one empty (disabled, until an activity is picked) product block, like the old single-product fields
   loadActivityCodes();
   loadLogisticList(); // Logistic List is the default tab on entering the menu
 })();

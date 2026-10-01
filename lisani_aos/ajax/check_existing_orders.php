@@ -74,7 +74,7 @@ try {
     $st = $lisani_conn->prepare(
         "SELECT m.id AS movement_id, m.logistic_id, m.movement_date, m.created_at,
                 m.batch_id, m.driver_name, m.police_number, m.qty_primary_package, m.price, m.total_price,
-                a.activity_name, l.primary_unit_label AS unit_label
+                l.product_name AS activity_name, l.primary_unit_label AS unit_label
          FROM logistic_movements m
          JOIN logistics l ON l.id = m.logistic_id
          JOIN activities a ON a.id = l.activity_id
