@@ -207,6 +207,10 @@ $adjustmentDate  = post_str('adjustment_date');
 $driver          = mb_strtoupper(post_str('driver_name'));
 $police          = mb_strtoupper(post_str('police_number'));
 $dryRun          = post_str('dry_run') !== '0'; // anything except an explicit "0" is a preview
+// Manual override: which of this customer's (possibly several) open invoices
+// to post against — empty means "auto" (old behaviour, below). Same flag as
+// create_return.php (both sent from the same Returns tab screen).
+$requestedInvoiceId = (int) post_str('invoice_id');
 
 if ($customerId <= 0) {
     aos_fail('Customer is missing.');
@@ -286,7 +290,7 @@ try {
     $lisani_conn->begin_transaction();
 
     // ---- Customer (locked — same reasoning as create_return.php) ----
-    $st = $lisani_conn->prepare('SELECT id, customer_name FROM customers WHERE id = ? FOR UPDATE');
+    $st = $lisani_conn->prepare('SELECT id, customer_name, credit_balance FROM customers WHERE id = ? FOR UPDATE');
     $st->bind_param('i', $customerId);
     $st->execute();
     $customer = $st->get_result()->fetch_assoc();
@@ -437,61 +441,55 @@ try {
     }
     $outLines = array_values($byLid);
 
-    // ---- Invoice: reuse the customer's open invoice if one exists, same
-    //      rule as create_order.php / create_return.php ----
-    $st = $lisani_conn->prepare(
-        "SELECT id, invoice_number, total_amount
-         FROM invoices
-         WHERE customer_id = ? AND status = 'open'
-         ORDER BY id DESC
-         LIMIT 1
-         FOR UPDATE"
-    );
-    $st->bind_param('i', $customerId);
-    $st->execute();
-    $invoice = $st->get_result()->fetch_assoc();
-    $st->close();
+    // ---- Invoice: if the user picked a specific one (rtInvoiceSelect — only
+    //      matters when the customer has 2+ open invoices, see
+    //      create_order.php's force_new_invoice), use that; otherwise fall
+    //      back to the old auto rule: reuse the customer's open invoice if
+    //      one exists, same rule as create_order.php / create_return.php.
+    if ($requestedInvoiceId > 0) {
+        $st = $lisani_conn->prepare(
+            "SELECT id, invoice_number, total_amount
+             FROM invoices
+             WHERE id = ? AND customer_id = ? AND status = 'open'
+             FOR UPDATE"
+        );
+        $st->bind_param('ii', $requestedInvoiceId, $customerId);
+        $st->execute();
+        $invoice = $st->get_result()->fetch_assoc();
+        $st->close();
+        if (!$invoice) {
+            throw new AosPriceAdjustmentError('Selected invoice is not an open invoice for this customer.');
+        }
+    } else {
+        $st = $lisani_conn->prepare(
+            "SELECT id, invoice_number, total_amount
+             FROM invoices
+             WHERE customer_id = ? AND status = 'open'
+             ORDER BY id DESC
+             LIMIT 1
+             FOR UPDATE"
+        );
+        $st->bind_param('i', $customerId);
+        $st->execute();
+        $invoice = $st->get_result()->fetch_assoc();
+        $st->close();
+    }
 
     $invoiceId     = null;
     $invoiceNumber = '';
-    $invoiceSeq    = 0;
-    $invoiceIsNew  = false;
     $totalBefore   = 0.0;
+    // No open invoice to reduce → CREDIT owed to the customer instead of a
+    // stray negative-total invoice. Same rule/rationale as create_return.php
+    // — see PROJECT_NOTES.md, 1 Okt 2026.
+    $toCredit = !$invoice;
 
     if ($invoice) {
         $invoiceId     = (int) $invoice['id'];
         $invoiceNumber = $invoice['invoice_number'];
         $totalBefore   = (float) $invoice['total_amount'];
-    } else {
-        $invoiceIsNew = true;
-
-        $st = $lisani_conn->prepare(
-            'SELECT COALESCE(MAX(sequence_number), 0) AS max_seq
-             FROM invoices
-             WHERE customer_id = ? AND period_month = ? AND period_year = ?'
-        );
-        $st->bind_param('iii', $customerId, $periodMonth, $periodYear);
-        $st->execute();
-        $invoiceSeq = (int) $st->get_result()->fetch_assoc()['max_seq'] + 1;
-        $st->close();
-
-        $initials      = customer_initials($customer['customer_name']);
-        $initialsIndex = invoice_initials_index($lisani_conn, $customerId, $initials);
-        $invoiceNumber = sprintf('%03d', $invoiceSeq) . '/adj/laj-' . $initials . '-' . $initialsIndex
-            . '/' . roman_month($periodMonth) . '/' . $periodYear;
-
-        $chk = $lisani_conn->prepare('SELECT 1 FROM invoices WHERE invoice_number = ? LIMIT 1');
-        $chk->bind_param('s', $invoiceNumber);
-        $chk->execute();
-        $taken = $chk->get_result()->fetch_assoc() !== null;
-        $chk->close();
-        if ($taken) {
-            throw new AosPriceAdjustmentError('Could not create a new invoice number.');
-        }
-        if ($invoiceSeq > 65535) {
-            throw new AosPriceAdjustmentError('Could not create a new invoice number.');
-        }
     }
+
+    $creditBefore = (float) $customer['credit_balance'];
 
     $adj = [
         'dry_run'         => $dryRun,
@@ -499,13 +497,17 @@ try {
         'adjustment_date' => $adjustmentDate,
         'driver_name'     => $driver !== '' ? $driver : null,
         'police_number'   => $police !== '' ? $police : null,
-        'invoice'         => [
+        'invoice'         => $toCredit ? null : [
             'id'           => $invoiceId,
             'number'       => $invoiceNumber,
-            'is_new'       => $invoiceIsNew,
+            'is_new'       => false,
             'total_before' => $totalBefore,
             'total_after'  => round($totalBefore - $grand, 2),
         ],
+        'credit'          => $toCredit ? [
+            'balance_before' => $creditBefore,
+            'balance_after'  => round($creditBefore + $grand, 2),
+        ] : null,
         'items'           => $outLines,
         'grand_discount'  => $grand,
     ];
@@ -520,18 +522,13 @@ try {
     $driverDb = $driver !== '' ? $driver : null;
     $policeDb = $police !== '' ? $police : null;
 
-    if ($invoiceIsNew) {
-        $negGrand = money(0 - $grand);
-        $st = $lisani_conn->prepare(
-            "INSERT INTO invoices
-               (customer_id, invoice_number, sequence_number, period_month, period_year,
-                status, total_amount, paid_amount)
-             VALUES (?, ?, ?, ?, ?, 'open', ?, 0)"
-        );
-        $st->bind_param('isiiis', $customerId, $invoiceNumber, $invoiceSeq, $periodMonth, $periodYear, $negGrand);
+    if ($toCredit) {
+        $g = money($grand);
+        $st = $lisani_conn->prepare('UPDATE customers SET credit_balance = credit_balance + ? WHERE id = ?');
+        $st->bind_param('si', $g, $customerId);
         $st->execute();
-        $invoiceId = (int) $lisani_conn->insert_id;
         $st->close();
+        // $invoiceId stays null — same "(No invoice)" grouping as before.
     } else {
         $negGrand = money(0 - $grand);
         $st = $lisani_conn->prepare('UPDATE invoices SET total_amount = total_amount + ? WHERE id = ?');
@@ -596,8 +593,10 @@ try {
 
     $lisani_conn->commit();
 
-    $adj['invoice']['id'] = $invoiceId;
-    $adj['movement_ids']  = $movementIds;
+    if (!$toCredit) {
+        $adj['invoice']['id'] = $invoiceId;
+    }
+    $adj['movement_ids'] = $movementIds;
 
     aos_json(['ok' => true, 'message' => 'Price adjustment saved.', 'adj' => $adj]);
 } catch (AosPriceAdjustmentError $e) {

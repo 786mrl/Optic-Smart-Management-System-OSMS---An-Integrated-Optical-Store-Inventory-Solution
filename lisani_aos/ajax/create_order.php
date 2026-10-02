@@ -204,6 +204,11 @@ $orderDate  = post_str('order_date');
 $driver     = mb_strtoupper(post_str('driver_name'));
 $police     = mb_strtoupper(post_str('police_number'));
 $dryRun     = post_str('dry_run') !== '0'; // anything except an explicit "0" is a preview
+// Manual override for "customer wants this order billed on its own invoice,
+// even though they already have one open" (requested by user, 1 Okt 2026) —
+// see §5 invariant in PROJECT_NOTES.md. "1" skips the open-invoice reuse
+// below entirely and always plans a brand-new invoice.
+$forceNewInvoice = post_str('force_new_invoice') === '1';
 
 if ($customerId <= 0) {
     aos_fail('Customer is missing.');
@@ -451,19 +456,23 @@ try {
         );
     }
 
-    // ---- Invoice: reuse the customer's open one, otherwise plan a new one ----
-    $st = $lisani_conn->prepare(
-        "SELECT id, invoice_number, total_amount
-         FROM invoices
-         WHERE customer_id = ? AND status = 'open'
-         ORDER BY id DESC
-         LIMIT 1
-         FOR UPDATE"
-    );
-    $st->bind_param('i', $customerId);
-    $st->execute();
-    $invoice = $st->get_result()->fetch_assoc();
-    $st->close();
+    // ---- Invoice: reuse the customer's open one, otherwise plan a new one
+    //      (unless force_new_invoice asked to skip reuse outright) ----
+    $invoice = null;
+    if (!$forceNewInvoice) {
+        $st = $lisani_conn->prepare(
+            "SELECT id, invoice_number, total_amount
+             FROM invoices
+             WHERE customer_id = ? AND status = 'open'
+             ORDER BY id DESC
+             LIMIT 1
+             FOR UPDATE"
+        );
+        $st->bind_param('i', $customerId);
+        $st->execute();
+        $invoice = $st->get_result()->fetch_assoc();
+        $st->close();
+    }
 
     $invoiceId     = null;
     $invoiceNumber = '';
@@ -478,13 +487,16 @@ try {
     } else {
         $invoiceIsNew = true;
 
-        // Sequence restarts per customer per month, starting at 001.
+        // Sequence continues per customer (001, 002, 003, ...) across months and
+        // years — it no longer restarts at 001 when the month/year changes
+        // (changed 2 Okt 2026). Old invoices keep their numbers; the next one
+        // simply continues from this customer's highest sequence_number.
         $st = $lisani_conn->prepare(
             'SELECT COALESCE(MAX(sequence_number), 0) AS max_seq
              FROM invoices
-             WHERE customer_id = ? AND period_month = ? AND period_year = ?'
+             WHERE customer_id = ?'
         );
-        $st->bind_param('iii', $customerId, $periodMonth, $periodYear);
+        $st->bind_param('i', $customerId);
         $st->execute();
         $invoiceSeq = (int) $st->get_result()->fetch_assoc()['max_seq'] + 1;
         $st->close();

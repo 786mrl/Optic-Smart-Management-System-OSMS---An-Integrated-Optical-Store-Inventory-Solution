@@ -63,10 +63,25 @@ function aosColumnExists(mysqli $conn, string $table, string $column): bool
 }
 $hasStockSource   = aosColumnExists($lisani_conn, 'logistic_movements', 'stock_source');
 
+// invoice_payments is from migration_invoice_payments.sql, which may not have
+// run yet — SHOW TABLES (unlike SHOW COLUMNS FROM a missing table) never
+// throws, so this is safe to call even under MYSQLI_REPORT_STRICT below.
+function aosTableExists(mysqli $conn, string $table): bool
+{
+    $res = $conn->query("SHOW TABLES LIKE '" . $conn->real_escape_string($table) . "'");
+    return $res instanceof mysqli_result && $res->num_rows > 0;
+}
+$hasInvoicePayments = aosTableExists($lisani_conn, 'invoice_payments');
+// migration_invoice_payments_bank_fields.sql (adds source/destination bank
+// columns, drops payment_method) may not have run yet either — same guard
+// pattern, so this endpoint works both before and after that migration.
+$hasBankFields = $hasInvoicePayments
+    && aosColumnExists($lisani_conn, 'invoice_payments', 'source_bank');
+
 try {
     // ---- Customer totals ----
     $st = $lisani_conn->prepare(
-        'SELECT id, customer_name, total_inflow, total_outflow, total_price_adjustments, total_paid
+        'SELECT id, customer_name, total_inflow, total_outflow, total_price_adjustments, total_paid, credit_balance
          FROM customers WHERE id = ?'
     );
     $st->bind_param('i', $customerId);
@@ -137,11 +152,69 @@ try {
             'paid_amount'    => $row['paid_amount'],
             'created_at'     => $row['created_at'],
             'movements'      => [],
+            'payments'       => [],
         ];
         $invoices[] = $inv;
         $byId[$inv['id']] = count($invoices) - 1;
     }
     $st->close();
+
+    // ---- Payments (invoice_payments), dropped into their invoice ----
+    // Table may not exist yet on a DB that hasn't run the migration — guarded
+    // the same way stock_source is above, so this endpoint keeps working
+    // (just without a Payments section) until the migration is applied.
+    if ($hasInvoicePayments) {
+        $st = $lisani_conn->prepare(
+            $hasBankFields
+            ? 'SELECT id, invoice_id, payment_date, amount,
+                      source_bank, source_account_name,
+                      destination_bank, destination_account_number, destination_account_name,
+                      notes, created_at
+               FROM invoice_payments
+               WHERE customer_id = ?
+               ORDER BY payment_date DESC, id DESC'
+            // Pre-migration fallback: old single payment_method column. Mapped
+            // into destination_bank below so the frontend's existing "p.destination_bank"
+            // display still shows something instead of going blank.
+            : 'SELECT id, invoice_id, payment_date, amount, payment_method, notes, created_at
+               FROM invoice_payments
+               WHERE customer_id = ?
+               ORDER BY payment_date DESC, id DESC'
+        );
+        $st->bind_param('i', $customerId);
+        $st->execute();
+        $res = $st->get_result();
+        while ($row = $res->fetch_assoc()) {
+            $iid = (int) $row['invoice_id'];
+            if (!isset($byId[$iid])) {
+                continue; // payment on an invoice outside this listing — shouldn't happen, skip defensively
+            }
+            $invoices[$byId[$iid]]['payments'][] = $hasBankFields ? [
+                'id'                          => (int) $row['id'],
+                'payment_date'                => $row['payment_date'],
+                'amount'                      => $row['amount'],
+                'source_bank'                 => $row['source_bank'],
+                'source_account_name'         => $row['source_account_name'],
+                'destination_bank'            => $row['destination_bank'],
+                'destination_account_number'  => $row['destination_account_number'],
+                'destination_account_name'    => $row['destination_account_name'],
+                'notes'                       => $row['notes'],
+                'created_at'                  => $row['created_at'],
+            ] : [
+                'id'                          => (int) $row['id'],
+                'payment_date'                => $row['payment_date'],
+                'amount'                      => $row['amount'],
+                'source_bank'                 => '',
+                'source_account_name'         => '',
+                'destination_bank'            => $row['payment_method'],
+                'destination_account_number'  => '',
+                'destination_account_name'    => '',
+                'notes'                       => $row['notes'],
+                'created_at'                  => $row['created_at'],
+            ];
+        }
+        $st->close();
+    }
 
     // ---- Movements, dropped into their invoice ----
     // created_at (down to the minute) + driver_name + police_number is how
@@ -212,6 +285,30 @@ try {
         ];
     }
 
+    // ---- Refunds (invoice_refunds) — customer-level, not tied to one invoice ----
+    $refunds = [];
+    if (aosTableExists($lisani_conn, 'invoice_refunds')) {
+        $st = $lisani_conn->prepare(
+            'SELECT id, refund_date, amount, method, notes
+             FROM invoice_refunds
+             WHERE customer_id = ?
+             ORDER BY refund_date DESC, id DESC'
+        );
+        $st->bind_param('i', $customerId);
+        $st->execute();
+        $res = $st->get_result();
+        while ($row = $res->fetch_assoc()) {
+            $refunds[] = [
+                'id'           => (int) $row['id'],
+                'refund_date'  => $row['refund_date'],
+                'amount'       => $row['amount'],
+                'method'       => $row['method'],
+                'notes'        => $row['notes'],
+            ];
+        }
+        $st->close();
+    }
+
     aos_json([
         'ok'   => true,
         'data' => [
@@ -230,9 +327,15 @@ try {
                 'total_returned'          => round((float) $customer['total_outflow'] - (float) $customer['total_price_adjustments'], 2),
                 'total_price_adjustments' => $customer['total_price_adjustments'],
                 'total_paid'              => $customer['total_paid'],
+                // Credit owed to this customer from a return/price adjustment
+                // that had no open invoice to reduce (see create_return.php /
+                // create_price_adjustment.php, PROJECT_NOTES.md 1 Okt 2026).
+                // Resolved manually via "Refund" or "Apply Credit" — never automatic.
+                'credit_balance'          => $customer['credit_balance'],
             ],
             'products' => $products,
             'invoices' => $invoices,
+            'refunds'  => $refunds,
         ],
     ]);
 } catch (Throwable $e) {

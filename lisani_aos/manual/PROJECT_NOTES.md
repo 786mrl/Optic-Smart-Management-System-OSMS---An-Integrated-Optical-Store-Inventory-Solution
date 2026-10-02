@@ -92,8 +92,13 @@ optic_pos/
   (identitas satu "order/kartu" = movement id terkecil saat disimpan).
 - **invoices**: customer_id, invoice_number, sequence_number, period_month/year, status(open/paid),
   total_amount, paid_amount. Nomor: `NNN/{inv|ret|adj}/laj-{INISIAL}-{n}/{ROMAWI}/{tahun}`; `[n]` unik lintas
-  ketiga jenis. **Order/retur/diskon memakai invoice OPEN yang ada; hanya kalau tidak ada dibuat baru**
-  (retur/diskon: total negatif).
+  ketiga jenis. **`NNN` = `sequence_number` lanjut per customer (001, 002, …) lintas bulan/tahun, TIDAK reset
+  tiap bulan** (sejak 2 Okt 2026, belum dites; invoice lama tidak diubah). **Order/retur/diskon memakai invoice OPEN yang ada; hanya kalau tidak ada dibuat baru**
+  (retur/diskon: total negatif). **Kecuali** (1 Okt 2026, belum dites): New Order bisa **manual** minta invoice
+  baru walau masih ada yang open (`force_new_invoice`, checkbox "Open as a new invoice") → sekarang **boleh ada
+  lebih dari satu invoice OPEN per customer sekaligus**; Returns/Price Adjustment di kasus itu wajib user pilih
+  invoice target (`rtInvoiceSelect` → `invoice_id`), kalau tidak dipilih fallback ke perilaku lama (invoice open
+  terbaru / buat baru kalau tidak ada).
 - **defective_stock_events**: logistic_id, event_type (kini hanya `repaired_to_normal`), qty, created_by.
   Kolom lama `logistics.defective_reference_price` **tidak dipakai lagi** (drop opsional:
   `migration_remove_defective_reference_price.sql`).
@@ -216,7 +221,25 @@ kategori Other, pencatatan pembayaran customer, print invoice, Report.
   `logistic_id` → `{data:{product_name, unit_label, defective_qty, defective_taken_qty, history:[{customer_name,
   movement_date, qty, price, total_price}]}}`; POST `action=repair` `logistic_id, qty` (≤ defective_qty).
 
-## 8. Log terbaru (1 Okt 2026)
+## 8. Log terbaru (1–2 Okt 2026)
+- **Fix "Connection error" saat Return/Discount kena kredit (2 Okt 2026, belum dites ulang)**: gejala — semua
+  invoice customer sudah PAID, lalu ada barang di-return → Review/Save di tab Returns muncul "Connection error".
+  Akar masalah (disimpulkan dari kode `transaction_content.php`): server sudah membalas `ret.invoice`/`adj.invoice`
+  = `null` + `ret.credit`/`adj.credit` (`balance_after`) untuk kasus kredit (§8 "Kredit customer"), tapi client
+  masih mengasumsikan invoice selalu ada → TypeError di dalam `.then`, yang ketangkap `.catch` dan ditampilkan
+  sebagai "Connection error". Perbaikan hanya di client: `showRtConfirm()` (baris Invoice → "None — goes to
+  customer credit", total akhir → "Credit Balance After") dan ringkasan sukses di `rtSaveReturn()` (label
+  "Customer credit" kalau invoice null). **Gotcha**: `.catch` di `rtReview`/`rtSaveReturn` menelan SEMUA error JS
+  sebagai "Connection error" — kalau pesan itu muncul padahal jaringan normal, curigai TypeError di handler
+  `.then`, bukan koneksi/endpoint.
+- **Add Payment & penomoran invoice (2 Okt 2026, belum dites)**: (1) `buildStInvoiceItem`
+  (`transaction_content.php`): tombol "+ Add Payment" kini hanya dibuat kalau `inv.status === 'open'`;
+  invoice PAID tidak punya tombol itu (Apply Credit sudah dari dulu hanya untuk open). (2) `create_order.php`:
+  `sequence_number` invoice baru = `MAX(sequence_number)` **per customer** + 1 (dulu per customer+bulan+tahun,
+  jadi order bulan baru kembali ke 001). Hanya `create_order.php` yang membuat invoice baru — return/diskon
+  tanpa invoice open kini masuk `credit_balance`, jadi `create_return.php`/`create_price_adjustment.php`
+  tidak perlu diubah. **Asumsi**: user menginginkan urutan lanjut terus per customer (bukan reset bulanan);
+  kalau ternyata tidak, kembalikan filter `period_month/period_year` di query MAX.
 - **Live refresh antar section** (belum dites user): dulu tiap `*_content.php` cuma fetch sekali saat load,
   sementara ganti menu lewat `footer.php` cuma show/hide div (bukan reload) → pindah ke Logistic setelah
   input order di Transactions tetap nampilin data lama sampai refresh manual. Perbaikan: `footer.php`
@@ -228,8 +251,80 @@ kategori Other, pencatatan pembayaran customer, print invoice, Report.
 - **Hapus ikon SVG "Logistic" di sidebar**: tombol Logistic (`sidebar.php` desktop + `bottom-nav` mobile)
   sekarang teks saja ("Logistic"), tanpa `<svg>`/`<i>` di depannya — konsisten dipermintaan user, item sidebar
   lain (Dashboard/Transactions/Report) tetap pakai ikon Tabler seperti biasa.
+- **Upload bukti pembayaran invoice** (belum dites): tombol "+ Add Payment" di tiap invoice (Sales Transaction >
+  Customers), sistemnya dicontoh dari Disbursement — viewer+OCR Tesseract.js dipakai BERSAMA (satu instance,
+  dipilah lewat `activeCapGroup`/`data-cap-group`, lihat `transaction_content.php`), bukan duplikat. Satu
+  invoice bisa dicicil berkali-kali → tabel baru **`invoice_payments`** (`migration_invoice_payments.sql`,
+  **belum dijalankan user**), endpoint baru `create_invoice_payment.php` (update `invoices.paid_amount`/
+  `status`/`paid_at` + `customers.total_paid` dalam 1 transaction + `FOR UPDATE`) dan
+  `view_invoice_payment_proof.php` (stream file). `list_customer_orders.php` ikut invoice.payments[].
+  **Asumsi perlu dikonfirmasi**: overpayment DITOLAK (bukan di-clamp). Folder bukti ikut persis konvensi
+  `create_customer.php` (`selling/{customers.year}/{customer_name, sanitized+lowercase}/`), subfolder
+  `payments/` di dalamnya.
+- **Buka invoice baru walau masih ada yang open** (belum dites): diminta user karena kadang customer sengaja
+  mau invoice terpisah untuk pengambilan barang tertentu. Diputuskan **manual** (bukan ditebak otomatis dari
+  produk/driver/tanggal — itu soal maksud bisnis customer, bukan sesuatu yang bisa disimpulkan dari data).
+  `create_order.php`: param baru `force_new_invoice` (checkbox "Open as a new invoice" di New Order), `=1`
+  skip pencarian invoice open sepenuhnya → selalu buat baru. `create_return.php` & `create_price_adjustment.php`:
+  param baru `invoice_id` (dropdown `rtInvoiceSelect` di tab Returns, diisi dari invoice `status==='open'` milik
+  customer terpilih via `list_customer_orders.php`); kalau diisi, divalidasi `WHERE id=? AND customer_id=? AND
+  status='open'` lalu dipakai; kalau kosong, fallback ke perilaku lama (auto pick invoice open terbaru).
+- **Kredit customer (sudah lunas, lalu return/turun harga)** (belum dites): kalau retur/diskon tidak ada
+  invoice open untuk dikurangi (termasuk kasus satu-satunya invoice customer itu sudah PAID), sistem **tidak
+  lagi bikin invoice minus baru** — nilainya masuk ke `customers.credit_balance` (kolom baru), pergerakan
+  barang tetap tercatat tapi `invoice_id = NULL` (masuk grup "(No invoice)" yang sudah ada di
+  `list_customer_orders.php`). Kredit **tidak pernah dipakai otomatis** — dua tombol manual di tab Customers:
+  **Refund** (`create_refund.php`, tabel baru `invoice_refunds`, bukti opsional, kurangi `credit_balance` &
+  `total_paid`) dan **Apply Credit** per invoice open (`apply_customer_credit.php`, tercatat di
+  `invoice_payments` method "CREDIT BALANCE" tanpa file, kurangi `credit_balance` saja — `total_paid` TIDAK
+  ikut berubah karena bukan uang baru masuk). `invoice_payments.proof_path`/`proof_original_name` jadi
+  nullable (migration) untuk menampung baris tanpa file ini.
+
+- **Perbaikan Record Payment invoice (dikerjakan, BELUM DITES user)**: (1) **Bug OCR amount** diperbaiki —
+  fungsi baru `parseOcrAmount()` di `transaction_content.php` (disambiguasi `.`/`,` dari teks OCR itu
+  sendiri: dua simbol dipakai → yang terakhir = desimal; satu simbol diikuti 3 digit atau dipakai berkali
+  → ribuan). Dipakai di 3 tempat yang baca hasil OCR angka: `capAmount`, `capExchangeRate` (Disbursement),
+  `payCapAmount` (payment) — `parseNumberInput` lama (koma=ribuan, titik=desimal) TETAP dipakai apa adanya
+  untuk ketikan manual (`input-number-comma`), jangan disatukan, beda konvensi sumbernya. (2) Field
+  "Payment Method / Bank" di form Add Payment diganti 6 field (pola persis disamakan dengan Disbursement):
+  **source bank, source account number, source account name, destination bank, destination account
+  number, destination account name** — semua text uppercase hasil OCR, editable; destination bank/account
+  number dikasih `<datalist>` kosong (id `payCapDestBankList`/`payCapDestAccountNumberList`) tapi **belum
+  diisi** (butuh kontrak endpoint list bank accounts, lihat §9). (3) **Notes auto-fill** jalan via
+  `recalcPayCapNotes()`: dibandingkan ke **outstanding saat form dibuka** (`total_amount − paid_amount`,
+  bukan total invoice) — kalau `inv.payments` kosong DAN amount ≥ outstanding → `Payment for invoice
+  [no]`; selain itu (cicilan) → `First/Second/… payment for invoice [no]` berdasar
+  `inv.payments.length + 1`. Auto-fill berhenti begitu user ngetik manual di Notes (flag
+  `payCapNotesEdited`). (4) **DB**: kolom `payment_method` di `invoice_payments` **diganti** (bukan
+  ditambah) jadi 6 kolom di atas — lihat `migration_invoice_payments_bank_fields.sql` (ALTER, destruktif,
+  **belum dijalankan user**); `create_invoice_payment.php` sudah disesuaikan (validasi panjang per kolom +
+  INSERT 14 kolom). Baris riwayat Payments di tab Customers sekarang nampilin "destination bank ·
+  destination account name" (ganti `payment_method` yang sudah tidak ada).
+
+- **Record Payment — revisi lanjutan (dikerjakan, belum dites)**: (1) **Source Account Number dihapus**
+  total dari fitur payment (form, JS, `create_invoice_payment.php`, migration, `list_customer_orders.php`)
+  — kalau sempat sudah menjalankan versi migration SEBELUMNYA yang masih punya kolom ini, ada instruksi
+  `DROP COLUMN` tambahan di awal `migration_invoice_payments_bank_fields.sql`, jalankan itu dulu. (2)
+  **Bugfix: Total Paid tidak update setelah Save Payment** — akar masalahnya `btnPayCapSave` sukses cuma
+  manggil `backFromPayCapture()` (balik ke tab Customers) tanpa refetch; `refreshStCustomerCard(customerId)`
+  yang sudah dipakai Refund/Apply Credit TIDAK pernah dipanggil di jalur payment. Fix: `openPayCaptureView`
+  sekarang terima param `customer` (dikirim dari `buildStInvoiceItem`) → disimpan ke `payCapCustomerId` →
+  dipanggil `refreshStCustomerCard(payCapCustomerId)` setelah save sukses. (3) **Baris baru "Total
+  Balance"** di kartu Customer (`renderStCustomerDetail`) = Total Actual − Total Paid (sisa belum dibayar
+  level customer, bisa negatif kalau overpaid — kelebihannya ada di Credit Balance, bukan di sini).
 
 ## 9. Belum dites / terbuka
+- **Record Payment (lihat §8), lanjutan**: `list_customer_orders.php` sudah diupdate — `invoice.payments[]`
+  sekarang pakai `aosColumnExists(..., 'source_bank')` (pola sama dengan `$hasStockSource`) buat tahu
+  migrasi bank fields sudah jalan atau belum: kalau sudah, SELECT 6 kolom bank baru; kalau belum, fallback
+  SELECT `payment_method` lama lalu dipetakan ke `destination_bank` saja (field lain `''`) supaya tampilan
+  tidak `undefined` di kedua kondisi. **Datalist destination bank/account** (`payCapDestBankList`/
+  `payCapDestAccountNumberList`) sekarang diisi dari `ajax/list_bank_accounts.php` (→
+  `json_file/bank_accounts.json`), tapi **nama field JSON-nya ditebak** (dicoba beberapa kemungkinan:
+  `bank_name`/`bank`, `account_number`/`number`, `account_name`/`holder_name`/`name`) karena isi
+  `bank_accounts.json` yang sebenarnya belum dilihat — **tolong tes**: kalau datalist destination bank
+  kosong atau salah nampilin teks, laporkan isi `bank_accounts.json` (atau `settings_content.php` bagian
+  Company Bank Accounts) biar nama field di `pickField()` (`transaction_content.php`) dikoreksi.
 - **Belum dites**: Logistic List & Movements dengan >1 produk dalam satu activity code (tampilan masih per
   baris produk, BELUM dikelompokkan di bawah satu header activity code — kalau user merasa berantakan,
   pertimbangkan pengelompokan). Edit/Delete logistic untuk kasus multi-produk (delete bukan produk

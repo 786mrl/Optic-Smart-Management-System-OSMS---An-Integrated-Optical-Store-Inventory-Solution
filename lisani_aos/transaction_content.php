@@ -303,7 +303,7 @@ $currentYear     = date('Y');
     <div class="label">Date</div>
     <div style="display:flex; gap:var(--space-2);">
       <input type="date" class="input" id="capDate" style="flex:1;">
-      <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="capDate" data-scan-label="Date">Scan</button>
+      <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="capDate" data-scan-label="Date" data-cap-group="disbursement">Scan</button>
     </div>
   </div>
 
@@ -311,7 +311,7 @@ $currentYear     = date('Y');
     <div class="label">Source Bank</div>
     <div style="display:flex; gap:var(--space-2);">
       <input type="text" class="input input-uppercase" id="capSourceBank" style="flex:1;">
-      <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="capSourceBank" data-scan-label="Source Bank">Scan</button>
+      <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="capSourceBank" data-scan-label="Source Bank" data-cap-group="disbursement">Scan</button>
     </div>
   </div>
 
@@ -319,7 +319,7 @@ $currentYear     = date('Y');
     <div class="label">Destination Bank</div>
     <div style="display:flex; gap:var(--space-2);">
       <input type="text" class="input input-uppercase" id="capDestBank" style="flex:1;">
-      <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="capDestBank" data-scan-label="Destination Bank">Scan</button>
+      <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="capDestBank" data-scan-label="Destination Bank" data-cap-group="disbursement">Scan</button>
     </div>
   </div>
 
@@ -327,7 +327,7 @@ $currentYear     = date('Y');
     <div class="label">Source Account Number</div>
     <div style="display:flex; gap:var(--space-2);">
       <input type="text" class="input input-uppercase" id="capSourceAccountNumber" style="flex:1;">
-      <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="capSourceAccountNumber" data-scan-label="Source Account Number">Scan</button>
+      <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="capSourceAccountNumber" data-scan-label="Source Account Number" data-cap-group="disbursement">Scan</button>
     </div>
   </div>
 
@@ -335,7 +335,7 @@ $currentYear     = date('Y');
     <div class="label">Source Account Name</div>
     <div style="display:flex; gap:var(--space-2);">
       <input type="text" class="input input-uppercase" id="capSourceAccountName" style="flex:1;">
-      <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="capSourceAccountName" data-scan-label="Source Account Name">Scan</button>
+      <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="capSourceAccountName" data-scan-label="Source Account Name" data-cap-group="disbursement">Scan</button>
     </div>
   </div>
 
@@ -343,7 +343,7 @@ $currentYear     = date('Y');
     <div class="label">Destination Account Number</div>
     <div style="display:flex; gap:var(--space-2);">
       <input type="text" class="input input-uppercase" id="capDestAccountNumber" style="flex:1;">
-      <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="capDestAccountNumber" data-scan-label="Destination Account Number">Scan</button>
+      <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="capDestAccountNumber" data-scan-label="Destination Account Number" data-cap-group="disbursement">Scan</button>
     </div>
   </div>
 
@@ -351,7 +351,7 @@ $currentYear     = date('Y');
     <div class="label">Destination Account Name</div>
     <div style="display:flex; gap:var(--space-2);">
       <input type="text" class="input input-uppercase" id="capDestAccountName" style="flex:1;">
-      <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="capDestAccountName" data-scan-label="Destination Account Name">Scan</button>
+      <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="capDestAccountName" data-scan-label="Destination Account Name" data-cap-group="disbursement">Scan</button>
     </div>
   </div>
 
@@ -359,7 +359,7 @@ $currentYear     = date('Y');
     <div class="label">Notes (as written on the slip)</div>
     <div style="display:flex; gap:var(--space-2);">
       <input type="text" class="input input-uppercase" id="capNotes" style="flex:1;">
-      <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="capNotes" data-scan-label="Notes">Scan</button>
+      <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="capNotes" data-scan-label="Notes" data-cap-group="disbursement">Scan</button>
     </div>
   </div>
 
@@ -367,7 +367,7 @@ $currentYear     = date('Y');
     <div class="label">Currency</div>
     <div style="display:flex; gap:var(--space-2);">
       <input type="text" class="input input-uppercase" id="capCurrency" value="IDR" maxlength="10" style="flex:1;">
-      <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="capCurrency" data-scan-label="Currency">Scan</button>
+      <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="capCurrency" data-scan-label="Currency" data-cap-group="disbursement">Scan</button>
     </div>
   </div>
 
@@ -375,7 +375,7 @@ $currentYear     = date('Y');
     <div class="label">Transaction Amount</div>
     <div style="display:flex; gap:var(--space-2);">
       <input type="text" inputmode="decimal" class="input input-number-comma" id="capAmount" style="flex:1;">
-      <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="capAmount" data-scan-label="Transaction Amount">Scan</button>
+      <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="capAmount" data-scan-label="Transaction Amount" data-cap-group="disbursement">Scan</button>
     </div>
   </div>
 
@@ -383,7 +383,7 @@ $currentYear     = date('Y');
     <div class="label">Exchange Rate</div>
     <div style="display:flex; gap:var(--space-2);">
       <input type="text" inputmode="decimal" class="input input-number-comma" id="capExchangeRate" style="flex:1;">
-      <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="capExchangeRate" data-scan-label="Exchange Rate">Scan</button>
+      <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="capExchangeRate" data-scan-label="Exchange Rate" data-cap-group="disbursement">Scan</button>
     </div>
   </div>
 
@@ -397,6 +397,99 @@ $currentYear     = date('Y');
 
   <div style="display:flex; gap:var(--space-3); justify-content:flex-end; margin-top:var(--space-5);">
     <button type="button" class="btn btn-primary" id="btnCapSave">Save Transaction</button>
+  </div>
+</div>
+
+
+<!-- Invoice Payment — Document capture. Reuses the SAME upload/viewer/OCR
+     engine as Disbursement above (capViewerWrap, capCanvas, capFieldPickerOverlay):
+     only one of the two wizards is ever open at a time, so the shared viewer
+     is simply repointed by activeCapGroup. Opened from a "+ Add Payment"
+     button on an invoice in Sales Transaction > Customers. -->
+<div class="card" id="viewInvoicePaymentCapture" style="width:100%; display:none;">
+  <div class="panel-header">
+    <div class="panel-title">Record Payment — <span id="payCapInvoiceLabel"></span></div>
+    <button type="button" class="btn btn-secondary" id="btnPayCapBack">Back</button>
+  </div>
+
+  <div class="empty-sub" id="payCapOutstanding" style="margin-bottom:var(--space-3);"></div>
+
+  <div class="form-group">
+    <div class="label">Proof of Payment (PDF or Image)</div>
+    <input type="file" class="input" id="payCapFileInput" accept="application/pdf,image/*">
+    <button type="button" class="btn btn-secondary" id="btnPayCapOpenViewer" style="display:none; margin-top:var(--space-2);">View Document</button>
+  </div>
+
+  <div class="form-group">
+    <div class="label">Payment Date</div>
+    <div style="display:flex; gap:var(--space-2);">
+      <input type="date" class="input" id="payCapDate" style="flex:1;">
+      <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="payCapDate" data-scan-label="Payment Date" data-cap-group="payment">Scan</button>
+    </div>
+  </div>
+
+  <div class="form-group">
+    <div class="label">Amount</div>
+    <div style="display:flex; gap:var(--space-2);">
+      <input type="text" inputmode="decimal" class="input input-number-comma" id="payCapAmount" style="flex:1;">
+      <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="payCapAmount" data-scan-label="Amount" data-cap-group="payment">Scan</button>
+    </div>
+  </div>
+
+  <div class="form-group">
+    <div class="label">Source Bank</div>
+    <div style="display:flex; gap:var(--space-2);">
+      <input type="text" class="input input-uppercase" id="payCapSourceBank" style="flex:1;">
+      <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="payCapSourceBank" data-scan-label="Source Bank" data-cap-group="payment">Scan</button>
+    </div>
+  </div>
+
+  <div class="form-group">
+    <div class="label">Source Account Name</div>
+    <div style="display:flex; gap:var(--space-2);">
+      <input type="text" class="input input-uppercase" id="payCapSourceAccountName" style="flex:1;">
+      <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="payCapSourceAccountName" data-scan-label="Source Account Name" data-cap-group="payment">Scan</button>
+    </div>
+  </div>
+
+  <div class="form-group">
+    <div class="label">Destination Bank</div>
+    <div style="display:flex; gap:var(--space-2);">
+      <input type="text" class="input input-uppercase" id="payCapDestBank" list="payCapDestBankList" style="flex:1;">
+      <datalist id="payCapDestBankList"></datalist>
+      <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="payCapDestBank" data-scan-label="Destination Bank" data-cap-group="payment">Scan</button>
+    </div>
+  </div>
+
+  <div class="form-group">
+    <div class="label">Destination Account Number</div>
+    <div style="display:flex; gap:var(--space-2);">
+      <input type="text" class="input input-uppercase" id="payCapDestAccountNumber" list="payCapDestAccountNumberList" style="flex:1;">
+      <datalist id="payCapDestAccountNumberList"></datalist>
+      <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="payCapDestAccountNumber" data-scan-label="Destination Account Number" data-cap-group="payment">Scan</button>
+    </div>
+  </div>
+
+  <div class="form-group">
+    <div class="label">Destination Account Name</div>
+    <div style="display:flex; gap:var(--space-2);">
+      <input type="text" class="input input-uppercase" id="payCapDestAccountName" style="flex:1;">
+      <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="payCapDestAccountName" data-scan-label="Destination Account Name" data-cap-group="payment">Scan</button>
+    </div>
+  </div>
+
+  <div class="form-group">
+    <div class="label">Notes</div>
+    <div style="display:flex; gap:var(--space-2);">
+      <input type="text" class="input input-uppercase" id="payCapNotes" style="flex:1;">
+      <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="payCapNotes" data-scan-label="Notes" data-cap-group="payment">Scan</button>
+    </div>
+  </div>
+
+  <div class="empty-sub" id="payCapError" style="display:none; color:var(--danger);"></div>
+
+  <div style="display:flex; gap:var(--space-3); justify-content:flex-end; margin-top:var(--space-5);">
+    <button type="button" class="btn btn-primary" id="btnPayCapSave">Save Payment</button>
   </div>
 </div>
 
@@ -726,6 +819,13 @@ $currentYear     = date('Y');
         <input type="date" class="input" id="stOrderDate">
       </div>
 
+      <div class="form-group">
+        <label style="display:flex; align-items:center; gap:var(--space-2); font-size:var(--text-sm); color:var(--text-secondary);">
+          <input type="checkbox" id="stForceNewInvoice">
+          <span>Open as a new invoice (instead of adding to this customer's current open invoice)</span>
+        </label>
+      </div>
+
       <div class="empty-sub" id="stReviewError" style="display:none; color:var(--danger); white-space:pre-line;"></div>
       <div style="display:flex; justify-content:flex-end; margin-top:var(--space-4);">
         <button type="button" class="btn btn-primary" id="btnStReview">Review Order</button>
@@ -774,6 +874,14 @@ $currentYear     = date('Y');
       <div class="form-group" style="margin-top:var(--space-4);">
         <div class="label">Return Date</div>
         <input type="date" class="input" id="rtReturnDate">
+      </div>
+
+      <div class="form-group">
+        <div class="label">Invoice</div>
+        <select class="select" id="rtInvoiceSelect">
+          <option value="">Auto (this customer's open invoice, or a new one)</option>
+        </select>
+        <div class="empty-sub">Only matters if this customer has more than one open invoice — pick which one this return/discount should post against.</div>
       </div>
 
       <div class="empty-sub" id="rtReviewError" style="display:none; color:var(--danger); white-space:pre-line;"></div>
@@ -908,6 +1016,71 @@ $currentYear     = date('Y');
     <div class="modal-footer">
       <button type="button" class="btn btn-secondary" id="btnItemPriceAddCancel">Cancel</button>
       <button type="button" class="btn btn-primary" id="btnItemPriceAddSave">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Refund — cash given back from a customer's credit_balance (credit comes
+     from a return/price adjustment that had no open invoice to reduce, see
+     PROJECT_NOTES.md 1 Okt 2026). Proof is OPTIONAL: sometimes it's a bank
+     transfer with a slip, sometimes just a note — unlike Add Payment above,
+     this does NOT reuse the OCR capture engine; it's a plain small form. -->
+<div class="modal-overlay" id="refundOverlay" style="display:none;">
+  <div class="modal">
+    <div class="modal-header"><div class="modal-title">Refund <span id="refundCustomerLabel"></span></div></div>
+    <div class="modal-body">
+      <div class="empty-sub" id="refundAvailable" style="margin-bottom:var(--space-2);"></div>
+      <div class="form-group">
+        <div class="label">Refund Date</div>
+        <input type="date" class="input" id="refundDate">
+      </div>
+      <div class="form-group">
+        <div class="label">Amount</div>
+        <input type="text" inputmode="decimal" class="input input-number-comma" id="refundAmount">
+      </div>
+      <div class="form-group">
+        <div class="label">Method</div>
+        <input type="text" class="input input-uppercase" id="refundMethod" placeholder="e.g. CASH, TRANSFER BCA">
+      </div>
+      <div class="form-group">
+        <div class="label">Notes</div>
+        <input type="text" class="input input-uppercase" id="refundNotes">
+      </div>
+      <div class="form-group">
+        <div class="label">Proof (optional)</div>
+        <input type="file" class="input" id="refundProofFile" accept="application/pdf,image/*">
+      </div>
+      <div class="empty-sub" id="refundError" style="display:none; color:var(--danger);"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" id="btnRefundCancel">Cancel</button>
+      <button type="button" class="btn btn-primary" id="btnRefundSave">Save Refund</button>
+    </div>
+  </div>
+</div>
+
+<!-- Apply Credit — move part/all of a customer's credit_balance onto one of
+     their OPEN invoices (no file; nothing new was paid in, it's a
+     reallocation). Appears as a payment in that invoice's history, method
+     "CREDIT BALANCE" — see apply_customer_credit.php. -->
+<div class="modal-overlay" id="applyCreditOverlay" style="display:none;">
+  <div class="modal">
+    <div class="modal-header"><div class="modal-title">Apply Credit \u2014 <span id="applyCreditInvoiceLabel"></span></div></div>
+    <div class="modal-body">
+      <div class="empty-sub" id="applyCreditAvailable" style="margin-bottom:var(--space-2);"></div>
+      <div class="form-group">
+        <div class="label">Amount</div>
+        <input type="text" inputmode="decimal" class="input input-number-comma" id="applyCreditAmount">
+      </div>
+      <div class="form-group">
+        <div class="label">Notes</div>
+        <input type="text" class="input input-uppercase" id="applyCreditNotes">
+      </div>
+      <div class="empty-sub" id="applyCreditError" style="display:none; color:var(--danger);"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" id="btnApplyCreditCancel">Cancel</button>
+      <button type="button" class="btn btn-primary" id="btnApplyCreditSave">Apply</button>
     </div>
   </div>
 </div>
@@ -1473,7 +1646,11 @@ $currentYear     = date('Y');
   var viewResult       = document.getElementById('viewActivityCodeResult');
   var viewCustomerList = document.getElementById('viewCustomerList');
   var viewDisbursementCapture = document.getElementById('viewDisbursementCapture');
+  var viewInvoicePaymentCapture = document.getElementById('viewInvoicePaymentCapture');
   var viewSales        = document.getElementById('viewSalesTransaction');
+
+  var refundOverlay = document.getElementById('refundOverlay');
+  var applyCreditOverlay = document.getElementById('applyCreditOverlay');
 
   var flexOverlays = [entryOverlay, passwordOverlay, manageDeptOverlay, deleteCustomerOverlay,
     deleteActivityCodeOverlay, itemPriceAddOverlay, itemPriceReverifyOverlay,
@@ -1481,7 +1658,8 @@ $currentYear     = date('Y');
     txnCategoryOverlay, disbDepartmentOverlay, disbActivityOverlay, disbDetailsOverlay,
     capFieldPickerOverlay, stProductOverlay, stPriceOverlay, stStockSourceOverlay, stConfirmOverlay,
     stOrderModeOverlay, stOrderPickOverlay, stDriverWarnOverlay,
-    rtProductOverlay, rtConfirmOverlay, rtReverifyOverlay];
+    rtProductOverlay, rtConfirmOverlay, rtReverifyOverlay,
+    refundOverlay, applyCreditOverlay];
 
   function show(el) {
     el.style.display = (flexOverlays.indexOf(el) !== -1) ? 'flex' : 'block';
@@ -1510,6 +1688,42 @@ $currentYear     = date('Y');
     var cleaned = String(raw).replace(/,/g, '').trim();
     if (cleaned === '') return NaN;
     return parseFloat(cleaned);
+  }
+
+  // Amount text read off a scanned document does NOT follow this app's
+  // manual-entry convention (",": thousands, ".": decimal — parseNumberInput
+  // above). Printed slips mix both styles ("5.000" = five thousand, "5,000.50"
+  // or "5.000,50" = five thousand point five zero) depending on the bank, so
+  // feeding OCR text through parseNumberInput silently turned "5.000" into 5.
+  // This disambiguates from whatever separators are actually present instead
+  // of assuming either convention:
+  //   - both "." and "," present -> whichever comes LAST is the decimal mark,
+  //     everything before it (both symbols) is thousands grouping.
+  //   - only one symbol present, used once, followed by 1-2 trailing digits
+  //     -> treated as decimal ("5.50", "5,00").
+  //   - only one symbol present but followed by 3 digits, or used more than
+  //     once -> treated as thousands grouping and stripped ("5.000", "5.000.000").
+  function parseOcrAmount(rawText) {
+    var cleaned = String(rawText || '').replace(/[^0-9.,]/g, '');
+    if (cleaned === '') return NaN;
+
+    var lastDot = cleaned.lastIndexOf('.');
+    var lastComma = cleaned.lastIndexOf(',');
+
+    if (lastDot !== -1 && lastComma !== -1) {
+      var decIndex = Math.max(lastDot, lastComma);
+      var intPart = cleaned.slice(0, decIndex).replace(/[.,]/g, '');
+      var decPart = cleaned.slice(decIndex + 1).replace(/[.,]/g, '');
+      return parseFloat(intPart + '.' + decPart);
+    }
+
+    var sep = lastDot !== -1 ? '.' : (lastComma !== -1 ? ',' : '');
+    if (sep === '') return parseFloat(cleaned); // digits only
+
+    var parts = cleaned.split(sep);
+    var lastGroup = parts[parts.length - 1];
+    var looksDecimal = parts.length === 2 && lastGroup.length > 0 && lastGroup.length <= 2;
+    return looksDecimal ? parseFloat(parts[0] + '.' + lastGroup) : parseFloat(parts.join(''));
   }
 
   function initNumberCommaInput(el) {
@@ -1542,7 +1756,7 @@ $currentYear     = date('Y');
   });
 
   function showOnlyView(target) {
-    [viewEmpty, viewForm, viewResult, viewCustomerList, viewDisbursementCapture, viewSales].forEach(hide);
+    [viewEmpty, viewForm, viewResult, viewCustomerList, viewDisbursementCapture, viewSales, viewInvoicePaymentCapture].forEach(hide);
     show(target);
   }
 
@@ -1586,6 +1800,7 @@ $currentYear     = date('Y');
         disbState = { department_key: null, department_label: null, activity_id: null,
           activity_name: null, activity_code: null, cashflow: null, purpose: '' };
         if (typeof resetCaptureForm === 'function') resetCaptureForm();
+        if (typeof resetPayCaptureForm === 'function') resetPayCaptureForm();
       }
       wasVisible = isVisible;
     });
@@ -1821,6 +2036,11 @@ $currentYear     = date('Y');
   var armedScanField = null;  // field id currently waiting for a drag-box, or null
   var scanTriggerSource = null; // 'picker' | 'manual' — decides what happens after OCR finishes
   var blockModeArmed = false; // false = user can still scroll/pan freely; true = next drag on canvas draws the crop box
+  // Which wizard currently owns the shared viewer/canvas/field-picker above:
+  // 'disbursement' (capDate, capAmount, ...) or 'payment' (payCapDate, payCapAmount, ...).
+  // Only one wizard is ever open at a time, so one viewer instance is reused — this just
+  // decides which fields openFieldPicker() lists. See data-cap-group on each Scan button.
+  var activeCapGroup = 'disbursement';
 
   function capBlockHintArmingText(label) {
     return 'Field: "' + label + '". Scroll/zoom to find it, then double-tap (or double-click) the spot to start blocking. Triple-tap to skip this field.';
@@ -1830,6 +2050,7 @@ $currentYear     = date('Y');
   }
 
   function resetCaptureForm() {
+    activeCapGroup = 'disbursement';
     capFileInput.value = '';
     capUploadedFile = null;
     capDoc = null;
@@ -1859,13 +2080,17 @@ $currentYear     = date('Y');
     document.getElementById('capError').style.display = 'none';
   }
 
-  capFileInput.addEventListener('change', function () {
-    var file = capFileInput.files[0];
+  // Shared by the Disbursement file input (capFileInput) AND the Invoice
+  // Payment file input (payCapFileInput) — both just hand their File off to
+  // this one loader; which "Open Document"/error box it affects is decided
+  // by openViewerBtn/errorBoxId since the two wizards otherwise share the
+  // exact same viewer/canvas/field-picker (only one wizard runs at a time).
+  function loadCapturedFile(file, openViewerBtn, errorBoxId) {
     if (!file) return;
     capUploadedFile = file;
     capZoom = 1;
-    btnCapOpenViewer.style.display = 'inline-flex';
-    document.getElementById('capError').style.display = 'none';
+    openViewerBtn.style.display = 'inline-flex';
+    document.getElementById(errorBoxId).style.display = 'none';
 
     ensureCaptureLibs().then(function () {
       if (file.type === 'application/pdf') {
@@ -1879,8 +2104,8 @@ $currentYear     = date('Y');
               renderCapPage(true);
             })
             .catch(function () {
-              document.getElementById('capError').textContent = 'Could not read this PDF.';
-              document.getElementById('capError').style.display = 'block';
+              document.getElementById(errorBoxId).textContent = 'Could not read this PDF.';
+              document.getElementById(errorBoxId).style.display = 'block';
             });
         };
         reader.readAsArrayBuffer(file);
@@ -1900,9 +2125,13 @@ $currentYear     = date('Y');
         img.src = URL.createObjectURL(file);
       }
     }).catch(function (err) {
-      document.getElementById('capError').textContent = 'Could not load the document viewer (' + err.message + ').';
-      document.getElementById('capError').style.display = 'block';
+      document.getElementById(errorBoxId).textContent = 'Could not load the document viewer (' + err.message + ').';
+      document.getElementById(errorBoxId).style.display = 'block';
     });
+  }
+
+  capFileInput.addEventListener('change', function () {
+    loadCapturedFile(capFileInput.files[0], btnCapOpenViewer, 'capError');
   });
 
   // ---- Fullscreen viewer: open / zoom / close ----
@@ -2038,7 +2267,9 @@ $currentYear     = date('Y');
   function openFieldPicker() {
     var listEl = document.getElementById('capFieldPickerList');
     listEl.innerHTML = '';
-    capFields.forEach(function (f) {
+    capFields.filter(function (f) {
+      return f.btn.getAttribute('data-cap-group') === activeCapGroup;
+    }).forEach(function (f) {
       var val = document.getElementById(f.id).value;
       var row = document.createElement('div');
       row.className = 'accordion-row';
@@ -2366,13 +2597,27 @@ $currentYear     = date('Y');
         errEl.style.display = 'block';
       }
     } else if (fieldId === 'capAmount' || fieldId === 'capExchangeRate') {
-      var numMatch = rawText.replace(/[^0-9.,]/g, '');
-      var parsed = parseNumberInput(numMatch);
+      var parsed = parseOcrAmount(rawText);
       el.value = isNaN(parsed) ? '' : formatNumberInput(String(parsed));
       recalcFinalAmount();
     } else if (fieldId === 'capCurrency') {
       el.value = normalizeCurrency(rawText);
       toggleExchangeRateVisibility();
+    } else if (fieldId === 'payCapDate') {
+      var payIso = parseOcrDate(rawText);
+      var payErrEl = document.getElementById('payCapError');
+      if (payIso) {
+        el.value = payIso;
+        if (payErrEl.textContent.indexOf('Could not read the date') === 0) payErrEl.style.display = 'none';
+      } else {
+        el.value = '';
+        payErrEl.textContent = 'Could not read the date from "' + rawText.replace(/\s+/g, ' ').slice(0, 40) + '" — please pick it manually.';
+        payErrEl.style.display = 'block';
+      }
+    } else if (fieldId === 'payCapAmount') {
+      var payParsed = parseOcrAmount(rawText);
+      el.value = isNaN(payParsed) ? '' : formatNumberInput(String(payParsed));
+      recalcPayCapNotes(); // applyOcrResult sets .value directly, no 'input' event fires
     } else {
       el.value = rawText.replace(/\s+/g, ' ').trim().toUpperCase();
     }
@@ -2491,6 +2736,410 @@ $currentYear     = date('Y');
         saveBtn.textContent = 'Save Transaction';
         errBox.textContent = 'Connection error while saving.';
         errBox.style.display = 'block';
+      });
+  });
+
+  // ==========================================================
+  // Invoice Payment — Document capture. Same engine as Disbursement above
+  // (upload, fullscreen viewer, semi-automatic block-to-OCR via Tesseract.js,
+  // manual entry, save) — only the field set and the save endpoint differ.
+  // Opened from the "+ Add Payment" button on an invoice in Sales
+  // Transaction > Customers (see buildStInvoiceItem below).
+  // ==========================================================
+  var payCapFileInput     = document.getElementById('payCapFileInput');
+  var btnPayCapOpenViewer = document.getElementById('btnPayCapOpenViewer');
+  var payCapDate   = document.getElementById('payCapDate');
+  var payCapAmount = document.getElementById('payCapAmount');
+  var payCapSourceBank            = document.getElementById('payCapSourceBank');
+  var payCapSourceAccountName     = document.getElementById('payCapSourceAccountName');
+  var payCapDestBank              = document.getElementById('payCapDestBank');
+  var payCapDestAccountNumber     = document.getElementById('payCapDestAccountNumber');
+  var payCapDestAccountName       = document.getElementById('payCapDestAccountName');
+  var payCapNotes  = document.getElementById('payCapNotes');
+  // Auto-fill state for Notes — see recalcPayCapNotes(). Reset per invoice.
+  var payCapNotesEdited = false;     // true once the user types in Notes themselves
+  var payCapSettingNotes = false;    // guards the listener above while WE set .value
+  var payCapOutstandingAmount = 0;   // outstanding balance when the form was opened
+  var payCapInvoiceNumber = '';
+  var payCapExistingPayments = [];   // inv.payments at the moment the form was opened
+  var payCapInvoiceLabel  = document.getElementById('payCapInvoiceLabel');
+  var payCapOutstandingEl = document.getElementById('payCapOutstanding');
+  var payCapError  = document.getElementById('payCapError');
+
+  var payCapInvoiceId = null; // invoice this payment will be attached to
+  var payCapCustomerId = null; // which customer card to refresh after a successful save
+
+  // Destination bank/account datalist, sourced from Company Bank Accounts
+  // (ajax/list_bank_accounts.php -> json_file/bank_accounts.json). Fetched
+  // once, lazily, the first time the payment form opens.
+  // NOTE: bank_accounts.json's exact field names weren't confirmed (only the
+  // endpoint's PHP was available, not a sample record), so this reads several
+  // likely key spellings per field and falls back to '' — please test and
+  // report if the datalist stays empty / shows the wrong text so the real
+  // key names can be fixed here.
+  var destBankAccounts = [];
+  var destBankAccountsLoaded = false;
+  function pickField(acc, keys) {
+    for (var i = 0; i < keys.length; i++) {
+      if (acc[keys[i]] !== undefined && acc[keys[i]] !== null && acc[keys[i]] !== '') return String(acc[keys[i]]);
+    }
+    return '';
+  }
+  function loadDestBankAccountsOnce() {
+    if (destBankAccountsLoaded) return;
+    destBankAccountsLoaded = true;
+    fetch('ajax/list_bank_accounts.php')
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (!res || !res.success || !Array.isArray(res.accounts)) return;
+        destBankAccounts = res.accounts.map(function (a) {
+          return {
+            bank: pickField(a, ['bank_name', 'bank', 'bankName']),
+            account_number: pickField(a, ['account_number', 'number', 'accountNumber']),
+            account_name: pickField(a, ['account_name', 'holder_name', 'name', 'accountName'])
+          };
+        }).filter(function (a) { return a.bank || a.account_number; });
+
+        var bankList = document.getElementById('payCapDestBankList');
+        var numList = document.getElementById('payCapDestAccountNumberList');
+        var seenBanks = {};
+        destBankAccounts.forEach(function (a) {
+          if (a.bank && !seenBanks[a.bank]) {
+            seenBanks[a.bank] = true;
+            var opt = document.createElement('option');
+            opt.value = a.bank;
+            bankList.appendChild(opt);
+          }
+          if (a.account_number) {
+            var opt2 = document.createElement('option');
+            opt2.value = a.account_number;
+            if (a.bank || a.account_name) {
+              opt2.label = [a.bank, a.account_name].filter(Boolean).join(' - ');
+            }
+            numList.appendChild(opt2);
+          }
+        });
+      })
+      .catch(function () { /* best-effort only — form stays plain editable text */ });
+  }
+  // Selecting an account number from the datalist also fills bank + name,
+  // since a datalist pick fires a normal 'input' event with the exact value.
+  payCapDestAccountNumber.addEventListener('input', function () {
+    for (var i = 0; i < destBankAccounts.length; i++) {
+      if (destBankAccounts[i].account_number === payCapDestAccountNumber.value) {
+        payCapDestBank.value = destBankAccounts[i].bank;
+        payCapDestAccountName.value = destBankAccounts[i].account_name;
+        break;
+      }
+    }
+  });
+
+  function resetPayCaptureForm() {
+    activeCapGroup = 'payment';
+    payCapFileInput.value = '';
+    capUploadedFile = null;
+    capDoc = null;
+    capNumPages = 1;
+    capCurrentPage = 1;
+    armedScanField = null;
+    scanTriggerSource = null;
+    blockModeArmed = false;
+    capCanvas.style.cursor = '';
+    tapCount = 0;
+    if (tapTimer) clearTimeout(tapTimer);
+    capViewerWrap.style.display = 'none';
+    capBlockHint.style.display = 'none';
+    capZoom = 1;
+    btnPayCapOpenViewer.style.display = 'none';
+    hide(capFieldPickerOverlay);
+    capCtx.clearRect(0, 0, capCanvas.width, capCanvas.height);
+    payCapDate.value = '';
+    payCapAmount.value = '';
+    payCapSourceBank.value = '';
+    payCapSourceAccountName.value = '';
+    payCapDestBank.value = '';
+    payCapDestAccountNumber.value = '';
+    payCapDestAccountName.value = '';
+    payCapNotes.value = '';
+    payCapNotesEdited = false;
+    payCapOutstandingAmount = 0;
+    payCapInvoiceNumber = '';
+    payCapExistingPayments = [];
+    payCapCustomerId = null;
+    capFields.forEach(function (f) { updateScanButtonVisibility(f.id); });
+    payCapError.style.display = 'none';
+  }
+
+  // One listener drives the Notes auto-fill: "PAYMENT FOR INVOICE [no]" when
+  // this single payment fully settles the outstanding balance, otherwise
+  // "FIRST/SECOND/... PAYMENT FOR INVOICE [no]" by position among this
+  // invoice's payments (existing ones from inv.payments + this new one).
+  // Stops touching Notes the moment the user edits it themselves.
+  var ORDINAL_WORDS = ['First', 'Second', 'Third', 'Fourth', 'Fifth', 'Sixth', 'Seventh', 'Eighth', 'Ninth', 'Tenth'];
+  function ordinalWord(n) {
+    if (n >= 1 && n <= ORDINAL_WORDS.length) return ORDINAL_WORDS[n - 1];
+    var suffix = 'th';
+    if (n % 100 < 11 || n % 100 > 13) {
+      if (n % 10 === 1) suffix = 'st';
+      else if (n % 10 === 2) suffix = 'nd';
+      else if (n % 10 === 3) suffix = 'rd';
+    }
+    return n + suffix;
+  }
+  function setPayCapNotesValue(text) {
+    payCapSettingNotes = true;
+    payCapNotes.value = text;
+    payCapSettingNotes = false;
+  }
+  function recalcPayCapNotes() {
+    if (payCapNotesEdited || !payCapInvoiceId) return;
+    var amount = parseNumberInput(payCapAmount.value);
+    if (isNaN(amount) || amount <= 0) return;
+    var existingCount = payCapExistingPayments.length;
+    var isFinal = amount >= (payCapOutstandingAmount - 0.01);
+    var text = (existingCount === 0 && isFinal)
+      ? ('Payment for invoice ' + payCapInvoiceNumber)
+      : (ordinalWord(existingCount + 1) + ' payment for invoice ' + payCapInvoiceNumber);
+    setPayCapNotesValue(text);
+  }
+  payCapNotes.addEventListener('input', function () {
+    if (!payCapSettingNotes) payCapNotesEdited = true;
+  });
+  payCapAmount.addEventListener('input', recalcPayCapNotes);
+
+  // inv = one invoice object from list_customer_orders.php (id, invoice_number,
+  // total_amount, paid_amount). Called from the "+ Add Payment" button.
+  function openPayCaptureView(inv, customer) {
+    resetPayCaptureForm();
+    loadDestBankAccountsOnce();
+    payCapCustomerId = customer ? customer.id : null;
+    payCapInvoiceId = inv.id;
+    payCapInvoiceLabel.textContent = inv.invoice_number;
+    var outstanding = round2(parseFloat(inv.total_amount) - parseFloat(inv.paid_amount));
+    payCapOutstandingEl.textContent = 'Total ' + formatIDR(inv.total_amount)
+      + ' \u00b7 Paid ' + formatIDR(inv.paid_amount)
+      + ' \u00b7 Outstanding ' + formatIDR(outstanding);
+    payCapOutstandingAmount = outstanding;
+    payCapInvoiceNumber = inv.invoice_number;
+    payCapExistingPayments = inv.payments || [];
+    payCapDate.value = todayISO();
+    showOnlyView(viewInvoicePaymentCapture);
+  }
+
+  function backFromPayCapture() {
+    resetPayCaptureForm();
+    showOnlyView(viewSales);
+    setActiveStTab('customers');
+  }
+  document.getElementById('btnPayCapBack').addEventListener('click', backFromPayCapture);
+
+  payCapFileInput.addEventListener('change', function () {
+    loadCapturedFile(payCapFileInput.files[0], btnPayCapOpenViewer, 'payCapError');
+  });
+  btnPayCapOpenViewer.addEventListener('click', function () { if (capUploadedFile) openCapViewer(); });
+
+  document.getElementById('btnPayCapSave').addEventListener('click', function () {
+    payCapError.style.display = 'none';
+
+    if (!payCapInvoiceId) {
+      payCapError.textContent = 'No invoice selected.';
+      payCapError.style.display = 'block';
+      return;
+    }
+    if (!capUploadedFile) {
+      payCapError.textContent = 'Upload the proof of payment first.';
+      payCapError.style.display = 'block';
+      return;
+    }
+    if (!payCapDate.value) {
+      payCapError.textContent = 'Payment Date is required.';
+      payCapError.style.display = 'block';
+      return;
+    }
+    var amount = parseNumberInput(payCapAmount.value);
+    if (isNaN(amount) || amount <= 0) {
+      payCapError.textContent = 'Amount is not valid.';
+      payCapError.style.display = 'block';
+      return;
+    }
+
+    var payload = new FormData();
+    payload.append('invoice_id', payCapInvoiceId);
+    payload.append('payment_date', payCapDate.value);
+    payload.append('amount', String(amount));
+    payload.append('source_bank', payCapSourceBank.value);
+    payload.append('source_account_name', payCapSourceAccountName.value);
+    payload.append('destination_bank', payCapDestBank.value);
+    payload.append('destination_account_number', payCapDestAccountNumber.value);
+    payload.append('destination_account_name', payCapDestAccountName.value);
+    payload.append('notes', payCapNotes.value);
+    payload.append('proof', capUploadedFile);
+
+    var saveBtn = document.getElementById('btnPayCapSave');
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving…';
+
+    fetch('ajax/create_invoice_payment.php', { method: 'POST', body: payload })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save Payment';
+        if (!res.ok) {
+          payCapError.textContent = res.message || 'Failed to save the payment.';
+          payCapError.style.display = 'block';
+          return;
+        }
+        alert('Payment saved.');
+        var savedCustomerId = payCapCustomerId;
+        backFromPayCapture();
+        if (savedCustomerId) refreshStCustomerCard(savedCustomerId);
+      })
+      .catch(function () {
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save Payment';
+        payCapError.textContent = 'Connection error while saving.';
+        payCapError.style.display = 'block';
+      });
+  });
+
+  // ==========================================================
+  // Refund — cash given back from a customer's credit_balance. Plain small
+  // form, proof optional (unlike Add Payment, no OCR/viewer engine here).
+  // ==========================================================
+  var refundCustomerLabel = document.getElementById('refundCustomerLabel');
+  var refundAvailable = document.getElementById('refundAvailable');
+  var refundDateEl = document.getElementById('refundDate');
+  var refundAmountEl = document.getElementById('refundAmount');
+  var refundMethodEl = document.getElementById('refundMethod');
+  var refundNotesEl = document.getElementById('refundNotes');
+  var refundProofFile = document.getElementById('refundProofFile');
+  var refundError = document.getElementById('refundError');
+  var refundCustomerId = null;
+
+  function openRefundView(customer) {
+    refundCustomerId = customer.id;
+    refundCustomerLabel.textContent = customer.customer_name;
+    refundAvailable.textContent = 'Available credit: ' + formatIDR(customer.credit_balance);
+    refundDateEl.value = todayISO();
+    refundAmountEl.value = '';
+    refundMethodEl.value = '';
+    refundNotesEl.value = '';
+    refundProofFile.value = '';
+    refundError.style.display = 'none';
+    show(refundOverlay);
+  }
+  document.getElementById('btnRefundCancel').addEventListener('click', function () { hide(refundOverlay); });
+
+  document.getElementById('btnRefundSave').addEventListener('click', function () {
+    refundError.style.display = 'none';
+    var amount = parseNumberInput(refundAmountEl.value);
+    if (!refundDateEl.value) {
+      refundError.textContent = 'Refund Date is required.';
+      refundError.style.display = 'block';
+      return;
+    }
+    if (isNaN(amount) || amount <= 0) {
+      refundError.textContent = 'Amount is not valid.';
+      refundError.style.display = 'block';
+      return;
+    }
+
+    var payload = new FormData();
+    payload.append('customer_id', refundCustomerId);
+    payload.append('refund_date', refundDateEl.value);
+    payload.append('amount', String(amount));
+    payload.append('method', refundMethodEl.value);
+    payload.append('notes', refundNotesEl.value);
+    if (refundProofFile.files[0]) payload.append('proof', refundProofFile.files[0]);
+
+    var saveBtn = document.getElementById('btnRefundSave');
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving…';
+
+    fetch('ajax/create_refund.php', { method: 'POST', body: payload })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save Refund';
+        if (!res.ok) {
+          refundError.textContent = res.message || 'Failed to save the refund.';
+          refundError.style.display = 'block';
+          return;
+        }
+        hide(refundOverlay);
+        refreshStCustomerCard(refundCustomerId);
+      })
+      .catch(function () {
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save Refund';
+        refundError.textContent = 'Connection error while saving.';
+        refundError.style.display = 'block';
+      });
+  });
+
+  // ==========================================================
+  // Apply Credit — move part/all of a customer's credit_balance onto one of
+  // their OPEN invoices. No file (nothing new was paid in).
+  // ==========================================================
+  var applyCreditInvoiceLabel = document.getElementById('applyCreditInvoiceLabel');
+  var applyCreditAvailable = document.getElementById('applyCreditAvailable');
+  var applyCreditAmountEl = document.getElementById('applyCreditAmount');
+  var applyCreditNotesEl = document.getElementById('applyCreditNotes');
+  var applyCreditError = document.getElementById('applyCreditError');
+  var applyCreditCustomerId = null;
+  var applyCreditInvoiceId = null;
+
+  function openApplyCreditView(inv, customer) {
+    applyCreditCustomerId = customer.id;
+    applyCreditInvoiceId = inv.id;
+    applyCreditInvoiceLabel.textContent = inv.invoice_number;
+    var outstanding = round2(parseFloat(inv.total_amount) - parseFloat(inv.paid_amount));
+    applyCreditAvailable.textContent = 'Available credit: ' + formatIDR(customer.credit_balance)
+      + ' \u00b7 Invoice outstanding: ' + formatIDR(outstanding);
+    applyCreditAmountEl.value = '';
+    applyCreditNotesEl.value = '';
+    applyCreditError.style.display = 'none';
+    show(applyCreditOverlay);
+  }
+  document.getElementById('btnApplyCreditCancel').addEventListener('click', function () { hide(applyCreditOverlay); });
+
+  document.getElementById('btnApplyCreditSave').addEventListener('click', function () {
+    applyCreditError.style.display = 'none';
+    var amount = parseNumberInput(applyCreditAmountEl.value);
+    if (isNaN(amount) || amount <= 0) {
+      applyCreditError.textContent = 'Amount is not valid.';
+      applyCreditError.style.display = 'block';
+      return;
+    }
+
+    var payload = new FormData();
+    payload.append('customer_id', applyCreditCustomerId);
+    payload.append('invoice_id', applyCreditInvoiceId);
+    payload.append('amount', String(amount));
+    payload.append('notes', applyCreditNotesEl.value);
+
+    var saveBtn = document.getElementById('btnApplyCreditSave');
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Applying…';
+
+    fetch('ajax/apply_customer_credit.php', { method: 'POST', body: payload })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Apply';
+        if (!res.ok) {
+          applyCreditError.textContent = res.message || 'Failed to apply the credit.';
+          applyCreditError.style.display = 'block';
+          return;
+        }
+        hide(applyCreditOverlay);
+        refreshStCustomerCard(applyCreditCustomerId);
+      })
+      .catch(function () {
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Apply';
+        applyCreditError.textContent = 'Connection error while saving.';
+        applyCreditError.style.display = 'block';
       });
   });
 
@@ -4152,6 +4801,7 @@ $currentYear     = date('Y');
   var stParsedBox   = document.getElementById('stParsedBox');
   var stDriver      = document.getElementById('stDriver');
   var stPolice      = document.getElementById('stPolice');
+  var stForceNewInvoice = document.getElementById('stForceNewInvoice');
   var stItemList    = document.getElementById('stItemList');
   var stItemEmpty   = document.getElementById('stItemEmpty');
   var stIgnoredBox  = document.getElementById('stIgnoredBox');
@@ -4290,6 +4940,7 @@ $currentYear     = date('Y');
     stParsedBox.style.display = 'none';
     stDriver.value = '';
     stPolice.value = '';
+    stForceNewInvoice.checked = false;
     stItemList.innerHTML = '';
     stItemEmpty.style.display = 'none';
     stIgnoredBox.innerHTML = '';
@@ -4816,6 +5467,10 @@ $currentYear     = date('Y');
     };
     if (stTargetOrder) {
       payload.movement_ids = JSON.stringify(stMovementIdByLogistic);
+    } else {
+      // Only meaningful for a plain New Order — Update Existing Order merges
+      // into an order that's already tied to a specific invoice.
+      payload.force_new_invoice = stForceNewInvoice.checked ? '1' : '0';
     }
     return payload;
   }
@@ -5223,33 +5878,50 @@ $currentYear     = date('Y');
       inner.className = 'accordion-body-inner';
       body.appendChild(inner);
 
+      item.dataset.customerId = String(c.id); // lets refreshStCustomerCard() find this card again later
+      item.stCustomerInner = inner; // same reason, kept off the DOM dataset since it's a node, not a string
+
       header.addEventListener('click', function () {
         toggleAccordionItem(item);
         if (!item.classList.contains('open')) return;
-        // Loaded on every open so a just-saved order is always included.
-        inner.innerHTML = '';
-        var loading = document.createElement('div');
-        loading.className = 'empty-sub';
-        loading.textContent = 'Loading...';
-        inner.appendChild(loading);
-        refreshOpenHeight(item);
-
-        fetch('ajax/list_customer_orders.php?customer_id=' + encodeURIComponent(c.id), { cache: 'no-store' })
-          .then(function (r) { return r.json(); })
-          .then(function (res) {
-            if (!res.ok) { loading.textContent = res.message || 'Could not load the orders.'; refreshOpenHeight(item); return; }
-            renderStCustomerDetail(inner, res.data, item);
-          })
-          .catch(function () {
-            loading.textContent = 'Connection error.';
-            refreshOpenHeight(item);
-          });
+        loadStCustomerDetailInto(c, inner, item);
       });
 
       item.appendChild(header);
       item.appendChild(body);
       stCustList.appendChild(item);
     });
+  }
+
+  // Loaded on every open (and after Refund/Apply Credit save) so the card
+  // always reflects the latest invoices/credit_balance.
+  function loadStCustomerDetailInto(c, inner, item) {
+    inner.innerHTML = '';
+    var loading = document.createElement('div');
+    loading.className = 'empty-sub';
+    loading.textContent = 'Loading...';
+    inner.appendChild(loading);
+    refreshOpenHeight(item);
+
+    fetch('ajax/list_customer_orders.php?customer_id=' + encodeURIComponent(c.id), { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (!res.ok) { loading.textContent = res.message || 'Could not load the orders.'; refreshOpenHeight(item); return; }
+        renderStCustomerDetail(inner, res.data, item);
+      })
+      .catch(function () {
+        loading.textContent = 'Connection error.';
+        refreshOpenHeight(item);
+      });
+  }
+
+  // Refund/Apply Credit call this after a successful save — c is whichever
+  // customer object they were opened for (kept small on purpose: just id,
+  // used to re-fetch; the card doesn't need to already be open).
+  function refreshStCustomerCard(customerId) {
+    var item = stCustList.querySelector('.accordion-item[data-customer-id="' + customerId + '"]');
+    if (!item || !item.classList.contains('open')) return; // not open — nothing on screen to refresh
+    loadStCustomerDetailInto({ id: customerId }, item.stCustomerInner, item);
   }
 
   function renderStCustomerDetail(container, data, item) {
@@ -5271,6 +5943,75 @@ $currentYear     = date('Y');
     }
     stAddRow(container, 'Total Actual', formatIDR(totalActual));
     stAddRow(container, 'Total Paid', formatIDR(data.customer.total_paid));
+    // Outstanding across the whole customer (not one invoice): Total Actual
+    // minus what's been paid so far. Same "sisa belum dibayar" idea the
+    // payment Notes auto-fill uses per-invoice, just rolled up — can go
+    // negative if total_paid overshoots total_actual (credit_balance below
+    // is where that overpaid amount actually lives).
+    var totalBalance = round2(totalActual - parseFloat(data.customer.total_paid));
+    stAddRow(container, 'Total Balance', formatIDR(totalBalance));
+
+    // Credit owed to this customer — see create_return.php / PROJECT_NOTES.md
+    // 1 Okt 2026 ("sudah bayar lunas, lalu return/turun harga"). Never
+    // applied automatically; resolved manually via Refund here, or
+    // "Apply Credit" on an open invoice below.
+    var creditBalance = parseFloat(data.customer.credit_balance || 0);
+    if (creditBalance > 0.0001) {
+      var creditRow = document.createElement('div');
+      creditRow.className = 'accordion-row';
+      creditRow.style.alignItems = 'center';
+      var creditLabel = document.createElement('div');
+      creditLabel.className = 'accordion-row-label';
+      creditLabel.textContent = 'Credit Balance';
+      var creditRight = document.createElement('div');
+      creditRight.style.display = 'flex';
+      creditRight.style.alignItems = 'center';
+      creditRight.style.gap = 'var(--space-2)';
+      var creditVal = document.createElement('span');
+      creditVal.className = 'accordion-row-value';
+      creditVal.textContent = formatIDR(creditBalance);
+      var refundBtn = document.createElement('button');
+      refundBtn.type = 'button';
+      refundBtn.className = 'btn btn-secondary st-mini-btn';
+      refundBtn.textContent = 'Refund';
+      refundBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        openRefundView(data.customer);
+      });
+      creditRight.appendChild(creditVal);
+      creditRight.appendChild(refundBtn);
+      creditRow.appendChild(creditLabel);
+      creditRow.appendChild(creditRight);
+      container.appendChild(creditRow);
+    }
+
+    if (data.refunds && data.refunds.length) {
+      var rfLabel = document.createElement('div');
+      rfLabel.className = 'st-section-label';
+      rfLabel.textContent = 'Refund History';
+      container.appendChild(rfLabel);
+      data.refunds.forEach(function (rf) {
+        var rfBox = document.createElement('div');
+        rfBox.className = 'st-mov';
+        var rfTop = document.createElement('div');
+        rfTop.className = 'st-mov-top';
+        var rfLeft = document.createElement('div');
+        rfLeft.textContent = formatPriceDate(rf.refund_date) + (rf.method ? ' \u00b7 ' + rf.method : '');
+        var rfRight = document.createElement('div');
+        rfRight.style.flexShrink = '0';
+        rfRight.textContent = formatIDR(rf.amount);
+        rfTop.appendChild(rfLeft);
+        rfTop.appendChild(rfRight);
+        rfBox.appendChild(rfTop);
+        if (rf.notes) {
+          var rfNotes = document.createElement('div');
+          rfNotes.className = 'st-mov-sub';
+          rfNotes.textContent = rf.notes;
+          rfBox.appendChild(rfNotes);
+        }
+        container.appendChild(rfBox);
+      });
+    }
 
     var pl = document.createElement('div');
     pl.className = 'st-section-label';
@@ -5359,12 +6100,12 @@ $currentYear     = date('Y');
     invList.style.marginTop = 'var(--space-2)';
     container.appendChild(invList);
 
-    data.invoices.forEach(function (inv) { invList.appendChild(buildStInvoiceItem(inv)); });
+    data.invoices.forEach(function (inv) { invList.appendChild(buildStInvoiceItem(inv, data.customer)); });
 
     refreshOpenHeight(item);
   }
 
-  function buildStInvoiceItem(inv) {
+  function buildStInvoiceItem(inv, customer) {
     var invItem = document.createElement('div');
     invItem.className = 'accordion-item';
 
@@ -5383,6 +6124,39 @@ $currentYear     = date('Y');
       h.appendChild(badge);
     }
 
+    // "(No invoice)" pseudo-row (inv.id === null, see list_customer_orders.php)
+    // has nothing to pay against — only real invoices get this button.
+    if (inv.id !== null) {
+      // Only an OPEN invoice can still receive a payment; once it is PAID
+      // there is nothing left to pay, so no button (changed 2 Okt 2026).
+      if (inv.status === 'open') {
+        var payBtn = document.createElement('button');
+        payBtn.type = 'button';
+        payBtn.className = 'btn btn-secondary st-mini-btn';
+        payBtn.style.flexShrink = '0';
+        payBtn.textContent = '+ Add Payment';
+        payBtn.addEventListener('click', function (e) {
+          e.stopPropagation(); // don't also toggle the accordion
+          openPayCaptureView(inv, customer);
+        });
+        h.appendChild(payBtn);
+      }
+
+      var custCredit = parseFloat((customer && customer.credit_balance) || 0);
+      if (inv.status === 'open' && custCredit > 0.0001) {
+        var creditBtn = document.createElement('button');
+        creditBtn.type = 'button';
+        creditBtn.className = 'btn btn-secondary st-mini-btn';
+        creditBtn.style.flexShrink = '0';
+        creditBtn.textContent = 'Apply Credit';
+        creditBtn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          openApplyCreditView(inv, customer);
+        });
+        h.appendChild(creditBtn);
+      }
+    }
+
     var chev = document.createElement('i');
     chev.className = 'ti ti-chevron-down accordion-chevron';
     h.appendChild(chev);
@@ -5397,6 +6171,50 @@ $currentYear     = date('Y');
     if (inv.total_amount !== null) {
       stAddRow(bi, 'Total', formatIDR(inv.total_amount));
       stAddRow(bi, 'Paid', formatIDR(inv.paid_amount));
+    }
+
+    // Payment history — one row per upload via "+ Add Payment" above.
+    // inv.payments comes from list_customer_orders.php (invoice_payments table).
+    if (inv.payments && inv.payments.length) {
+      var payLabel = document.createElement('div');
+      payLabel.className = 'st-section-label';
+      payLabel.style.marginTop = 'var(--space-3)';
+      payLabel.textContent = 'Payments';
+      bi.appendChild(payLabel);
+
+      inv.payments.forEach(function (p) {
+        var pBox = document.createElement('div');
+        pBox.className = 'st-mov';
+
+        var pTop = document.createElement('div');
+        pTop.className = 'st-mov-top';
+        var pLeft = document.createElement('div');
+        var pBankLabel = [p.destination_bank, p.destination_account_name].filter(Boolean).join(' ');
+        pLeft.textContent = formatPriceDate(p.payment_date) + (pBankLabel ? ' \u00b7 ' + pBankLabel : '');
+        var pRight = document.createElement('div');
+        pRight.style.flexShrink = '0';
+        pRight.textContent = formatIDR(p.amount);
+        pTop.appendChild(pLeft);
+        pTop.appendChild(pRight);
+        pBox.appendChild(pTop);
+
+        if (p.notes) {
+          var pNotes = document.createElement('div');
+          pNotes.className = 'st-mov-sub';
+          pNotes.textContent = p.notes;
+          pBox.appendChild(pNotes);
+        }
+
+        var pLink = document.createElement('a');
+        pLink.className = 'st-mov-sub';
+        pLink.href = 'ajax/view_invoice_payment_proof.php?payment_id=' + encodeURIComponent(p.id);
+        pLink.target = '_blank';
+        pLink.rel = 'noopener';
+        pLink.textContent = 'View proof of payment';
+        pBox.appendChild(pLink);
+
+        bi.appendChild(pBox);
+      });
     }
 
     // Group the flat movement rows back into order cards — same grouping
@@ -5574,6 +6392,7 @@ $currentYear     = date('Y');
   var rtItemEmpty  = document.getElementById('rtItemEmpty');
   var rtIgnoredBox = document.getElementById('rtIgnoredBox');
   var rtReturnDate = document.getElementById('rtReturnDate');
+  var rtInvoiceSelect = document.getElementById('rtInvoiceSelect');
   var rtReviewError = document.getElementById('rtReviewError');
   var btnRtReview  = document.getElementById('btnRtReview');
   var rtSuccessBox = document.getElementById('rtSuccessBox');
@@ -5630,6 +6449,7 @@ $currentYear     = date('Y');
     rtIgnoredBox.innerHTML = '';
     rtIgnoredBox.style.display = 'none';
     rtReturnDate.value = todayISO();
+    rtInvoiceSelect.innerHTML = '<option value="">Auto (this customer\u2019s open invoice, or a new one)</option>';
     stHideError(rtReadError);
     stHideError(rtReviewError);
     stHideError(rtConfirmError);
@@ -5641,7 +6461,27 @@ $currentYear     = date('Y');
   }
 
   // A price fetched for one customer must never leak into another customer's return.
-  rtCustomer.addEventListener('change', function () { rtPriceCache = {}; });
+  // Also refreshes the Invoice selector — this customer's open invoices may
+  // be different from whichever customer was selected before.
+  rtCustomer.addEventListener('change', function () {
+    rtPriceCache = {};
+    rtInvoiceSelect.innerHTML = '<option value="">Auto (this customer\u2019s open invoice, or a new one)</option>';
+    var cid = rtCustomer.value;
+    if (!cid) return;
+    fetch('ajax/list_customer_orders.php?customer_id=' + encodeURIComponent(cid), { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (!res.ok || rtCustomer.value !== cid) return; // customer changed again while this was in flight
+        (res.data.invoices || []).filter(function (inv) { return inv.status === 'open'; })
+          .forEach(function (inv) {
+            var opt = document.createElement('option');
+            opt.value = inv.id;
+            opt.textContent = inv.invoice_number;
+            rtInvoiceSelect.appendChild(opt);
+          });
+      })
+      .catch(function () { /* leave only "Auto" — not fatal, same as before this feature existed */ });
+  });
 
   // ---------- Read the message ----------
   btnRtRead.addEventListener('click', function () {
@@ -6343,6 +7183,10 @@ $currentYear     = date('Y');
 
     var driver = rtDriver.value.trim().toUpperCase();
     var police = rtPolice.value.trim().toUpperCase();
+    // Empty string = old behaviour (server reuses the latest open invoice,
+    // or creates a new one). Only sent as non-empty when the user picked a
+    // specific invoice from rtInvoiceSelect (customer has 2+ open invoices).
+    var invoiceId = rtInvoiceSelect.value;
 
     // Two independent payloads, one per endpoint — see "Kendala #1 & #2" in
     // PROJECT_NOTES.md, 22 Sep 2026: a return and a price adjustment are
@@ -6356,6 +7200,7 @@ $currentYear     = date('Y');
         return_date: rtReturnDate.value,
         driver_name: driver,
         police_number: police,
+        invoice_id: invoiceId,
         items: JSON.stringify(returnItems),
         dry_run: dryRun ? '1' : '0'
       } : null,
@@ -6364,6 +7209,7 @@ $currentYear     = date('Y');
         adjustment_date: rtReturnDate.value,
         driver_name: driver,
         police_number: police,
+        invoice_id: invoiceId,
         items: JSON.stringify(adjustItems),
         dry_run: dryRun ? '1' : '0'
       } : null
@@ -6426,11 +7272,22 @@ $currentYear     = date('Y');
     stAddRow(rtConfirmBody, 'Driver', head.driver_name || '-');
     stAddRow(rtConfirmBody, 'Police Number', head.police_number || '-');
 
-    var invoiceNumber = ret ? ret.invoice.number : adj.invoice.number;
-    var invoiceIsNew  = ret ? ret.invoice.is_new : adj.invoice.is_new;
-    stAddRow(rtConfirmBody, 'Invoice', invoiceNumber + (invoiceIsNew ? ' (new)' : ''));
+    // ret.invoice / adj.invoice is null when there was no open invoice to
+    // reduce — the amount instead goes to customers.credit_balance (see
+    // PROJECT_NOTES.md §8, "Kredit customer"). Each side carries its own
+    // invoice-or-credit independently (a return and a price adjustment in
+    // the same screen could in theory land on different invoices), but we
+    // only show one "Invoice"/"Credit" row for the pair, preferring ret's.
+    var invoiceSide = ret && ret.invoice ? ret.invoice : (adj && adj.invoice ? adj.invoice : null);
+    var creditSide  = ret && ret.credit ? ret.credit : (adj && adj.credit ? adj.credit : null);
 
-    var totalBefore  = ret ? ret.invoice.total_before : adj.invoice.total_before;
+    if (invoiceSide) {
+      stAddRow(rtConfirmBody, 'Invoice', invoiceSide.number + (invoiceSide.is_new ? ' (new)' : ''));
+    } else if (creditSide) {
+      stAddRow(rtConfirmBody, 'Invoice', 'None \u2014 goes to customer credit');
+    }
+
+    var totalBefore  = invoiceSide ? invoiceSide.total_before : 0;
     var grandReturn  = ret ? ret.grand_total : 0;
     var grandAdjust  = adj ? adj.grand_discount : 0;
 
@@ -6524,7 +7381,11 @@ $currentYear     = date('Y');
     sep.className = 'st-section-label';
     sep.textContent = 'Total';
     rtConfirmBody.appendChild(sep);
-    stAddRow(rtConfirmBody, 'Invoice Total After', formatIDR(totalBefore - grandReturn - grandAdjust));
+    if (invoiceSide) {
+      stAddRow(rtConfirmBody, 'Invoice Total After', formatIDR(totalBefore - grandReturn - grandAdjust));
+    } else if (creditSide) {
+      stAddRow(rtConfirmBody, 'Credit Balance After', formatIDR(creditSide.balance_after));
+    }
 
     show(rtConfirmOverlay);
   }
@@ -6625,9 +7486,12 @@ $currentYear     = date('Y');
         var parts = [];
         if (retRes) parts.push('Return \u2212' + formatIDR(retRes.ret.grand_total));
         if (adjRes) parts.push('Price Adjustment \u2212' + formatIDR(adjRes.adj.grand_discount));
-        var invoiceNumber = retRes ? retRes.ret.invoice.number : adjRes.adj.invoice.number;
-        var customerName  = retRes ? retRes.ret.customer.name : adjRes.adj.customer.name;
-        var summary = 'Saved \u2014 ' + customerName + ' \u00b7 Invoice ' + invoiceNumber + ' \u00b7 ' + parts.join(' \u00b7 ');
+        // invoice is null when this landed on the customer's credit balance
+        // instead (no open invoice to reduce) — see PROJECT_NOTES.md §8.
+        var invoiceSide  = retRes && retRes.ret.invoice ? retRes.ret.invoice : (adjRes && adjRes.adj.invoice ? adjRes.adj.invoice : null);
+        var invoiceLabel = invoiceSide ? ('Invoice ' + invoiceSide.number) : 'Customer credit';
+        var customerName = retRes ? retRes.ret.customer.name : adjRes.adj.customer.name;
+        var summary = 'Saved \u2014 ' + customerName + ' \u00b7 ' + invoiceLabel + ' \u00b7 ' + parts.join(' \u00b7 ');
 
         resetReturnForm(); // also closes the fly windows
         rtSuccessBox.textContent = summary;
