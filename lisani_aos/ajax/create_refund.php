@@ -102,6 +102,19 @@ if ($amountRaw === null || (float)$amountRaw <= 0) {
 }
 $amount = (float) $amountRaw;
 
+// Source account is OPTIONAL: some refunds are approved by management with
+// no transfer at all (cash, or just a write-off), so these can all be NULL.
+$sourceBank      = post_str('source_bank') === '' ? null : mb_strtoupper(post_str('source_bank'));
+$sourceAccNumber = post_str('source_account_number') === '' ? null : mb_strtoupper(post_str('source_account_number'));
+$sourceAccName   = post_str('source_account_name') === '' ? null : mb_strtoupper(post_str('source_account_name'));
+
+foreach (['Source Bank' => [$sourceBank, 100], 'Source Account Number' => [$sourceAccNumber, 60],
+          'Source Account Name' => [$sourceAccName, 150]] as $label => $pair) {
+    if ($pair[0] !== null && mb_strlen($pair[0]) > $pair[1]) {
+        aos_fail($label . ' is too long (max ' . $pair[1] . ' characters).');
+    }
+}
+
 // ---------- Proof is optional ----------
 $hasProof = isset($_FILES['proof']) && $_FILES['proof']['error'] !== UPLOAD_ERR_NO_FILE;
 $documentPath = null;
@@ -188,13 +201,15 @@ try {
 
     $ins = $lisani_conn->prepare(
         'INSERT INTO invoice_refunds
-           (customer_id, refund_date, amount, method, notes, proof_path, proof_original_name, created_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+           (customer_id, refund_date, amount, method, source_bank, source_account_number,
+            source_account_name, notes, proof_path, proof_original_name, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     );
     $amountStr = (string) $amount;
     $ins->bind_param(
-        'issssssi',
-        $customerId, $refundDate, $amountStr, $method, $notes, $documentPath, $originalName, $userId
+        'isssssssssi',
+        $customerId, $refundDate, $amountStr, $method, $sourceBank, $sourceAccNumber,
+        $sourceAccName, $notes, $documentPath, $originalName, $userId
     );
     $ins->execute();
     $refundId = $lisani_conn->insert_id;

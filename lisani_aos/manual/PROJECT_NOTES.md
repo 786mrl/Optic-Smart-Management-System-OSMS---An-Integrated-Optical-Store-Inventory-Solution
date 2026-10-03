@@ -61,11 +61,14 @@ optic_pos/
   `max-height=scrollHeight`: kalau isinya berubah saat terbuka, **re-sync max-height** (hanya jika sedang
   terbuka). (3) Klik card exclusive per parent (`closest('.accordion-list')`). (4) Modal didaftarkan ke
   `flexOverlays` supaya `show()`/`hide()` dan MutationObserver bekerja.
+  (5) **Layout/overflow**: `.app` HARUS `minmax(0,1fr)` (bukan `1fr`) dan `.main` `min-width:0` — kalau tidak, konten
+  lebar melebarkan SELURUH halaman (scroll horizontal di layar kecil/jendela setengah). Scroll horizontal hanya
+  boleh di `.table-wrapper`. Grid `repeat(auto-fit, minmax(Npx,1fr))` pakai `minmax(min(Npx,100%),1fr)`. Lihat §8 (3 Okt).
 - **Menu**: sidebar = Dashboard, Transactions, Logistic, Report (Logistic = teks saja, tanpa ikon; menu
   lain pakai ikon Tabler). Settings & Exit di dropdown avatar. Ganti section lewat `[data-target]`
   (footer.php) → `setActive()` juga `dispatchEvent('aos:section-shown', {detail:{target}})` tiap ganti
   section (lihat §8) supaya section yang IIFE-nya cuma fetch sekali bisa listen & refresh live. Report
-  masih kosong.
+  sudah berisi Finance Report (lihat §8).
 
 ## 4. Model data (kolom penting — cocokkan dengan `DESCRIBE` sebelum menulis query baru)
 - **activities**: id, activity_name, cashflow(inflow/outflow/in-out), relative_path (UNIQUE,
@@ -313,7 +316,46 @@ kategori Other, pencatatan pembayaran customer, print invoice, Report.
   Balance"** di kartu Customer (`renderStCustomerDetail`) = Total Actual − Total Paid (sisa belum dibayar
   level customer, bisa negatif kalau overpaid — kelebihannya ada di Credit Balance, bukan di sini).
 
+- **Report (2 Okt 2026, belum dites)**: menu Report diisi — `report_content.php` (baru, di-include dari
+  `index.php` menggantikan placeholder lama) berisi tab **Finance Report** (ringkasan saldo per rekening,
+  Chart.js: inflow/outflow per bulan, saldo kumulatif, saldo per rekening; ledger gabungan + Export CSV;
+  snapshot piutang/credit) dan **Investor Report** (placeholder kosong). Endpoint baru `ajax/get_finance_report.php`
+  menggabungkan outflow (`transactions` category=disbursement), inflow (`invoice_payments`), outflow refund
+  (`invoice_refunds`), dicocokkan ke rekening di `bank_accounts.json` via bank_name+account_number (bukan FK).
+  Saldo mulai dari 0 (keputusan user, bukan saldo awal manual). **Migration baru belum dijalankan**:
+  `migration_invoice_refunds_bank_fields.sql` (3 kolom nullable di `invoice_refunds`: source_bank,
+  source_account_number, source_account_name) — `create_refund.php` dan modal Refund (`transaction_content.php`)
+  sudah diupdate untuk field ini (opsional, ada pilihan "No account / no transfer proof" karena refund kadang
+  cuma validasi manajemen tanpa transfer). **Pola tab/badge** (`.tab-group`, `.tab`, `.badge-success/danger`)
+  dikonfirmasi dari `transaction_content.php`, bukan tebakan. Event `aos:section-shown` (dipakai buat refresh
+  data tiap pindah ke tab Report) sudah dicek ke `footer_php.txt`/`sidebar_php.txt` — benar ada
+  (`dispatchEvent` di `setActive()`, `data-target="report"` match `data-section="report"`), jadi load data
+  finance report via event asli ini, bukan `MutationObserver` lagi. Sudah dites sebagian: migration sudah
+  dijalankan user, query PHP sukses (200 di Network tab). Tapi **`chart.umd.min.js` dari cdnjs.cloudflare.com
+  gagal dimuat** (diblokir jaringan user) — tadinya bikin SELURUH report gagal tampil ("Connection error")
+  karena error di `renderCharts()` tidak tertangkap. Sudah diperbaiki: dibungkus try/catch supaya
+  ringkasan/ledger/piutang tetap tampil walau grafik gagal. **Belum dites ulang** setelah fix ini — kalau
+  jaringan user terus memblokir cdnjs, pertimbangkan host Chart.js lokal di server.
+
+- **Fix scroll horizontal halaman Report (3 Okt 2026, belum dites user)**: gejala — di layar kecil (HP, tablet,
+  jendela dibagi dua) SELURUH halaman Report bisa scroll ke samping; seharusnya hanya tabel (Ledger, AP/Receivable).
+  **Akar masalah global**, bukan di Report: `.app { grid-template-columns: … 1fr }` (`theme.css` + 2 aturan di
+  `responsive.css`) = `minmax(auto,1fr)` → kolom konten melebar mengikuti isi terlebar. Fix: `minmax(0,1fr)` di
+  ketiga tempat + `.main{min-width:0}`. Di `report_content.php` (hanya blok `<style>`): containment section/card
+  (`min-width:0`, `overflow-x:clip` di card terluar), grid `min(Npx,100%)`, kartu grafik `position:relative;
+  min-width:0`, `.table-wrapper` `overflow-x:auto` di SEMUA lebar (bukan cuma ≤768px), Ledger `min-width:640px`,
+  tabel piutang `420px`, `th/td{width:auto}`. Catatan: `responsive.css` mengubah SEMUA `table` jadi tampilan kartu
+  di <1024px (bukan 768px) dan memaksa `td{width:100%}` — tabel yang harus tetap tabel perlu override `display`
+  eksplisit (sudah dilakukan untuk tabel Report).
+
 ## 9. Belum dites / terbuka
+- **PENGINGAT — audit scroll horizontal menu lain**: perbaikan `.app`/`.main` (3 Okt) berlaku GLOBAL, jadi
+  Transactions, Logistic, Settings, Dashboard sekarang ikut "tertahan" di lebar layar. Tes tiap menu di 3 ukuran
+  (HP ≤767px, tablet 768–1023px, jendela setengah layar ~900–1000px). Cek: (1) halaman tidak scroll ke samping;
+  (2) tabel/konten lebar yang dulu "lega" sekarang terpotong → bungkus `.table-wrapper` + `overflow-x:auto`
+  (atau `min-width:0` di parent flex/grid-nya); (3) tabel yang seharusnya tetap kolom malah jadi kartu di
+  <1024px (aturan `responsive.css`). Tiap temuan: catat menu + ukuran layar, lalu tulis hasilnya di sini.
+  Daftar sudah dicek: Report ☐ dites user · Transactions ☐ · Logistic ☐ · Settings ☐ · Dashboard ☐.
 - **Record Payment (lihat §8), lanjutan**: `list_customer_orders.php` sudah diupdate — `invoice.payments[]`
   sekarang pakai `aosColumnExists(..., 'source_bank')` (pola sama dengan `$hasStockSource`) buat tahu
   migrasi bank fields sudah jalan atau belum: kalau sudah, SELECT 6 kolom bank baru; kalau belum, fallback
@@ -335,7 +377,7 @@ kategori Other, pencatatan pembayaran customer, print invoice, Report.
   penggabungan card Return+Discount, tab Returned In, Repair default qty — carry-over dari sesi 28 Sep,
   belum dikonfirmasi user.
 - Data lama order yang sudah terlanjur terpecah (sebelum `batch_id`) tetap terpisah; skrip migrasi belum dibuat.
-- Ditunda: filter/pagination Movements, retention `storage/recycle/`, `customers.profit`, Report, pembayaran,
+- Ditunda: filter/pagination Movements, retention `storage/recycle/`, `customers.profit`, pembayaran,
   print invoice, edit/hapus alias & order, aturan stok minus, uppercase server di `manage_packaging_units.php`.
 - Opsi: `DROP COLUMN logistics.defective_reference_price` (ireversibel, belum dijalankan).
 

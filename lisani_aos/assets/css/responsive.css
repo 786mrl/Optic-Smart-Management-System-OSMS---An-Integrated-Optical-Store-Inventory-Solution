@@ -23,13 +23,13 @@
   .sidebar .brand-name, .sidebar .brand-sub,
   .sidebar .nav-label { display: none; }
   .sidebar-item { justify-content: center; padding: var(--space-3); }
-  .app { grid-template-columns: 64px 1fr; }
+  .app { grid-template-columns: 64px minmax(0, 1fr); }
 }
 
 /* Mobile: sidebar hidden, uses bottom-nav */
 @media (max-width: 767px) {
   .sidebar { display: none; }
-  .app { grid-template-columns: 1fr; }
+  .app { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* ===== Bottom Navigation (mobile only, <768px) ===== */

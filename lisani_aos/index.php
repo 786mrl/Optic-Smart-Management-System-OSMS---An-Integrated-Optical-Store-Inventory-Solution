@@ -69,15 +69,7 @@ include 'partials/header.php';
       <?php include 'logistic_content.php'; ?>
 
       <!-- Report -->
-      <div class="menu-section" data-section="report" style="display:none;">
-        <div class="card" style="width:100%;">
-          <div class="empty-state">
-            <i class="ti ti-report-money"></i>
-            <div class="empty-title">Report</div>
-            <div class="empty-sub">No content yet.</div>
-          </div>
-        </div>
-      </div>
+      <?php include 'report_content.php'; ?>
 
       <!-- Settings -->
       <?php include 'settings_content.php'; ?>

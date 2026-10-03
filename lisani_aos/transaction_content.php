@@ -1043,6 +1043,12 @@ $currentYear     = date('Y');
         <input type="text" class="input input-uppercase" id="refundMethod" placeholder="e.g. CASH, TRANSFER BCA">
       </div>
       <div class="form-group">
+        <div class="label">Source Account (optional — leave as "No account" if there's no transfer)</div>
+        <select class="select" id="refundSourceAccount">
+          <option value="">No account / no transfer proof</option>
+        </select>
+      </div>
+      <div class="form-group">
         <div class="label">Notes</div>
         <input type="text" class="input input-uppercase" id="refundNotes">
       </div>
@@ -3013,8 +3019,33 @@ $currentYear     = date('Y');
   var refundMethodEl = document.getElementById('refundMethod');
   var refundNotesEl = document.getElementById('refundNotes');
   var refundProofFile = document.getElementById('refundProofFile');
+  var refundSourceAccount = document.getElementById('refundSourceAccount');
   var refundError = document.getElementById('refundError');
   var refundCustomerId = null;
+  var refundAccountsLoaded = false;
+
+  // Lazy-loaded once per page load — reuses the same bank_accounts.json the
+  // Settings > Company Bank Accounts card manages. Kept simple: no currency
+  // grouping here, refunds are always settled in IDR terms like the slip.
+  function loadRefundSourceAccounts() {
+    if (refundAccountsLoaded) return;
+    refundAccountsLoaded = true;
+    fetch('ajax/list_bank_accounts.php')
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (!res.success || !Array.isArray(res.accounts)) return;
+        res.accounts.forEach(function (acc) {
+          var opt = document.createElement('option');
+          opt.value = acc.id;
+          opt.textContent = acc.bank_name + ' · ' + acc.account_number + ' · ' + acc.account_name + ' (' + acc.currency + ')';
+          opt.dataset.bank = acc.bank_name;
+          opt.dataset.accountNumber = acc.account_number;
+          opt.dataset.accountName = acc.account_name;
+          refundSourceAccount.appendChild(opt);
+        });
+      })
+      .catch(function () { /* dropdown just stays at "No account" */ });
+  }
 
   function openRefundView(customer) {
     refundCustomerId = customer.id;
@@ -3025,6 +3056,8 @@ $currentYear     = date('Y');
     refundMethodEl.value = '';
     refundNotesEl.value = '';
     refundProofFile.value = '';
+    refundSourceAccount.value = '';
+    loadRefundSourceAccounts();
     refundError.style.display = 'none';
     show(refundOverlay);
   }
@@ -3049,6 +3082,12 @@ $currentYear     = date('Y');
     payload.append('refund_date', refundDateEl.value);
     payload.append('amount', String(amount));
     payload.append('method', refundMethodEl.value);
+    var selectedOpt = refundSourceAccount.options[refundSourceAccount.selectedIndex];
+    if (refundSourceAccount.value) {
+      payload.append('source_bank', selectedOpt.dataset.bank || '');
+      payload.append('source_account_number', selectedOpt.dataset.accountNumber || '');
+      payload.append('source_account_name', selectedOpt.dataset.accountName || '');
+    }
     payload.append('notes', refundNotesEl.value);
     if (refundProofFile.files[0]) payload.append('proof', refundProofFile.files[0]);
 
