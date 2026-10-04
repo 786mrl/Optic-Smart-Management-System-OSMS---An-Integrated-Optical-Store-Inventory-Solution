@@ -6166,6 +6166,19 @@ $currentYear     = date('Y');
     // "(No invoice)" pseudo-row (inv.id === null, see list_customer_orders.php)
     // has nothing to pay against — only real invoices get this button.
     if (inv.id !== null) {
+      // Printable Indonesian invoice (Print -> Save as PDF in the new tab;
+      // bank accounts are ticked on that page). Added 4 Okt 2026.
+      var printBtn = document.createElement('button');
+      printBtn.type = 'button';
+      printBtn.className = 'btn btn-secondary st-mini-btn';
+      printBtn.style.flexShrink = '0';
+      printBtn.textContent = 'Print';
+      printBtn.addEventListener('click', function (e) {
+        e.stopPropagation(); // don't also toggle the accordion
+        window.open('ajax/print_invoice.php?invoice_id=' + encodeURIComponent(inv.id), '_blank');
+      });
+      h.appendChild(printBtn);
+
       // Only an OPEN invoice can still receive a payment; once it is PAID
       // there is nothing left to pay, so no button (changed 2 Okt 2026).
       if (inv.status === 'open') {

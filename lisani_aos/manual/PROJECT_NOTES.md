@@ -158,7 +158,7 @@ Folder `selling/{year}/{nama}/` auto (best-effort). Edit rename folder; Delete p
 **Itemized Pricing**: nested accordion di tiap customer (lazy-load), Add Price bebas reverify, Edit/Delete pola (b).
 **Input Transaction / Disbursement**: OCR Tesseract.js di browser (semi-otomatis, hasil selalu bisa diedit),
 viewer layar penuh, wizard; simpan ke `transactions`. **Belum ada**: list/edit/delete transaksi tersimpan,
-kategori Other, pencatatan pembayaran customer, print invoice, Report.
+kategori Other, pencatatan pembayaran customer, Report.
 **Settings**: Company Documents (upload/edit/delete→recycle/share WA/download) & Company Bank Accounts
 (autocomplete bank/nama, duplikat per bank, share WA). Edit/Delete/Share pola (b).
 **Sales Transaction** (3 tab): 
@@ -224,7 +224,17 @@ kategori Other, pencatatan pembayaran customer, print invoice, Report.
   `logistic_id` → `{data:{product_name, unit_label, defective_qty, defective_taken_qty, history:[{customer_name,
   movement_date, qty, price, total_price}]}}`; POST `action=repair` `logistic_id, qty` (≤ defective_qty).
 
-## 8. Log terbaru (1–2 Okt 2026)
+## 8. Log terbaru (1–4 Okt 2026)
+- **Print Invoice / PDF (4 Okt 2026, belum dites user)**: tombol **Print** di header tiap invoice (tab Customers,
+  `buildStInvoiceItem`) → tab baru `ajax/print_invoice.php?invoice_id=N` (halaman HTML A4 bahasa Indonesia;
+  PDF = Print → Save as PDF dari browser, TANPA library PHP). Isi: header gambar, customer, meta invoice, tabel
+  item per movement (order / RETUR / POTONGAN HARGA, urut tanggal), ringkasan (Total = `invoices.total_amount`,
+  Sudah Dibayar, Sisa), terbilang, riwayat pembayaran, rekening, ttd. **Rekening**: toolbar halaman (UI Inggris)
+  punya checkbox per rekening dari `json_file/bank_accounts.json` (field: id, bank_name, account_number,
+  account_name, currency, swift_code, address); boleh >1, pilihan diingat di localStorage
+  `aos_invoice_bank_selection` (default semua tercentang). Aset baru: `assets/img/invoice_header.png`,
+  `invoice_signature.png`. Penanda tangan = konstanta `PI_SIGNER_NAME`/`PI_SIGNER_ROLE` di atas file. Read-only,
+  tanpa migration. Layout sudah diuji render (Chromium) dengan data contoh; PHP-nya belum dijalankan (sandbox tanpa PHP).
 - **Fix "Connection error" saat Return/Discount kena kredit (2 Okt 2026, belum dites ulang)**: gejala — semua
   invoice customer sudah PAID, lalu ada barang di-return → Review/Save di tab Returns muncul "Connection error".
   Akar masalah (disimpulkan dari kode `transaction_content.php`): server sudah membalas `ret.invoice`/`adj.invoice`
@@ -378,7 +388,7 @@ kategori Other, pencatatan pembayaran customer, print invoice, Report.
   belum dikonfirmasi user.
 - Data lama order yang sudah terlanjur terpecah (sebelum `batch_id`) tetap terpisah; skrip migrasi belum dibuat.
 - Ditunda: filter/pagination Movements, retention `storage/recycle/`, `customers.profit`, pembayaran,
-  print invoice, edit/hapus alias & order, aturan stok minus, uppercase server di `manage_packaging_units.php`.
+  edit/hapus alias & order, aturan stok minus, uppercase server di `manage_packaging_units.php`.
 - Opsi: `DROP COLUMN logistics.defective_reference_price` (ireversibel, belum dijalankan).
 
 ## 10. Cara lanjut di sesi baru
