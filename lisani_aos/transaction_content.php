@@ -1020,6 +1020,26 @@ $currentYear     = date('Y');
   </div>
 </div>
 
+<!-- Sales Transaction > Customers > invoice "Print": pick which company bank
+     accounts appear on the printed invoice BEFORE the invoice page opens.
+     Grouped Rupiah / foreign currency, then by account name. -->
+<div class="modal-overlay" id="invPrintOverlay" style="display:none;">
+  <div class="modal" style="max-width:520px;">
+    <div class="modal-header"><div class="modal-title">Bank Accounts on Invoice</div></div>
+    <div class="modal-body">
+      <div class="empty-sub" style="margin-bottom:var(--space-3);">
+        Tick the accounts the customer can transfer to. You can pick several, or none.
+      </div>
+      <div id="invPrintBody" style="max-height:55vh; overflow-y:auto;"></div>
+      <div class="empty-sub" id="invPrintError" style="display:none; color:var(--danger);"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" id="btnInvPrintCancel">Cancel</button>
+      <button type="button" class="btn btn-primary" id="btnInvPrintOpen">Open Invoice</button>
+    </div>
+  </div>
+</div>
+
 <!-- Refund — cash given back from a customer's credit_balance (credit comes
      from a return/price adjustment that had no open invoice to reduce, see
      PROJECT_NOTES.md 1 Okt 2026). Proof is OPTIONAL: sometimes it's a bank
@@ -1665,7 +1685,7 @@ $currentYear     = date('Y');
     capFieldPickerOverlay, stProductOverlay, stPriceOverlay, stStockSourceOverlay, stConfirmOverlay,
     stOrderModeOverlay, stOrderPickOverlay, stDriverWarnOverlay,
     rtProductOverlay, rtConfirmOverlay, rtReverifyOverlay,
-    refundOverlay, applyCreditOverlay];
+    refundOverlay, applyCreditOverlay, document.getElementById('invPrintOverlay')];
 
   function show(el) {
     el.style.display = (flexOverlays.indexOf(el) !== -1) ? 'flex' : 'block';
@@ -6144,6 +6164,158 @@ $currentYear     = date('Y');
     refreshOpenHeight(item);
   }
 
+  // ---------- Print Invoice: choose bank accounts first (fly window) ----------
+  // Accounts come from ajax/list_bank_accounts.php (json_file/bank_accounts.json).
+  // Layout: Rupiah (IDR) / Foreign currency -> grouped by account_name, each
+  // group with its own Select all / Deselect all. The last selection is kept
+  // in this browser (localStorage) and pre-ticked next time.
+  var invPrintOverlay = document.getElementById('invPrintOverlay');
+  var invPrintBody = document.getElementById('invPrintBody');
+  var invPrintError = document.getElementById('invPrintError');
+  var invPrintInvoiceId = null;
+  var INV_PRINT_STORE_KEY = 'aos_invoice_bank_selection';
+
+  function invPrintLoadStored() {
+    try {
+      var raw = localStorage.getItem(INV_PRINT_STORE_KEY);
+      var arr = raw === null ? [] : JSON.parse(raw);
+      return Array.isArray(arr) ? arr : [];
+    } catch (e) { return []; }
+  }
+  function invPrintSaveStored(ids) {
+    try { localStorage.setItem(INV_PRINT_STORE_KEY, JSON.stringify(ids)); } catch (e) { /* storage unavailable */ }
+  }
+  function invPrintBoxes(scope) {
+    return [].slice.call((scope || invPrintBody).querySelectorAll('input[type="checkbox"][data-bank-id]'));
+  }
+  function invPrintSelectedIds() {
+    return invPrintBoxes().filter(function (c) { return c.checked; })
+      .map(function (c) { return c.getAttribute('data-bank-id'); });
+  }
+  function invPrintSyncButtons() {
+    [].forEach.call(invPrintBody.querySelectorAll('[data-name-group]'), function (grp) {
+      var boxes = invPrintBoxes(grp);
+      var all = boxes.length > 0 && boxes.every(function (c) { return c.checked; });
+      grp.querySelector('button').textContent = all ? 'Deselect all' : 'Select all';
+    });
+  }
+
+  function invPrintRender(accounts, selected) {
+    invPrintBody.innerHTML = '';
+    if (!accounts.length) {
+      var none = document.createElement('div');
+      none.className = 'empty-sub';
+      none.textContent = 'No bank accounts saved yet (Settings \u203A Company Bank Accounts). The invoice will open without payment details.';
+      invPrintBody.appendChild(none);
+      return;
+    }
+    var sections = [
+      { title: 'Rupiah (IDR)', items: accounts.filter(function (a) { return a.currency === 'IDR'; }) },
+      { title: 'Foreign currency', items: accounts.filter(function (a) { return a.currency !== 'IDR'; }) }
+    ];
+    sections.forEach(function (sec) {
+      if (!sec.items.length) return;
+      var title = document.createElement('div');
+      title.className = 'st-section-label';
+      title.textContent = sec.title;
+      invPrintBody.appendChild(title);
+
+      var order = [];
+      var byName = {};
+      sec.items.forEach(function (a) {
+        var key = a.account_name || '(No account name)';
+        if (!byName[key]) { byName[key] = []; order.push(key); }
+        byName[key].push(a);
+      });
+
+      order.forEach(function (name) {
+        var grp = document.createElement('div');
+        grp.setAttribute('data-name-group', '1');
+        grp.style.cssText = 'border:1px solid rgba(128,128,128,.3); border-radius:8px; padding:8px 10px; margin:6px 0 var(--space-3);';
+
+        var head = document.createElement('div');
+        head.style.cssText = 'display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:4px;';
+        var nm = document.createElement('div');
+        nm.style.fontWeight = '600';
+        nm.textContent = name;
+        var allBtn = document.createElement('button');
+        allBtn.type = 'button';
+        allBtn.className = 'btn btn-secondary st-mini-btn';
+        allBtn.style.flexShrink = '0';
+        allBtn.textContent = 'Select all';
+        head.appendChild(nm);
+        head.appendChild(allBtn);
+        grp.appendChild(head);
+
+        byName[name].forEach(function (a) {
+          var row = document.createElement('label');
+          row.style.cssText = 'display:flex; align-items:center; gap:8px; padding:4px 0; cursor:pointer;';
+          var cb = document.createElement('input');
+          cb.type = 'checkbox';
+          cb.setAttribute('data-bank-id', a.id);
+          cb.checked = selected.indexOf(a.id) !== -1;
+          cb.addEventListener('change', invPrintSyncButtons);
+          var txt = document.createElement('span');
+          txt.textContent = a.bank_name + ' \u00B7 ' + a.account_number + (a.currency !== 'IDR' && a.currency ? ' (' + a.currency + ')' : '');
+          row.appendChild(cb);
+          row.appendChild(txt);
+          grp.appendChild(row);
+        });
+
+        allBtn.addEventListener('click', function () {
+          var boxes = invPrintBoxes(grp);
+          var all = boxes.every(function (c) { return c.checked; });
+          boxes.forEach(function (c) { c.checked = !all; });
+          invPrintSyncButtons();
+        });
+        invPrintBody.appendChild(grp);
+      });
+    });
+    invPrintSyncButtons();
+  }
+
+  function openInvoicePrintPicker(invoiceId) {
+    invPrintInvoiceId = invoiceId;
+    invPrintError.style.display = 'none';
+    invPrintBody.innerHTML = '';
+    var loading = document.createElement('div');
+    loading.className = 'empty-sub';
+    loading.textContent = 'Loading bank accounts\u2026';
+    invPrintBody.appendChild(loading);
+    show(invPrintOverlay);
+
+    fetch('ajax/list_bank_accounts.php')
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (!res || !res.success || !Array.isArray(res.accounts)) throw new Error('bad response');
+        var accounts = res.accounts.map(function (a) {
+          return {
+            id: a.id === undefined || a.id === null ? '' : String(a.id),
+            bank_name: String(a.bank_name || ''),
+            account_number: String(a.account_number || ''),
+            account_name: String(a.account_name || ''),
+            currency: String(a.currency || 'IDR')
+          };
+        }).filter(function (a) { return a.id && (a.bank_name || a.account_number); });
+        invPrintRender(accounts, invPrintLoadStored());
+      })
+      .catch(function () {
+        invPrintBody.innerHTML = '';
+        invPrintError.textContent = 'Could not load bank accounts. You can still open the invoice without them.';
+        invPrintError.style.display = 'block';
+      });
+  }
+
+  document.getElementById('btnInvPrintCancel').addEventListener('click', function () { hide(invPrintOverlay); });
+  document.getElementById('btnInvPrintOpen').addEventListener('click', function () {
+    var ids = invPrintSelectedIds();
+    if (invPrintBoxes().length) invPrintSaveStored(ids);
+    var url = 'ajax/print_invoice.php?invoice_id=' + encodeURIComponent(invPrintInvoiceId);
+    ids.forEach(function (id) { url += '&banks%5B%5D=' + encodeURIComponent(id); });
+    window.open(url, '_blank');
+    hide(invPrintOverlay);
+  });
+
   function buildStInvoiceItem(inv, customer) {
     var invItem = document.createElement('div');
     invItem.className = 'accordion-item';
@@ -6166,8 +6338,8 @@ $currentYear     = date('Y');
     // "(No invoice)" pseudo-row (inv.id === null, see list_customer_orders.php)
     // has nothing to pay against — only real invoices get this button.
     if (inv.id !== null) {
-      // Printable Indonesian invoice (Print -> Save as PDF in the new tab;
-      // bank accounts are ticked on that page). Added 4 Okt 2026.
+      // Printable Indonesian invoice: the Print button first opens the bank-account
+      // picker (invPrintOverlay), then ajax/print_invoice.php in a new tab.
       var printBtn = document.createElement('button');
       printBtn.type = 'button';
       printBtn.className = 'btn btn-secondary st-mini-btn';
@@ -6175,7 +6347,7 @@ $currentYear     = date('Y');
       printBtn.textContent = 'Print';
       printBtn.addEventListener('click', function (e) {
         e.stopPropagation(); // don't also toggle the accordion
-        window.open('ajax/print_invoice.php?invoice_id=' + encodeURIComponent(inv.id), '_blank');
+        openInvoicePrintPicker(inv.id);
       });
       h.appendChild(printBtn);
 

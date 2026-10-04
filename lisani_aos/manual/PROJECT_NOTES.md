@@ -167,6 +167,26 @@ kategori Other, pencatatan pembayaran customer, Report.
   `defective_qty>0`) → Confirm → `create_order.php`. Order lain di tanggal sama → pilihan New Order / Update Existing.
 - *Customers*: kartu customer (Total Ordered/Returned/Discounts/Actual, per produk), riwayat per invoice →
   kartu per batch, badge RETURN (+NORMAL/DEFECTIVE) dan DISCOUNT (nilai bertanda minus), "from pickup on …".
+- *Print Invoice* (tombol **Print** di header tiap invoice, tab Customers; revisi 4 Okt 2026 = pemilihan rekening
+  pindah ke fly window; 4 Okt 2026 tabel utama per produk + lampiran + ttd kiri, **belum dites user**): klik Print → fly window `invPrintOverlay` ("Bank Accounts on
+  Invoice", data dari `ajax/list_bank_accounts.php`): grup **Rupiah (IDR)** / **Foreign currency**, lalu per
+  `account_name`, tiap grup punya tombol **Select all / Deselect all**; boleh pilih >1 atau kosong; pilihan terakhir
+  diingat di localStorage `aos_invoice_bank_selection`. "Open Invoice" → tab baru
+  `ajax/print_invoice.php?invoice_id=N&banks[]=id...` = halaman HTML A4 **bahasa Indonesia** (PDF = Print → Save as
+  PDF dari browser, tanpa library PHP); hanya rekening di `banks[]` yang tampil (tanpa param = tanpa bagian
+  rekening). Halaman 1: header gambar, customer, meta, **tabel utama dikumpulkan per produk + harga satuan**: pengambilan normal,
+  low grade, dan RETUR dengan produk & harga sama digabung jadi satu baris (retur mengurangi qty/total); harga berbeda =
+  baris terpisah; POTONGAN HARGA dikumpulkan sendiri per produk + selisih + harga awal, ditaruh paling bawah; **Harga Satuan baris potongan = SELISIH per unit (dalam kurung), bukan harga jual**; Keterangan = "Harga turun Rp A → Rp B" (selisih ada di kolom Harga Satuan) (A = `price` pickup asal via `source_movement_id`; B = `price` baris `price_adjustment` itu sendiri = **HARGA BARU**; selisih = `total_price` ÷ qty — jadi di DB `price_adjustment.price` BUKAN selisih); baris hanya
+  diberi label (LOW GRADE / RETURN / POTONGAN HARGA) bila seluruh isinya satu jenis, kalau campuran diberi catatan
+  ("Diambil 6x · Return 10", "Low grade 2"); di invoice istilahnya **"Return"**, bukan "Retur"; kolom Tanggal = movement pertama s.d. terakhir; kolom: No · Tanggal · Produk (lebar) · Jumlah (**angka saja, tanpa unit**; hanya uang yang dijumlah, qty tidak) · Harga Satuan · Total ·
+  **Keterangan (paling akhir, berisi label + catatan)**; nilai negatif ditulis **dalam kurung `(Rp 1.000)`**, bukan tanda minus —
+  berlaku di seluruh invoice dan lampiran),
+  ringkasan (**Total Pengambilan Barang = Σout − Σin, sudah NET; baris "Return Barang" dihapus**; lalu Potongan Harga, Total = `invoices.total_amount`), terbilang, riwayat pembayaran,
+  ttd (kiri) + rekening (kanan) sejajar (rata atas, kolom sama lebar), lalu **catatan "* Satuan Produk" di PALING BAWAH** (jarak + garis putus-putus; header kolom **"Jumlah *"** di tabel utama menunjuk ke sini; nama produk + unit primary/secondary, rasio & berat; dari `logistics`, query terpisah + cek kolom supaya invoice tetap tercetak bila gagal; label unit bermakna "tidak ada" (mis. `NO PRIMARY CARTON`, NONE, N/A, `-`, diawali NO/TIDAK ADA/TANPA) **tidak dicetak sama sekali** via `pi_unit_is_none()`; kolom Secondary dibuang kalau tak ada produk dengan secondary asli). Stok `defective` di invoice ditulis
+  **"LOW GRADE"** (jangan pakai kata "cacat"). Halaman 2 = **LAMPIRAN**: semua movement per tanggal (sopir, no. polisi, subtotal
+  per tanggal, TOTAL); toolbar layar memberi peringatan bila jumlah baris ≠ `total_amount`. Aset: `assets/img/invoice_header.png`,
+  `invoice_signature.png`. Penanda tangan = konstanta `PI_SIGNER_NAME`/`PI_SIGNER_ROLE` di atas file. Read-only,
+  tanpa migration.
 - *Returns*: pesan WA retur → tiap produk: qty dialokasikan **FIFO otomatis** ke pickup (bisa dikoreksi, `+ Split`),
   tiap split punya disposition **Good / Defective / Price Adjustment** (adjust: old→new price). Review
   (`dry_run`) → password (pola b) → simpan **berurutan**: `create_return.php` lalu `create_price_adjustment.php`
@@ -224,17 +244,13 @@ kategori Other, pencatatan pembayaran customer, Report.
   `logistic_id` → `{data:{product_name, unit_label, defective_qty, defective_taken_qty, history:[{customer_name,
   movement_date, qty, price, total_price}]}}`; POST `action=repair` `logistic_id, qty` (≤ defective_qty).
 
-## 8. Log terbaru (1–4 Okt 2026)
-- **Print Invoice / PDF (4 Okt 2026, belum dites user)**: tombol **Print** di header tiap invoice (tab Customers,
-  `buildStInvoiceItem`) → tab baru `ajax/print_invoice.php?invoice_id=N` (halaman HTML A4 bahasa Indonesia;
-  PDF = Print → Save as PDF dari browser, TANPA library PHP). Isi: header gambar, customer, meta invoice, tabel
-  item per movement (order / RETUR / POTONGAN HARGA, urut tanggal), ringkasan (Total = `invoices.total_amount`,
-  Sudah Dibayar, Sisa), terbilang, riwayat pembayaran, rekening, ttd. **Rekening**: toolbar halaman (UI Inggris)
-  punya checkbox per rekening dari `json_file/bank_accounts.json` (field: id, bank_name, account_number,
-  account_name, currency, swift_code, address); boleh >1, pilihan diingat di localStorage
-  `aos_invoice_bank_selection` (default semua tercentang). Aset baru: `assets/img/invoice_header.png`,
-  `invoice_signature.png`. Penanda tangan = konstanta `PI_SIGNER_NAME`/`PI_SIGNER_ROLE` di atas file. Read-only,
-  tanpa migration. Layout sudah diuji render (Chromium) dengan data contoh; PHP-nya belum dijalankan (sandbox tanpa PHP).
+## 8. Log terbaru (1–3 Okt 2026)
+- **Sapaan bisa diketik sendiri (4 Okt 2026, dites jsdom, belum di server user)**: di fly window sapaan ada kotak teks "Or type your own" (maks 30 karakter, spasi dirapikan, huruf tidak dipaksa uppercase). Teks yang diketik menang atas tombol; klik tombol mengosongkan kotak, mengetik membatalkan tombol. Kalau Remember aktif, teks custom disimpan apa adanya di `aos_invoice_honorific_{customer_id}` dan dimunculkan lagi di kotak saat dibuka. Hanya `print_invoice.php`.
+- **Revisi alur Send Invoice (WhatsApp) (4 Okt 2026, dites di sandbox + jsdom, belum di server user)**: ada DUA fly window berurutan. (1) **Lampiran ikut atau tidak** (default *Without*; radio `att`) → param `&attach=1` ke `?format=pdf`; `_invoice_pdf.php` hanya merender halaman LAMPIRAN bila `withAttachment`. (2) **Sapaan**: **Kak / Bang / Buk / Pak / None (no title)**; None disimpan sebagai `'none'` dan teks WA jadi "Yth. {nama}," tanpa sapaan. Nilai lama di localStorage (Kakak/Abang/Bapak/Ibu) otomatis dipetakan ke Kak/Bang/Pak/Buk. Pilihan lampiran TIDAK diingat (selalu default Without). Tombol Print / Save as PDF (HTML) tidak berubah dan tetap menyertakan Lampiran.
+- **PDF server-side dengan FPDF (4 Okt 2026, dites di sandbox dengan DB tiruan, belum dites di server user)**: `ajax/print_invoice.php?invoice_id=N&banks[]=…&format=pdf` merender PDF via `ajax/_invoice_pdf.php` (file baru, `pi_pdf_render()`), memakai data/grup yang sama dengan halaman HTML (satu sumber data). FPDF dimuat dari `optic_pos/fpdf/fpdf.php` (sejajar `lisani_aos/`, `dirname(__DIR__,2).'/fpdf/fpdf.php'`; v1.9, font core Helvetica/cp1252 → `→` ditulis `->`). Blok `$unitRows` dipindah dari template ke bagian data supaya dipakai HTML & PDF. Tombol Send Invoice (WhatsApp): setelah pilih sapaan → tab WA dibuka di dalam klik (anti popup-blocker) → `fetch(...&format=pdf)` → blob diunduh sebagai `Invoice-<no>.pdf` → tab WA diarahkan ke `wa.me`. Print / Save as PDF (browser) tetap ada. Logika `afterprint` dihapus.
+- **Sapaan customer sebelum kirim WA (4 Okt 2026, belum dites)**: klik Send Invoice (WhatsApp) → fly window pilih Kak/Bang/Buk/Pak/None (direvisi 4 Okt, lihat entri berikutnya) (+ checkbox "Remember for this customer", default tercentang) → Continue → Save as PDF → WA dengan teks "Yth. {sapaan} {nama}, …". Pilihan diingat di localStorage `aos_invoice_honorific_{customer_id}` (per browser, bukan di DB); modal selalu muncul tiap kirim, pilihan lama otomatis terpilih. `customer_id` ditambahkan ke SELECT invoice.
+- **Tombol Send Invoice (WhatsApp) (4 Okt 2026, belum dites)**: di toolbar `print_invoice.php`. Klik → `window.print()` (judul halaman diset `Invoice-<no>` sebagai nama file PDF default) → setelah dialog tutup (`afterprint`) buka `wa.me/<telp>?text=…` (telp dari `customers.phone_number`, digit saja; awalan 0 → 62). File PDF di-attach manual oleh user. Tanpa library PDF. Keterbatasan: `afterprint` juga terpicu saat dialog di-cancel; kalau popup diblokir muncul link manual.
+- **Invoice cetak — 3 perbaikan (4 Okt 2026, belum dites)**: (1) Satuan Produk dipindah ke bawah ttd/rekening sebagai catatan bertanda `*` (header "Jumlah *"); (2) unit bermakna "tidak ada" (NO PRIMARY CARTON dst.) disembunyikan total; (3) ringkasan: baris Return Barang dihapus, Total Pengambilan Barang = out − in. Hanya `print_invoice.php`.
 - **Fix "Connection error" saat Return/Discount kena kredit (2 Okt 2026, belum dites ulang)**: gejala — semua
   invoice customer sudah PAID, lalu ada barang di-return → Review/Save di tab Returns muncul "Connection error".
   Akar masalah (disimpulkan dari kode `transaction_content.php`): server sudah membalas `ret.invoice`/`adj.invoice`
