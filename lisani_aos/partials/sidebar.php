@@ -20,6 +20,9 @@
   <button type="button" class="sidebar-item" data-target="report">
     <i class="ti ti-report-money"></i> <span class="label-text">Report</span>
   </button>
+  <button type="button" class="sidebar-item" data-target="investor">
+    <i class="ti ti-users"></i> <span class="label-text">Investor</span>
+  </button>
 </aside>
 
 <nav class="bottom-nav">
@@ -27,4 +30,5 @@
   <button type="button" class="bottom-nav-item" data-target="transactions"><i class="ti ti-arrows-exchange"></i>Transactions</button>
   <button type="button" class="bottom-nav-item" data-target="logistic">Logistic</button>
   <button type="button" class="bottom-nav-item" data-target="report"><i class="ti ti-report-money"></i>Report</button>
+  <button type="button" class="bottom-nav-item" data-target="investor"><i class="ti ti-users"></i>Investor</button>
 </nav>

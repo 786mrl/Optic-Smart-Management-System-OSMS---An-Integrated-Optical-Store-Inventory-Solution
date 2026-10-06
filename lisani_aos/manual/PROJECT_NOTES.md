@@ -273,6 +273,22 @@ Perlu konfirmasi keputusan:
 - Audit scroll horizontal menu lain setelah perbaikan `.app`/`.main` (global): Transactions, Logistic, Settings, Dashboard
   dicek di 3 ukuran (HP ≤767px, tablet 768–1023px, jendela setengah layar ~900–1000px).
 
+### Log terbaru (belum dites di server; lebur ke §4–7 setelah dites, lalu hapus dari sini)
+- **6 Okt 2026, Kategori Disbursement** (hanya label pengelompokan uang keluar; tidak memecah total/saldo/chart):
+  - DB: tabel baru `disbursement_categories` (id, category_name UNIQUE, created_by, created_at), seed PURCHASE PAYMENT /
+    CLEARANCE FEES / OPERATIONAL EXPENSES; kolom baru `transaction_disbursements.category_id` (NOT NULL, indeks, tanpa FK,
+    validasi di PHP). Migrasi: `migration_disbursement_categories.sql` (jalankan sekali).
+  - Wizard step 3 (Details): dropdown Category **wajib**, di antara Cashflow Type dan Transaction Purpose. Opsi
+    "+ Add new category…" (uppercase; nama yang sudah ada dipakai ulang, bukan error). Tombol **Manage** = Rename/Delete
+    **tanpa password** (keputusan user); Delete ditolak bila kategori sudah dipakai transaksi. Overlay
+    `disbManageCategoryOverlay` terdaftar di `flexOverlays`. Berlaku untuk semua departemen.
+  - Endpoint baru: `list|save|update|delete_disbursement_category.php`. `create_disbursement.php` kini wajib `category_id`.
+  - Finance Report: `get_finance_report.php` menambah field `category` di ledger (disbursement = nama kategori,
+    **invoice payment = tetap `SALES PAYMENT`**, refund = null). `report_content.php`: kolom Category di ledger + Export CSV,
+    `min-width` ledger 640 → 760px. Nominal ledger: inflow hijau, outflow merah, negatif pakai kurung `(Rp …)` bukan minus
+    (helper `fmtIDRParen`, hanya di ledger; kartu ringkasan tetap `fmtIDR`; CSV tetap angka mentah + kolom Type).
+  - Belum ada: edit kategori transaksi yang sudah tersimpan (list/edit/delete transaksi tersimpan memang belum dibangun).
+
 ## 9. Cara lanjut di sesi baru
 1. Upload PROJECT_NOTES.md ini + hanya file kode yang relevan (Sales: `transaction_content.php` + `ajax/` terkait;
    Logistic: `logistic_content.php` + `list_logistic_movements.php`/`list_logistics.php`).

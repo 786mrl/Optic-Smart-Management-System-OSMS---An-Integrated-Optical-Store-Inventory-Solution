@@ -1,7 +1,7 @@
 <?php
 // lisani_aos/ajax/create_disbursement.php
 // Saves one Disbursement transaction: slip file + row in `transactions`
-// + row in `transaction_disbursements`.
+// + row in `transaction_disbursements` (incl. category_id -> disbursement_categories).
 // Called from transaction_content.php (btnCapSave) with multipart FormData.
 //
 // Response contract: { ok: true|false, message: "...", ... }
@@ -67,12 +67,16 @@ function clean_decimal(string $raw): ?string
 
 // ---------- Read + validate input ----------
 $activityId = (int)post_str('activity_id');
+$categoryId = (int)post_str('category_id');
 $cashflow   = post_str('cashflow_type');
 $purpose    = mb_strtoupper(post_str('transaction_purpose'));
 $txnDate    = post_str('transaction_date');
 
 if ($activityId <= 0) {
     aos_fail('Activity Code is missing.');
+}
+if ($categoryId <= 0) {
+    aos_fail('Disbursement Category is required.');
 }
 if (!in_array($cashflow, ['inflow', 'outflow', 'in-out'], true)) {
     aos_fail('Cashflow Type is not valid.');
@@ -160,6 +164,17 @@ $stmt->close();
 
 if (!$activity) {
     aos_fail('Activity Code was not found.');
+}
+
+// Category must exist (list comes from disbursement_categories).
+$stmt = $lisani_conn->prepare('SELECT id FROM disbursement_categories WHERE id = ?');
+$stmt->bind_param('i', $categoryId);
+$stmt->execute();
+$categoryRow = $stmt->get_result()->fetch_assoc();
+$stmt->close();
+
+if (!$categoryRow) {
+    aos_fail('Disbursement Category was not found.');
 }
 
 // relative_path looks like "input/2026/dates/001/" — normalise and refuse
@@ -254,10 +269,10 @@ try {
 
     $ins2 = $lisani_conn->prepare(
         'INSERT INTO transaction_disbursements
-           (transaction_id, activity_id, cashflow_type, transaction_purpose)
-         VALUES (?, ?, ?, ?)'
+           (transaction_id, activity_id, category_id, cashflow_type, transaction_purpose)
+         VALUES (?, ?, ?, ?, ?)'
     );
-    $ins2->bind_param('iiss', $transactionId, $activityId, $cashflow, $purpose);
+    $ins2->bind_param('iiiss', $transactionId, $activityId, $categoryId, $cashflow, $purpose);
     $ins2->execute();
     $ins2->close();
 

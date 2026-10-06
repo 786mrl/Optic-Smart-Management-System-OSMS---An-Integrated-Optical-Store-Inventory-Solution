@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Oct 02, 2026 at 05:36 PM
+-- Generation Time: Oct 06, 2026 at 06:17 PM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -36,15 +36,6 @@ CREATE TABLE `activities` (
   `created_at` datetime DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
---
--- Dumping data for table `activities`
---
-
-INSERT INTO `activities` (`id`, `activity_name`, `cashflow`, `relative_path`, `created_by`, `created_at`) VALUES
-(1, 'SAYYER I', 'outflow', 'input/2026/dates/001/', 1, '2026-09-14 17:49:48'),
-(4, 'SUKKARI LISANI', 'outflow', 'input/2026/dates/002/', 1, '2026-09-18 20:03:48'),
-(5, 'SUKKARI AL-QASSIM & AJWA', 'outflow', 'input/2026/dates/003/', 1, '2026-09-29 23:16:02');
-
 -- --------------------------------------------------------
 
 --
@@ -64,13 +55,6 @@ CREATE TABLE `company_documents` (
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
---
--- Dumping data for table `company_documents`
---
-
-INSERT INTO `company_documents` (`id`, `document_name`, `document_date`, `original_filename`, `stored_filename`, `file_path`, `file_ext`, `file_size`, `uploaded_by`, `created_at`, `updated_at`) VALUES
-(1, 'SK Menkumham perubahan anggaran dasar_2026', '2026-09-03', 'cetak_sk_4026090312240633.pdf', 'sk_menkumham_perubahan_anggaran_dasar_2026.pdf', 'company/legal_document/sk_menkumham_perubahan_anggaran_dasar_2026.pdf', 'pdf', 329485, 1, '2026-09-16 08:27:17', '2026-09-16 08:27:17');
 
 -- --------------------------------------------------------
 
@@ -92,14 +76,6 @@ CREATE TABLE `customers` (
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
---
--- Dumping data for table `customers`
---
-
-INSERT INTO `customers` (`id`, `year`, `customer_name`, `phone_number`, `total_inflow`, `total_outflow`, `total_price_adjustments`, `total_paid`, `credit_balance`, `profit`, `created_at`) VALUES
-(1, 2026, 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', '+6281265472547', 110315000.00, 13650000.00, 860000.00, 50665000.00, 0.00, 0.00, '2026-09-18 10:55:33'),
-(2, 2026, 'RAIS', '+6281267646916', 11260000.00, 1310000.00, 120000.00, 10490000.00, 540000.00, 0.00, '2026-09-21 04:36:37');
-
 -- --------------------------------------------------------
 
 --
@@ -116,21 +92,6 @@ CREATE TABLE `customer_item_prices` (
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
---
--- Dumping data for table `customer_item_prices`
---
-
-INSERT INTO `customer_item_prices` (`id`, `customer_id`, `logistic_id`, `price`, `price_date`, `unit_label`, `created_at`, `updated_at`) VALUES
-(1, 1, 2, 136000.00, '2026-09-18', 'MASTER CARTON', '2026-09-18 13:26:04', '2026-09-18 13:26:04'),
-(2, 1, 3, 345000.00, '2026-09-18', 'MASTER CARTON', '2026-09-18 13:26:21', '2026-09-18 13:26:21'),
-(3, 1, 2, 145000.00, '2026-09-18', 'MASTER CARTON', '2026-09-18 13:26:42', '2026-09-18 13:26:42'),
-(4, 2, 2, 140000.00, '2026-09-21', 'MASTER CARTON', '2026-09-21 04:47:41', '2026-09-21 04:47:41'),
-(5, 2, 2, 130000.00, '2026-09-21', 'MASTER CARTON', '2026-09-21 09:58:51', '2026-09-21 09:58:51'),
-(6, 2, 3, 260000.00, '2026-09-21', 'MASTER CARTON', '2026-09-21 10:49:43', '2026-09-21 10:49:43'),
-(7, 1, 4, 125000.00, '2026-10-01', 'MASTER CARTON', '2026-10-01 00:20:52', '2026-10-01 00:20:52'),
-(8, 1, 5, 450000.00, '2026-10-01', 'MASTER CARTON', '2026-10-01 00:20:52', '2026-10-01 00:20:52'),
-(9, 2, 4, 115000.00, '2026-10-01', 'MASTER CARTON', '2026-10-01 00:49:24', '2026-10-01 00:49:24');
 
 -- --------------------------------------------------------
 
@@ -150,12 +111,125 @@ CREATE TABLE `defective_stock_events` (
   `created_at` datetime NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- --------------------------------------------------------
+
 --
--- Dumping data for table `defective_stock_events`
+-- Table structure for table `disbursement_categories`
 --
 
-INSERT INTO `defective_stock_events` (`id`, `logistic_id`, `event_type`, `qty`, `old_price`, `new_price`, `note`, `created_by`, `created_at`) VALUES
-(1, 3, 'reference_price_set', NULL, NULL, 200000.00, NULL, 1, '2026-09-27 18:47:52');
+CREATE TABLE `disbursement_categories` (
+  `id` int(10) UNSIGNED NOT NULL,
+  `category_name` varchar(100) NOT NULL,
+  `created_by` int(10) UNSIGNED DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `disbursement_categories`
+--
+
+INSERT INTO `disbursement_categories` (`id`, `category_name`, `created_by`, `created_at`) VALUES
+(1, 'PURCHASE PAYMENT', NULL, '2026-10-06 22:21:36'),
+(2, 'CLEARANCE FEES', NULL, '2026-10-06 22:21:36'),
+(3, 'OPERATIONAL EXPENSES', NULL, '2026-10-06 22:21:36');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `investors`
+--
+
+CREATE TABLE `investors` (
+  `id` int(10) UNSIGNED NOT NULL,
+  `investor_name` varchar(150) NOT NULL,
+  `created_by` int(10) UNSIGNED DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `investor_activity_allocations`
+--
+
+CREATE TABLE `investor_activity_allocations` (
+  `id` int(10) UNSIGNED NOT NULL,
+  `investor_id` int(10) UNSIGNED NOT NULL,
+  `activity_id` int(10) UNSIGNED NOT NULL,
+  `allocation_percent` decimal(5,2) NOT NULL,
+  `created_by` int(10) UNSIGNED DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `investor_activity_settings`
+--
+
+CREATE TABLE `investor_activity_settings` (
+  `activity_id` int(10) UNSIGNED NOT NULL,
+  `profit_distribution_percent` decimal(5,2) NOT NULL DEFAULT 0.00,
+  `updated_by` int(10) UNSIGNED DEFAULT NULL,
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `investor_deposits`
+--
+
+CREATE TABLE `investor_deposits` (
+  `id` int(10) UNSIGNED NOT NULL,
+  `investor_id` int(10) UNSIGNED NOT NULL,
+  `deposit_date` date NOT NULL,
+  `currency` varchar(10) NOT NULL DEFAULT 'IDR',
+  `amount` decimal(18,2) NOT NULL,
+  `exchange_rate` decimal(18,6) DEFAULT NULL,
+  `final_amount_idr` decimal(18,2) NOT NULL,
+  `notes` varchar(500) NOT NULL DEFAULT '',
+  `created_by` int(10) UNSIGNED DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `investor_profit_payments`
+--
+
+CREATE TABLE `investor_profit_payments` (
+  `id` int(10) UNSIGNED NOT NULL,
+  `investor_id` int(10) UNSIGNED NOT NULL,
+  `payment_date` date NOT NULL,
+  `amount_idr` decimal(18,2) NOT NULL,
+  `notes` varchar(500) NOT NULL DEFAULT '',
+  `created_by` int(10) UNSIGNED DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `investor_support_expenses`
+--
+
+CREATE TABLE `investor_support_expenses` (
+  `id` int(10) UNSIGNED NOT NULL,
+  `investor_id` int(10) UNSIGNED NOT NULL,
+  `expense_date` date NOT NULL,
+  `category` enum('return_capital','aid','other') NOT NULL,
+  `amount_idr` decimal(18,2) NOT NULL,
+  `notes` varchar(500) NOT NULL DEFAULT '',
+  `created_by` int(10) UNSIGNED DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
 
@@ -177,17 +251,6 @@ CREATE TABLE `invoices` (
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
---
--- Dumping data for table `invoices`
---
-
-INSERT INTO `invoices` (`id`, `customer_id`, `invoice_number`, `sequence_number`, `period_month`, `period_year`, `status`, `total_amount`, `paid_amount`, `paid_at`, `created_at`, `updated_at`) VALUES
-(1, 1, '001/inv/laj-TAHKP-1/IX/2026', 1, 9, 2026, 'paid', 47765000.00, 47765000.00, '2026-10-02 21:24:01', '2026-09-21 04:39:50', '2026-10-02 14:24:01'),
-(2, 2, '001/inv/laj-R-1/IX/2026', 1, 9, 2026, 'paid', 10490000.00, 10490000.00, '2026-10-02 22:25:28', '2026-09-21 04:47:41', '2026-10-02 15:25:28'),
-(3, 1, '001/inv/laj-TAHKP-1/X/2026', 1, 10, 2026, 'paid', 3625000.00, 3625000.00, '2026-10-02 22:16:58', '2026-10-02 14:56:10', '2026-10-02 15:16:58'),
-(4, 1, '002/inv/laj-TAHKP-1/X/2026', 2, 10, 2026, 'open', 1000000.00, 0.00, NULL, '2026-10-02 15:17:39', '2026-10-02 15:21:05'),
-(5, 1, '003/inv/laj-TAHKP-1/X/2026', 3, 10, 2026, 'open', 45000000.00, 0.00, NULL, '2026-10-02 15:21:48', '2026-10-02 15:21:48');
 
 -- --------------------------------------------------------
 
@@ -213,17 +276,6 @@ CREATE TABLE `invoice_payments` (
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
---
--- Dumping data for table `invoice_payments`
---
-
-INSERT INTO `invoice_payments` (`id`, `invoice_id`, `customer_id`, `payment_date`, `amount`, `source_bank`, `source_account_name`, `destination_bank`, `destination_account_number`, `destination_account_name`, `notes`, `proof_path`, `proof_original_name`, `created_by`, `created_at`) VALUES
-(1, 1, 1, '2025-11-22', 7470000.00, '', '', '', '', '', 'FIRST PAYMENT FOR INVOICE 001/INV/LAJ-TAHKP-1/IX/2026', 'selling/2026/toko an-najihah herbal kak putri/payments/001_inv_laj_TAHKP_1_IX_2026_20251122.jpg', '03-xi-2025.jpg', 1, '2026-10-02 09:44:31'),
-(2, 1, 1, '2025-12-07', 28080000.00, '', '', '', '', '', 'SECOND PAYMENT FOR INVOICE 001/INV/LAJ-TAHKP-1/IX/2026', 'selling/2026/toko an-najihah herbal kak putri/payments/001_inv_laj_TAHKP_1_IX_2026_20251207.jpg', '04-xii-2025.jpg', 1, '2026-10-02 09:48:03'),
-(3, 1, 1, '2025-12-14', 12215000.00, 'MANDIRI', 'PUTRI NUR ANDANI', 'MANDIRI', '1110016097897', 'SYIS BIN SAMSUL BAHRI', 'THIRD PAYMENT FOR INVOICE 001/INV/LAJ-TAHKP-1/IX/2026', 'selling/2026/toko an-najihah herbal kak putri/payments/001_inv_laj_TAHKP_1_IX_2026_20251214.jpg', '05-xii-2025.jpeg', 1, '2026-10-02 14:24:01'),
-(4, 3, 1, '2026-10-02', 3625000.00, 'BCA', '', '', '0322473794', 'SYIS BIN SAMSUL BAHRI', 'PAYMENT FOR INVOICE 001/INV/LAJ-TAHKP-1/X/2026', 'selling/2026/toko an-najihah herbal kak putri/payments/001_inv_laj_TAHKP_1_X_2026_20261002.jpg', '03-xi-2025.jpg', 1, '2026-10-02 15:16:58'),
-(5, 2, 2, '2026-10-02', 10490000.00, '', '', '', '0322473794', 'SYIS BIN SAMSUL BAHRI', 'PAYMENT FOR INVOICE 001/INV/LAJ-R-1/IX/2026', 'selling/2026/rais/payments/001_inv_laj_R_1_IX_2026_20261002.jpg', '02-xi-2025.jpg', 1, '2026-10-02 15:25:28');
-
 -- --------------------------------------------------------
 
 --
@@ -236,19 +288,15 @@ CREATE TABLE `invoice_refunds` (
   `refund_date` date NOT NULL,
   `amount` decimal(18,2) NOT NULL,
   `method` varchar(100) NOT NULL DEFAULT '',
+  `source_bank` varchar(100) DEFAULT NULL,
+  `source_account_number` varchar(60) DEFAULT NULL,
+  `source_account_name` varchar(150) DEFAULT NULL,
   `notes` varchar(500) NOT NULL DEFAULT '',
   `proof_path` varchar(500) DEFAULT NULL,
   `proof_original_name` varchar(255) DEFAULT NULL,
   `created_by` int(10) UNSIGNED NOT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
---
--- Dumping data for table `invoice_refunds`
---
-
-INSERT INTO `invoice_refunds` (`id`, `customer_id`, `refund_date`, `amount`, `method`, `notes`, `proof_path`, `proof_original_name`, `created_by`, `created_at`) VALUES
-(1, 1, '2026-10-02', 725000.00, 'TRANSFER BCA', 'KEMBALIKAN FULL', NULL, NULL, 1, '2026-10-02 14:54:58');
 
 -- --------------------------------------------------------
 
@@ -277,16 +325,6 @@ CREATE TABLE `logistics` (
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
---
--- Dumping data for table `logistics`
---
-
-INSERT INTO `logistics` (`id`, `activity_id`, `product_name`, `incoming_date`, `primary_qty`, `primary_unit_label`, `primary_unit_weight_kg`, `remaining_primary_qty`, `defective_qty`, `total_taken_qty`, `defective_taken_qty`, `defective_reference_price`, `secondary_unit_label`, `secondary_unit_weight_kg`, `secondary_ratio_per_primary`, `created_by`, `created_at`, `updated_at`) VALUES
-(2, 4, 'SUKKARI LISANI', NULL, 1500.00, 'MASTER CARTON', 12.000, 1321.00, 7.00, 172.00, 3.00, NULL, 'BABY CARTON', 3.000, 4.000, 1, '2026-09-18 20:06:51', '2026-10-02 22:27:08'),
-(3, 1, 'SAYYER I', NULL, 5000.00, 'MASTER CARTON', 10.000, 4902.00, 15.00, 83.00, 3.00, 200000.00, 'NO PRIMARY CARTON', 10.000, 1.000, 1, '2026-09-18 20:25:26', '2026-10-02 22:21:05'),
-(4, 5, 'SUKKARI AL-QASSIM', NULL, 1500.00, 'MASTER CARTON', 12.000, 1431.00, 0.00, 69.00, 1.00, NULL, 'BABY CARTON', 3.000, 4.000, 1, '2026-10-01 07:10:53', '2026-10-01 07:49:24'),
-(5, 5, 'AJWA', NULL, 500.00, 'MASTER CARTON', 10.000, 395.00, 0.00, 105.00, 0.00, NULL, 'NO PRIMARY CARTON', 10.000, 1.000, 1, '2026-10-01 07:10:53', '2026-10-02 22:21:48');
-
 -- --------------------------------------------------------
 
 --
@@ -303,13 +341,6 @@ CREATE TABLE `logistic_documents` (
   `uploaded_by` int(10) UNSIGNED DEFAULT NULL,
   `uploaded_at` datetime NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
---
--- Dumping data for table `logistic_documents`
---
-
-INSERT INTO `logistic_documents` (`id`, `activity_id`, `document_type`, `document_name`, `document_date`, `file_path`, `uploaded_by`, `uploaded_at`) VALUES
-(4, 4, 'shipper', 'DO', '2026-09-14', 'input/2026/dates/002/import_documents/shipper/20260918152311_do.pdf', 1, '2026-09-18 20:23:11');
 
 -- --------------------------------------------------------
 
@@ -336,61 +367,6 @@ CREATE TABLE `logistic_movements` (
   `created_by` int(10) UNSIGNED DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
---
--- Dumping data for table `logistic_movements`
---
-
-INSERT INTO `logistic_movements` (`id`, `logistic_id`, `source_movement_id`, `customer_id`, `movement_type`, `stock_source`, `movement_date`, `customer_name`, `driver_name`, `police_number`, `qty_primary_package`, `price`, `total_price`, `invoice_id`, `batch_id`, `created_by`, `created_at`) VALUES
-(1, 2, NULL, 1, 'out', 'normal', '2026-09-21', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BK 1284 AXE', 5.00, 145000.00, 725000.00, 1, 1, 1, '2026-09-21 11:39:50'),
-(2, 3, NULL, 1, 'out', 'normal', '2026-09-21', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BK 1284 AXE', 8.00, 345000.00, 2760000.00, 1, 1, 1, '2026-09-21 11:39:50'),
-(3, 2, NULL, 1, 'out', 'normal', '2026-09-21', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'RENDI', 'BL 2114 BNN', 50.00, 145000.00, 7250000.00, 1, 3, 1, '2026-09-21 11:45:13'),
-(4, 2, NULL, 2, 'out', 'normal', '2026-09-21', 'RAIS', 'PAK RE', 'BA 3421 AAS', 5.00, 140000.00, 700000.00, 2, 4, 1, '2026-09-21 11:47:41'),
-(5, 3, NULL, 1, 'out', 'normal', '2026-09-21', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'ADI', 'BK 4124 BL', 2.00, 345000.00, 690000.00, 1, 5, 1, '2026-09-21 11:52:34'),
-(6, 2, NULL, 2, 'out', 'normal', '2026-09-21', 'RAIS', 'RAIS', 'BA 1687 AWN', 5.00, 130000.00, 650000.00, 2, 6, 1, '2026-09-21 17:01:54'),
-(7, 3, NULL, 2, 'out', 'normal', '2026-09-21', 'RAIS', 'RAIS', 'BA 1687 AWN', 5.00, 260000.00, 1300000.00, 2, 7, 1, '2026-09-21 17:49:43'),
-(8, 2, NULL, 1, 'out', 'normal', '2026-09-21', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BL 3415 AHY', 80.00, 145000.00, 11600000.00, 1, 8, 1, '2026-09-21 19:44:40'),
-(9, 3, NULL, 1, 'out', 'normal', '2026-09-21', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BL 3415 AHY', 30.00, 345000.00, 10350000.00, 1, 8, 1, '2026-09-21 19:44:40'),
-(10, 3, NULL, 1, 'out', 'normal', '2026-09-22', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BK 1456 FAA', 15.00, 345000.00, 5175000.00, 1, 10, 1, '2026-09-22 12:38:09'),
-(11, 2, 1, 1, 'in', 'normal', '2026-09-22', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BK 1245 AFF', 5.00, 145000.00, 725000.00, 1, 11, 1, '2026-09-22 12:45:25'),
-(12, 2, 8, 1, 'in', 'normal', '2026-09-22', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BK 1245 AFF', 10.00, 145000.00, 1450000.00, 1, 11, 1, '2026-09-22 12:45:25'),
-(13, 3, 10, 1, 'in', 'normal', '2026-09-22', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BK 1245 AFF', 5.00, 345000.00, 1725000.00, 1, 11, 1, '2026-09-22 12:45:25'),
-(14, 2, NULL, 1, 'out', 'normal', '2026-09-26', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BK 241 AFS', 10.00, 145000.00, 1450000.00, 1, 14, 1, '2026-09-26 10:08:00'),
-(15, 3, NULL, 1, 'out', 'normal', '2026-09-26', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BK 241 AFS', 15.00, 345000.00, 5175000.00, 1, 14, 1, '2026-09-26 10:08:00'),
-(16, 3, 15, 1, 'in', 'normal', '2026-09-26', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BK 4145 BK', 3.00, 345000.00, 1035000.00, 1, 16, 1, '2026-09-26 10:09:48'),
-(17, 3, 15, 1, 'in', 'defective', '2026-09-26', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BK 4145 BK', 2.00, 345000.00, 690000.00, 1, 16, 1, '2026-09-26 10:09:48'),
-(18, 3, 15, 1, 'price_adjustment', 'normal', '2026-09-26', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BK 4145 BK', 5.00, 200000.00, 725000.00, 1, 18, 1, '2026-09-26 10:09:49'),
-(19, 3, NULL, 2, 'out', 'defective', '2026-09-27', 'RAIS', 'PAK FADLUN', 'BA 1687 ASF', 2.00, 260000.00, 520000.00, 2, 19, 1, '2026-09-27 18:48:43'),
-(20, 2, NULL, 2, 'out', 'normal', '2026-09-28', 'RAIS', 'PAK FADLUN', 'BK 523 AF', 6.00, 130000.00, 780000.00, 2, 20, 1, '2026-09-28 17:02:15'),
-(21, 3, NULL, 2, 'out', 'normal', '2026-09-28', 'RAIS', 'PAK FADLUN', 'BK 523 AF', 6.00, 260000.00, 1560000.00, 2, 20, 1, '2026-09-28 17:02:15'),
-(22, 3, 21, 2, 'in', 'normal', '2026-09-28', 'RAIS', 'PAK FADLUN', 'BK 1241 FAF', 1.00, 260000.00, 260000.00, 2, 22, 1, '2026-09-28 17:22:09'),
-(23, 3, 21, 2, 'in', 'defective', '2026-09-28', 'RAIS', 'PAK FADLUN', 'BK 1241 FAF', 1.00, 260000.00, 260000.00, 2, 22, 1, '2026-09-28 17:22:09'),
-(24, 2, 20, 2, 'in', 'defective', '2026-09-28', 'RAIS', 'PAK FADLUN', 'BK 1241 FAF', 1.00, 130000.00, 130000.00, 2, 22, 1, '2026-09-28 17:22:09'),
-(25, 3, 21, 2, 'price_adjustment', 'normal', '2026-09-28', 'RAIS', 'PAK FADLUN', 'BK 1241 FAF', 1.00, 200000.00, 60000.00, 2, 25, 1, '2026-09-28 17:22:10'),
-(26, 2, 20, 2, 'price_adjustment', 'normal', '2026-09-28', 'RAIS', 'PAK FADLUN', 'BK 1241 FAF', 2.00, 100000.00, 60000.00, 2, 25, 1, '2026-09-28 17:22:10'),
-(27, 2, NULL, 1, 'out', 'normal', '2026-10-01', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BL 2414 CAS', 15.00, 145000.00, 2175000.00, 1, 27, 1, '2026-10-01 07:20:52'),
-(28, 3, NULL, 1, 'out', 'normal', '2026-10-01', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BL 2414 CAS', 6.00, 345000.00, 2070000.00, 1, 27, 1, '2026-10-01 07:20:52'),
-(29, 4, NULL, 1, 'out', 'normal', '2026-10-01', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BL 2414 CAS', 20.00, 125000.00, 2500000.00, 1, 27, 1, '2026-10-01 07:20:52'),
-(30, 5, NULL, 1, 'out', 'normal', '2026-10-01', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BL 2414 CAS', 5.00, 450000.00, 2250000.00, 1, 27, 1, '2026-10-01 07:20:52'),
-(31, 2, 14, 1, 'in', 'defective', '2026-10-01', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BK 4124 ASA', 2.00, 145000.00, 290000.00, 1, 31, 1, '2026-10-01 07:25:59'),
-(32, 4, 29, 1, 'in', 'normal', '2026-10-01', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BK 4124 ASA', 1.00, 125000.00, 125000.00, 1, 31, 1, '2026-10-01 07:25:59'),
-(33, 4, 29, 1, 'in', 'defective', '2026-10-01', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BK 4124 ASA', 1.00, 125000.00, 125000.00, 1, 31, 1, '2026-10-01 07:25:59'),
-(34, 4, 29, 1, 'price_adjustment', 'normal', '2026-10-01', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BK 4124 ASA', 1.00, 100000.00, 25000.00, 1, 34, 1, '2026-10-01 07:26:00'),
-(35, 5, 30, 1, 'price_adjustment', 'normal', '2026-10-01', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BK 4124 ASA', 1.00, 400000.00, 50000.00, 1, 34, 1, '2026-10-01 07:26:00'),
-(36, 3, 2, 1, 'price_adjustment', 'normal', '2026-10-01', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BK 4124 ASA', 1.00, 285000.00, 60000.00, 1, 34, 1, '2026-10-01 07:26:00'),
-(37, 2, NULL, 1, 'out', 'defective', '2026-10-01', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BK 5121 ASF', 3.00, 110000.00, 330000.00, 1, 37, 1, '2026-10-01 07:32:55'),
-(38, 3, NULL, 1, 'out', 'defective', '2026-10-01', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BK 5121 ASF', 1.00, 200000.00, 200000.00, 1, 37, 1, '2026-10-01 07:32:55'),
-(39, 4, NULL, 1, 'out', 'defective', '2026-10-01', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BK 5121 ASF', 1.00, 90000.00, 90000.00, 1, 37, 1, '2026-10-01 07:32:55'),
-(40, 4, NULL, 2, 'out', 'normal', '2026-10-01', 'RAIS', 'RAIS', 'BA 1415 ASA', 50.00, 115000.00, 5750000.00, 2, 40, 1, '2026-10-01 07:49:24'),
-(41, 2, 8, 1, 'in', 'normal', '2026-10-02', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BK 2412 FAS', 5.00, 145000.00, 725000.00, NULL, 41, 1, '2026-10-02 21:52:55'),
-(42, 2, NULL, 1, 'out', 'normal', '2026-10-02', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BK 2412 SFA', 25.00, 145000.00, 3625000.00, 3, 42, 1, '2026-10-02 21:56:10'),
-(43, 3, NULL, 1, 'out', 'normal', '2026-10-02', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BK 4124 SVA', 15.00, 345000.00, 5175000.00, 4, 43, 1, '2026-10-02 22:17:39'),
-(44, 3, 43, 1, 'in', 'defective', '2026-10-02', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BK 512 SAA', 15.00, 345000.00, 5175000.00, 4, 44, 1, '2026-10-02 22:18:52'),
-(45, 2, 42, 1, 'in', 'defective', '2026-10-02', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BK 1212 SAD', 5.00, 145000.00, 725000.00, 4, 45, 1, '2026-10-02 22:19:57'),
-(46, 3, NULL, 1, 'out', 'normal', '2026-10-02', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BK 1241 ASA', 5.00, 345000.00, 1725000.00, 4, 46, 1, '2026-10-02 22:21:05'),
-(47, 5, NULL, 1, 'out', 'normal', '2026-10-02', 'TOKO AN-NAJIHAH HERBAL (KAK PUTRI)', 'PAK FADLUN', 'BK 1241 ASD', 100.00, 450000.00, 45000000.00, 5, 47, 1, '2026-10-02 22:21:48'),
-(48, 2, 4, 2, 'in', 'defective', '2026-10-02', 'RAIS', 'RAIS', 'BK 1411 AFA', 2.00, 140000.00, 280000.00, NULL, 48, 1, '2026-10-02 22:26:26'),
-(49, 2, 20, 2, 'in', 'normal', '2026-10-02', 'RAIS', 'RAIS', 'BK 1231 ASA', 2.00, 130000.00, 260000.00, NULL, 49, 1, '2026-10-02 22:27:08');
 
 -- --------------------------------------------------------
 
@@ -420,13 +396,20 @@ CREATE TABLE `transactions` (
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+-- --------------------------------------------------------
+
 --
--- Dumping data for table `transactions`
+-- Table structure for table `transaction_activities`
 --
 
-INSERT INTO `transactions` (`id`, `category`, `transaction_date`, `source_bank`, `destination_bank`, `source_account_number`, `source_account_name`, `destination_account_number`, `destination_account_name`, `notes`, `currency`, `amount`, `exchange_rate`, `final_amount_idr`, `document_path`, `document_original_name`, `created_by`, `created_at`, `updated_at`) VALUES
-(1, 'disbursement', '2026-06-16', 'MAYBANK', 'BANK MUAMALAT', '', '', '1205 0003 5177 19', 'RAMIN AKBARINAKHIJAVANI', 'Maher Rostam', 'RM', 7000.00, 4325.000000, 30275000.00, 'input/2026/dates/001/disbursement/20260616_453546b7.pdf', 'M2U_20260615_1401.pdf', 1, '2026-09-20 15:11:22', '2026-09-20 15:11:22'),
-(2, 'disbursement', '2026-06-15', 'MANDIRI', 'CIMB BANK BERHAD', '1060030131984.', 'LISANI ALAF JAYA', '850002311940', 'EDGE SPIRAL SDN BHD', 'RFB PAYMENT FOR INVOICE NO. 423', 'USD', 17005.00, 17690.000000, 300818450.00, 'input/2026/dates/001/disbursement/second_payment_20260615.pdf', 'USD 17K Edge Spiral Sayer.pdf', 1, '2026-09-20 15:55:37', '2026-09-20 15:55:37');
+CREATE TABLE `transaction_activities` (
+  `id` int(10) UNSIGNED NOT NULL,
+  `transaction_id` int(10) UNSIGNED NOT NULL,
+  `activity_id` int(10) UNSIGNED NOT NULL,
+  `amount_idr` decimal(18,2) NOT NULL,
+  `created_by` int(10) UNSIGNED DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
 
@@ -438,18 +421,11 @@ CREATE TABLE `transaction_disbursements` (
   `id` int(10) UNSIGNED NOT NULL,
   `transaction_id` int(10) UNSIGNED NOT NULL,
   `activity_id` int(10) UNSIGNED NOT NULL,
+  `category_id` int(10) UNSIGNED NOT NULL,
   `cashflow_type` enum('inflow','outflow','in-out') NOT NULL,
   `transaction_purpose` varchar(255) NOT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
---
--- Dumping data for table `transaction_disbursements`
---
-
-INSERT INTO `transaction_disbursements` (`id`, `transaction_id`, `activity_id`, `cashflow_type`, `transaction_purpose`, `created_at`) VALUES
-(1, 1, 1, 'outflow', 'FIRST PAYMENT', '2026-09-20 15:11:22'),
-(2, 2, 1, 'outflow', 'SECOND PAYMENT', '2026-09-20 15:55:37');
 
 -- --------------------------------------------------------
 
@@ -474,7 +450,7 @@ CREATE TABLE `users` (
 --
 
 INSERT INTO `users` (`user_id`, `username`, `password_hash`, `role`, `is_approved`, `created_at`, `last_login`, `session_token`, `session_expires`) VALUES
-(1, 'Rais786', '$2y$10$QciWVGPK9aGHjy05rBoXgOWfCAesfocowc0vt4QCMHVeVzsVuGDS6', 'admin', 1, '2026-09-10 21:34:57', '2026-10-02 16:21:36', NULL, NULL);
+(1, 'Rais786', '$2y$10$QciWVGPK9aGHjy05rBoXgOWfCAesfocowc0vt4QCMHVeVzsVuGDS6', 'admin', 1, '2026-09-10 21:34:57', '2026-10-06 17:55:22', NULL, NULL);
 
 --
 -- Indexes for dumped tables
@@ -516,6 +492,58 @@ ALTER TABLE `customer_item_prices`
 ALTER TABLE `defective_stock_events`
   ADD PRIMARY KEY (`id`),
   ADD KEY `idx_defective_stock_events_logistic` (`logistic_id`);
+
+--
+-- Indexes for table `disbursement_categories`
+--
+ALTER TABLE `disbursement_categories`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uq_disbursement_category_name` (`category_name`);
+
+--
+-- Indexes for table `investors`
+--
+ALTER TABLE `investors`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uq_investors_name` (`investor_name`);
+
+--
+-- Indexes for table `investor_activity_allocations`
+--
+ALTER TABLE `investor_activity_allocations`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uq_alloc_investor_activity` (`investor_id`,`activity_id`),
+  ADD KEY `idx_alloc_activity` (`activity_id`);
+
+--
+-- Indexes for table `investor_activity_settings`
+--
+ALTER TABLE `investor_activity_settings`
+  ADD PRIMARY KEY (`activity_id`);
+
+--
+-- Indexes for table `investor_deposits`
+--
+ALTER TABLE `investor_deposits`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_deposits_investor` (`investor_id`),
+  ADD KEY `idx_deposits_date` (`deposit_date`);
+
+--
+-- Indexes for table `investor_profit_payments`
+--
+ALTER TABLE `investor_profit_payments`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_profitpay_investor` (`investor_id`),
+  ADD KEY `idx_profitpay_date` (`payment_date`);
+
+--
+-- Indexes for table `investor_support_expenses`
+--
+ALTER TABLE `investor_support_expenses`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_support_investor` (`investor_id`),
+  ADD KEY `idx_support_date` (`expense_date`);
 
 --
 -- Indexes for table `invoices`
@@ -576,12 +604,21 @@ ALTER TABLE `transactions`
   ADD KEY `idx_txn_category` (`category`);
 
 --
+-- Indexes for table `transaction_activities`
+--
+ALTER TABLE `transaction_activities`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uq_txact_tx_activity` (`transaction_id`,`activity_id`),
+  ADD KEY `idx_txact_activity` (`activity_id`);
+
+--
 -- Indexes for table `transaction_disbursements`
 --
 ALTER TABLE `transaction_disbursements`
   ADD PRIMARY KEY (`id`),
   ADD UNIQUE KEY `uq_txn` (`transaction_id`),
-  ADD KEY `idx_activity` (`activity_id`);
+  ADD KEY `idx_activity` (`activity_id`),
+  ADD KEY `idx_td_category` (`category_id`);
 
 --
 -- Indexes for table `users`
@@ -598,79 +635,121 @@ ALTER TABLE `users`
 -- AUTO_INCREMENT for table `activities`
 --
 ALTER TABLE `activities`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT for table `company_documents`
 --
 ALTER TABLE `company_documents`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT for table `customers`
 --
 ALTER TABLE `customers`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT for table `customer_item_prices`
 --
 ALTER TABLE `customer_item_prices`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=10;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT for table `defective_stock_events`
 --
 ALTER TABLE `defective_stock_events`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `disbursement_categories`
+--
+ALTER TABLE `disbursement_categories`
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+
+--
+-- AUTO_INCREMENT for table `investors`
+--
+ALTER TABLE `investors`
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `investor_activity_allocations`
+--
+ALTER TABLE `investor_activity_allocations`
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `investor_deposits`
+--
+ALTER TABLE `investor_deposits`
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `investor_profit_payments`
+--
+ALTER TABLE `investor_profit_payments`
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `investor_support_expenses`
+--
+ALTER TABLE `investor_support_expenses`
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT for table `invoices`
 --
 ALTER TABLE `invoices`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT for table `invoice_payments`
 --
 ALTER TABLE `invoice_payments`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT for table `invoice_refunds`
 --
 ALTER TABLE `invoice_refunds`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT for table `logistics`
 --
 ALTER TABLE `logistics`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT for table `logistic_documents`
 --
 ALTER TABLE `logistic_documents`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT for table `logistic_movements`
 --
 ALTER TABLE `logistic_movements`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=50;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT for table `transactions`
 --
 ALTER TABLE `transactions`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `transaction_activities`
+--
+ALTER TABLE `transaction_activities`
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT for table `transaction_disbursements`
 --
 ALTER TABLE `transaction_disbursements`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT for table `users`
@@ -681,6 +760,37 @@ ALTER TABLE `users`
 --
 -- Constraints for dumped tables
 --
+
+--
+-- Constraints for table `investor_activity_allocations`
+--
+ALTER TABLE `investor_activity_allocations`
+  ADD CONSTRAINT `fk_alloc_activity` FOREIGN KEY (`activity_id`) REFERENCES `activities` (`id`),
+  ADD CONSTRAINT `fk_alloc_investor` FOREIGN KEY (`investor_id`) REFERENCES `investors` (`id`);
+
+--
+-- Constraints for table `investor_activity_settings`
+--
+ALTER TABLE `investor_activity_settings`
+  ADD CONSTRAINT `fk_settings_activity` FOREIGN KEY (`activity_id`) REFERENCES `activities` (`id`);
+
+--
+-- Constraints for table `investor_deposits`
+--
+ALTER TABLE `investor_deposits`
+  ADD CONSTRAINT `fk_deposits_investor` FOREIGN KEY (`investor_id`) REFERENCES `investors` (`id`);
+
+--
+-- Constraints for table `investor_profit_payments`
+--
+ALTER TABLE `investor_profit_payments`
+  ADD CONSTRAINT `fk_profitpay_investor` FOREIGN KEY (`investor_id`) REFERENCES `investors` (`id`);
+
+--
+-- Constraints for table `investor_support_expenses`
+--
+ALTER TABLE `investor_support_expenses`
+  ADD CONSTRAINT `fk_support_investor` FOREIGN KEY (`investor_id`) REFERENCES `investors` (`id`);
 
 --
 -- Constraints for table `logistics`
@@ -700,6 +810,13 @@ ALTER TABLE `logistic_documents`
 ALTER TABLE `logistic_movements`
   ADD CONSTRAINT `fk_lm_source_movement` FOREIGN KEY (`source_movement_id`) REFERENCES `logistic_movements` (`id`),
   ADD CONSTRAINT `fk_logmov_logistic` FOREIGN KEY (`logistic_id`) REFERENCES `logistics` (`id`) ON DELETE CASCADE;
+
+--
+-- Constraints for table `transaction_activities`
+--
+ALTER TABLE `transaction_activities`
+  ADD CONSTRAINT `fk_txact_activity` FOREIGN KEY (`activity_id`) REFERENCES `activities` (`id`),
+  ADD CONSTRAINT `fk_txact_transaction` FOREIGN KEY (`transaction_id`) REFERENCES `transactions` (`id`);
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;

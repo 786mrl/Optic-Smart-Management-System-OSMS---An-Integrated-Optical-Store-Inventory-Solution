@@ -70,12 +70,12 @@
         <table class="table" id="rptLedgerTable">
           <thead>
             <tr>
-              <th>Date</th><th>Type</th><th>Account</th><th>Description</th>
+              <th>Date</th><th>Type</th><th>Account</th><th>Description</th><th>Category</th>
               <th>Amount (IDR)</th><th>Running Balance</th>
             </tr>
           </thead>
           <tbody id="rptLedgerBody">
-            <tr><td colspan="6" class="empty-sub">Loading...</td></tr>
+            <tr><td colspan="7" class="empty-sub">Loading...</td></tr>
           </tbody>
         </table>
       </div>
@@ -123,6 +123,9 @@
   .rpt-summary-card .rpt-summary-value { font-size:20px; font-weight:600; }
   .rpt-summary-card.positive .rpt-summary-value { color:var(--success,#2ecc71); }
   .rpt-summary-card.negative .rpt-summary-value { color:var(--danger,#e74c3c); }
+  /* Ledger amounts: inflow green, outflow / negative balance red (shown in parentheses, no minus sign). */
+  #rptLedgerTable .rpt-amt-in  { color:var(--success,#2ecc71); }
+  #rptLedgerTable .rpt-amt-out { color:var(--danger,#e74c3c); }
 
   /* Chart.js needs a position:relative parent with min-width:0, otherwise the
      canvas keeps its old (wide) size and drags the whole page wider. */
@@ -141,7 +144,7 @@
     overflow-x:auto;
     -webkit-overflow-scrolling:touch;
   }
-  #rptLedgerTable { width:100%; min-width:640px; border-collapse:collapse; }
+  #rptLedgerTable { width:100%; min-width:760px; border-collapse:collapse; }
   .rpt-receivables table { width:100%; min-width:420px; border-collapse:collapse; }
 
   /* The app theme turns .table into a stacked card list on small screens.
@@ -216,6 +219,12 @@
     return sign + 'Rp ' + Math.abs(Math.round(n)).toLocaleString('id-ID');
   }
 
+  // Accounting style for the ledger: negatives in parentheses instead of a minus sign.
+  function fmtIDRParen(n) {
+    var txt = 'Rp ' + Math.abs(Math.round(n)).toLocaleString('id-ID');
+    return n < 0 ? '(' + txt + ')' : txt;
+  }
+
   function escapeHtml(s) {
     var d = document.createElement('div');
     d.textContent = s == null ? '' : String(s);
@@ -234,7 +243,7 @@
 
     document.getElementById('rptTotalsGrid').innerHTML = '<div class="empty-sub">Loading...</div>';
     document.getElementById('rptAccountsGrid').innerHTML = '<div class="empty-sub">Loading...</div>';
-    document.getElementById('rptLedgerBody').innerHTML = '<tr><td colspan="6" class="empty-sub">Loading...</td></tr>';
+    document.getElementById('rptLedgerBody').innerHTML = '<tr><td colspan="7" class="empty-sub">Loading...</td></tr>';
 
     fetch('ajax/get_finance_report.php' + (qs.length ? '?' + qs.join('&') : ''))
       .then(function (r) { return r.json(); })
@@ -363,7 +372,7 @@
   function renderLedger(ledger) {
     var tbody = document.getElementById('rptLedgerBody');
     if (!ledger.length) {
-      tbody.innerHTML = '<tr><td colspan="6" class="empty-sub">No transactions in this period.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" class="empty-sub">No transactions in this period.</td></tr>';
       return;
     }
     var running = 0;
@@ -373,14 +382,18 @@
       var badge = row.type === 'inflow'
         ? '<span class="badge badge-success">INFLOW</span>'
         : '<span class="badge badge-danger">OUTFLOW</span>';
-      var amtStr = (row.type === 'inflow' ? '+' : '-') + fmtIDR(row.amount).replace('Rp ', 'Rp ');
+      var isIn = row.type === 'inflow';
+      var amtCell = '<span class="' + (isIn ? 'rpt-amt-in' : 'rpt-amt-out') + '">' +
+        fmtIDRParen(isIn ? row.amount : -row.amount) + '</span>';
+      var balCell = '<span class="' + (running < 0 ? 'rpt-amt-out' : '') + '">' + fmtIDRParen(running) + '</span>';
       return '<tr>' +
         '<td>' + escapeHtml(row.date) + '</td>' +
         '<td>' + badge + '</td>' +
         '<td>' + escapeHtml(acctLabel) + '</td>' +
         '<td>' + escapeHtml(row.label) + (row.original ? ' <span class="empty-sub">(' + escapeHtml(row.original) + ')</span>' : '') + '</td>' +
-        '<td>' + amtStr + '</td>' +
-        '<td>' + fmtIDR(running) + '</td>' +
+        '<td>' + escapeHtml(row.category || '\u2014') + '</td>' +
+        '<td>' + amtCell + '</td>' +
+        '<td>' + balCell + '</td>' +
         '</tr>';
     }).join('');
   }
@@ -394,9 +407,9 @@
 
   document.getElementById('rptExportCsv').addEventListener('click', function () {
     var ledger = window._rptLastLedger || [];
-    var rows = [['Date', 'Type', 'Bank', 'Account Number', 'Description', 'Amount IDR']];
+    var rows = [['Date', 'Type', 'Bank', 'Account Number', 'Description', 'Category', 'Amount IDR']];
     ledger.forEach(function (r) {
-      rows.push([r.date, r.type, r.bank || '', r.account_no || '', r.label, r.amount]);
+      rows.push([r.date, r.type, r.bank || '', r.account_no || '', r.label, r.category || '', r.amount]);
     });
     var csv = rows.map(function (r) {
       return r.map(function (v) { return '"' + String(v).replace(/"/g, '""') + '"'; }).join(',');

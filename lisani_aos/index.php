@@ -71,6 +71,9 @@ include 'partials/header.php';
       <!-- Report -->
       <?php include 'report_content.php'; ?>
 
+      <!-- Investor -->
+      <?php include 'investor_content.php'; ?>
+
       <!-- Settings -->
       <?php include 'settings_content.php'; ?>
 

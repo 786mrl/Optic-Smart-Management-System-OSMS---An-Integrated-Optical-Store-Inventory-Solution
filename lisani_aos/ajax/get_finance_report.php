@@ -3,6 +3,7 @@
 // Finance Report (Report menu > Finance Report tab).
 // Aggregates three money-movement sources into one ledger + per-account balances:
 //   - outflow: transactions (category='disbursement') -> source_bank/source_account_number
+//             (+ ledger 'category' = disbursement_categories.category_name; invoice payments = fixed 'SALES PAYMENT'; refunds = null; display-only grouping label)
 //   - inflow:  invoice_payments                        -> destination_bank/destination_account_number
 //   - outflow: invoice_refunds (source account OPTIONAL, see migration_invoice_refunds_bank_fields.sql)
 // "Rekening" here are company bank accounts (json_file/bank_accounts.json), matched
@@ -129,9 +130,10 @@ if ($hasTo)   { $whereDate .= ' AND transaction_date <= ?'; $params[] = $dateTo;
 
 $sql = "SELECT t.id, t.transaction_date, t.source_bank, t.source_account_number,
                t.final_amount_idr, t.currency, t.amount, t.notes,
-               d.transaction_purpose, d.cashflow_type
+               d.transaction_purpose, d.cashflow_type, dc.category_name
         FROM transactions t
         JOIN transaction_disbursements d ON d.transaction_id = t.id
+        LEFT JOIN disbursement_categories dc ON dc.id = d.category_id
         WHERE t.category = 'disbursement' AND $whereDate
         ORDER BY t.transaction_date ASC, t.id ASC";
 $stmt = $lisani_conn->prepare($sql);
@@ -157,6 +159,7 @@ while ($row = $res->fetch_assoc()) {
         'amount'     => $amt,
         'original'   => $row['currency'] !== 'IDR' ? ($row['currency'] . ' ' . number_format((float)$row['amount'], 2)) : null,
         'label'      => $row['transaction_purpose'],
+        'category'   => $row['category_name'], // disbursement category (null for inflow/refund rows)
         'notes'      => $row['notes'],
         'ref_id'     => (int)$row['id'],
     ];
@@ -194,6 +197,7 @@ while ($row = $res->fetch_assoc()) {
         'amount'     => $amt,
         'original'   => null,
         'label'      => 'Payment — ' . $row['customer_name'] . ' (' . $row['invoice_number'] . ')',
+        'category'   => 'SALES PAYMENT', // fixed label: every invoice payment is a sales payment
         'notes'      => $row['notes'],
         'ref_id'     => (int)$row['id'],
     ];
@@ -230,6 +234,7 @@ while ($row = $res->fetch_assoc()) {
         'amount'     => $amt,
         'original'   => null,
         'label'      => 'Refund — ' . $row['customer_name'] . ($row['method'] ? ' (' . $row['method'] . ')' : ''),
+        'category'   => null,
         'notes'      => $row['notes'],
         'ref_id'     => (int)$row['id'],
     ];

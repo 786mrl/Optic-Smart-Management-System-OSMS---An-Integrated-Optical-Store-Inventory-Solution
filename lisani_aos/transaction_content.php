@@ -1324,6 +1324,23 @@ $currentYear     = date('Y');
         <div class="empty-sub">Defaults from the Activity Code, but you can change it.</div>
       </div>
       <div class="form-group">
+        <div style="display:flex; align-items:center; justify-content:space-between;">
+          <div class="label">Disbursement Category</div>
+          <button type="button" class="btn btn-secondary" id="btnDisbManageCategories" style="padding:2px 10px; font-size:12px;">Manage</button>
+        </div>
+        <select class="select" id="disbCategory">
+          <option value="">-- select category --</option>
+        </select>
+        <div class="empty-sub">What this money is used for, in general terms. Pick "+ Add new category" if it is not listed.</div>
+      </div>
+      <div class="form-group" id="disbNewCategoryGroup" style="display:none;">
+        <div class="label">New Category Name</div>
+        <div style="display:flex; gap:8px;">
+          <input type="text" class="input input-uppercase" id="disbNewCategoryName" maxlength="100" placeholder="e.g. TAXES" style="flex:1;">
+          <button type="button" class="btn btn-secondary" id="btnDisbAddCategory">Add</button>
+        </div>
+      </div>
+      <div class="form-group">
         <div class="label">Transaction Purpose</div>
         <textarea class="input input-uppercase" id="disbPurpose" rows="3" maxlength="255" placeholder="What is this disbursement actually for?"></textarea>
         <div class="empty-sub">This is the real purpose — separate from whatever notes end up on the bank slip.</div>
@@ -1333,6 +1350,23 @@ $currentYear     = date('Y');
     <div class="modal-footer">
       <button type="button" class="btn btn-secondary" id="btnDisbDetailsBack">Back</button>
       <button type="button" class="btn btn-primary" id="btnDisbDetailsNext">Continue</button>
+    </div>
+  </div>
+</div>
+
+<!-- Disbursement — Manage Categories (rename / delete). Opened from the Details step. -->
+<div class="modal-overlay" id="disbManageCategoryOverlay" style="display:none;">
+  <div class="modal" style="max-width:460px;">
+    <div class="modal-header">
+      <div class="modal-title">Manage Categories</div>
+    </div>
+    <div class="modal-body">
+      <div id="disbManageCategoryList"></div>
+      <div class="empty-sub" id="disbManageCategoryError" style="display:none; color:var(--danger);"></div>
+      <div class="empty-sub">A category already used by a transaction cannot be deleted, but it can be renamed.</div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-primary" id="btnDisbManageCategoryClose">Done</button>
     </div>
   </div>
 </div>
@@ -1651,6 +1685,7 @@ $currentYear     = date('Y');
   var disbDepartmentOverlay = document.getElementById('disbDepartmentOverlay');
   var disbActivityOverlay   = document.getElementById('disbActivityOverlay');
   var disbDetailsOverlay    = document.getElementById('disbDetailsOverlay');
+  var disbManageCategoryOverlay = document.getElementById('disbManageCategoryOverlay');
   var capFieldPickerOverlay = document.getElementById('capFieldPickerOverlay');
 
   // Sales Transaction fly windows.
@@ -1681,7 +1716,7 @@ $currentYear     = date('Y');
   var flexOverlays = [entryOverlay, passwordOverlay, manageDeptOverlay, deleteCustomerOverlay,
     deleteActivityCodeOverlay, itemPriceAddOverlay, itemPriceReverifyOverlay,
     itemPriceEditOverlay, itemPriceDeleteOverlay,
-    txnCategoryOverlay, disbDepartmentOverlay, disbActivityOverlay, disbDetailsOverlay,
+    txnCategoryOverlay, disbDepartmentOverlay, disbActivityOverlay, disbDetailsOverlay, disbManageCategoryOverlay,
     capFieldPickerOverlay, stProductOverlay, stPriceOverlay, stStockSourceOverlay, stConfirmOverlay,
     stOrderModeOverlay, stOrderPickOverlay, stDriverWarnOverlay,
     rtProductOverlay, rtConfirmOverlay, rtReverifyOverlay,
@@ -1821,10 +1856,11 @@ $currentYear     = date('Y');
         hide(disbDepartmentOverlay);
         hide(disbActivityOverlay);
         hide(disbDetailsOverlay);
+        hide(disbManageCategoryOverlay);
         hide(capFieldPickerOverlay);
         if (typeof resetSalesForm === 'function') resetSalesForm();
         disbState = { department_key: null, department_label: null, activity_id: null,
-          activity_name: null, activity_code: null, cashflow: null, purpose: '' };
+          activity_name: null, activity_code: null, category_id: null, cashflow: null, purpose: '' };
         if (typeof resetCaptureForm === 'function') resetCaptureForm();
         if (typeof resetPayCaptureForm === 'function') resetPayCaptureForm();
       }
@@ -1864,7 +1900,7 @@ $currentYear     = date('Y');
   // --- Disbursement wizard state (reset whenever the wizard is abandoned,
   // see the "left the Transactions section" branch above too) ---
   var disbState = { department_key: null, department_label: null, activity_id: null,
-    activity_name: null, activity_code: null, cashflow: null, purpose: '' };
+    activity_name: null, activity_code: null, category_id: null, cashflow: null, purpose: '' };
 
   document.getElementById('btnCategoryDisbursement').addEventListener('click', function () {
     hide(txnCategoryOverlay);
@@ -1958,12 +1994,193 @@ $currentYear     = date('Y');
     document.getElementById('disbCashflow').value = a.cashflow;
     document.getElementById('disbPurpose').value = disbState.purpose || '';
     document.getElementById('disbDetailsError').style.display = 'none';
+    loadDisbCategories(disbState.category_id);
     show(disbDetailsOverlay);
   });
 
   document.getElementById('btnDisbActivityBack').addEventListener('click', function () {
     hide(disbActivityOverlay);
     show(disbDepartmentOverlay);
+  });
+
+  // --- Disbursement categories (list + inline "add new") ---
+  // Plain grouping label for outgoing money (Purchase Payment, Clearance
+  // Fees, ...). Stored per transaction in transaction_disbursements.category_id.
+  var DISB_NEW_CATEGORY_VALUE = '__new__';
+  var disbCategorySelect = document.getElementById('disbCategory');
+
+  function fillDisbCategories(rows, selectedId) {
+    disbCategorySelect.innerHTML = '<option value="">-- select category --</option>';
+    (rows || []).forEach(function (c) {
+      var opt = document.createElement('option');
+      opt.value = c.id;
+      opt.textContent = c.category_name;
+      disbCategorySelect.appendChild(opt);
+    });
+    var addOpt = document.createElement('option');
+    addOpt.value = DISB_NEW_CATEGORY_VALUE;
+    addOpt.textContent = '+ Add new category\u2026';
+    disbCategorySelect.appendChild(addOpt);
+    if (selectedId) { disbCategorySelect.value = String(selectedId); }
+    if (disbCategorySelect.selectedIndex < 0) { disbCategorySelect.value = ''; }
+  }
+
+  function loadDisbCategories(selectedId) {
+    var errBox = document.getElementById('disbDetailsError');
+    document.getElementById('disbNewCategoryGroup').style.display = 'none';
+    fetch('ajax/list_disbursement_categories.php')
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (!res.ok) {
+          fillDisbCategories([], null);
+          errBox.textContent = res.message || 'Failed to load categories.';
+          errBox.style.display = 'block';
+          return;
+        }
+        fillDisbCategories(res.data, selectedId);
+      })
+      .catch(function () {
+        fillDisbCategories([], null);
+        errBox.textContent = 'Could not load the category list.';
+        errBox.style.display = 'block';
+      });
+  }
+
+  disbCategorySelect.addEventListener('change', function () {
+    var isNew = disbCategorySelect.value === DISB_NEW_CATEGORY_VALUE;
+    var group = document.getElementById('disbNewCategoryGroup');
+    var nameEl = document.getElementById('disbNewCategoryName');
+    group.style.display = isNew ? 'block' : 'none';
+    if (isNew) {
+      nameEl.value = '';
+      nameEl.focus();
+    }
+  });
+
+  document.getElementById('btnDisbAddCategory').addEventListener('click', function () {
+    var btn = this;
+    var errBox = document.getElementById('disbDetailsError');
+    var nameEl = document.getElementById('disbNewCategoryName');
+    var name = nameEl.value.trim().toUpperCase();
+    if (!name) {
+      errBox.textContent = 'Category name is required.';
+      errBox.style.display = 'block';
+      return;
+    }
+    errBox.style.display = 'none';
+    btn.disabled = true;
+    var fd = new FormData();
+    fd.append('category_name', name);
+    fetch('ajax/save_disbursement_category.php', { method: 'POST', body: fd })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        btn.disabled = false;
+        if (!res.ok) {
+          errBox.textContent = res.message || 'Failed to save the category.';
+          errBox.style.display = 'block';
+          return;
+        }
+        // Reload the list and select the new (or already existing) category.
+        loadDisbCategories(res.data.id);
+      })
+      .catch(function () {
+        btn.disabled = false;
+        errBox.textContent = 'Connection error while saving the category.';
+        errBox.style.display = 'block';
+      });
+  });
+
+  // --- Manage categories (rename / delete, no password) ---
+  function disbManageError(msg) {
+    var errBox = document.getElementById('disbManageCategoryError');
+    if (!msg) { errBox.style.display = 'none'; return; }
+    errBox.textContent = msg;
+    errBox.style.display = 'block';
+  }
+
+  function disbCategoryAction(url, fields) {
+    disbManageError('');
+    var fd = new FormData();
+    Object.keys(fields).forEach(function (k) { fd.append(k, fields[k]); });
+    fetch(url, { method: 'POST', body: fd })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (!res.ok) {
+          disbManageError(res.message || 'Action failed.');
+          return;
+        }
+        loadManageCategories();
+      })
+      .catch(function () { disbManageError('Connection error.'); });
+  }
+
+  function renderManageCategories(rows) {
+    var list = document.getElementById('disbManageCategoryList');
+    list.innerHTML = '';
+    if (!rows.length) {
+      list.innerHTML = '<div class="empty-sub">No categories yet.</div>';
+      return;
+    }
+    rows.forEach(function (c) {
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex; gap:8px; align-items:center; margin-bottom:8px;';
+
+      var input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'input input-uppercase';
+      input.maxLength = 100;
+      input.value = c.category_name;
+      input.style.flex = '1';
+
+      var renameBtn = document.createElement('button');
+      renameBtn.type = 'button';
+      renameBtn.className = 'btn btn-secondary';
+      renameBtn.textContent = 'Rename';
+      renameBtn.addEventListener('click', function () {
+        var name = input.value.trim().toUpperCase();
+        if (!name) { disbManageError('Category name is required.'); return; }
+        disbCategoryAction('ajax/update_disbursement_category.php', { id: c.id, category_name: name });
+      });
+
+      var delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.className = 'btn btn-danger';
+      delBtn.textContent = 'Delete';
+      delBtn.addEventListener('click', function () {
+        if (!confirm('Delete category "' + c.category_name + '"?')) { return; }
+        disbCategoryAction('ajax/delete_disbursement_category.php', { id: c.id });
+      });
+
+      row.appendChild(input);
+      row.appendChild(renameBtn);
+      row.appendChild(delBtn);
+      list.appendChild(row);
+    });
+  }
+
+  function loadManageCategories() {
+    fetch('ajax/list_disbursement_categories.php')
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (!res.ok) { disbManageError(res.message || 'Failed to load categories.'); return; }
+        renderManageCategories(res.data || []);
+      })
+      .catch(function () { disbManageError('Could not load the category list.'); });
+  }
+
+  document.getElementById('btnDisbManageCategories').addEventListener('click', function () {
+    disbManageError('');
+    document.getElementById('disbManageCategoryList').innerHTML = '<div class="empty-sub">Loading...</div>';
+    show(disbManageCategoryOverlay);
+    loadManageCategories();
+  });
+
+  document.getElementById('btnDisbManageCategoryClose').addEventListener('click', function () {
+    hide(disbManageCategoryOverlay);
+    // Refresh the dropdown, keeping the current pick if it still exists.
+    var cur = disbCategorySelect.value;
+    var keepId = (cur && cur !== DISB_NEW_CATEGORY_VALUE) ? parseInt(cur, 10) : disbState.category_id;
+    loadDisbCategories(keepId);
   });
 
   // --- Disbursement step 3: Cashflow + Purpose ---
@@ -1975,6 +2192,12 @@ $currentYear     = date('Y');
 
   document.getElementById('btnDisbDetailsNext').addEventListener('click', function () {
     var errBox = document.getElementById('disbDetailsError');
+    var catVal = disbCategorySelect.value;
+    if (!catVal || catVal === DISB_NEW_CATEGORY_VALUE) {
+      errBox.textContent = 'Disbursement Category is required.';
+      errBox.style.display = 'block';
+      return;
+    }
     var purpose = document.getElementById('disbPurpose').value.trim();
     if (!purpose) {
       errBox.textContent = 'Transaction Purpose is required.';
@@ -1982,6 +2205,7 @@ $currentYear     = date('Y');
       return;
     }
     disbState.cashflow = document.getElementById('disbCashflow').value;
+    disbState.category_id = parseInt(catVal, 10);
     disbState.purpose = purpose.toUpperCase();
     hide(disbDetailsOverlay);
     resetCaptureForm();
@@ -2723,6 +2947,7 @@ $currentYear     = date('Y');
     var payload = new FormData();
     payload.append('activity_id', disbState.activity_id);
     payload.append('cashflow_type', disbState.cashflow);
+    payload.append('category_id', disbState.category_id);
     payload.append('transaction_purpose', disbState.purpose);
     payload.append('transaction_date', document.getElementById('capDate').value);
     payload.append('source_bank', document.getElementById('capSourceBank').value);
