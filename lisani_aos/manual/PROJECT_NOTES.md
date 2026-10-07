@@ -22,8 +22,10 @@ optic_pos/
     ├── transaction_content.php    Transactions: Activity Code, Customer List, Input Transaction, Sales
     ├── logistic_content.php       Logistic: List, Movements, Create New Logistic
     ├── settings_content.php       Company Documents & Company Bank Accounts
-    ├── report_content.php         Report: Finance Report (Investor Report = placeholder)
-    ├── ajax/                      semua endpoint (§7); _invoice_pdf.php, _require_reverify.php, _order_patterns.php
+    ├── report_content.php         Report: Finance Report
+    ├── investor_content.php       Investor: Investors, Investment, Report, Profit Payment & Rolled Capital (lihat Log terbaru)
+    ├── ajax/                      semua endpoint (§7); _invoice_pdf.php, _require_reverify.php, _order_patterns.php;
+    │                              investor_api.php (endpoint tunggal modul Investor)
     ├── json_file/                 departments.json, packaging units, bank_accounts.json, order_patterns/
     ├── sql/ & migration_*.sql
     └── storage/                   input/…, selling/…, recycle/… (AOS_STORAGE_BASE)
@@ -156,6 +158,7 @@ saat section Transactions dibuka.
 **Input Transaction / Disbursement**: OCR Tesseract.js di browser (semi-otomatis, hasil selalu bisa diedit), viewer
 layar penuh, wizard; simpan ke `transactions`. Belum ada: list/edit/delete transaksi tersimpan, kategori Other.
 Viewer + OCR dipakai bersama dengan upload bukti pembayaran (satu instance, dipilah lewat `activeCapGroup`/`data-cap-group`).
+Auto-isi rekening setelah scan nomor rekening: lihat Log terbaru (7 Okt 2026).
 
 **Settings**: Company Documents (upload/edit/delete→recycle/share WA/download) dan Company Bank Accounts (autocomplete
 bank/nama, duplikat per bank, share WA). Edit/Delete/Share pola (b).
@@ -258,7 +261,6 @@ tabel piutang 420px, `.table-wrapper` `overflow-x:auto` di semua lebar.
 ## 8. Pekerjaan terbuka
 Belum dibangun (disengaja, bukan bug):
 - Fitur pembayaran bersama (disebut user saat desain Create New Logistic). Baru placeholder di form.
-- Investor Report (placeholder kosong).
 - Filter/pagination Movements; retention `storage/recycle/`; `customers.profit`; edit/hapus alias & order; aturan stok minus;
   uppercase server di `manage_packaging_units.php`.
 - Data lama order yang sudah terpecah sebelum `batch_id` tetap terpisah. Skrip migrasi belum dibuat.
@@ -274,6 +276,30 @@ Perlu konfirmasi keputusan:
   dicek di 3 ukuran (HP ≤767px, tablet 768–1023px, jendela setengah layar ~900–1000px).
 
 ### Log terbaru (belum dites di server; lebur ke §4–7 setelah dites, lalu hapus dari sini)
+- **7 Okt 2026, Menu Investor baru** (`investor_content.php` + `ajax/investor_api.php`, satu endpoint untuk semua aksi):
+  - DB baru: `investors`, `investor_deposits` (setoran, IDR/valas + kurs manual, bisa berkali-kali),
+    `investor_support_expenses` (pengeluaran non-project: return_capital/aid/other, mengurangi ICU),
+    `investor_activity_allocations` (investor→activity code, % dari ICU, total per investor ≤100%, dicek di PHP),
+    `investor_activity_settings` (pdp **per activity code**), `investor_profit_payments` (bisa berkali-kali).
+    Migrasi: `migration_investor.sql` lalu `migration_investor_v2.sql` (yang kedua DROP `transaction_activities` —
+    sempat dibuat untuk menautkan manual pengeluaran project ke activity, ternyata berlebihan karena fitur
+    Category Disbursement paralel sudah menambah `transaction_disbursements.activity_id`, 1 transaksi → 1 activity,
+    `transaction_id` UNIQUE di situ).
+  - Total cost per activity = `SUM(transactions.final_amount_idr) JOIN transaction_disbursements` (category=disbursement).
+    Dana investor terpakai per project = Σ(%alokasi × ICU investor), dibatasi ≤ total cost (kalau total alokasi
+    melebihi cost, proporsinya di-scale turun). Sisanya = company additional contribution.
+  - Rumus laporan: gross = sales aktual (dari `logistic_movements`, out−in−price_adjustment) − cost; zakat 2.5% dari
+    gross (0 bila ≤0); net = gross−zakat; distribusi investor = net × pdp (per activity); rasio tiap investor
+    **per project** (bukan gabungan semua project); TP = Σ profit semua project; ICU = setoran − non-project;
+    rolled capital = (TP−PP)+ICU. Rugi (net<0) ditandai badge "RUGI", tetap dihitung apa adanya — **belum ada
+    kebijakan otomatis**, menunggu keputusan manajemen.
+  - UI 4 tab: Investors (CRUD + list ringkas semua angka) / Investment (modal pilih investor dulu, card setoran+non-
+    project, card alokasi ke activity + tabel pengeluaran project **read-only**, auto dari Category Disbursement) /
+    Report (usage per investor, sales per project, profit distribution + share per investor) / Profit Payment &
+    Rolled Capital. Hapus pakai password pola (a) langsung (keputusan user, bukan reverify 120 detik).
+  - Belum dites di server sama sekali. Perlu dicek: tanda `total_price` pada `price_adjustment` (asumsi positif,
+    dikurangkan); kelas `.input-uppercase`/`.input-number-comma` jalan tanpa `flexOverlays` untuk 2 modal baru
+    (`invPickerOverlay`, `invPwOverlay`); overflow tabel di <1024px (§3 gotcha #7).
 - **6 Okt 2026, Kategori Disbursement** (hanya label pengelompokan uang keluar; tidak memecah total/saldo/chart):
   - DB: tabel baru `disbursement_categories` (id, category_name UNIQUE, created_by, created_at), seed PURCHASE PAYMENT /
     CLEARANCE FEES / OPERATIONAL EXPENSES; kolom baru `transaction_disbursements.category_id` (NOT NULL, indeks, tanpa FK,
@@ -288,6 +314,34 @@ Perlu konfirmasi keputusan:
     `min-width` ledger 640 → 760px. Nominal ledger: inflow hijau, outflow merah, negatif pakai kurung `(Rp …)` bukan minus
     (helper `fmtIDRParen`, hanya di ledger; kartu ringkasan tetap `fmtIDR`; CSV tetap angka mentah + kolom Type).
   - Belum ada: edit kategori transaksi yang sudah tersimpan (list/edit/delete transaksi tersimpan memang belum dibangun).
+- **7 Okt 2026, Auto-isi rekening dari OCR** (tanpa migration; hanya `transaction_content.php` + `save_bank_account.php`):
+  - Setelah OCR membaca nomor rekening, dicocokkan ke `bank_accounts.json` (via `list_bank_accounts.php`, diambil segar tiap
+    pencarian). Disbursement = **source** account number → isi Source Bank, Source Account Name, Currency (+ exchange rate
+    muncul bila non-IDR). Add Payment = **destination** account number → isi Destination Bank & Name (tidak ada currency:
+    form & `invoice_payments` memang tak punya kolomnya). Jalan setelah scan OCR **dan** saat ketik manual (event `change` =
+    blur/Enter, bukan tiap ketukan, supaya angka yang baru separuh diketik tidak dikira 4 digit terakhir).
+  - Aturan cocok (`parseScannedAccount()`, `acctFindMatches()`): nomor penuh → sama persis (spasi/strip diabaikan); nomor
+    tertutup → cocok 4 digit terakhir. OCR tidak pernah membaca `*` dengan benar (jadi huruf, mis. `SSSSSSSSS8393`), maka
+    **karakter non-digit apa pun** (selain spasi/titik/strip) = tertutup; nomor rekening asli selalu digit. Juga tertutup bila ≤4
+    karakter. Tanpa 4 digit di ujung → diabaikan.
+  - Hasil: 1 cocok → langsung isi; >1 cocok (beda bank) → fly window `acctPickOverlay` pilih manual; 0 cocok → fly window
+    `acctRegisterOverlay` (daftar rekening baru; bank/nama/currency diisi dari form bila ada; nomor penuh wajib diketik bila
+    hanya 4 digit). Kedua overlay terdaftar di `flexOverlays`, z-index 2200 (di atas viewer & field picker).
+  - Saat cocok/terdaftar, kolom nomor **diganti dengan nomor penuh milik JSON** (supaya Finance Report yang join lewat
+    bank_name+account_number tetap cocok); pilihan ini bisa dibatalkan kalau user maunya nomor apa adanya dari slip.
+  - Daftar rekening baru = **password pola (b)**: `verify_password.php` lalu `save_bank_account.php` dengan
+    `require_reverify=1` (endpoint memanggil `aos_require_recent_reverify()` hanya bila `id` ada ATAU flag itu dikirim;
+    Settings tetap membuat rekening baru tanpa password).
+  - Datalist destination Add Payment (`loadDestBankAccounts`) dimuat ulang tiap form dibuka dan setelah rekening baru didaftarkan,
+    jadi tidak perlu refresh halaman.
+  - **Pencocokan hanya dari nama bank** (`lookupAccountByBank()`, `acctBankMatches()`): dipakai kalau nomor/nama akun tidak
+    terbaca sama sekali di slip, hanya nama bank. Jalan saat field Bank (scan OCR atau selesai ketik) berisi nilai **dan**
+    field Account Number untuk wizard itu masih kosong — begitu nomor terisi, pencocokan nomor di atas yang menang.
+    Dicocokkan ke `bank_name` persis (tanpa spasi di pinggir, tanpa pandang besar/kecil huruf). 1 cocok → isi nomor, nama,
+    currency. >1 cocok (bank sama, >1 rekening) → `acctPickOverlay`. 0 cocok → `acctRegisterOverlay` lewat
+    `openAcctRegisterByBank()` (bank sudah terisi, nomor & nama kosong menunggu diisi manual; password tetap wajib).
+    `openAcctPicker()`/`openAcctRegister()` dirombak jadi fungsi inti (`openAcctRegisterCore`) dipakai bersama kedua alur
+    (nomor & bank-saja) supaya tidak dobel kode.
 
 ## 9. Cara lanjut di sesi baru
 1. Upload PROJECT_NOTES.md ini + hanya file kode yang relevan (Sales: `transaction_content.php` + `ajax/` terkait;

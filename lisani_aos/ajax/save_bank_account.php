@@ -35,7 +35,10 @@ if ($currency !== 'IDR' && ($swiftCode === '' || $address === '')) {
 
 // Editing an existing account requires the user to have just re-verified
 // their password via ajax/verify_password.php (create/new account does not).
-if ($isUpdate) {
+// Registering a NEW account from the Transactions OCR flow also requires
+// a fresh re-verify: that caller sends require_reverify=1. Settings > Company
+// Bank Accounts creates without it, as before.
+if ($isUpdate || ($_POST['require_reverify'] ?? '') === '1') {
     aos_require_recent_reverify();
 }
 

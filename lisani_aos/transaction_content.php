@@ -1391,6 +1391,73 @@ $currentYear     = date('Y');
   </div>
 </div>
 
+<!-- OCR account lookup — more than one company account matches the scanned
+     number (e.g. same last 4 digits at different banks): pick the right one. -->
+<div class="modal-overlay" id="acctPickOverlay" style="display:none;">
+  <div class="modal" style="max-width:440px;">
+    <div class="modal-header">
+      <div class="modal-title">Select Bank Account</div>
+    </div>
+    <div class="modal-body">
+      <div class="empty-sub" id="acctPickIntro" style="margin-bottom:var(--space-3);"></div>
+      <div id="acctPickList" style="display:flex; flex-direction:column; gap:var(--space-2); max-height:50vh; overflow-y:auto;"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" id="btnAcctPickCancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- OCR account lookup — no company account matches the scanned number:
+     register it. Saved through ajax/save_bank_account.php (same bank_accounts.json
+     as Settings > Company Bank Accounts); password required (pattern b). -->
+<div class="modal-overlay" id="acctRegisterOverlay" style="display:none;">
+  <div class="modal" style="max-width:440px;">
+    <div class="modal-header">
+      <div class="modal-title">Register Bank Account</div>
+    </div>
+    <div class="modal-body" style="max-height:70vh; overflow-y:auto;">
+      <div class="empty-sub" id="acctRegIntro" style="margin-bottom:var(--space-3);"></div>
+      <div class="form-group">
+        <div class="label">Bank Name</div>
+        <input type="text" class="input input-uppercase" id="acctRegBank" list="acctRegBankList" autocomplete="off">
+        <datalist id="acctRegBankList"></datalist>
+      </div>
+      <div class="form-group">
+        <div class="label">Account Number</div>
+        <input type="text" class="input input-uppercase" id="acctRegNumber" inputmode="numeric" autocomplete="off">
+      </div>
+      <div class="form-group">
+        <div class="label">Account Name</div>
+        <input type="text" class="input input-uppercase" id="acctRegName" autocomplete="off">
+      </div>
+      <div class="form-group">
+        <div class="label">Currency</div>
+        <select class="select" id="acctRegCurrency"></select>
+      </div>
+      <div id="acctRegIntlBox" style="display:none;">
+        <div class="form-group">
+          <div class="label">SWIFT Code</div>
+          <input type="text" class="input input-uppercase" id="acctRegSwift" autocomplete="off">
+        </div>
+        <div class="form-group">
+          <div class="label">Bank Address</div>
+          <input type="text" class="input input-uppercase" id="acctRegAddress" autocomplete="off">
+        </div>
+      </div>
+      <div class="form-group">
+        <div class="label">Password</div>
+        <input type="password" class="input" id="acctRegPassword" autocomplete="current-password" placeholder="Enter your password">
+      </div>
+      <div class="empty-sub" id="acctRegError" style="display:none; color:var(--danger);"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" id="btnAcctRegCancel">Cancel</button>
+      <button type="button" class="btn btn-primary" id="btnAcctRegSave">Save Account</button>
+    </div>
+  </div>
+</div>
+
 <!-- Sales Transaction — "Which product is this?" for a line the parser did not
      recognize. Saving with "Remember" adds the wording to
      json_file/order_patterns/{logistic_id}.json (ajax/save_order_alias.php). -->
@@ -1664,6 +1731,9 @@ $currentYear     = date('Y');
   }
   /* The field picker must sit above the fullscreen viewer. */
   #capFieldPickerOverlay { z-index: 2100 !important; }
+  /* Account lookup fly windows open right after an OCR scan, so they must sit
+     above both the fullscreen viewer and the field picker. */
+  #acctPickOverlay, #acctRegisterOverlay { z-index: 2200 !important; }
 </style>
 
 <script>
@@ -1720,7 +1790,8 @@ $currentYear     = date('Y');
     capFieldPickerOverlay, stProductOverlay, stPriceOverlay, stStockSourceOverlay, stConfirmOverlay,
     stOrderModeOverlay, stOrderPickOverlay, stDriverWarnOverlay,
     rtProductOverlay, rtConfirmOverlay, rtReverifyOverlay,
-    refundOverlay, applyCreditOverlay, document.getElementById('invPrintOverlay')];
+    refundOverlay, applyCreditOverlay, document.getElementById('invPrintOverlay'),
+    document.getElementById('acctPickOverlay'), document.getElementById('acctRegisterOverlay')];
 
   function show(el) {
     el.style.display = (flexOverlays.indexOf(el) !== -1) ? 'flex' : 'block';
@@ -2828,6 +2899,379 @@ $currentYear     = date('Y');
     return '';
   }
 
+  // ==========================================================
+  // OCR account lookup — after the account number is scanned, match it to
+  // Company Bank Accounts (ajax/list_bank_accounts.php -> bank_accounts.json)
+  // and fill bank name / account name (/ currency). Disbursement matches the
+  // SOURCE account number, Add Payment the DESTINATION account number.
+  //   - Full number scanned    -> exact match on the number (spaces/dashes ignored).
+  //   - Masked (*******8673)   -> match on the last 4 digits. OCR never reads the
+  //                               "*" correctly (it comes back as letters, e.g.
+  //                               "SSSSSSSSS8393"), so ANY non-digit in the scanned
+  //                               value means "masked": real account numbers are digits.
+  //   - Several matches        -> pick one (acctPickOverlay).
+  //   - No match               -> register a new account (acctRegisterOverlay,
+  //                               password required, saved via save_bank_account.php).
+  // Runs right after an OCR scan of that field, and when the user finishes typing
+  // it manually (the field's 'change' event = blur/Enter, NOT every keystroke, so a
+  // half-typed number is never mistaken for a 4-digit tail).
+  // On a match the number field is replaced with the full number as stored,
+  // because get_finance_report.php joins transactions to bank_accounts.json by
+  // bank_name + account_number — a masked number would never join.
+  // ==========================================================
+  var ACCT_LOOKUP = {
+    disbursement: { numberId: 'capSourceAccountNumber', bankId: 'capSourceBank',
+                    nameId: 'capSourceAccountName', currencyId: 'capCurrency', label: 'source' },
+    payment:      { numberId: 'payCapDestAccountNumber', bankId: 'payCapDestBank',
+                    nameId: 'payCapDestAccountName', currencyId: null, label: 'destination' }
+  };
+  var acctPickOverlay     = document.getElementById('acctPickOverlay');
+  var acctRegisterOverlay = document.getElementById('acctRegisterOverlay');
+  var acctPickList        = document.getElementById('acctPickList');
+  var acctRegBank         = document.getElementById('acctRegBank');
+  var acctRegNumber       = document.getElementById('acctRegNumber');
+  var acctRegName         = document.getElementById('acctRegName');
+  var acctRegCurrency     = document.getElementById('acctRegCurrency');
+  var acctRegIntlBox      = document.getElementById('acctRegIntlBox');
+  var acctRegSwift        = document.getElementById('acctRegSwift');
+  var acctRegAddress      = document.getElementById('acctRegAddress');
+  var acctRegPassword     = document.getElementById('acctRegPassword');
+  var acctRegError        = document.getElementById('acctRegError');
+  var btnAcctRegSave      = document.getElementById('btnAcctRegSave');
+  var acctLookupSeq = 0;      // a newer scan supersedes an older, slower lookup
+  var acctPendingGroup = null; // which wizard the open fly window belongs to
+
+  function acctNormalize(s) { return String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
+
+  function acctHasMaskChars(s) {
+    return /[*#•●]|X{2,}/.test(String(s || '').toUpperCase().replace(/\s+/g, ''));
+  }
+
+  // Same 4-character grouping as Settings > Company Bank Accounts.
+  function acctGroupNumber(raw) {
+    var clean = acctNormalize(raw);
+    var groups = clean.match(/.{1,4}/g);
+    return groups ? groups.join(' ') : '';
+  }
+
+  // -> null when too short to identify anything, else {alnum, masked, tail}.
+  function parseScannedAccount(raw) {
+    // Spaces, dots and dashes are formatting, not mask. Trailing noise is dropped.
+    var body = String(raw || '').toUpperCase().replace(/[\s.\-]+/g, '').replace(/\D+$/, '');
+    var m = body.match(/(\d{4})$/);
+    if (!m) return null; // fewer than 4 trailing digits: too short to identify anything
+    return {
+      alnum: body,
+      masked: /\D/.test(body) || body.length <= 4,
+      tail: m[1]
+    };
+  }
+
+  function acctFindMatches(accounts, parsed) {
+    return accounts.filter(function (a) {
+      var n = acctNormalize(a.account_number);
+      if (!n) return false;
+      return parsed.masked ? n.slice(-4) === parsed.tail : n === parsed.alnum;
+    });
+  }
+
+  function acctGroupForField(fieldId) {
+    for (var g in ACCT_LOOKUP) {
+      if (ACCT_LOOKUP.hasOwnProperty(g) && ACCT_LOOKUP[g].numberId === fieldId) return g;
+    }
+    return null;
+  }
+
+  function acctGroupForBankField(fieldId) {
+    for (var g in ACCT_LOOKUP) {
+      if (ACCT_LOOKUP.hasOwnProperty(g) && ACCT_LOOKUP[g].bankId === fieldId) return g;
+    }
+    return null;
+  }
+
+  function acctSetField(id, value) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.value = value;
+    updateScanButtonVisibility(id);
+  }
+
+  function applyMatchedAccount(group, acc) {
+    var cfg = ACCT_LOOKUP[group];
+    acctSetField(cfg.bankId, String(acc.bank_name || '').toUpperCase());
+    acctSetField(cfg.nameId, String(acc.account_name || '').toUpperCase());
+    acctSetField(cfg.numberId, String(acc.account_number || '').toUpperCase());
+    if (cfg.currencyId) {
+      capCurrency.value = normalizeCurrency(acc.currency) || 'IDR';
+      toggleExchangeRateVisibility();
+    }
+    // The picker (if open) was rendered before these values were filled in.
+    if (capFieldPickerOverlay.style.display === 'flex') openFieldPicker();
+  }
+
+  function lookupAccount(group) {
+    var cfg = ACCT_LOOKUP[group];
+    var parsed = parseScannedAccount(document.getElementById(cfg.numberId).value);
+    if (!parsed) return;
+    var token = ++acctLookupSeq;
+
+    fetch('ajax/list_bank_accounts.php')
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (token !== acctLookupSeq || activeCapGroup !== group) return;
+        // Best-effort: if the list can't be read, say nothing and leave the form as scanned.
+        if (!res || !res.success || !Array.isArray(res.accounts)) return;
+        var hits = acctFindMatches(res.accounts, parsed);
+        if (hits.length === 1) {
+          applyMatchedAccount(group, hits[0]);
+        } else if (hits.length > 1) {
+          openAcctPicker(group, hits,
+            'The scanned ' + ACCT_LOOKUP[group].label + ' account number matches more than one bank account. Select the right one.');
+        } else {
+          openAcctRegister(group, parsed, res.accounts);
+        }
+      })
+      .catch(function () { /* best-effort only */ });
+  }
+
+  // ==========================================================
+  // Bank-only lookup: sometimes the slip only shows the bank's NAME (no
+  // account number or holder name legible at all). Runs after the bank field
+  // is scanned/typed, but only while the account number field for that
+  // wizard is still empty — the number-based lookup above always wins once
+  // a number shows up (see applyOcrResult / the 'change' listeners below).
+  // ==========================================================
+  function acctBankMatches(accounts, bankValue) {
+    var norm = String(bankValue || '').trim().toUpperCase();
+    if (!norm) return [];
+    return accounts.filter(function (a) {
+      return String(a.bank_name || '').trim().toUpperCase() === norm;
+    });
+  }
+
+  function lookupAccountByBank(group) {
+    var cfg = ACCT_LOOKUP[group];
+    var bankVal = document.getElementById(cfg.bankId).value.trim();
+    if (!bankVal || document.getElementById(cfg.numberId).value.trim()) return;
+    var token = ++acctLookupSeq;
+
+    fetch('ajax/list_bank_accounts.php')
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (token !== acctLookupSeq || activeCapGroup !== group) return;
+        if (!res || !res.success || !Array.isArray(res.accounts)) return;
+        // The number field may have been filled while this request was in flight.
+        if (document.getElementById(cfg.numberId).value.trim()) return;
+        var hits = acctBankMatches(res.accounts, bankVal);
+        var bankUpper = bankVal.toUpperCase();
+        if (hits.length === 1) {
+          applyMatchedAccount(group, hits[0]);
+        } else if (hits.length > 1) {
+          openAcctPicker(group, hits,
+            '"' + bankUpper + '" matches more than one bank account. Select the right one.');
+        } else {
+          openAcctRegisterByBank(group, bankUpper, res.accounts);
+        }
+      })
+      .catch(function () { /* best-effort only */ });
+  }
+
+  // ---- Several accounts match: choose one ----
+  function openAcctPicker(group, hits, introText) {
+    document.getElementById('acctPickIntro').textContent = introText;
+    acctPickList.innerHTML = '';
+    hits.forEach(function (acc) {
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn btn-secondary';
+      btn.style.cssText = 'text-align:left; white-space:normal; justify-content:flex-start;';
+      var cur = acc.currency && acc.currency !== 'IDR' ? ' (' + acc.currency + ')' : '';
+      btn.textContent = (acc.bank_name || '-') + ' · ' + (acc.account_number || '-') +
+        ' · ' + (acc.account_name || '-') + cur;
+      btn.addEventListener('click', function () {
+        hide(acctPickOverlay);
+        if (activeCapGroup === group) applyMatchedAccount(group, acc);
+      });
+      acctPickList.appendChild(btn);
+    });
+    show(acctPickOverlay);
+  }
+  document.getElementById('btnAcctPickCancel').addEventListener('click', function () {
+    hide(acctPickOverlay);
+  });
+
+  // ---- No match: register a new account ----
+  function toggleAcctRegIntl() {
+    acctRegIntlBox.style.display = acctRegCurrency.value && acctRegCurrency.value !== 'IDR' ? 'block' : 'none';
+  }
+  acctRegCurrency.addEventListener('change', toggleAcctRegIntl);
+
+  function acctShowRegError(msg) {
+    acctRegError.textContent = msg;
+    acctRegError.style.display = 'block';
+  }
+
+  function openAcctRegister(group, parsed, knownAccounts) {
+    var cfg = ACCT_LOOKUP[group];
+    var intro = 'No bank account matches the scanned ' + cfg.label + ' account number "' +
+      document.getElementById(cfg.numberId).value + '". Register it as a new account.' +
+      (parsed.masked ? ' Only the last 4 digits were scanned, so type the full account number.' : '');
+    openAcctRegisterCore(group, knownAccounts, intro,
+      parsed.masked ? '' : acctGroupNumber(parsed.alnum),
+      parsed.masked ? acctRegNumber : acctRegBank);
+  }
+
+  // Bank known, number/name not — e.g. the slip only shows the bank's name.
+  // Number and name stay blank for the user to fill in; bank is prefilled
+  // (acctRegBank reads it straight from the wizard's bank field, same as above).
+  function openAcctRegisterByBank(group, bankValue, knownAccounts) {
+    var cfg = ACCT_LOOKUP[group];
+    var intro = 'No account found for bank "' + bankValue + '" — only the bank is known. ' +
+      'Register the ' + cfg.label + ' account number and name to continue.';
+    openAcctRegisterCore(group, knownAccounts, intro, '', acctRegNumber);
+  }
+
+  // Shared by openAcctRegister (number scanned, no match) and
+  // openAcctRegisterByBank (only the bank is known). prefillNumber is already
+  // grouped/formatted (or '' to leave it for the user); focusEl is whichever
+  // field the user should fill in first.
+  function openAcctRegisterCore(group, knownAccounts, introText, prefillNumber, focusEl) {
+    var cfg = ACCT_LOOKUP[group];
+    acctPendingGroup = group;
+
+    document.getElementById('acctRegIntro').textContent = introText;
+
+    var bankNames = [];
+    (knownAccounts || []).forEach(function (a) {
+      if (a.bank_name && bankNames.indexOf(a.bank_name) === -1) bankNames.push(a.bank_name);
+    });
+    document.getElementById('acctRegBankList').innerHTML = bankNames.map(function (b) {
+      return '<option value="' + String(b).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;') + '"></option>';
+    }).join('');
+
+    // Prefill from whatever the slip already gave us.
+    acctRegBank.value = document.getElementById(cfg.bankId).value.toUpperCase();
+    acctRegName.value = document.getElementById(cfg.nameId).value.toUpperCase();
+    acctRegNumber.value = prefillNumber;
+    acctRegSwift.value = '';
+    acctRegAddress.value = '';
+    acctRegPassword.value = '';
+    acctRegError.style.display = 'none';
+    btnAcctRegSave.disabled = false;
+
+    var wantCurrency = cfg.currencyId ? (normalizeCurrency(capCurrency.value) || 'IDR') : 'IDR';
+    fetch('ajax/manage_currencies.php?action=list')
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        return (data && data.success && Array.isArray(data.currencies) && data.currencies.length)
+          ? data.currencies : ['IDR'];
+      })
+      .catch(function () { return ['IDR']; })
+      .then(function (codes) {
+        acctRegCurrency.innerHTML = '';
+        codes.forEach(function (code) {
+          var opt = document.createElement('option');
+          opt.value = code;
+          opt.textContent = code;
+          acctRegCurrency.appendChild(opt);
+        });
+        acctRegCurrency.value = codes.indexOf(wantCurrency) !== -1 ? wantCurrency : codes[0];
+        toggleAcctRegIntl();
+      });
+
+    show(acctRegisterOverlay);
+    focusEl.focus();
+  }
+
+  document.getElementById('btnAcctRegCancel').addEventListener('click', function () {
+    hide(acctRegisterOverlay);
+    acctPendingGroup = null;
+  });
+
+  // Password first (ajax/verify_password.php sets the 120 s re-verify window),
+  // then save_bank_account.php with require_reverify=1 — pattern (b), same as
+  // Settings. Pattern (b) answers {success:false,...} when the window expired,
+  // so check res.success on the save response.
+  function submitAcctRegister() {
+    acctRegError.style.display = 'none';
+
+    var bank = acctRegBank.value.trim().toUpperCase();
+    var number = acctRegNumber.value.trim().toUpperCase();
+    var name = acctRegName.value.trim().toUpperCase();
+    var currency = acctRegCurrency.value;
+    var swift = acctRegSwift.value.trim().toUpperCase();
+    var address = acctRegAddress.value.trim().toUpperCase();
+    var pwd = acctRegPassword.value;
+
+    if (!bank || !number || !name || !currency) {
+      acctShowRegError('Bank name, account number, account name, and currency are required.');
+      return;
+    }
+    if (acctHasMaskChars(number) || acctNormalize(number).length <= 4) {
+      acctShowRegError('Type the full account number (not only the last 4 digits).');
+      return;
+    }
+    if (currency !== 'IDR' && (!swift || !address)) {
+      acctShowRegError('SWIFT code and address are required for non-IDR currency.');
+      return;
+    }
+    if (!pwd) {
+      acctShowRegError('Password is required.');
+      return;
+    }
+
+    btnAcctRegSave.disabled = true;
+    fetch('ajax/verify_password.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ password: pwd }).toString()
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (!res.ok) {
+          btnAcctRegSave.disabled = false;
+          acctShowRegError(res.message || 'Wrong password.');
+          return null;
+        }
+        var fd = new FormData();
+        fd.append('bank_name', bank);
+        fd.append('account_number', number);
+        fd.append('account_name', name);
+        fd.append('currency', currency);
+        fd.append('swift_code', currency !== 'IDR' ? swift : '');
+        fd.append('address', currency !== 'IDR' ? address : '');
+        fd.append('require_reverify', '1');
+        return fetch('ajax/save_bank_account.php', { method: 'POST', body: fd })
+          .then(function (r) { return r.json(); });
+      })
+      .then(function (res) {
+        if (res === null) return; // password step already reported its error
+        btnAcctRegSave.disabled = false;
+        if (!res || !res.success) {
+          acctShowRegError((res && res.message) || 'Failed to save account.');
+          return;
+        }
+        hide(acctRegisterOverlay);
+        var group = acctPendingGroup;
+        acctPendingGroup = null;
+        acctRegPassword.value = '';
+        loadDestBankAccounts(); // refresh the Add Payment datalists with the new account
+        if (group && activeCapGroup === group) {
+          applyMatchedAccount(group, {
+            bank_name: bank, account_number: number, account_name: name, currency: currency
+          });
+        }
+      })
+      .catch(function () {
+        btnAcctRegSave.disabled = false;
+        acctShowRegError('Connection error.');
+      });
+  }
+  btnAcctRegSave.addEventListener('click', submitAcctRegister);
+  acctRegPassword.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); submitAcctRegister(); }
+  });
+
   // Best-effort cleanup per field type. The result is ALWAYS left editable
   // afterwards — this just saves typing when OCR reads cleanly.
   function applyOcrResult(fieldId, rawText) {
@@ -2872,7 +3316,30 @@ $currentYear     = date('Y');
       el.value = rawText.replace(/\s+/g, ' ').trim().toUpperCase();
     }
     updateScanButtonVisibility(fieldId);
+
+    // Source (Disbursement) / destination (Add Payment) account number just
+    // scanned -> look it up in Company Bank Accounts. See "OCR account lookup".
+    var acctGroup = acctGroupForField(fieldId);
+    if (acctGroup && el.value) lookupAccount(acctGroup);
+
+    // Same field's BANK just scanned (number still empty, e.g. only the bank's
+    // name is legible on the slip) -> try matching on bank name alone.
+    var acctBankGroup = acctGroupForBankField(fieldId);
+    if (acctBankGroup && el.value) lookupAccountByBank(acctBankGroup);
   }
+
+  // Manual typing: look up once the user leaves the field / presses Enter.
+  // (OCR and applyMatchedAccount set .value directly, which fires no 'change'.)
+  Object.keys(ACCT_LOOKUP).forEach(function (group) {
+    var numEl = document.getElementById(ACCT_LOOKUP[group].numberId);
+    numEl.addEventListener('change', function () {
+      if (activeCapGroup === group && numEl.value) lookupAccount(group);
+    });
+    var bankEl = document.getElementById(ACCT_LOOKUP[group].bankId);
+    bankEl.addEventListener('change', function () {
+      if (activeCapGroup === group && bankEl.value) lookupAccountByBank(group);
+    });
+  });
 
   // --- Currency / amount / final amount interplay ---
   // Slips print local symbols (RM, Rp); we always store the ISO 4217 code.
@@ -3029,16 +3496,15 @@ $currentYear     = date('Y');
   // report if the datalist stays empty / shows the wrong text so the real
   // key names can be fixed here.
   var destBankAccounts = [];
-  var destBankAccountsLoaded = false;
   function pickField(acc, keys) {
     for (var i = 0; i < keys.length; i++) {
       if (acc[keys[i]] !== undefined && acc[keys[i]] !== null && acc[keys[i]] !== '') return String(acc[keys[i]]);
     }
     return '';
   }
-  function loadDestBankAccountsOnce() {
-    if (destBankAccountsLoaded) return;
-    destBankAccountsLoaded = true;
+  // Reloaded every time the payment form opens, and after a new account is
+  // registered from the OCR lookup, so the datalists never go stale.
+  function loadDestBankAccounts() {
     fetch('ajax/list_bank_accounts.php')
       .then(function (r) { return r.json(); })
       .then(function (res) {
@@ -3053,6 +3519,8 @@ $currentYear     = date('Y');
 
         var bankList = document.getElementById('payCapDestBankList');
         var numList = document.getElementById('payCapDestAccountNumberList');
+        bankList.innerHTML = '';
+        numList.innerHTML = '';
         var seenBanks = {};
         destBankAccounts.forEach(function (a) {
           if (a.bank && !seenBanks[a.bank]) {
@@ -3162,7 +3630,7 @@ $currentYear     = date('Y');
   // total_amount, paid_amount). Called from the "+ Add Payment" button.
   function openPayCaptureView(inv, customer) {
     resetPayCaptureForm();
-    loadDestBankAccountsOnce();
+    loadDestBankAccounts();
     payCapCustomerId = customer ? customer.id : null;
     payCapInvoiceId = inv.id;
     payCapInvoiceLabel.textContent = inv.invoice_number;

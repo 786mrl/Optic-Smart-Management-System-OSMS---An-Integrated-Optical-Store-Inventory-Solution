@@ -157,8 +157,15 @@ function inv_compute(): array
     }
     $res->free();
 
-    // Total cost = pengeluaran project yang sudah ditautkan ke activity.
-    $res = $db->query('SELECT activity_id, SUM(amount_idr) AS v FROM transaction_activities GROUP BY activity_id');
+    // Total cost = pengeluaran project, dikaitkan otomatis lewat transaction_disbursements.activity_id
+    // (fitur Category Disbursement). Satu transaksi -> satu activity code (transaction_id UNIQUE di sana).
+    $res = $db->query(
+        "SELECT td.activity_id, SUM(t.final_amount_idr) AS v
+         FROM transactions t
+         JOIN transaction_disbursements td ON td.transaction_id = t.id
+         WHERE t.category = 'disbursement'
+         GROUP BY td.activity_id"
+    );
     while ($r = $res->fetch_assoc()) {
         $aid = (int) $r['activity_id'];
         if (isset($activities[$aid])) {
@@ -297,6 +304,7 @@ function inv_compute(): array
             'net'           => $net,
             'distribution'  => $distribution,
             'investors'     => $investorRows,
+            'expenses'      => $expensesByActivity[$aid] ?? [],
         ];
     }
 
@@ -365,40 +373,23 @@ function inv_compute(): array
     }
     $res->free();
 
-    // Penautan pengeluaran project ke activity
-    $links = [];
-    $res = $db->query('SELECT id, transaction_id, activity_id, amount_idr FROM transaction_activities ORDER BY id');
+    // Pengeluaran project per activity (read-only), dikaitkan otomatis lewat
+    // transaction_disbursements.activity_id (fitur Category Disbursement).
+    $expensesByActivity = [];
+    $res = $db->query(
+        "SELECT t.id, t.transaction_date, t.notes, t.final_amount_idr, td.activity_id
+         FROM transactions t
+         JOIN transaction_disbursements td ON td.transaction_id = t.id
+         WHERE t.category = 'disbursement'
+         ORDER BY t.transaction_date DESC, t.id DESC"
+    );
     while ($r = $res->fetch_assoc()) {
         $aid = (int) $r['activity_id'];
-        $links[(int) $r['transaction_id']][] = [
-            'id'             => (int) $r['id'],
-            'activity_id'    => $aid,
-            'activity_label' => $activities[$aid]['label'] ?? '-',
-            'amount'         => round((float) $r['amount_idr'], 2),
-        ];
-    }
-    $res->free();
-
-    $transactions = [];
-    $res = $db->query("SELECT id, transaction_date, notes, final_amount_idr
-                       FROM transactions WHERE category = 'disbursement'
-                       ORDER BY transaction_date DESC, id DESC");
-    while ($r = $res->fetch_assoc()) {
-        $tid    = (int) $r['id'];
-        $lk     = $links[$tid] ?? [];
-        $linked = 0.0;
-        foreach ($lk as $l) {
-            $linked += $l['amount'];
-        }
-        $final = round((float) $r['final_amount_idr'], 2);
-        $transactions[] = [
-            'id'               => $tid,
-            'date'             => $r['transaction_date'],
-            'notes'            => $r['notes'],
-            'final'            => $final,
-            'linked'           => round($linked, 2),
-            'remaining'        => round($final - $linked, 2),
-            'links'            => $lk,
+        $expensesByActivity[$aid][] = [
+            'id'    => (int) $r['id'],
+            'date'  => $r['transaction_date'],
+            'notes' => $r['notes'],
+            'final' => round((float) $r['final_amount_idr'], 2),
         ];
     }
     $res->free();
@@ -409,14 +400,13 @@ function inv_compute(): array
     }
 
     return [
-        'investors'    => $investorOut,
-        'deposits'     => $deposits,
-        'support'      => $support,
-        'payments'     => $payments,
-        'allocations'  => $allocOut,
-        'activities'   => array_values($activityOut),
-        'transactions' => $transactions,
-        'activity_options' => $activityOptions,
+        'investors'         => $investorOut,
+        'deposits'          => $deposits,
+        'support'           => $support,
+        'payments'          => $payments,
+        'allocations'       => $allocOut,
+        'activities'        => array_values($activityOut),
+        'activity_options'  => $activityOptions,
     ];
 }
 
@@ -636,45 +626,6 @@ try {
             }
             $stmt = $db->prepare('INSERT INTO investor_activity_settings (activity_id, profit_distribution_percent, updated_by) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE profit_distribution_percent = VALUES(profit_distribution_percent), updated_by = VALUES(updated_by)');
             $stmt->bind_param('idi', $activityId, $pdp, $uid);
-            $stmt->execute();
-            $stmt->close();
-            inv_out(['ok' => true]);
-
-        // ----- Penautan pengeluaran project (transactions) ke activity -----
-        case 'link_transaction':
-            $txId       = (int) ($_POST['transaction_id'] ?? 0);
-            $activityId = (int) ($_POST['activity_id'] ?? 0);
-            $amount     = round(inv_num($_POST['amount'] ?? 0), 2);
-            $tx = inv_fetch_one('SELECT id, category, final_amount_idr FROM transactions WHERE id = ?', $txId);
-            if (!$tx || $tx['category'] !== 'disbursement') {
-                inv_fail('Transaction not found or not a disbursement.');
-            }
-            if (!inv_exists('SELECT id FROM activities WHERE id = ?', $activityId)) {
-                inv_fail('Activity code not found.');
-            }
-            if ($amount <= 0) {
-                inv_fail('Amount must be greater than 0.');
-            }
-            $stmt = $db->prepare('SELECT COALESCE(SUM(amount_idr), 0) AS s FROM transaction_activities WHERE transaction_id = ? AND activity_id <> ?');
-            $stmt->bind_param('ii', $txId, $activityId);
-            $stmt->execute();
-            $others = (float) $stmt->get_result()->fetch_assoc()['s'];
-            $stmt->close();
-            $remaining = round((float) $tx['final_amount_idr'] - $others, 2);
-            if ($amount > $remaining + 0.005) {
-                inv_fail('Amount exceeds the remaining balance of this transaction (' . number_format($remaining, 2) . ').');
-            }
-            $stmt = $db->prepare('INSERT INTO transaction_activities (transaction_id, activity_id, amount_idr, created_by) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE amount_idr = VALUES(amount_idr)');
-            $stmt->bind_param('iidi', $txId, $activityId, $amount, $uid);
-            $stmt->execute();
-            $stmt->close();
-            inv_out(['ok' => true]);
-
-        case 'unlink_transaction':
-            inv_verify_password();
-            $id = (int) ($_POST['id'] ?? 0);
-            $stmt = $db->prepare('DELETE FROM transaction_activities WHERE id = ?');
-            $stmt->bind_param('i', $id);
             $stmt->execute();
             $stmt->close();
             inv_out(['ok' => true]);

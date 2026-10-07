@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Oct 06, 2026 at 06:17 PM
+-- Generation Time: Oct 07, 2026 at 12:35 PM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -35,6 +35,13 @@ CREATE TABLE `activities` (
   `created_by` int(10) UNSIGNED NOT NULL,
   `created_at` datetime DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `activities`
+--
+
+INSERT INTO `activities` (`id`, `activity_name`, `cashflow`, `relative_path`, `created_by`, `created_at`) VALUES
+(1, 'SUKKARI LISANI', 'in-out', 'input/2025/dates/001/', 1, '2026-10-07 16:55:24');
 
 -- --------------------------------------------------------
 
@@ -76,6 +83,13 @@ CREATE TABLE `customers` (
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+--
+-- Dumping data for table `customers`
+--
+
+INSERT INTO `customers` (`id`, `year`, `customer_name`, `phone_number`, `total_inflow`, `total_outflow`, `total_price_adjustments`, `total_paid`, `credit_balance`, `profit`, `created_at`) VALUES
+(1, 2025, 'MUHAMMAD RAIS BIN LATIF', '+6281267646916', 962500000.00, 0.00, 0.00, 962500000.00, 0.00, 0.00, '2026-10-07 10:14:19');
+
 -- --------------------------------------------------------
 
 --
@@ -92,6 +106,13 @@ CREATE TABLE `customer_item_prices` (
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `customer_item_prices`
+--
+
+INSERT INTO `customer_item_prices` (`id`, `customer_id`, `logistic_id`, `price`, `price_date`, `unit_label`, `created_at`, `updated_at`) VALUES
+(1, 1, 1, 385000.00, '2026-02-10', 'MASTER CARTON', '2026-10-07 10:15:21', '2026-10-07 10:15:21');
 
 -- --------------------------------------------------------
 
@@ -147,6 +168,13 @@ CREATE TABLE `investors` (
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+--
+-- Dumping data for table `investors`
+--
+
+INSERT INTO `investors` (`id`, `investor_name`, `created_by`, `created_at`, `updated_at`) VALUES
+(1, 'MR. BADR', 1, '2026-10-07 17:29:02', '2026-10-07 17:29:02');
+
 -- --------------------------------------------------------
 
 --
@@ -163,6 +191,13 @@ CREATE TABLE `investor_activity_allocations` (
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ;
 
+--
+-- Dumping data for table `investor_activity_allocations`
+--
+
+INSERT INTO `investor_activity_allocations` (`id`, `investor_id`, `activity_id`, `allocation_percent`, `created_by`, `created_at`, `updated_at`) VALUES
+(1, 1, 1, 100.00, 1, '2026-10-07 17:33:24', '2026-10-07 17:33:24');
+
 -- --------------------------------------------------------
 
 --
@@ -175,6 +210,13 @@ CREATE TABLE `investor_activity_settings` (
   `updated_by` int(10) UNSIGNED DEFAULT NULL,
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ;
+
+--
+-- Dumping data for table `investor_activity_settings`
+--
+
+INSERT INTO `investor_activity_settings` (`activity_id`, `profit_distribution_percent`, `updated_by`, `updated_at`) VALUES
+(1, 50.00, 1, '2026-10-07 17:34:25');
 
 -- --------------------------------------------------------
 
@@ -195,6 +237,14 @@ CREATE TABLE `investor_deposits` (
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `investor_deposits`
+--
+
+INSERT INTO `investor_deposits` (`id`, `investor_id`, `deposit_date`, `currency`, `amount`, `exchange_rate`, `final_amount_idr`, `notes`, `created_by`, `created_at`, `updated_at`) VALUES
+(1, 1, '2025-09-09', 'IDR', 1349653350.00, NULL, 1349653350.00, 'INITIAL CAPITAL FROM 2024', 1, '2026-10-07 17:31:28', '2026-10-07 17:31:28'),
+(2, 1, '2025-09-09', 'IDR', 136465022.00, NULL, 136465022.00, 'RETAINED PROFIT FROM 2024', 1, '2026-10-07 17:32:09', '2026-10-07 17:32:09');
 
 -- --------------------------------------------------------
 
@@ -231,6 +281,13 @@ CREATE TABLE `investor_support_expenses` (
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+--
+-- Dumping data for table `investor_support_expenses`
+--
+
+INSERT INTO `investor_support_expenses` (`id`, `investor_id`, `expense_date`, `category`, `amount_idr`, `notes`, `created_by`, `created_at`, `updated_at`) VALUES
+(1, 1, '2025-12-12', 'aid', 10000000.00, 'ACEH DISASTER RELIEF AID', 1, '2026-10-07 17:33:01', '2026-10-07 17:33:01');
+
 -- --------------------------------------------------------
 
 --
@@ -251,6 +308,13 @@ CREATE TABLE `invoices` (
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `invoices`
+--
+
+INSERT INTO `invoices` (`id`, `customer_id`, `invoice_number`, `sequence_number`, `period_month`, `period_year`, `status`, `total_amount`, `paid_amount`, `paid_at`, `created_at`, `updated_at`) VALUES
+(1, 1, '001/inv/laj-MRBL-1/II/2026', 1, 2, 2026, 'paid', 962500000.00, 962500000.00, '2026-10-07 17:16:55', '2026-10-07 10:15:21', '2026-10-07 10:16:55');
 
 -- --------------------------------------------------------
 
@@ -275,6 +339,13 @@ CREATE TABLE `invoice_payments` (
   `created_by` int(10) UNSIGNED NOT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `invoice_payments`
+--
+
+INSERT INTO `invoice_payments` (`id`, `invoice_id`, `customer_id`, `payment_date`, `amount`, `source_bank`, `source_account_name`, `destination_bank`, `destination_account_number`, `destination_account_name`, `notes`, `proof_path`, `proof_original_name`, `created_by`, `created_at`) VALUES
+(1, 1, 1, '2026-02-11', 962500000.00, 'BSI', 'RAIS', 'BSI', '1010 3198 42', 'SYIS BIN SAMSUL BAHRI', 'PAYMENT FOR INVOICE 001/INV/LAJ-MRBL-1/II/2026', 'selling/2025/muhammad rais bin latif/payments/001_inv_laj_MRBL_1_II_2026_20260211.jpg', 'WhatsApp Image 2026-02-22 at 5.38.56 PM.jpeg', 1, '2026-10-07 10:16:55');
 
 -- --------------------------------------------------------
 
@@ -325,6 +396,13 @@ CREATE TABLE `logistics` (
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+--
+-- Dumping data for table `logistics`
+--
+
+INSERT INTO `logistics` (`id`, `activity_id`, `product_name`, `incoming_date`, `primary_qty`, `primary_unit_label`, `primary_unit_weight_kg`, `remaining_primary_qty`, `defective_qty`, `total_taken_qty`, `defective_taken_qty`, `defective_reference_price`, `secondary_unit_label`, `secondary_unit_weight_kg`, `secondary_ratio_per_primary`, `created_by`, `created_at`, `updated_at`) VALUES
+(1, 1, 'SUKKARI LISANI', '2026-02-09', 2500.00, 'MASTER CARTON', 12.000, 0.00, 0.00, 2500.00, 0.00, NULL, 'BABY CARTON', 3.000, 4.000, 1, '2026-10-07 17:13:49', '2026-10-07 17:15:21');
+
 -- --------------------------------------------------------
 
 --
@@ -368,6 +446,13 @@ CREATE TABLE `logistic_movements` (
   `created_at` datetime NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+--
+-- Dumping data for table `logistic_movements`
+--
+
+INSERT INTO `logistic_movements` (`id`, `logistic_id`, `source_movement_id`, `customer_id`, `movement_type`, `stock_source`, `movement_date`, `customer_name`, `driver_name`, `police_number`, `qty_primary_package`, `price`, `total_price`, `invoice_id`, `batch_id`, `created_by`, `created_at`) VALUES
+(1, 1, NULL, 1, 'out', 'normal', '2026-02-10', 'MUHAMMAD RAIS BIN LATIF', 'RAIS', 'BA 6618 AAC', 2500.00, 385000.00, 962500000.00, 1, 1, 1, '2026-10-07 17:15:21');
+
 -- --------------------------------------------------------
 
 --
@@ -396,20 +481,14 @@ CREATE TABLE `transactions` (
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
--- --------------------------------------------------------
-
 --
--- Table structure for table `transaction_activities`
+-- Dumping data for table `transactions`
 --
 
-CREATE TABLE `transaction_activities` (
-  `id` int(10) UNSIGNED NOT NULL,
-  `transaction_id` int(10) UNSIGNED NOT NULL,
-  `activity_id` int(10) UNSIGNED NOT NULL,
-  `amount_idr` decimal(18,2) NOT NULL,
-  `created_by` int(10) UNSIGNED DEFAULT NULL,
-  `created_at` datetime NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+INSERT INTO `transactions` (`id`, `category`, `transaction_date`, `source_bank`, `destination_bank`, `source_account_number`, `source_account_name`, `destination_account_number`, `destination_account_name`, `notes`, `currency`, `amount`, `exchange_rate`, `final_amount_idr`, `document_path`, `document_original_name`, `created_by`, `created_at`, `updated_at`) VALUES
+(1, 'disbursement', '2025-09-10', 'MANDIRI', 'NATIONAL COMMERCIAL BANK,', '1060 0301 3198 4', 'LISANI ALAF JAYA', 'SA8910000033147457007704', 'BARAKAT ALMADINAH DATE FACTORY', 'PAYMENT FOR INVOICE 12100', 'USD', 52700.00, 16460.000000, 867442000.00, 'input/2025/dates/001/disbursement/full_payment_20250910.pdf', '01.pdf', 1, '2026-10-07 16:58:30', '2026-10-07 16:58:30'),
+(2, 'disbursement', '2025-10-30', 'MANDIRI', 'BANK SYARIAH INDONESIA', '1110 0160 9789 7', 'SYIS BIN SAMSUL BAHRI', '7123177414', 'DENI SYAHPUTRA', 'CLEARANCE SUKKARI TF 1', 'IDR', 5002500.00, NULL, 5002500.00, 'input/2025/dates/001/disbursement/first_payment_20251030.jpg', '01.jpg', 1, '2026-10-07 17:01:47', '2026-10-07 17:01:47'),
+(3, 'disbursement', '2026-02-22', 'BCA', 'BCA', '0322 4737 94', 'SYIS BIN SAMSUL BAHRI', '3831989988', 'FAJARINDO ANUGERAH SUKSE', 'COLD STORAGE', 'IDR', 8699150.00, NULL, 8699150.00, 'input/2025/dates/001/disbursement/first_payment_20260222.jpg', 'WhatsApp Image 2026-02-22 at 5.38.56 PM.jpeg', 1, '2026-10-07 17:09:11', '2026-10-07 17:09:11');
 
 -- --------------------------------------------------------
 
@@ -426,6 +505,15 @@ CREATE TABLE `transaction_disbursements` (
   `transaction_purpose` varchar(255) NOT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `transaction_disbursements`
+--
+
+INSERT INTO `transaction_disbursements` (`id`, `transaction_id`, `activity_id`, `category_id`, `cashflow_type`, `transaction_purpose`, `created_at`) VALUES
+(1, 1, 1, 1, 'outflow', 'FULL PAYMENT', '2026-10-07 16:58:30'),
+(2, 2, 1, 2, 'outflow', 'FIRST PAYMENT', '2026-10-07 17:01:47'),
+(3, 3, 1, 3, 'outflow', 'FIRST PAYMENT', '2026-10-07 17:09:11');
 
 -- --------------------------------------------------------
 
@@ -450,7 +538,7 @@ CREATE TABLE `users` (
 --
 
 INSERT INTO `users` (`user_id`, `username`, `password_hash`, `role`, `is_approved`, `created_at`, `last_login`, `session_token`, `session_expires`) VALUES
-(1, 'Rais786', '$2y$10$QciWVGPK9aGHjy05rBoXgOWfCAesfocowc0vt4QCMHVeVzsVuGDS6', 'admin', 1, '2026-09-10 21:34:57', '2026-10-06 17:55:22', NULL, NULL);
+(1, 'Rais786', '$2y$10$QciWVGPK9aGHjy05rBoXgOWfCAesfocowc0vt4QCMHVeVzsVuGDS6', 'admin', 1, '2026-09-10 21:34:57', '2026-10-07 11:54:40', NULL, NULL);
 
 --
 -- Indexes for dumped tables
@@ -604,14 +692,6 @@ ALTER TABLE `transactions`
   ADD KEY `idx_txn_category` (`category`);
 
 --
--- Indexes for table `transaction_activities`
---
-ALTER TABLE `transaction_activities`
-  ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `uq_txact_tx_activity` (`transaction_id`,`activity_id`),
-  ADD KEY `idx_txact_activity` (`activity_id`);
-
---
 -- Indexes for table `transaction_disbursements`
 --
 ALTER TABLE `transaction_disbursements`
@@ -635,7 +715,7 @@ ALTER TABLE `users`
 -- AUTO_INCREMENT for table `activities`
 --
 ALTER TABLE `activities`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `company_documents`
@@ -647,13 +727,13 @@ ALTER TABLE `company_documents`
 -- AUTO_INCREMENT for table `customers`
 --
 ALTER TABLE `customers`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `customer_item_prices`
 --
 ALTER TABLE `customer_item_prices`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `defective_stock_events`
@@ -671,7 +751,7 @@ ALTER TABLE `disbursement_categories`
 -- AUTO_INCREMENT for table `investors`
 --
 ALTER TABLE `investors`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `investor_activity_allocations`
@@ -683,7 +763,7 @@ ALTER TABLE `investor_activity_allocations`
 -- AUTO_INCREMENT for table `investor_deposits`
 --
 ALTER TABLE `investor_deposits`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
 -- AUTO_INCREMENT for table `investor_profit_payments`
@@ -695,19 +775,19 @@ ALTER TABLE `investor_profit_payments`
 -- AUTO_INCREMENT for table `investor_support_expenses`
 --
 ALTER TABLE `investor_support_expenses`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `invoices`
 --
 ALTER TABLE `invoices`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `invoice_payments`
 --
 ALTER TABLE `invoice_payments`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `invoice_refunds`
@@ -719,7 +799,7 @@ ALTER TABLE `invoice_refunds`
 -- AUTO_INCREMENT for table `logistics`
 --
 ALTER TABLE `logistics`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `logistic_documents`
@@ -731,25 +811,19 @@ ALTER TABLE `logistic_documents`
 -- AUTO_INCREMENT for table `logistic_movements`
 --
 ALTER TABLE `logistic_movements`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `transactions`
 --
 ALTER TABLE `transactions`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
-
---
--- AUTO_INCREMENT for table `transaction_activities`
---
-ALTER TABLE `transaction_activities`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
 
 --
 -- AUTO_INCREMENT for table `transaction_disbursements`
 --
 ALTER TABLE `transaction_disbursements`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
 
 --
 -- AUTO_INCREMENT for table `users`
@@ -810,13 +884,6 @@ ALTER TABLE `logistic_documents`
 ALTER TABLE `logistic_movements`
   ADD CONSTRAINT `fk_lm_source_movement` FOREIGN KEY (`source_movement_id`) REFERENCES `logistic_movements` (`id`),
   ADD CONSTRAINT `fk_logmov_logistic` FOREIGN KEY (`logistic_id`) REFERENCES `logistics` (`id`) ON DELETE CASCADE;
-
---
--- Constraints for table `transaction_activities`
---
-ALTER TABLE `transaction_activities`
-  ADD CONSTRAINT `fk_txact_activity` FOREIGN KEY (`activity_id`) REFERENCES `activities` (`id`),
-  ADD CONSTRAINT `fk_txact_transaction` FOREIGN KEY (`transaction_id`) REFERENCES `transactions` (`id`);
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
