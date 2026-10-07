@@ -10,10 +10,42 @@
   .inv-sub { margin: 16px 0 8px; font-weight: 600; }
   .inv-scroll { width: 100%; overflow-x: auto; }
   .inv-scroll table { min-width: 620px; }
+  /* responsive.css (global) turns every <table> into a stacked card view below
+     1024px and forces td{width:100%}. The Investor tables must stay tables at
+     any width, with horizontal scroll handled by .inv-scroll instead. */
+  .inv-scroll table,
+  .inv-scroll thead,
+  .inv-scroll tbody,
+  .inv-scroll tr,
+  .inv-scroll th,
+  .inv-scroll td {
+    display: revert;
+  }
+  .inv-scroll table { width: auto; }
+  .inv-scroll td { width: auto; }
+  .inv-scroll tr { border: inherit; }
   .inv-picker-list { display: flex; flex-direction: column; gap: 8px; max-height: 50vh; overflow-y: auto; }
   .inv-picker-list .btn { justify-content: flex-start; text-align: left; }
   .inv-hint { opacity: .7; font-size: 13px; }
   .num { text-align: right; white-space: nowrap; }
+  .inv-row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  .inv-action-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 4px 8px;
+    font-size: 12px;
+    line-height: 1.4;
+    width: 72px;
+    flex: 0 0 auto;
+  }
+  .inv-scroll th[data-help] {
+    cursor: pointer;
+    text-decoration: underline dotted;
+    text-underline-offset: 3px;
+  }
+  .inv-scroll th[data-help]:hover { opacity: .8; }
 </style>
 
 <div class="menu-section" data-section="investor" style="display:none;">
@@ -52,15 +84,15 @@
           <table>
             <thead>
               <tr>
-                <th>Investor</th>
-                <th class="num">Deposits (IDR)</th>
-                <th class="num">Non-Project (IDR)</th>
-                <th class="num">ICU (IDR)</th>
-                <th class="num">Used in Projects (IDR)</th>
-                <th class="num">Total Profit (IDR)</th>
-                <th class="num">Paid Profit (IDR)</th>
-                <th class="num">Rolled Capital (IDR)</th>
-                <th>Actions</th>
+                <th data-help="Investor name.">Investor</th>
+                <th class="num" data-help="Total of all deposits received from this investor, converted to IDR.">Deposits (IDR)</th>
+                <th class="num" data-help="Total non-project expenses (capital returned, aid, other) for this investor.">Non-Project (IDR)</th>
+                <th class="num" data-help="Investor Capital Utilized: Deposits minus Non-Project expenses. Funds available for projects.">ICU (IDR)</th>
+                <th class="num" data-help="Portion of ICU actually used across all linked projects (capped by each project's total cost).">Used in Projects (IDR)</th>
+                <th class="num" data-help="TP: this investor's share of net profit, summed across all projects.">Total Profit (IDR)</th>
+                <th class="num" data-help="PP: total profit payments already recorded for this investor.">Paid Profit (IDR)</th>
+                <th class="num" data-help="(TP minus PP) plus ICU. Capital ready to be reused for the next investment.">Rolled Capital (IDR)</th>
+                <th data-help="Rename or delete this investor.">Actions</th>
               </tr>
             </thead>
             <tbody id="invListBody"></tbody>
@@ -125,13 +157,13 @@
           <table>
             <thead>
               <tr>
-                <th>Date</th>
-                <th>Currency</th>
-                <th class="num">Amount</th>
-                <th class="num">Rate</th>
-                <th class="num">IDR</th>
-                <th>Notes</th>
-                <th>Actions</th>
+                <th data-help="Date the investment was received.">Date</th>
+                <th data-help="Currency of the deposit as received.">Currency</th>
+                <th class="num" data-help="Amount in its original currency.">Amount</th>
+                <th class="num" data-help="Exchange rate to IDR used for this deposit (manual input, foreign currency only).">Rate</th>
+                <th class="num" data-help="Final amount converted to IDR (Amount x Rate, or Amount directly if already IDR).">IDR</th>
+                <th data-help="Free text notes for this deposit.">Notes</th>
+                <th data-help="Edit or delete this deposit.">Actions</th>
               </tr>
             </thead>
             <tbody id="depBody"></tbody>
@@ -169,11 +201,11 @@
           <table>
             <thead>
               <tr>
-                <th>Date</th>
-                <th>Category</th>
-                <th class="num">Amount (IDR)</th>
-                <th>Notes</th>
-                <th>Actions</th>
+                <th data-help="Date the expense occurred.">Date</th>
+                <th data-help="Return of capital / Aid / Other. Reduces this investor's ICU.">Category</th>
+                <th class="num" data-help="Expense amount in IDR.">Amount (IDR)</th>
+                <th data-help="Free text notes for this expense.">Notes</th>
+                <th data-help="Delete this expense.">Actions</th>
               </tr>
             </thead>
             <tbody id="supBody"></tbody>
@@ -202,10 +234,10 @@
           <table>
             <thead>
               <tr>
-                <th>Activity Code</th>
-                <th class="num">Share (%)</th>
-                <th class="num">Fund Used (IDR)</th>
-                <th>Actions</th>
+                <th data-help="The project this investor's fund is linked to.">Activity Code</th>
+                <th class="num" data-help="Percentage of this investor's ICU allocated to the project.">Share (%)</th>
+                <th class="num" data-help="Actual amount used in the project (may be less than the allocated share if the project's total cost is smaller).">Fund Used (IDR)</th>
+                <th data-help="Unlink this allocation from the project.">Actions</th>
               </tr>
             </thead>
             <tbody id="allocBody"></tbody>
@@ -221,13 +253,20 @@
           <table>
             <thead>
               <tr>
-                <th>Activity Code</th>
-                <th>Date</th>
-                <th>Notes</th>
-                <th class="num">Amount (IDR)</th>
+                <th data-help="Project this disbursement is linked to.">Activity Code</th>
+                <th data-help="Transaction date.">Date</th>
+                <th data-help="Disbursement category, set in Transactions (Category step).">Category</th>
+                <th data-help="Transaction purpose, as entered in Transactions (Category step).">Description</th>
+                <th class="num" data-help="Disbursement amount, auto-linked to this activity code via the transaction's Category.">Amount (IDR)</th>
               </tr>
             </thead>
             <tbody id="txBody"></tbody>
+            <tfoot>
+              <tr>
+                <td colspan="4" style="text-align:right;font-weight:600;">Total</td>
+                <td class="num" style="font-weight:600;" id="txTotal">0.00</td>
+              </tr>
+            </tfoot>
           </table>
         </div>
       </div>
@@ -242,12 +281,12 @@
           <table>
             <thead>
               <tr>
-                <th>Investor</th>
-                <th class="num">Deposits (IDR)</th>
-                <th class="num">Non-Project (IDR)</th>
-                <th class="num">ICU (IDR)</th>
-                <th class="num">Used in Projects (IDR)</th>
-                <th class="num">Not Yet Allocated (IDR)</th>
+                <th data-help="Investor name.">Investor</th>
+                <th class="num" data-help="Total of all deposits received from this investor, converted to IDR.">Deposits (IDR)</th>
+                <th class="num" data-help="Total non-project expenses (capital returned, aid, other) for this investor.">Non-Project (IDR)</th>
+                <th class="num" data-help="Investor Capital Utilized: Deposits minus Non-Project expenses.">ICU (IDR)</th>
+                <th class="num" data-help="Portion of ICU actually used across all linked projects.">Used in Projects (IDR)</th>
+                <th class="num" data-help="ICU minus funds already used in projects.">Not Yet Allocated (IDR)</th>
               </tr>
             </thead>
             <tbody id="rptUsageBody"></tbody>
@@ -261,9 +300,9 @@
           <table>
             <thead>
               <tr>
-                <th>Activity Code</th>
-                <th class="num">Sales Actual (IDR)</th>
-                <th class="num">Total Cost (IDR)</th>
+                <th data-help="Project name and code.">Activity Code</th>
+                <th class="num" data-help="Ordered minus Returned minus Discounts, from Logistic movements.">Sales Actual (IDR)</th>
+                <th class="num" data-help="Sum of disbursement transactions linked to this activity code.">Total Cost (IDR)</th>
               </tr>
             </thead>
             <tbody id="rptSalesBody"></tbody>
@@ -277,17 +316,17 @@
           <table>
             <thead>
               <tr>
-                <th>Activity Code</th>
-                <th class="num">Total Cost</th>
-                <th class="num">Total Investor Fund</th>
-                <th class="num">Company Additional</th>
-                <th class="num">Sales Actual</th>
-                <th class="num">Gross Profit</th>
-                <th class="num">Zakat 2.5%</th>
-                <th class="num">Net Profit</th>
-                <th class="num">pdp (%)</th>
-                <th class="num">Investor Distribution</th>
-                <th>Actions</th>
+                <th data-help="Project name and code.">Activity Code</th>
+                <th class="num" data-help="Total project expenses (disbursements linked to this activity code).">Total Cost</th>
+                <th class="num" data-help="Investor money used for this project (capped by Total Cost).">Total Investor Fund</th>
+                <th class="num" data-help="Total Cost minus Total Investor Fund used. Paid from company funds.">Company Additional</th>
+                <th class="num" data-help="Ordered minus Returned minus Discounts, from Logistic movements.">Sales Actual</th>
+                <th class="num" data-help="Sales Actual minus Total Cost.">Gross Profit</th>
+                <th class="num" data-help="2.5% of Gross Profit (0 if Gross Profit is negative or zero).">Zakat 2.5%</th>
+                <th class="num" data-help="Gross Profit minus Zakat.">Net Profit</th>
+                <th class="num" data-help="Profit distribution percentage for investors, set per project.">pdp (%)</th>
+                <th class="num" data-help="Net Profit x pdp. Total profit share for all investors combined on this project.">Investor Distribution</th>
+                <th data-help="Save the pdp percentage for this project.">Actions</th>
               </tr>
             </thead>
             <tbody id="rptDistBody"></tbody>
@@ -299,11 +338,11 @@
           <table>
             <thead>
               <tr>
-                <th>Activity Code</th>
-                <th>Investor</th>
-                <th class="num">Fund Used (IDR)</th>
-                <th class="num">Ratio (%)</th>
-                <th class="num">Profit (IDR)</th>
+                <th data-help="Project name and code.">Activity Code</th>
+                <th data-help="Investor name.">Investor</th>
+                <th class="num" data-help="This investor's fund used in this project.">Fund Used (IDR)</th>
+                <th class="num" data-help="This investor's share of the total investor fund used in this project.">Ratio (%)</th>
+                <th class="num" data-help="Investor Distribution x Ratio. This investor's profit from this project.">Profit (IDR)</th>
               </tr>
             </thead>
             <tbody id="rptShareBody"></tbody>
@@ -321,11 +360,11 @@
           <table>
             <thead>
               <tr>
-                <th>Investor</th>
-                <th class="num">Total Profit (TP)</th>
-                <th class="num">Paid Profit (PP)</th>
-                <th class="num">ICU</th>
-                <th class="num">Rolled Capital</th>
+                <th data-help="Investor name.">Investor</th>
+                <th class="num" data-help="Sum of this investor's profit across all projects.">Total Profit (TP)</th>
+                <th class="num" data-help="Sum of profit payments already made to this investor.">Paid Profit (PP)</th>
+                <th class="num" data-help="Investor Capital Utilized: Deposits minus Non-Project expenses.">ICU</th>
+                <th class="num" data-help="(TP minus PP) plus ICU. Capital ready to be reused for the next investment.">Rolled Capital</th>
               </tr>
             </thead>
             <tbody id="profBody"></tbody>
@@ -361,11 +400,11 @@
           <table>
             <thead>
               <tr>
-                <th>Date</th>
-                <th>Investor</th>
-                <th class="num">Amount (IDR)</th>
-                <th>Notes</th>
-                <th>Actions</th>
+                <th data-help="Date the payment was made.">Date</th>
+                <th data-help="Investor name.">Investor</th>
+                <th class="num" data-help="Profit payment amount in IDR.">Amount (IDR)</th>
+                <th data-help="Free text notes for this payment.">Notes</th>
+                <th data-help="Delete this profit payment.">Actions</th>
               </tr>
             </thead>
             <tbody id="payBody"></tbody>
@@ -385,6 +424,17 @@
     <div class="inv-picker-list" id="invPickerList"></div>
     <div class="modal-footer" style="display:flex;justify-content:flex-end;margin-top:12px;">
       <button type="button" class="btn btn-secondary" id="invPickerCancel">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: penjelasan arti header kolom (klik judul kolom mana pun) -->
+<div class="modal-overlay" id="invColHelpOverlay" style="display:none;">
+  <div class="modal" style="max-width:360px;">
+    <div class="modal-header" id="invColHelpTitle">Column</div>
+    <div class="inv-hint" id="invColHelpText" style="font-size:14px;opacity:1;"></div>
+    <div class="modal-footer" style="display:flex;justify-content:flex-end;margin-top:12px;">
+      <button type="button" class="btn btn-secondary" id="invColHelpClose">Close</button>
     </div>
   </div>
 </div>
@@ -530,6 +580,18 @@
     renderFund();
   }
 
+  // ---------- column header help (click any <th data-help>) ----------
+  root.addEventListener('click', function (e) {
+    var th = e.target.closest('th[data-help]');
+    if (!th) return;
+    byId('invColHelpTitle').textContent = th.textContent.trim();
+    byId('invColHelpText').textContent = th.getAttribute('data-help');
+    byId('invColHelpOverlay').style.display = 'flex';
+  });
+  byId('invColHelpClose').addEventListener('click', function () {
+    byId('invColHelpOverlay').style.display = 'none';
+  });
+
   // ---------- tabs ----------
   root.querySelectorAll('[data-inv-tab]').forEach(function (btn) {
     btn.addEventListener('click', function () {
@@ -597,10 +659,10 @@
         '<td class="num">' + fmt(inv.tp) + '</td>' +
         '<td class="num">' + fmt(inv.pp) + '</td>' +
         '<td class="num">' + fmt(inv.rolled) + '</td>' +
-        '<td>' +
-          '<button type="button" class="btn btn-secondary" data-act="edit-inv" data-id="' + inv.id + '">Edit</button> ' +
-          '<button type="button" class="btn btn-danger" data-act="del-inv" data-id="' + inv.id + '">Delete</button>' +
-        '</td>';
+        '<td><div class="inv-row-actions">' +
+          '<button type="button" class="btn btn-secondary inv-action-btn" data-act="edit-inv" data-id="' + inv.id + '">Rename</button>' +
+          '<button type="button" class="btn btn-danger inv-action-btn" data-act="del-inv" data-id="' + inv.id + '">Delete</button>' +
+        '</div></td>';
       tbody.appendChild(tr);
     });
   }
@@ -613,12 +675,13 @@
     var tx = byId('txBody');
     deps.innerHTML = ''; sup.innerHTML = ''; alloc.innerHTML = ''; tx.innerHTML = '';
     byId('allocTotal').textContent = '';
+    byId('txTotal').textContent = fmt(0);
 
     if (!selectedInvestorId) {
       emptyRow('depBody', 7, 'Select an investor first.');
       emptyRow('supBody', 5, 'Select an investor first.');
       emptyRow('allocBody', 4, 'Select an investor first.');
-      emptyRow('txBody', 6, 'Select an investor first.');
+      emptyRow('txBody', 5, 'Select an investor first.');
       return;
     }
 
@@ -631,10 +694,10 @@
         '<td class="num">' + (d.rate === null ? '-' : fmt(d.rate)) + '</td>' +
         '<td class="num">' + fmt(d.final) + '</td>' +
         '<td>' + esc(d.notes) + '</td>' +
-        '<td>' +
-          '<button type="button" class="btn btn-secondary" data-act="edit-dep" data-id="' + d.id + '">Edit</button> ' +
-          '<button type="button" class="btn btn-danger" data-act="del-dep" data-id="' + d.id + '">Delete</button>' +
-        '</td>';
+        '<td><div class="inv-row-actions">' +
+          '<button type="button" class="btn btn-secondary inv-action-btn" data-act="edit-dep" data-id="' + d.id + '">Edit</button>' +
+          '<button type="button" class="btn btn-danger inv-action-btn" data-act="del-dep" data-id="' + d.id + '">Delete</button>' +
+        '</div></td>';
       deps.appendChild(tr);
     });
     if (!deps.children.length) emptyRow('depBody', 7, 'No investments received yet.');
@@ -646,7 +709,7 @@
         '<td>' + esc(CATEGORY_LABEL[s.category] || s.category) + '</td>' +
         '<td class="num">' + fmt(s.amount) + '</td>' +
         '<td>' + esc(s.notes) + '</td>' +
-        '<td><button type="button" class="btn btn-danger" data-act="del-sup" data-id="' + s.id + '">Delete</button></td>';
+        '<td><button type="button" class="btn btn-danger inv-action-btn" data-act="del-sup" data-id="' + s.id + '">Delete</button></td>';
       sup.appendChild(tr);
     });
     if (!sup.children.length) emptyRow('supBody', 5, 'No non-project expenses.');
@@ -668,7 +731,7 @@
         '<td>' + esc(a.activity_label) + '</td>' +
         '<td class="num">' + fmt(a.percent) + '</td>' +
         '<td class="num">' + fmt(used) + '</td>' +
-        '<td><button type="button" class="btn btn-danger" data-act="del-alloc" data-id="' + a.id + '">Unlink</button></td>';
+        '<td><button type="button" class="btn btn-danger inv-action-btn" data-act="del-alloc" data-id="' + a.id + '">Unlink</button></td>';
       alloc.appendChild(tr);
     });
     if (!alloc.children.length) emptyRow('allocBody', 4, 'Not linked to any project yet.');
@@ -677,19 +740,23 @@
     var linkedActivityIds = state.allocations
       .filter(function (a) { return a.investor_id === selectedInvestorId; })
       .map(function (a) { return a.activity_id; });
+    var txTotal = 0;
     state.activities.forEach(function (act) {
       if (linkedActivityIds.indexOf(act.id) === -1) return;
       (act.expenses || []).forEach(function (ex) {
+        txTotal += ex.final;
         var tr = document.createElement('tr');
         tr.innerHTML =
           '<td>' + esc(act.label) + '</td>' +
           '<td>' + esc(ex.date) + '</td>' +
-          '<td>' + esc(ex.notes) + '</td>' +
+          '<td>' + esc(ex.category) + '</td>' +
+          '<td>' + esc(ex.description) + '</td>' +
           '<td class="num">' + fmt(ex.final) + '</td>';
         tx.appendChild(tr);
       });
     });
-    if (!tx.children.length) emptyRow('txBody', 4, 'No project expenses for the linked activity codes yet.');
+    if (!tx.children.length) emptyRow('txBody', 5, 'No project expenses for the linked activity codes yet.');
+    byId('txTotal').textContent = fmt(txTotal);
   }
 
   // Tab 3
@@ -737,7 +804,7 @@
         '<td class="num">' + fmt(a.net) + '</td>' +
         '<td class="num"><input type="text" class="input input-number-comma" style="max-width:110px;margin-left:auto;text-align:right;" data-pdp-for="' + a.id + '" value="' + a.pdp + '"></td>' +
         '<td class="num">' + fmt(a.distribution) + '</td>' +
-        '<td><button type="button" class="btn btn-secondary" data-act="save-pdp" data-id="' + a.id + '">Save pdp</button></td>';
+        '<td><button type="button" class="btn btn-secondary inv-action-btn" data-act="save-pdp" data-id="' + a.id + '">Save pdp</button></td>';
       dist.appendChild(tr);
 
       a.investors.forEach(function (r) {
@@ -780,7 +847,7 @@
         '<td>' + esc(invName(p.investor_id)) + '</td>' +
         '<td class="num">' + fmt(p.amount) + '</td>' +
         '<td>' + esc(p.notes) + '</td>' +
-        '<td><button type="button" class="btn btn-danger" data-act="del-pay" data-id="' + p.id + '">Delete</button></td>';
+        '<td><button type="button" class="btn btn-danger inv-action-btn" data-act="del-pay" data-id="' + p.id + '">Delete</button></td>';
       pay.appendChild(tr);
     });
     if (!pay.children.length) emptyRow('payBody', 5, 'No profit payments yet.');

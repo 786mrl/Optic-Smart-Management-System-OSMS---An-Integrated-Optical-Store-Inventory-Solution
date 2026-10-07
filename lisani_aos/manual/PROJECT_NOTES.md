@@ -297,9 +297,37 @@ Perlu konfirmasi keputusan:
     project, card alokasi ke activity + tabel pengeluaran project **read-only**, auto dari Category Disbursement) /
     Report (usage per investor, sales per project, profit distribution + share per investor) / Profit Payment &
     Rolled Capital. Hapus pakai password pola (a) langsung (keputusan user, bukan reverify 120 detik).
-  - Belum dites di server sama sekali. Perlu dicek: tanda `total_price` pada `price_adjustment` (asumsi positif,
-    dikurangkan); kelas `.input-uppercase`/`.input-number-comma` jalan tanpa `flexOverlays` untuk 2 modal baru
-    (`invPickerOverlay`, `invPwOverlay`); overflow tabel di <1024px (§3 gotcha #7).
+  - **8 Okt 2026, fix**: tombol Edit/Delete di baris tabel (semua tabel Investor) diseragamkan, class baru
+    `.inv-action-btn` (`inline-flex` center, `width:72px` tetap, padding+font-size kecil, dibungkus
+    `.inv-row-actions` kalau >1 tombol per baris) — sebelumnya ikut ukuran `.btn` default (besar, teks Delete tidak
+    center). Label tombol rename investor di Investor List: "Rename" (sempat "Edit Investor Name", kepanjangan).
+  - **8 Okt 2026, fitur**: semua `<th>` di modul Investor (64 kolom, 11 tabel) diberi `data-help="…"`; klik judul
+    kolom mana pun → fly window `invColHelpOverlay` (judul = teks header, isi = penjelasan singkat artinya, mis.
+    ICU, TP/PP, Rolled Capital, Fund Used vs Share %). Event delegation satu listener di `root`, bukan per-`<th>`.
+    Pola ini generik, bisa dipakai modul lain kalau mau (`th[data-help]` + 1 modal + 1 listener).
+  - **8 Okt 2026, fix**: tabel di `investor_content.php` sempat ikut berubah jadi kartu di <1024px (gotcha #7,
+    `responsive.css` global memaksa semua `<table>`→card + `td{width:100%}`). Ditambah override khusus di dalam
+    `.inv-scroll` (`display:revert` untuk table/thead/tbody/tr/th/td) supaya tabel Investor tetap tabel di semua
+    lebar layar; scroll horizontal tetap lewat `.inv-scroll{overflow-x:auto}` seperti modul lain.
+  - **8 Okt 2026, bugfix**: tab Investment → card Investor Fund Utilization → tabel "Project Expenses" selalu
+    kosong walau alokasi investor↔activity berhasil. Penyebab: di `inv_compute()` (`investor_api.php`), query
+    `$expensesByActivity` (dari `transaction_disbursements`) ditulis **setelah** loop yang membangun `$activityOut`
+    tapi dipakai **di dalam** loop itu (`'expenses' => $expensesByActivity[$aid] ?? []`) — variabel belum ada saat
+    dipakai, jadi selalu jatuh ke `[]`. PHP tidak error (undefined var + null coalescing diam-diam jadi array
+    kosong), makanya lolos cek kurung/kurawal manual sebelumnya. Fix: pindahkan query `$expensesByActivity` ke atas
+    loop `$activityOut`. Pelajaran: kalau sebuah array dipakai dengan `?? []` di tengah loop, **cek urutan
+    deklarasinya**, bukan cuma isi nilainya — bug ini tidak akan ketahuan dari membaca query SQL-nya sendiri.
+  - **8 Okt 2026, fitur**: tabel "Project Expenses" (tab Investment) dapat baris `<tfoot>` Total (jumlah kolom
+    Amount dari baris yang tampil, dihitung di JS saat render, bukan dari server). Reset ke 0.00 saat belum ada
+    investor dipilih.
+  - **8 Okt 2026, ubah kolom**: tabel "Project Expenses" (tab Investment) kolom Notes diganti jadi **Category**
+    (`disbursement_categories.category_name`, LEFT JOIN by `transaction_disbursements.category_id`, fallback "-"
+    kalau NULL) dan **Description** (`transaction_disbursements.transaction_purpose`). `transactions.notes` sudah
+    tidak dipakai di tabel ini.
+  - Belum dites di server sama sekali (menunggu pengujian dari fix-fix di atas). Perlu dicek juga: tanda
+    `total_price` pada `price_adjustment` (asumsi positif, dikurangkan); kelas
+    `.input-uppercase`/`.input-number-comma` jalan tanpa `flexOverlays` untuk 2 modal baru (`invPickerOverlay`,
+    `invPwOverlay`).
 - **6 Okt 2026, Kategori Disbursement** (hanya label pengelompokan uang keluar; tidak memecah total/saldo/chart):
   - DB: tabel baru `disbursement_categories` (id, category_name UNIQUE, created_by, created_at), seed PURCHASE PAYMENT /
     CLEARANCE FEES / OPERATIONAL EXPENSES; kolom baru `transaction_disbursements.category_id` (NOT NULL, indeks, tanpa FK,

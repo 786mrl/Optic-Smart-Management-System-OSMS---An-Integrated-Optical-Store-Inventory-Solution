@@ -259,6 +259,31 @@ function inv_compute(): array
         $contrib[$aid][$iid] = ($contrib[$aid][$iid] ?? 0.0) + $icu * $pct / 100;
     }
 
+    // Pengeluaran project per activity (read-only), dikaitkan otomatis lewat
+    // transaction_disbursements.activity_id (fitur Category Disbursement).
+    // Dihitung di sini (SEBELUM loop activityOut) karena dipakai di dalamnya.
+    $expensesByActivity = [];
+    $res = $db->query(
+        "SELECT t.id, t.transaction_date, t.final_amount_idr, td.activity_id,
+                td.transaction_purpose, dc.category_name
+         FROM transactions t
+         JOIN transaction_disbursements td ON td.transaction_id = t.id
+         LEFT JOIN disbursement_categories dc ON dc.id = td.category_id
+         WHERE t.category = 'disbursement'
+         ORDER BY t.transaction_date DESC, t.id DESC"
+    );
+    while ($r = $res->fetch_assoc()) {
+        $aid = (int) $r['activity_id'];
+        $expensesByActivity[$aid][] = [
+            'id'          => (int) $r['id'],
+            'date'        => $r['transaction_date'],
+            'category'    => $r['category_name'] ?? '-',
+            'description' => $r['transaction_purpose'],
+            'final'       => round((float) $r['final_amount_idr'], 2),
+        ];
+    }
+    $res->free();
+
     // ---- Per activity: dana terpakai, perusahaan, gross, zakat, net, distribusi ----
     $activityOut = [];
     foreach ($activities as $aid => $act) {
@@ -369,27 +394,6 @@ function inv_compute(): array
             'date'        => $r['payment_date'],
             'amount'      => (float) $r['amount_idr'],
             'notes'       => $r['notes'],
-        ];
-    }
-    $res->free();
-
-    // Pengeluaran project per activity (read-only), dikaitkan otomatis lewat
-    // transaction_disbursements.activity_id (fitur Category Disbursement).
-    $expensesByActivity = [];
-    $res = $db->query(
-        "SELECT t.id, t.transaction_date, t.notes, t.final_amount_idr, td.activity_id
-         FROM transactions t
-         JOIN transaction_disbursements td ON td.transaction_id = t.id
-         WHERE t.category = 'disbursement'
-         ORDER BY t.transaction_date DESC, t.id DESC"
-    );
-    while ($r = $res->fetch_assoc()) {
-        $aid = (int) $r['activity_id'];
-        $expensesByActivity[$aid][] = [
-            'id'    => (int) $r['id'],
-            'date'  => $r['transaction_date'],
-            'notes' => $r['notes'],
-            'final' => round((float) $r['final_amount_idr'], 2),
         ];
     }
     $res->free();
