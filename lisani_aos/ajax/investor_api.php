@@ -581,41 +581,66 @@ try {
             $stmt->close();
             inv_out(['ok' => true]);
 
-        // ----- Alokasi investor ke activity -----
-        case 'save_allocation':
-            $investorId = (int) ($_POST['investor_id'] ?? 0);
+        // ----- Share of Investor Fund (%): batch, multi-investor, per activity -----
+        // Replaces the whole set of allocation rows for one activity_id in a single
+        // request (Investment tab -> Investor Fund Utilization -> fly window).
+        // $_POST['rows'] is a JSON array: [{"investor_id":1,"percent":62.5}, ...].
+        // An investor left out of $rows (or sent with percent <= 0) is unlinked
+        // from this activity.
+        case 'save_fund_shares':
             $activityId = (int) ($_POST['activity_id'] ?? 0);
-            $pct        = round(inv_num($_POST['allocation_percent'] ?? 0), 2);
-            if (!inv_exists('SELECT id FROM investors WHERE id = ?', $investorId)) {
-                inv_fail('Investor not found.');
-            }
             if (!inv_exists('SELECT id FROM activities WHERE id = ?', $activityId)) {
                 inv_fail('Activity code not found.');
             }
-            if ($pct <= 0 || $pct > 100) {
-                inv_fail('Allocation must be between 0.01 and 100.');
+            $rows = json_decode((string) ($_POST['rows'] ?? '[]'), true);
+            if (!is_array($rows)) {
+                inv_fail('Invalid data.');
             }
-            $stmt = $db->prepare('SELECT COALESCE(SUM(allocation_percent), 0) AS s FROM investor_activity_allocations WHERE investor_id = ? AND activity_id <> ?');
-            $stmt->bind_param('ii', $investorId, $activityId);
-            $stmt->execute();
-            $others = (float) $stmt->get_result()->fetch_assoc()['s'];
-            $stmt->close();
-            if ($others + $pct > 100.001) {
-                inv_fail('Total allocation for this investor would exceed 100% (already ' . number_format($others, 2) . '%).');
-            }
-            $stmt = $db->prepare('INSERT INTO investor_activity_allocations (investor_id, activity_id, allocation_percent, created_by) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE allocation_percent = VALUES(allocation_percent)');
-            $stmt->bind_param('iidi', $investorId, $activityId, $pct, $uid);
-            $stmt->execute();
-            $stmt->close();
-            inv_out(['ok' => true]);
 
-        case 'delete_allocation':
-            inv_verify_password();
-            $id = (int) ($_POST['id'] ?? 0);
-            $stmt = $db->prepare('DELETE FROM investor_activity_allocations WHERE id = ?');
-            $stmt->bind_param('i', $id);
+            // Validate and de-duplicate by investor_id first, before touching the DB.
+            $clean = [];
+            foreach ($rows as $row) {
+                $investorId = (int) ($row['investor_id'] ?? 0);
+                $pct        = round((float) ($row['percent'] ?? 0), 2);
+                if ($investorId <= 0 || $pct <= 0) {
+                    continue; // treated as "not linked", same as leaving it out
+                }
+                if ($pct > 100) {
+                    inv_fail('Share cannot exceed 100% for one investor.');
+                }
+                if (!inv_exists('SELECT id FROM investors WHERE id = ?', $investorId)) {
+                    inv_fail('Investor not found.');
+                }
+                $clean[$investorId] = $pct;
+            }
+
+            // Each investor's total share across OTHER activities (excluding this
+            // one, since this request replaces this activity's row entirely) must
+            // still leave room for the new percentage here.
+            foreach ($clean as $investorId => $pct) {
+                $stmt = $db->prepare('SELECT COALESCE(SUM(allocation_percent), 0) AS s FROM investor_activity_allocations WHERE investor_id = ? AND activity_id <> ?');
+                $stmt->bind_param('ii', $investorId, $activityId);
+                $stmt->execute();
+                $others = (float) $stmt->get_result()->fetch_assoc()['s'];
+                $stmt->close();
+                if ($others + $pct > 100.001) {
+                    inv_fail('Total allocation for one investor would exceed 100% across their other projects (already ' . number_format($others, 2) . '%).');
+                }
+            }
+
+            $db->begin_transaction();
+            $stmt = $db->prepare('DELETE FROM investor_activity_allocations WHERE activity_id = ?');
+            $stmt->bind_param('i', $activityId);
             $stmt->execute();
             $stmt->close();
+
+            foreach ($clean as $investorId => $pct) {
+                $stmt = $db->prepare('INSERT INTO investor_activity_allocations (investor_id, activity_id, allocation_percent, created_by) VALUES (?, ?, ?, ?)');
+                $stmt->bind_param('iidi', $investorId, $activityId, $pct, $uid);
+                $stmt->execute();
+                $stmt->close();
+            }
+            $db->commit();
             inv_out(['ok' => true]);
 
         // ----- Pengaturan pdp per activity -----

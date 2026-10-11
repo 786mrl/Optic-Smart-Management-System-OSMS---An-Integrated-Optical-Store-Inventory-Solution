@@ -276,6 +276,26 @@ Perlu konfirmasi keputusan:
   dicek di 3 ukuran (HP ≤767px, tablet 768–1023px, jendela setengah layar ~900–1000px).
 
 ### Log terbaru (belum dites di server; lebur ke §4–7 setelah dites, lalu hapus dari sini)
+- **11 Okt 2026, fitur — Unlink kembali ditambahkan di "Share of Investor Fund (%)"**: rombak 11 Okt (multi-investor
+    auto-balance, lihat log di bawah) sempat menghapus kolom Actions/Unlink per baris; dikembalikan di dua tempat,
+    keduanya lewat `save_fund_shares` (tidak ada endpoint baru):
+    - Tabel utama "Investor Fund Utilization" (`allocBody`, Card alokasi di tab Investment): kolom Actions baru,
+      tombol Unlink per investor langsung mengirim `save_fund_shares` untuk activity yang sedang dipilih di
+      `#allocActivity`, tanpa investor baris itu (`rows` dibangun dari `state.allocations` dikurangi investor
+      tersebut) — tidak perlu buka fly window.
+    - Fly window `invAllocOverlay` (`invAllocBody`): tombol Unlink per baris set `percent = 0` untuk investor itu,
+      lalu `allocRecalc()` jalan seperti biasa (baris lain auto-balance ulang), baru tersimpan saat tombol Save
+      fly window diklik.
+    - Tidak ada password untuk unlink (konsisten dengan `save_fund_shares` yang memang tanpa `inv_verify_password()`).
+- **11 Okt 2026, fitur — 3 card tab Investment jadi collapsible**: Investment Input, Non-Project Expenses (sebelumnya
+    satu card gabungan dengan Investment Input), dan Investor Fund Utilization sekarang 3 `<div class="card">`
+    terpisah, masing-masing dengan header klik (`.inv-collapsible`, `[data-inv-card-toggle]`) + body
+    (`.inv-collapsible-body`). Default semua collapsed. Klik tunggal header → buka card itu, tutup yang lain. Klik
+    ganda header → toggle card itu saja, tidak menutup yang lain (bisa beberapa card terbuka bersamaan). Pakai pola
+    collapsible proyek (`max-height:scrollHeight`, bukan `display:none/block`, §3 gotcha #2); di-re-sync lewat
+    `window.invSyncCollapsibleHeights()` di akhir `render()` dan `renderAllocTable()`, karena kedua fungsi itu
+    menulis ulang isi tbody di dalam card yang mungkin sedang terbuka. CSS/JS lokal di `investor_content.php`
+    (IIFE sendiri, tidak berbagi scope — sesuai §3), belum dibuat generik ke `theme.css`.
 - **7 Okt 2026, Menu Investor baru** (`investor_content.php` + `ajax/investor_api.php`, satu endpoint untuk semua aksi):
   - DB baru: `investors`, `investor_deposits` (setoran, IDR/valas + kurs manual, bisa berkali-kali),
     `investor_support_expenses` (pengeluaran non-project: return_capital/aid/other, mengurangi ICU),
@@ -324,10 +344,38 @@ Perlu konfirmasi keputusan:
     (`disbursement_categories.category_name`, LEFT JOIN by `transaction_disbursements.category_id`, fallback "-"
     kalau NULL) dan **Description** (`transaction_disbursements.transaction_purpose`). `transactions.notes` sudah
     tidak dipakai di tabel ini.
-  - Belum dites di server sama sekali (menunggu pengujian dari fix-fix di atas). Perlu dicek juga: tanda
-    `total_price` pada `price_adjustment` (asumsi positif, dikurangkan); kelas
-    `.input-uppercase`/`.input-number-comma` jalan tanpa `flexOverlays` untuk 2 modal baru (`invPickerOverlay`,
-    `invPwOverlay`).
+  - **11 Okt 2026, fitur**: input `.input-number-comma` di modul Investor (Amount, Exchange Rate, allocation %, pdp)
+    sebelumnya tidak terpisah koma ribuan (class-nya ada tapi tidak ada handler yang memformatnya — ternyata
+    `.input-number-comma` bukan sesuatu yang diformat otomatis oleh CSS/JS global proyek). Ditambah `formatComma()`
+    + satu `input` listener (delegasi di `root`) khusus di `investor_content.php` sendiri, bukan bergantung pada
+    mekanisme global: grouping ribuan live saat mengetik, tidak memotong desimal (supaya exchange rate 6 digit
+    tetap utuh), cursor position disesuaikan. Dipakai juga saat mengisi form Edit deposit dan input pdp dinamis di
+    tabel Report. Server tidak berubah — `inv_num()` di `investor_api.php` sudah strip koma sejak awal.
+  - **11 Okt 2026, rombak besar — "Share of Investor Fund (%)" jadi multi-investor**: sebelumnya alokasi
+    investor↔activity code diisi satu-satu per investor terpilih (input % + tombol "Link to Project"). Diganti
+    tombol "Share of Investor Fund (%)" di Card 2 (tab Investment) yang membuka fly window `invAllocOverlay`
+    berisi SEMUA investor dengan ICU > 0, masing-masing baris punya input % yang **auto-balance**: mengedit %
+    satu investor langsung menghitung ulang % investor lain secara **sama rata, sebagai % dari ICU masing-masing**,
+    supaya total dana investor menutupi Total Cost project tersebut (sisanya tetap jadi Company Additional kalau
+    ICU gabungan tidak cukup). Rumus: `remaining = cost − (pct_edited × icu_edited)`; `pct_lainnya = remaining ÷
+    Σicu_lainnya × 100` (diterapkan sama ke semua investor "lainnya", bukan hanya satu) — ini pilihan desain untuk
+    kasus >2 investor yang belum dikonfirmasi eksplisit oleh user (contoh user cuma kasus 2 investor), perlu
+    divalidasi saat dites apakah perilakunya sesuai ekspektasi untuk 3+ investor.
+    - Card 2 (tabel "Investor Fund Utilization") sekarang berbasis Activity Code yang dipilih di dropdown
+      `#allocActivity`, menampilkan SEMUA investor yang terkait ke activity itu (bukan cuma investor yang sedang
+      dipilih di atas) — fungsi baru `renderAllocTable()`, dipanggil saat `render()` dan saat `#allocActivity`
+      berubah. Kolom Actions/Unlink per baris sempat dihapus di rombak ini, lalu dikembalikan — lihat log
+      11 Okt "Unlink kembali ditambahkan" di atas.
+    - API: `save_allocation` + `delete_allocation` (satu baris per request) diganti `save_fund_shares` (satu
+      action batch): terima `activity_id` + `rows` (JSON array `{investor_id, percent}`), dalam satu transaksi
+      DELETE semua baris `investor_activity_allocations` untuk activity itu lalu INSERT ulang dari `rows` —
+      investor yang tidak ada di `rows` (atau percent≤0) otomatis ter-unlink. Validasi total alokasi investor
+      ≤100% tetap jalan, dihitung dari activity LAIN (`activity_id <> ?`) karena activity ini sendiri sedang
+      ditimpa penuh.
+  - Belum dites di server sama sekali (menunggu pengujian dari fix-fix dan fitur di atas). Perlu dicek juga: tanda
+    `total_price` pada `price_adjustment` (asumsi positif, dikurangkan); kelas `.input-uppercase` jalan tanpa
+    `flexOverlays` untuk 2 modal baru (`invPickerOverlay`, `invPwOverlay`); perilaku auto-balance untuk 3+ investor
+    (lihat poin di atas).
 - **6 Okt 2026, Kategori Disbursement** (hanya label pengelompokan uang keluar; tidak memecah total/saldo/chart):
   - DB: tabel baru `disbursement_categories` (id, category_name UNIQUE, created_by, created_at), seed PURCHASE PAYMENT /
     CLEARANCE FEES / OPERATIONAL EXPENSES; kolom baru `transaction_disbursements.category_id` (NOT NULL, indeks, tanpa FK,

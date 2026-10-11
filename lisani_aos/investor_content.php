@@ -46,6 +46,35 @@
     text-underline-offset: 3px;
   }
   .inv-scroll th[data-help]:hover { opacity: .8; }
+
+  .inv-collapsible .inv-collapsible-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+    margin-bottom: 0;
+  }
+  .inv-collapsible .inv-collapsible-header .label { margin-bottom: 0; }
+  .inv-collapsible-chevron {
+    display: inline-flex;
+    flex: 0 0 auto;
+    transition: transform .15s ease;
+    opacity: .6;
+  }
+  .inv-collapsible.open .inv-collapsible-chevron { transform: rotate(90deg); }
+  /* Pola collapsible proyek (lihat PROJECT_NOTES §3 gotcha #2): max-height, bukan
+     display:none/block, supaya transisi bisa di-animasi dan konsisten dengan
+     collapsible lain di aplikasi. max-height di-set ke scrollHeight lewat JS saat
+     dibuka / saat isi berubah ketika sedang terbuka (re-sync). */
+  .inv-collapsible-body {
+    overflow: hidden;
+    max-height: 0;
+    margin-top: 0;
+    transition: max-height .2s ease, margin-top .2s ease;
+  }
+  .inv-collapsible.open .inv-collapsible-body { margin-top: 12px; }
 </style>
 
 <div class="menu-section" data-section="investor" style="display:none;">
@@ -112,9 +141,13 @@
         <button type="button" class="btn btn-secondary" id="fundChangeBtn">Change Investor</button>
       </div>
 
-      <!-- Card 1: input investasi + list + non-project -->
-      <div class="card">
-        <div class="label" style="margin-bottom:8px;">Investment Input</div>
+      <!-- Card 1: Investment Input -->
+      <div class="card inv-collapsible" data-inv-card="dep">
+        <div class="inv-collapsible-header" data-inv-card-toggle>
+          <div class="label">Investment Input</div>
+          <svg class="inv-collapsible-chevron" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div class="inv-collapsible-body">
         <input type="hidden" id="depId" value="0">
         <div class="inv-row">
           <div class="form-group">
@@ -169,8 +202,16 @@
             <tbody id="depBody"></tbody>
           </table>
         </div>
+        </div>
+      </div>
 
-        <div class="inv-sub">Non-Project Expenses (returns, aid, others)</div>
+      <!-- Card 2: Non-Project Expenses -->
+      <div class="card inv-collapsible" data-inv-card="sup">
+        <div class="inv-collapsible-header" data-inv-card-toggle>
+          <div class="label">Non-Project Expenses (returns, aid, others)</div>
+          <svg class="inv-collapsible-chevron" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div class="inv-collapsible-body">
         <div class="inv-row">
           <div class="form-group">
             <div class="label">Category</div>
@@ -211,22 +252,23 @@
             <tbody id="supBody"></tbody>
           </table>
         </div>
+        </div>
       </div>
 
-      <!-- Card 2: investor fund utilization -->
-      <div class="card">
-        <div class="label" style="margin-bottom:8px;">Investor Fund Utilization (linked to projects)</div>
+      <!-- Card 3: investor fund utilization -->
+      <div class="card inv-collapsible" data-inv-card="alloc">
+        <div class="inv-collapsible-header" data-inv-card-toggle>
+          <div class="label">Investor Fund Utilization (linked to projects)</div>
+          <svg class="inv-collapsible-chevron" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div class="inv-collapsible-body">
         <div class="inv-row">
           <div class="form-group">
             <div class="label">Activity Code</div>
             <select class="select" id="allocActivity"></select>
           </div>
-          <div class="form-group">
-            <div class="label">Share of Investor Fund (%)</div>
-            <input type="text" class="input input-number-comma" id="allocPercent" placeholder="0">
-          </div>
           <div class="inv-btns">
-            <button type="button" class="btn btn-primary" id="allocSaveBtn">Link to Project</button>
+            <button type="button" class="btn btn-primary" id="allocOpenBtn">Share of Investor Fund (%)</button>
           </div>
         </div>
         <div class="inv-hint" style="margin-top:6px;" id="allocTotal"></div>
@@ -234,10 +276,10 @@
           <table>
             <thead>
               <tr>
-                <th data-help="The project this investor's fund is linked to.">Activity Code</th>
+                <th data-help="Investor whose fund is linked to this project.">Investor</th>
                 <th class="num" data-help="Percentage of this investor's ICU allocated to the project.">Share (%)</th>
                 <th class="num" data-help="Actual amount used in the project (may be less than the allocated share if the project's total cost is smaller).">Fund Used (IDR)</th>
-                <th data-help="Unlink this allocation from the project.">Actions</th>
+                <th data-help="Remove this investor's fund link from this project.">Actions</th>
               </tr>
             </thead>
             <tbody id="allocBody"></tbody>
@@ -268,6 +310,7 @@
               </tr>
             </tfoot>
           </table>
+        </div>
         </div>
       </div>
     </div>
@@ -428,6 +471,37 @@
   </div>
 </div>
 
+<!-- Modal: Share of Investor Fund (%) — multi-investor, auto-balance -->
+<div class="modal-overlay" id="invAllocOverlay" style="display:none;">
+  <div class="modal" style="max-width:640px;">
+    <div class="modal-header">Share of Investor Fund (%)</div>
+    <div class="inv-hint" id="invAllocSub" style="margin-bottom:8px;"></div>
+    <div class="inv-hint" style="margin-bottom:8px;">
+      Set a share for one investor; the other investors below adjust automatically (equally, as a % of
+      their own ICU) to cover the rest of this project's total cost.
+    </div>
+    <div class="inv-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Investor</th>
+            <th class="num">ICU (IDR)</th>
+            <th class="num">Share (%)</th>
+            <th class="num">Fund Used (IDR)</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="invAllocBody"></tbody>
+      </table>
+    </div>
+    <div class="inv-hint" style="margin-top:10px;font-size:14px;opacity:1;" id="invAllocSummary"></div>
+    <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">
+      <button type="button" class="btn btn-secondary" id="invAllocCancel">Cancel</button>
+      <button type="button" class="btn btn-primary" id="invAllocSave">Save</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal: penjelasan arti header kolom (klik judul kolom mana pun) -->
 <div class="modal-overlay" id="invColHelpOverlay" style="display:none;">
   <div class="modal" style="max-width:360px;">
@@ -484,6 +558,27 @@
   function invName(id) { var inv = findInv(id); return inv ? inv.name : '-'; }
   function emptyRow(tbodyId, cols, text) {
     byId(tbodyId).innerHTML = '<tr><td colspan="' + cols + '" class="inv-hint">' + text + '</td></tr>';
+  }
+
+  // Thousand-separator formatting for .input-number-comma fields (amount,
+  // exchange rate, percentages). Groups the integer part with commas as the
+  // user types; does not round/truncate the decimal part, so a 6-decimal
+  // exchange rate stays intact. The server (inv_num() in investor_api.php)
+  // strips commas back out before using the value, so no change is needed
+  // on the PHP side or in the request-building code here.
+  function formatComma(raw) {
+    raw = String(raw === null || raw === undefined ? '' : raw);
+    var neg = raw.trim().charAt(0) === '-';
+    var cleaned = raw.replace(/[^0-9.]/g, '');
+    var firstDot = cleaned.indexOf('.');
+    if (firstDot !== -1) {
+      cleaned = cleaned.slice(0, firstDot + 1) + cleaned.slice(firstDot + 1).replace(/\./g, '');
+    }
+    var parts = cleaned.split('.');
+    var intPart = parts[0].replace(/^0+(?=\d)/, '');
+    var withCommas = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    var result = withCommas + (parts.length > 1 ? '.' + parts[1] : '');
+    return (neg && result !== '' ? '-' : '') + result;
   }
 
   var CATEGORY_LABEL = { return_capital: 'Return of capital', aid: 'Aid / assistance', other: 'Other' };
@@ -580,6 +675,124 @@
     renderFund();
   }
 
+  byId('allocActivity').addEventListener('change', renderAllocTable);
+
+  // ---------- Share of Investor Fund (%) fly window: multi-investor, auto-balance ----------
+  // allocWorking: [{ investor_id, name, icu, percent }], one row per investor with
+  // ICU > 0 for the activity currently chosen in #allocActivity.
+  var allocWorking = [];
+  var allocActivityId = 0;
+
+  function allocRecalc(editedInvestorId) {
+    var act = findActivity(allocActivityId);
+    var cost = act ? act.cost : 0;
+    var edited = null;
+    allocWorking.forEach(function (r) { if (r.investor_id === editedInvestorId) edited = r; });
+    if (!edited) return;
+    edited.percent = Math.max(0, Math.min(100, edited.percent));
+    var contributionEdited = edited.percent / 100 * edited.icu;
+    var remaining = cost - contributionEdited;
+    var others = allocWorking.filter(function (r) { return r.investor_id !== editedInvestorId; });
+    var sumOtherIcu = 0;
+    others.forEach(function (r) { sumOtherIcu += r.icu; });
+    var otherPct = 0;
+    if (sumOtherIcu > 0) {
+      otherPct = Math.max(0, Math.min(100, remaining / sumOtherIcu * 100));
+    }
+    others.forEach(function (r) { r.percent = otherPct; });
+  }
+
+  function allocRenderModal() {
+    var act = findActivity(allocActivityId);
+    byId('invAllocSub').textContent = act
+      ? act.label + ' — Total Cost: ' + fmt(act.cost)
+      : '';
+    var tbody = byId('invAllocBody');
+    tbody.innerHTML = '';
+    var totalUsed = 0;
+    allocWorking.forEach(function (r) {
+      var used = r.percent / 100 * r.icu;
+      totalUsed += used;
+      var tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td>' + esc(r.name) + '</td>' +
+        '<td class="num">' + fmt(r.icu) + '</td>' +
+        '<td class="num"><input type="text" class="input input-number-comma" style="max-width:100px;margin-left:auto;text-align:right;" data-alloc-pct="' + r.investor_id + '" value="' + formatComma(r.percent) + '"></td>' +
+        '<td class="num">' + fmt(used) + '</td>' +
+        '<td><button type="button" class="btn btn-danger inv-action-btn" data-alloc-unlink="' + r.investor_id + '">Unlink</button></td>';
+      tbody.appendChild(tr);
+    });
+    if (!allocWorking.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="inv-hint">No investor currently has ICU greater than 0.</td></tr>';
+    }
+    var cost = act ? act.cost : 0;
+    var companyNeeded = Math.max(0, cost - totalUsed);
+    byId('invAllocSummary').textContent =
+      'Investor Fund: ' + fmt(totalUsed) + ' of Total Cost ' + fmt(cost) + '. Company Additional: ' + fmt(companyNeeded) + '.';
+  }
+
+  byId('invAllocBody').addEventListener('click', function (e) {
+    var btn = e.target.closest('[data-alloc-unlink]');
+    if (!btn) return;
+    var investorId = parseInt(btn.getAttribute('data-alloc-unlink'), 10);
+    var row = null;
+    allocWorking.forEach(function (r) { if (r.investor_id === investorId) row = r; });
+    if (!row) return;
+    row.percent = 0;
+    allocRecalc(investorId);
+    allocRenderModal();
+  });
+
+  byId('invAllocBody').addEventListener('input', function (e) {
+    var input = e.target.closest('[data-alloc-pct]');
+    if (!input) return;
+    var investorId = parseInt(input.getAttribute('data-alloc-pct'), 10);
+    var row = null;
+    allocWorking.forEach(function (r) { if (r.investor_id === investorId) row = r; });
+    if (!row) return;
+    var raw = input.value.replace(/,/g, '');
+    row.percent = parseFloat(raw) || 0;
+    allocRecalc(investorId);
+    allocRenderModal();
+    // Put focus back on the field the person is typing in, cursor at the end,
+    // since allocRenderModal() just rebuilt every input in the table.
+    var again = byId('invAllocBody').querySelector('[data-alloc-pct="' + investorId + '"]');
+    if (again) {
+      again.focus();
+      var len = again.value.length;
+      again.setSelectionRange(len, len);
+    }
+  });
+
+  byId('allocOpenBtn').addEventListener('click', function () {
+    allocActivityId = selId('allocActivity');
+    if (!allocActivityId) { msg('Select an activity code first.', true); return; }
+    var existing = {};
+    state.allocations.filter(function (a) { return a.activity_id === allocActivityId; })
+      .forEach(function (a) { existing[a.investor_id] = a.percent; });
+    allocWorking = state.investors
+      .filter(function (inv) { return inv.icu > 0; })
+      .map(function (inv) {
+        return { investor_id: inv.id, name: inv.name, icu: inv.icu, percent: existing[inv.id] || 0 };
+      });
+    allocRenderModal();
+    byId('invAllocOverlay').style.display = 'flex';
+  });
+  byId('invAllocCancel').addEventListener('click', function () {
+    byId('invAllocOverlay').style.display = 'none';
+  });
+  byId('invAllocSave').addEventListener('click', function () {
+    var rows = allocWorking
+      .filter(function (r) { return r.percent > 0; })
+      .map(function (r) { return { investor_id: r.investor_id, percent: Math.round(r.percent * 100) / 100 }; });
+    run('save_fund_shares', {
+      activity_id: allocActivityId,
+      rows: JSON.stringify(rows)
+    }, 'Investor fund shares saved.').then(function (ok) {
+      if (ok) byId('invAllocOverlay').style.display = 'none';
+    });
+  });
+
   // ---------- column header help (click any <th data-help>) ----------
   root.addEventListener('click', function (e) {
     var th = e.target.closest('th[data-help]');
@@ -591,6 +804,77 @@
   byId('invColHelpClose').addEventListener('click', function () {
     byId('invColHelpOverlay').style.display = 'none';
   });
+
+  // ---------- live thousand-separator formatting ----------
+  root.addEventListener('input', function (e) {
+    var el = e.target;
+    if (!el.classList || !el.classList.contains('input-number-comma')) return;
+    var start = el.selectionStart;
+    var oldLen = el.value.length;
+    var newVal = formatComma(el.value);
+    if (newVal === el.value) return;
+    el.value = newVal;
+    var newLen = newVal.length;
+    if (start !== null) {
+      var pos = start + (newLen - oldLen);
+      el.setSelectionRange(Math.max(0, pos), Math.max(0, pos));
+    }
+  });
+
+  // ---------- collapsible cards (Investment Input / Non-Project Expenses / Fund Utilization) ----------
+  // Default: all collapsed. Single click on a header: open that card, close the
+  // others. Double click on a header: toggle just that card, leaving the others
+  // as they are (so more than one can stay open at once).
+  // Pola max-height mengikuti gotcha collapsible proyek (PROJECT_NOTES §3 #2): body
+  // di-render dengan max-height:0 lalu diset ke scrollHeight saat dibuka; harus
+  // di-re-sync setiap kali isi card yang sedang terbuka berubah (mis. setelah
+  // render() menulis ulang tbody di dalamnya), kalau tidak body akan terpotong.
+  (function () {
+    var cards = Array.prototype.slice.call(root.querySelectorAll('.inv-collapsible'));
+
+    function syncHeight(card) {
+      var body = card.querySelector('.inv-collapsible-body');
+      if (!body) return;
+      body.style.maxHeight = card.classList.contains('open') ? body.scrollHeight + 'px' : '0';
+    }
+
+    function openOnly(card) {
+      cards.forEach(function (c) {
+        c.classList.toggle('open', c === card);
+        syncHeight(c);
+      });
+    }
+
+    function toggleOnly(card) {
+      card.classList.toggle('open');
+      syncHeight(card);
+    }
+
+    var clickTimer = null;
+    cards.forEach(function (card) {
+      var header = card.querySelector('[data-inv-card-toggle]');
+      if (!header) return;
+      header.addEventListener('click', function () {
+        if (clickTimer) {
+          // second click within the window -> this is a double click
+          clearTimeout(clickTimer);
+          clickTimer = null;
+          toggleOnly(card);
+        } else {
+          clickTimer = setTimeout(function () {
+            clickTimer = null;
+            openOnly(card);
+          }, 250);
+        }
+      });
+    });
+
+    // Re-sync whenever a card's content might have changed while it's open
+    // (render() rewrites the tbody's inside these cards on every data refresh).
+    window.invSyncCollapsibleHeights = function () {
+      cards.forEach(function (c) { if (c.classList.contains('open')) syncHeight(c); });
+    };
+  })();
 
   // ---------- tabs ----------
   root.querySelectorAll('[data-inv-tab]').forEach(function (btn) {
@@ -615,8 +899,10 @@
     if (selectedInvestorId && !findInv(selectedInvestorId)) selectedInvestorId = 0;
     byId('fundName').textContent = selectedInvestorId ? invName(selectedInvestorId) : '-';
     renderFund();
+    renderAllocTable();
     renderReport();
     renderProfit();
+    if (window.invSyncCollapsibleHeights) window.invSyncCollapsibleHeights();
   }
 
   function fillSelects() {
@@ -667,20 +953,54 @@
     });
   }
 
+  function findActivity(id) {
+    for (var i = 0; i < state.activities.length; i++) {
+      if (state.activities[i].id === id) return state.activities[i];
+    }
+    return null;
+  }
+
+  // Card 2 (Investor Fund Utilization) is keyed by the chosen Activity Code,
+  // across ALL investors linked to it — independent of selectedInvestorId.
+  function renderAllocTable() {
+    var alloc = byId('allocBody');
+    alloc.innerHTML = '';
+    var activityId = selId('allocActivity');
+    var act = findActivity(activityId);
+    var rows = state.allocations.filter(function (a) { return a.activity_id === activityId; });
+    var totalUsed = 0;
+    rows.forEach(function (a) {
+      var used = 0;
+      if (act) {
+        act.investors.forEach(function (r) { if (r.investor_id === a.investor_id) used = r.used; });
+      }
+      totalUsed += used;
+      var tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td>' + esc(invName(a.investor_id)) + '</td>' +
+        '<td class="num">' + fmt(a.percent) + '</td>' +
+        '<td class="num">' + fmt(used) + '</td>' +
+        '<td><button type="button" class="btn btn-danger inv-action-btn" data-act="unlink-alloc" data-id="' + a.investor_id + '">Unlink</button></td>';
+      alloc.appendChild(tr);
+    });
+    if (!rows.length) emptyRow('allocBody', 4, 'No investor fund linked to this project yet.');
+    byId('allocTotal').textContent = act
+      ? 'Investor Fund: ' + fmt(totalUsed) + ' of Total Cost ' + fmt(act.cost) + ' (Company Additional: ' + fmt(act.company) + ')'
+      : '';
+    if (window.invSyncCollapsibleHeights) window.invSyncCollapsibleHeights();
+  }
+
   // Tab 2
   function renderFund() {
     var deps = byId('depBody');
     var sup = byId('supBody');
-    var alloc = byId('allocBody');
     var tx = byId('txBody');
-    deps.innerHTML = ''; sup.innerHTML = ''; alloc.innerHTML = ''; tx.innerHTML = '';
-    byId('allocTotal').textContent = '';
+    deps.innerHTML = ''; sup.innerHTML = ''; tx.innerHTML = '';
     byId('txTotal').textContent = fmt(0);
 
     if (!selectedInvestorId) {
       emptyRow('depBody', 7, 'Select an investor first.');
       emptyRow('supBody', 5, 'Select an investor first.');
-      emptyRow('allocBody', 4, 'Select an investor first.');
       emptyRow('txBody', 5, 'Select an investor first.');
       return;
     }
@@ -713,29 +1033,6 @@
       sup.appendChild(tr);
     });
     if (!sup.children.length) emptyRow('supBody', 5, 'No non-project expenses.');
-
-    var total = 0;
-    var inv = findInv(selectedInvestorId);
-    state.allocations.filter(function (a) { return a.investor_id === selectedInvestorId; }).forEach(function (a) {
-      total += a.percent;
-      var used = 0;
-      state.activities.forEach(function (act) {
-        if (act.id === a.activity_id) {
-          act.investors.forEach(function (r) {
-            if (r.investor_id === selectedInvestorId) used = r.used;
-          });
-        }
-      });
-      var tr = document.createElement('tr');
-      tr.innerHTML =
-        '<td>' + esc(a.activity_label) + '</td>' +
-        '<td class="num">' + fmt(a.percent) + '</td>' +
-        '<td class="num">' + fmt(used) + '</td>' +
-        '<td><button type="button" class="btn btn-danger inv-action-btn" data-act="del-alloc" data-id="' + a.id + '">Unlink</button></td>';
-      alloc.appendChild(tr);
-    });
-    if (!alloc.children.length) emptyRow('allocBody', 4, 'Not linked to any project yet.');
-    if (inv) byId('allocTotal').textContent = 'Linked: ' + fmt(total) + '% of ICU ' + fmt(inv.icu);
 
     var linkedActivityIds = state.allocations
       .filter(function (a) { return a.investor_id === selectedInvestorId; })
@@ -802,7 +1099,7 @@
         '<td class="num">' + fmt(a.gross) + '</td>' +
         '<td class="num">' + fmt(a.zakat) + '</td>' +
         '<td class="num">' + fmt(a.net) + '</td>' +
-        '<td class="num"><input type="text" class="input input-number-comma" style="max-width:110px;margin-left:auto;text-align:right;" data-pdp-for="' + a.id + '" value="' + a.pdp + '"></td>' +
+        '<td class="num"><input type="text" class="input input-number-comma" style="max-width:110px;margin-left:auto;text-align:right;" data-pdp-for="' + a.id + '" value="' + formatComma(a.pdp) + '"></td>' +
         '<td class="num">' + fmt(a.distribution) + '</td>' +
         '<td><button type="button" class="btn btn-secondary inv-action-btn" data-act="save-pdp" data-id="' + a.id + '">Save pdp</button></td>';
       dist.appendChild(tr);
@@ -904,14 +1201,6 @@
     byId('supAmount').value = ''; byId('supNotes').value = ''; byId('supDate').value = today();
   });
 
-  byId('allocSaveBtn').addEventListener('click', function () {
-    if (!selectedInvestorId) { msg('Select an investor first.', true); return; }
-    run('save_allocation', {
-      investor_id: selectedInvestorId,
-      activity_id: selId('allocActivity'),
-      allocation_percent: byId('allocPercent').value
-    }, 'Linked to project.').then(function (ok) { if (ok) byId('allocPercent').value = ''; });
-  });
 
   byId('paySaveBtn').addEventListener('click', function () {
     run('save_profit_payment', {
@@ -942,20 +1231,27 @@
       byId('depDate').value = d.date;
       byId('depCurrency').value = d.currency;
       byId('depRateWrap').style.display = d.currency === 'IDR' ? 'none' : 'block';
-      byId('depAmount').value = d.amount;
-      byId('depRate').value = d.rate === null ? '' : d.rate;
+      byId('depAmount').value = formatComma(d.amount);
+      byId('depRate').value = d.rate === null ? '' : formatComma(d.rate);
       byId('depNotes').value = d.notes;
     } else if (act === 'del-dep') {
       askPassword('Delete investment', 'delete_deposit', { id: id }, 'Investment deleted.');
     } else if (act === 'del-sup') {
       askPassword('Delete expense', 'delete_support', { id: id }, 'Expense deleted.');
-    } else if (act === 'del-alloc') {
-      askPassword('Unlink from project', 'delete_allocation', { id: id }, 'Unlinked.');
     } else if (act === 'del-pay') {
       askPassword('Delete profit payment', 'delete_profit_payment', { id: id }, 'Payment deleted.');
     } else if (act === 'save-pdp') {
       var input = root.querySelector('[data-pdp-for="' + id + '"]');
       run('save_pdp', { activity_id: id, profit_distribution_percent: input ? input.value : 0 }, 'pdp saved.');
+    } else if (act === 'unlink-alloc') {
+      var unlinkActivityId = selId('allocActivity');
+      var remaining = state.allocations
+        .filter(function (a) { return a.activity_id === unlinkActivityId && a.investor_id !== id; })
+        .map(function (a) { return { investor_id: a.investor_id, percent: a.percent }; });
+      run('save_fund_shares', {
+        activity_id: unlinkActivityId,
+        rows: JSON.stringify(remaining)
+      }, 'Investor unlinked from this project.');
     }
   });
 
