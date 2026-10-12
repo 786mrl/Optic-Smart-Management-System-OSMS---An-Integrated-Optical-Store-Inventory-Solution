@@ -107,6 +107,21 @@
         </div>
       </div>
 
+      <div class="card" style="display:flex;gap:20px;flex-wrap:wrap;">
+        <div>
+          <div class="inv-hint" title="Sum of ICU (Deposits minus Non-Project expenses) across all investors.">Total ICU (IDR)</div>
+          <div style="font-size:18px;font-weight:600;" id="invTotalIcu">-</div>
+        </div>
+        <div>
+          <div class="inv-hint" title="Sum of Used in Projects (IDR) across all investors.">Total Used in Projects (IDR)</div>
+          <div style="font-size:18px;font-weight:600;" id="invTotalUsed">-</div>
+        </div>
+        <div>
+          <div class="inv-hint" title="Sum of ICU minus Used in Projects across all investors.">Total Remaining (IDR)</div>
+          <div style="font-size:18px;font-weight:600;" id="invTotalRemaining">-</div>
+        </div>
+      </div>
+
       <div class="card">
         <div class="label" style="margin-bottom:8px;">Investor List</div>
         <div class="inv-scroll">
@@ -137,6 +152,20 @@
         <div>
           <div class="inv-hint">Selected investor</div>
           <div style="font-size:18px;font-weight:600;" id="fundName">-</div>
+          <div class="inv-row" style="gap:20px;margin-top:6px;flex-wrap:wrap;">
+            <div>
+              <div class="inv-hint" title="Investor Capital Utilized: total fund available for this investor (deposits minus non-project expenses).">Available (ICU)</div>
+              <div style="font-weight:600;" id="fundAvailable">-</div>
+            </div>
+            <div>
+              <div class="inv-hint" title="Portion of this investor's ICU already used across linked projects.">Used in Projects</div>
+              <div style="font-weight:600;" id="fundUsed">-</div>
+            </div>
+            <div>
+              <div class="inv-hint" title="ICU minus funds already used in projects.">Remaining</div>
+              <div style="font-weight:600;" id="fundRemaining">-</div>
+            </div>
+          </div>
         </div>
         <button type="button" class="btn btn-secondary" id="fundChangeBtn">Change Investor</button>
       </div>
@@ -683,6 +712,16 @@
   var allocWorking = [];
   var allocActivityId = 0;
 
+  // Cascading equal-RUPIAH split (not equal %):
+  // - The edited investor keeps whatever percent the person typed (clamped 0-100).
+  // - What's left of the project cost is split into equal IDR amounts across the
+  //   other investors (remaining ÷ count still in the pool).
+  // - If an investor's equal IDR share is more than their ICU can hold, they're
+  //   capped at 100% of their own ICU, and the part their ICU couldn't hold is
+  //   thrown back into the pool and re-split as an equal IDR amount among the
+  //   investors still left. Repeats until nothing more needs to move or everyone
+  //   left is already capped at 100%. Anything still unplaced after that becomes
+  //   Company Additional (shown elsewhere), same as before.
   function allocRecalc(editedInvestorId) {
     var act = findActivity(allocActivityId);
     var cost = act ? act.cost : 0;
@@ -692,14 +731,35 @@
     edited.percent = Math.max(0, Math.min(100, edited.percent));
     var contributionEdited = edited.percent / 100 * edited.icu;
     var remaining = cost - contributionEdited;
+
     var others = allocWorking.filter(function (r) { return r.investor_id !== editedInvestorId; });
-    var sumOtherIcu = 0;
-    others.forEach(function (r) { sumOtherIcu += r.icu; });
-    var otherPct = 0;
-    if (sumOtherIcu > 0) {
-      otherPct = Math.max(0, Math.min(100, remaining / sumOtherIcu * 100));
+    var pool = others.slice(); // investors still eligible for an equal-IDR share
+    var share = {}; // investor_id -> cumulative IDR share across cascade rounds
+    others.forEach(function (r) { share[r.investor_id] = 0; });
+
+    var guard = 0;
+    while (pool.length && remaining > 0 && guard < others.length + 1) {
+      guard++;
+      var equalShare = remaining / pool.length;
+      var overflow = 0;
+      var stillOpen = [];
+      pool.forEach(function (r) {
+        if (equalShare >= r.icu) {
+          // this investor's ICU can't hold an equal IDR slice: cap at their own
+          // ICU (100%), throw back what didn't fit for the rest to re-split.
+          share[r.investor_id] = r.icu;
+          overflow += equalShare - r.icu;
+        } else {
+          share[r.investor_id] += equalShare;
+          stillOpen.push(r);
+        }
+      });
+      remaining = overflow;
+      pool = stillOpen;
     }
-    others.forEach(function (r) { r.percent = otherPct; });
+    others.forEach(function (r) {
+      r.percent = r.icu > 0 ? Math.max(0, Math.min(100, share[r.investor_id] / r.icu * 100)) : 0;
+    });
   }
 
   function allocRenderModal() {
@@ -774,7 +834,8 @@
       .filter(function (inv) { return inv.icu > 0; })
       .map(function (inv) {
         return { investor_id: inv.id, name: inv.name, icu: inv.icu, percent: existing[inv.id] || 0 };
-      });
+      })
+      .sort(function (a, b) { return b.icu - a.icu; }); // row order = cascade order (largest ICU first)
     allocRenderModal();
     byId('invAllocOverlay').style.display = 'flex';
   });
@@ -822,9 +883,9 @@
   });
 
   // ---------- collapsible cards (Investment Input / Non-Project Expenses / Fund Utilization) ----------
-  // Default: all collapsed. Single click on a header: open that card, close the
-  // others. Double click on a header: toggle just that card, leaving the others
-  // as they are (so more than one can stay open at once).
+  // Default: all collapsed. Exclusive-open: clicking a closed header opens that
+  // card and closes the others; clicking the already-open header's own card
+  // closes it (single click both ways, no double-click needed).
   // Pola max-height mengikuti gotcha collapsible proyek (PROJECT_NOTES §3 #2): body
   // di-render dengan max-height:0 lalu diset ke scrollHeight saat dibuka; harus
   // di-re-sync setiap kali isi card yang sedang terbuka berubah (mis. setelah
@@ -838,34 +899,15 @@
       body.style.maxHeight = card.classList.contains('open') ? body.scrollHeight + 'px' : '0';
     }
 
-    function openOnly(card) {
-      cards.forEach(function (c) {
-        c.classList.toggle('open', c === card);
-        syncHeight(c);
-      });
-    }
-
-    function toggleOnly(card) {
-      card.classList.toggle('open');
-      syncHeight(card);
-    }
-
-    var clickTimer = null;
     cards.forEach(function (card) {
       var header = card.querySelector('[data-inv-card-toggle]');
       if (!header) return;
       header.addEventListener('click', function () {
-        if (clickTimer) {
-          // second click within the window -> this is a double click
-          clearTimeout(clickTimer);
-          clickTimer = null;
-          toggleOnly(card);
-        } else {
-          clickTimer = setTimeout(function () {
-            clickTimer = null;
-            openOnly(card);
-          }, 250);
-        }
+        var wasOpen = card.classList.contains('open');
+        cards.forEach(function (c) {
+          c.classList.toggle('open', c === card && !wasOpen);
+          syncHeight(c);
+        });
       });
     });
 
@@ -933,6 +975,17 @@
   function renderInvestorList() {
     var tbody = byId('invListBody');
     tbody.innerHTML = '';
+
+    var totalIcu = 0, totalUsed = 0, totalRemaining = 0;
+    state.investors.forEach(function (inv) {
+      totalIcu += inv.icu;
+      totalUsed += inv.related;
+      totalRemaining += (inv.icu - inv.related);
+    });
+    byId('invTotalIcu').textContent = fmt(totalIcu);
+    byId('invTotalUsed').textContent = fmt(totalUsed);
+    byId('invTotalRemaining').textContent = fmt(totalRemaining);
+
     if (!state.investors.length) { emptyRow('invListBody', 9, 'No investors yet.'); return; }
     state.investors.forEach(function (inv) {
       var tr = document.createElement('tr');
@@ -1002,7 +1055,17 @@
       emptyRow('depBody', 7, 'Select an investor first.');
       emptyRow('supBody', 5, 'Select an investor first.');
       emptyRow('txBody', 5, 'Select an investor first.');
+      byId('fundAvailable').textContent = '-';
+      byId('fundUsed').textContent = '-';
+      byId('fundRemaining').textContent = '-';
       return;
+    }
+
+    var selInv = findInv(selectedInvestorId);
+    if (selInv) {
+      byId('fundAvailable').textContent = fmt(selInv.icu);
+      byId('fundUsed').textContent = fmt(selInv.related);
+      byId('fundRemaining').textContent = fmt(selInv.icu - selInv.related);
     }
 
     state.deposits.filter(function (d) { return d.investor_id === selectedInvestorId; }).forEach(function (d) {

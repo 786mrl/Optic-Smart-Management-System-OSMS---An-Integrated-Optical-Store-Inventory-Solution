@@ -105,6 +105,12 @@ optic_pos/
 - Lain: `logistic_documents` (key activity_id, dibagi semua produk dalam activity code), `transactions` + tabel bantu
   (Disbursement), company documents & bank accounts (Settings).
 - `logistics.defective_reference_price` sudah tidak dipakai (drop opsional, lihat §8).
+- **investors**: id, name. **investor_deposits**: investor_id, date, currency, amount, rate (nullable, hanya valas),
+  final (IDR), notes. **investor_support_expenses**: investor_id, date, category (`return_capital`/`aid`/`other`),
+  amount (IDR), notes — mengurangi ICU. **investor_activity_allocations**: investor_id, activity_id, percent (dari
+  ICU investor itu; total per investor ≤100% dicek di PHP lintas activity). **investor_activity_settings**: pdp
+  (profit distribution percent) **per activity_id**. **investor_profit_payments**: investor_id, date, amount, notes
+  (bisa berkali-kali). Tanpa tabel `transaction_activities` (sempat dibuat, di-drop — lihat §8 kalau perlu alasan).
 
 ## 5. Aturan bisnis (invarian, jangan dilanggar)
 1. **Stok dua bucket independen**: `remaining_primary_qty` = normal, `defective_qty` = defective. Satu-satunya jalan
@@ -143,6 +149,22 @@ optic_pos/
     "(No invoice)"). Kredit **tidak pernah dipakai otomatis**: lewat Refund (`create_refund.php`, mengurangi credit_balance
     & total_paid) atau Apply Credit per invoice open (`apply_customer_credit.php`, mengurangi credit_balance saja;
     total_paid tidak berubah).
+13. **Investor — ICU & dana project**: ICU (Investor Capital Utilized) = Σdeposits − Σnon-project expenses; ini total
+    dana investor yang tersedia (bukan akumulator, turun kalau ada return_capital/aid/other). Total cost per activity =
+    `SUM(transactions.final_amount_idr) JOIN transaction_disbursements` (category=disbursement). Dana investor terpakai
+    per project = Σ(%alokasi × ICU investor), **dibatasi ≤ total cost** project itu (kalau total alokasi melebihi cost,
+    proporsinya di-scale turun); sisanya = company additional contribution. "Share of Investor Fund (%)" (fly window)
+    auto-balance investor lain memakai pembagian **nilai rupiah sama rata** (bukan %) dari sisa cost yang belum
+    dialokasikan investor yang sedang diedit; investor yang ICU-nya tidak cukup menampung bagian rupiah rata itu
+    di-cap 100% ICU, kekurangannya dilempar & dibagi rata lagi ke investor tersisa (cascading, lihat `allocRecalc()`
+    di `investor_content.php`).
+14. **Investor — rumus laporan**: gross = sales aktual (dari `logistic_movements`, out−in−price_adjustment) − cost;
+    zakat 2.5% dari gross (0 bila ≤0); net = gross − zakat; distribusi investor = net × pdp (pdp per activity code);
+    rasio tiap investor dihitung **per project** (bukan gabungan semua project). TP (Total Profit) = Σ profit semua
+    project; PP (Paid Profit) = Σ `investor_profit_payments`; Rolled Capital = (TP − PP) + ICU. Rugi (net<0) ditandai
+    badge "RUGI", tetap dihitung apa adanya — **belum ada kebijakan otomatis**, menunggu keputusan manajemen.
+15. **Investor — hapus**: pola password (a) langsung (`password_verify()` di endpoint), bukan reverify 120 detik
+    (keputusan user, beda dari pola delete customer/activity code di modul lain).
 
 ## 6. Kondisi tiap modul
 **Transactions, Activity Code**: tab Preview (accordion, satu terbuka sekaligus; Edit/Delete pola a) + tab Create (nomor
@@ -227,6 +249,46 @@ saldo kumulatif, saldo per rekening), ledger gabungan + Export CSV, snapshot piu
 user). Refresh lewat event `aos:section-shown`. Investor Report = placeholder kosong. Lebar: Ledger `min-width:640px`,
 tabel piutang 420px, `.table-wrapper` `overflow-x:auto` di semua lebar.
 
+**Investor** (`investor_content.php` + `ajax/investor_api.php`, satu endpoint untuk semua aksi; rumus & invarian di
+§4–5 di atas; triple-click login untuk masuk extended mode, lihat §1):
+- UI 4 tab: **Investors** (CRUD nama + tabel ringkas semua angka, kolom Deposits/Non-Project/ICU/Used in
+  Projects/TP/PP/Rolled Capital; card ringkasan di atas tabel: Total ICU, Total Used in Projects, Total Remaining,
+  dijumlahkan dari kolom yang sama) / **Investment** (pilih investor dulu lewat `fundChangeBtn`, lalu 3 card
+  collapsible: Investment Input, Non-Project Expenses, Investor Fund Utilization — lihat gotcha collapsible di
+  bawah) / Report (usage per investor, sales per project, profit distribution + share per investor) / Profit
+  Payment & Rolled Capital. Hapus pakai password pola (a) langsung.
+- Card header "Selected investor" (tab Investment) menampilkan Available (ICU), Used in Projects, Remaining untuk
+  investor yang sedang dipilih — field sama dengan tabel Investors (`findInv().icu`/`.related`), diisi di
+  `renderFund()`.
+- **Investment Input**: deposit (IDR/valas + kurs manual, bisa berkali-kali) + tabel Received Investments (Edit
+  pola bebas password, Delete pola a).
+- **Non-Project Expenses**: return_capital/aid/other, mengurangi ICU, Delete pola (a).
+- **Investor Fund Utilization**: dropdown Activity Code (`#allocActivity`) → tabel "Investor Fund Utilization"
+  (`allocBody`, `renderAllocTable()`) menampilkan SEMUA investor yang terkait ke activity itu, dengan tombol Unlink
+  per baris (langsung `save_fund_shares` tanpa investor itu, tanpa buka fly window) → tombol "Share of Investor
+  Fund (%)" buka fly window `invAllocOverlay` (`invAllocBody`, `allocRecalc()`/`allocRenderModal()`) berisi SEMUA
+  investor ber-ICU>0, auto-balance cascading (lihat §5.13) saat satu baris diedit, tombol Unlink per baris (set %
+  jadi 0, baru tersimpan saat Save fly window) → tabel "Project Expenses" **read-only**, auto-linked via Category
+  (kolom Category + Description, bukan Notes; `<tfoot>` Total dihitung di JS). API: `save_fund_shares` (batch,
+  `activity_id` + `rows` JSON `{investor_id,percent}`, satu transaksi hapus-lalu-insert ulang semua baris activity
+  itu; investor tidak di `rows` atau percent≤0 = otomatis unlinked).
+- **Tombol Edit/Delete** semua tabel Investor pakai class `.inv-action-btn` (`inline-flex` center, width:72px tetap),
+  dibungkus `.inv-row-actions` kalau >1 tombol per baris.
+- **Kolom bantuan**: semua `<th>` modul Investor punya `data-help="…"`; klik judul kolom → fly window
+  `invColHelpOverlay` (event delegation satu listener di `root`, bukan per-`<th>`). Pola generik, bisa dipakai modul
+  lain (`th[data-help]` + 1 modal + 1 listener). Khusus label non-`<th>` (mis. ringkasan card), pakai atribut
+  `title` HTML biasa, BUKAN `data-help` (listener-nya scoped ke `th[data-help]` saja).
+- **Gotcha khusus modul ini** (selain gotcha umum §3):
+  1. Tabel modul Investor override `responsive.css` (gotcha umum #7) lewat `.inv-scroll{display:revert}` supaya
+     tetap tabel di semua lebar layar.
+  2. Input `.input-number-comma` di modul ini **tidak** otomatis diformat oleh mekanisme global proyek (beda dari
+     modul lain) — grouping ribuan live via `formatComma()` + satu `input` listener lokal (delegasi di `root`),
+     tidak memotong desimal (exchange rate 6 digit), cursor position disesuaikan.
+  3. Collapsible 3 card tab Investment: default semua collapsed, exclusive-open 1 klik (klik header tertutup → buka
+     & tutup yang lain; klik header yang sedang terbuka → tutup). Pakai pola `max-height:scrollHeight` proyek
+     (bukan `display:none/block`, gotcha umum #2), di-re-sync lewat `window.invSyncCollapsibleHeights()` di akhir
+     `render()` dan `renderAllocTable()` karena keduanya menulis ulang tbody di dalam card yang mungkin terbuka.
+
 ## 7. Peta endpoint (`ajax/`)
 - **Auth/util**: `verify_password.php`, `_require_reverify.php`, `_order_patterns.php`, `_invoice_pdf.php`.
 - **Activity/Customer/Settings**: `create|update|delete|list|preview_activity_code`, `manage_departments`,
@@ -257,6 +319,12 @@ tabel piutang 420px, `.table-wrapper` `overflow-x:auto` di semua lebar.
   - `manage_defective_stock.php`: GET `action=history` (Taken Out) & `action=return_history` (Returned In) + `logistic_id`
     → `{data:{product_name, unit_label, defective_qty, defective_taken_qty, history:[…]}}`. POST `action=repair`
     `logistic_id, qty` (≤ defective_qty).
+- **Investor**: `investor_api.php`, satu endpoint untuk semua aksi (lihat §6 Investor untuk detail UI tiap action).
+  Action relevan: `save_deposit`/`update_deposit`/`delete_deposit`, `save_support_expense`/`delete_support_expense`,
+  `save_fund_shares` (batch alloc per activity, lihat §5.13 & §6), `save_pdp`, `save_profit_payment`,
+  `save_investor`/`rename_investor`/`delete_investor`. `inv_compute()` membangun `$activityOut` (dipakai tabel
+  Project Expenses & allocation) — query `$expensesByActivity` HARUS dideklarasikan sebelum loop yang memakainya
+  (pernah jadi bug diam-diam, lihat §8 kalau perlu detail).
 
 ## 8. Pekerjaan terbuka
 Belum dibangun (disengaja, bukan bug):
@@ -274,108 +342,13 @@ Perlu konfirmasi keputusan:
   bawah satu header activity code. Pertimbangkan pengelompokan kalau terasa berantakan.
 - Audit scroll horizontal menu lain setelah perbaikan `.app`/`.main` (global): Transactions, Logistic, Settings, Dashboard
   dicek di 3 ukuran (HP ≤767px, tablet 768–1023px, jendela setengah layar ~900–1000px).
+- Modul Investor belum dites sama sekali di server (seluruh fitur §6 Investor). Perlu dicek khusus: tanda
+  `total_price` pada `price_adjustment` (dipakai rumus gross di §5.14; asumsi positif, dikurangkan) — ini sebenarnya
+  milik modul Sales, bukan Investor, tapi memengaruhi rumus laporan Investor; kelas `.input-uppercase` jalan tanpa
+  `flexOverlays` untuk 2 modal `invPickerOverlay`/`invPwOverlay` (kalau masih dipakai — cek apakah sudah terpakai di
+  kode saat ini); auto-balance cascading equal-IDR (§5.13) untuk 3+ investor dengan kombinasi ICU kecil/besar.
 
 ### Log terbaru (belum dites di server; lebur ke §4–7 setelah dites, lalu hapus dari sini)
-- **11 Okt 2026, fitur — Unlink kembali ditambahkan di "Share of Investor Fund (%)"**: rombak 11 Okt (multi-investor
-    auto-balance, lihat log di bawah) sempat menghapus kolom Actions/Unlink per baris; dikembalikan di dua tempat,
-    keduanya lewat `save_fund_shares` (tidak ada endpoint baru):
-    - Tabel utama "Investor Fund Utilization" (`allocBody`, Card alokasi di tab Investment): kolom Actions baru,
-      tombol Unlink per investor langsung mengirim `save_fund_shares` untuk activity yang sedang dipilih di
-      `#allocActivity`, tanpa investor baris itu (`rows` dibangun dari `state.allocations` dikurangi investor
-      tersebut) — tidak perlu buka fly window.
-    - Fly window `invAllocOverlay` (`invAllocBody`): tombol Unlink per baris set `percent = 0` untuk investor itu,
-      lalu `allocRecalc()` jalan seperti biasa (baris lain auto-balance ulang), baru tersimpan saat tombol Save
-      fly window diklik.
-    - Tidak ada password untuk unlink (konsisten dengan `save_fund_shares` yang memang tanpa `inv_verify_password()`).
-- **11 Okt 2026, fitur — 3 card tab Investment jadi collapsible**: Investment Input, Non-Project Expenses (sebelumnya
-    satu card gabungan dengan Investment Input), dan Investor Fund Utilization sekarang 3 `<div class="card">`
-    terpisah, masing-masing dengan header klik (`.inv-collapsible`, `[data-inv-card-toggle]`) + body
-    (`.inv-collapsible-body`). Default semua collapsed. Klik tunggal header → buka card itu, tutup yang lain. Klik
-    ganda header → toggle card itu saja, tidak menutup yang lain (bisa beberapa card terbuka bersamaan). Pakai pola
-    collapsible proyek (`max-height:scrollHeight`, bukan `display:none/block`, §3 gotcha #2); di-re-sync lewat
-    `window.invSyncCollapsibleHeights()` di akhir `render()` dan `renderAllocTable()`, karena kedua fungsi itu
-    menulis ulang isi tbody di dalam card yang mungkin sedang terbuka. CSS/JS lokal di `investor_content.php`
-    (IIFE sendiri, tidak berbagi scope — sesuai §3), belum dibuat generik ke `theme.css`.
-- **7 Okt 2026, Menu Investor baru** (`investor_content.php` + `ajax/investor_api.php`, satu endpoint untuk semua aksi):
-  - DB baru: `investors`, `investor_deposits` (setoran, IDR/valas + kurs manual, bisa berkali-kali),
-    `investor_support_expenses` (pengeluaran non-project: return_capital/aid/other, mengurangi ICU),
-    `investor_activity_allocations` (investor→activity code, % dari ICU, total per investor ≤100%, dicek di PHP),
-    `investor_activity_settings` (pdp **per activity code**), `investor_profit_payments` (bisa berkali-kali).
-    Migrasi: `migration_investor.sql` lalu `migration_investor_v2.sql` (yang kedua DROP `transaction_activities` —
-    sempat dibuat untuk menautkan manual pengeluaran project ke activity, ternyata berlebihan karena fitur
-    Category Disbursement paralel sudah menambah `transaction_disbursements.activity_id`, 1 transaksi → 1 activity,
-    `transaction_id` UNIQUE di situ).
-  - Total cost per activity = `SUM(transactions.final_amount_idr) JOIN transaction_disbursements` (category=disbursement).
-    Dana investor terpakai per project = Σ(%alokasi × ICU investor), dibatasi ≤ total cost (kalau total alokasi
-    melebihi cost, proporsinya di-scale turun). Sisanya = company additional contribution.
-  - Rumus laporan: gross = sales aktual (dari `logistic_movements`, out−in−price_adjustment) − cost; zakat 2.5% dari
-    gross (0 bila ≤0); net = gross−zakat; distribusi investor = net × pdp (per activity); rasio tiap investor
-    **per project** (bukan gabungan semua project); TP = Σ profit semua project; ICU = setoran − non-project;
-    rolled capital = (TP−PP)+ICU. Rugi (net<0) ditandai badge "RUGI", tetap dihitung apa adanya — **belum ada
-    kebijakan otomatis**, menunggu keputusan manajemen.
-  - UI 4 tab: Investors (CRUD + list ringkas semua angka) / Investment (modal pilih investor dulu, card setoran+non-
-    project, card alokasi ke activity + tabel pengeluaran project **read-only**, auto dari Category Disbursement) /
-    Report (usage per investor, sales per project, profit distribution + share per investor) / Profit Payment &
-    Rolled Capital. Hapus pakai password pola (a) langsung (keputusan user, bukan reverify 120 detik).
-  - **8 Okt 2026, fix**: tombol Edit/Delete di baris tabel (semua tabel Investor) diseragamkan, class baru
-    `.inv-action-btn` (`inline-flex` center, `width:72px` tetap, padding+font-size kecil, dibungkus
-    `.inv-row-actions` kalau >1 tombol per baris) — sebelumnya ikut ukuran `.btn` default (besar, teks Delete tidak
-    center). Label tombol rename investor di Investor List: "Rename" (sempat "Edit Investor Name", kepanjangan).
-  - **8 Okt 2026, fitur**: semua `<th>` di modul Investor (64 kolom, 11 tabel) diberi `data-help="…"`; klik judul
-    kolom mana pun → fly window `invColHelpOverlay` (judul = teks header, isi = penjelasan singkat artinya, mis.
-    ICU, TP/PP, Rolled Capital, Fund Used vs Share %). Event delegation satu listener di `root`, bukan per-`<th>`.
-    Pola ini generik, bisa dipakai modul lain kalau mau (`th[data-help]` + 1 modal + 1 listener).
-  - **8 Okt 2026, fix**: tabel di `investor_content.php` sempat ikut berubah jadi kartu di <1024px (gotcha #7,
-    `responsive.css` global memaksa semua `<table>`→card + `td{width:100%}`). Ditambah override khusus di dalam
-    `.inv-scroll` (`display:revert` untuk table/thead/tbody/tr/th/td) supaya tabel Investor tetap tabel di semua
-    lebar layar; scroll horizontal tetap lewat `.inv-scroll{overflow-x:auto}` seperti modul lain.
-  - **8 Okt 2026, bugfix**: tab Investment → card Investor Fund Utilization → tabel "Project Expenses" selalu
-    kosong walau alokasi investor↔activity berhasil. Penyebab: di `inv_compute()` (`investor_api.php`), query
-    `$expensesByActivity` (dari `transaction_disbursements`) ditulis **setelah** loop yang membangun `$activityOut`
-    tapi dipakai **di dalam** loop itu (`'expenses' => $expensesByActivity[$aid] ?? []`) — variabel belum ada saat
-    dipakai, jadi selalu jatuh ke `[]`. PHP tidak error (undefined var + null coalescing diam-diam jadi array
-    kosong), makanya lolos cek kurung/kurawal manual sebelumnya. Fix: pindahkan query `$expensesByActivity` ke atas
-    loop `$activityOut`. Pelajaran: kalau sebuah array dipakai dengan `?? []` di tengah loop, **cek urutan
-    deklarasinya**, bukan cuma isi nilainya — bug ini tidak akan ketahuan dari membaca query SQL-nya sendiri.
-  - **8 Okt 2026, fitur**: tabel "Project Expenses" (tab Investment) dapat baris `<tfoot>` Total (jumlah kolom
-    Amount dari baris yang tampil, dihitung di JS saat render, bukan dari server). Reset ke 0.00 saat belum ada
-    investor dipilih.
-  - **8 Okt 2026, ubah kolom**: tabel "Project Expenses" (tab Investment) kolom Notes diganti jadi **Category**
-    (`disbursement_categories.category_name`, LEFT JOIN by `transaction_disbursements.category_id`, fallback "-"
-    kalau NULL) dan **Description** (`transaction_disbursements.transaction_purpose`). `transactions.notes` sudah
-    tidak dipakai di tabel ini.
-  - **11 Okt 2026, fitur**: input `.input-number-comma` di modul Investor (Amount, Exchange Rate, allocation %, pdp)
-    sebelumnya tidak terpisah koma ribuan (class-nya ada tapi tidak ada handler yang memformatnya — ternyata
-    `.input-number-comma` bukan sesuatu yang diformat otomatis oleh CSS/JS global proyek). Ditambah `formatComma()`
-    + satu `input` listener (delegasi di `root`) khusus di `investor_content.php` sendiri, bukan bergantung pada
-    mekanisme global: grouping ribuan live saat mengetik, tidak memotong desimal (supaya exchange rate 6 digit
-    tetap utuh), cursor position disesuaikan. Dipakai juga saat mengisi form Edit deposit dan input pdp dinamis di
-    tabel Report. Server tidak berubah — `inv_num()` di `investor_api.php` sudah strip koma sejak awal.
-  - **11 Okt 2026, rombak besar — "Share of Investor Fund (%)" jadi multi-investor**: sebelumnya alokasi
-    investor↔activity code diisi satu-satu per investor terpilih (input % + tombol "Link to Project"). Diganti
-    tombol "Share of Investor Fund (%)" di Card 2 (tab Investment) yang membuka fly window `invAllocOverlay`
-    berisi SEMUA investor dengan ICU > 0, masing-masing baris punya input % yang **auto-balance**: mengedit %
-    satu investor langsung menghitung ulang % investor lain secara **sama rata, sebagai % dari ICU masing-masing**,
-    supaya total dana investor menutupi Total Cost project tersebut (sisanya tetap jadi Company Additional kalau
-    ICU gabungan tidak cukup). Rumus: `remaining = cost − (pct_edited × icu_edited)`; `pct_lainnya = remaining ÷
-    Σicu_lainnya × 100` (diterapkan sama ke semua investor "lainnya", bukan hanya satu) — ini pilihan desain untuk
-    kasus >2 investor yang belum dikonfirmasi eksplisit oleh user (contoh user cuma kasus 2 investor), perlu
-    divalidasi saat dites apakah perilakunya sesuai ekspektasi untuk 3+ investor.
-    - Card 2 (tabel "Investor Fund Utilization") sekarang berbasis Activity Code yang dipilih di dropdown
-      `#allocActivity`, menampilkan SEMUA investor yang terkait ke activity itu (bukan cuma investor yang sedang
-      dipilih di atas) — fungsi baru `renderAllocTable()`, dipanggil saat `render()` dan saat `#allocActivity`
-      berubah. Kolom Actions/Unlink per baris sempat dihapus di rombak ini, lalu dikembalikan — lihat log
-      11 Okt "Unlink kembali ditambahkan" di atas.
-    - API: `save_allocation` + `delete_allocation` (satu baris per request) diganti `save_fund_shares` (satu
-      action batch): terima `activity_id` + `rows` (JSON array `{investor_id, percent}`), dalam satu transaksi
-      DELETE semua baris `investor_activity_allocations` untuk activity itu lalu INSERT ulang dari `rows` —
-      investor yang tidak ada di `rows` (atau percent≤0) otomatis ter-unlink. Validasi total alokasi investor
-      ≤100% tetap jalan, dihitung dari activity LAIN (`activity_id <> ?`) karena activity ini sendiri sedang
-      ditimpa penuh.
-  - Belum dites di server sama sekali (menunggu pengujian dari fix-fix dan fitur di atas). Perlu dicek juga: tanda
-    `total_price` pada `price_adjustment` (asumsi positif, dikurangkan); kelas `.input-uppercase` jalan tanpa
-    `flexOverlays` untuk 2 modal baru (`invPickerOverlay`, `invPwOverlay`); perilaku auto-balance untuk 3+ investor
-    (lihat poin di atas).
 - **6 Okt 2026, Kategori Disbursement** (hanya label pengelompokan uang keluar; tidak memecah total/saldo/chart):
   - DB: tabel baru `disbursement_categories` (id, category_name UNIQUE, created_by, created_at), seed PURCHASE PAYMENT /
     CLEARANCE FEES / OPERATIONAL EXPENSES; kolom baru `transaction_disbursements.category_id` (NOT NULL, indeks, tanpa FK,
@@ -421,6 +394,7 @@ Perlu konfirmasi keputusan:
 
 ## 9. Cara lanjut di sesi baru
 1. Upload PROJECT_NOTES.md ini + hanya file kode yang relevan (Sales: `transaction_content.php` + `ajax/` terkait;
-   Logistic: `logistic_content.php` + `list_logistic_movements.php`/`list_logistics.php`).
+   Logistic: `logistic_content.php` + `list_logistic_movements.php`/`list_logistics.php`; Investor:
+   `investor_content.php` + `ajax/investor_api.php`).
 2. Jangan upload `NOTES_ARCHIVE.md` kecuali perlu menelusuri alasan keputusan lama (sebut bagian yang dicari).
 3. Setelah selesai: tambahkan ≤10 baris ke §8 (atau "Log terbaru"), lalu lebur ke §4–6 kalau sudah dites.

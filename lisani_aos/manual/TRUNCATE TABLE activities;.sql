@@ -1,0 +1,21 @@
+TRUNCATE TABLE activities;
+TRUNCATE TABLE company_documents;
+TRUNCATE TABLE customers;
+TRUNCATE TABLE customer_item_prices;
+TRUNCATE TABLE defective_stock_events;
+TRUNCATE TABLE investors;
+TRUNCATE TABLE investor_activity_allocations;
+TRUNCATE TABLE investor_activity_settings;
+TRUNCATE TABLE investor_deposits;
+TRUNCATE TABLE investor_profit_payments;
+TRUNCATE TABLE investor_support_expenses;
+TRUNCATE TABLE invoices;
+TRUNCATE TABLE invoice_payments;
+TRUNCATE TABLE invoice_refunds;
+TRUNCATE TABLE logistics;
+TRUNCATE TABLE logistic_documents;
+TRUNCATE TABLE logistic_movements;
+TRUNCATE TABLE transactions;
+TRUNCATE TABLE transaction_disbursements;
+
+SET FOREIGN_KEY_CHECKS = 1;
