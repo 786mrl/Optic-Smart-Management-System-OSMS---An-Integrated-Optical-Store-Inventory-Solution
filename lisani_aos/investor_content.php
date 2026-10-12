@@ -362,6 +362,16 @@
               </tr>
             </thead>
             <tbody id="rptUsageBody"></tbody>
+            <tfoot>
+              <tr>
+                <td style="text-align:right;font-weight:600;">Total</td>
+                <td class="num" style="font-weight:600;" id="rptUsageTotalDeposits">0.00</td>
+                <td class="num" style="font-weight:600;" id="rptUsageTotalSupport">0.00</td>
+                <td class="num" style="font-weight:600;" id="rptUsageTotalIcu">0.00</td>
+                <td class="num" style="font-weight:600;" id="rptUsageTotalRelated">0.00</td>
+                <td class="num" style="font-weight:600;" id="rptUsageTotalRemain">0.00</td>
+              </tr>
+            </tfoot>
           </table>
         </div>
       </div>
@@ -378,6 +388,13 @@
               </tr>
             </thead>
             <tbody id="rptSalesBody"></tbody>
+            <tfoot>
+              <tr>
+                <td style="text-align:right;font-weight:600;">Total</td>
+                <td class="num" style="font-weight:600;" id="rptSalesTotalSales">0.00</td>
+                <td class="num" style="font-weight:600;" id="rptSalesTotalCost">0.00</td>
+              </tr>
+            </tfoot>
           </table>
         </div>
       </div>
@@ -402,6 +419,21 @@
               </tr>
             </thead>
             <tbody id="rptDistBody"></tbody>
+            <tfoot>
+              <tr>
+                <td style="text-align:right;font-weight:600;">Total</td>
+                <td class="num" style="font-weight:600;" id="rptDistTotalCost">0.00</td>
+                <td class="num" style="font-weight:600;" id="rptDistTotalFund">0.00</td>
+                <td class="num" style="font-weight:600;" id="rptDistTotalCompany">0.00</td>
+                <td class="num" style="font-weight:600;" id="rptDistTotalSales">0.00</td>
+                <td class="num" style="font-weight:600;" id="rptDistTotalGross">0.00</td>
+                <td class="num" style="font-weight:600;" id="rptDistTotalZakat">0.00</td>
+                <td class="num" style="font-weight:600;" id="rptDistTotalNet">0.00</td>
+                <td></td>
+                <td class="num" style="font-weight:600;" id="rptDistTotalDistribution">0.00</td>
+                <td></td>
+              </tr>
+            </tfoot>
           </table>
         </div>
 
@@ -418,6 +450,14 @@
               </tr>
             </thead>
             <tbody id="rptShareBody"></tbody>
+            <tfoot>
+              <tr>
+                <td colspan="2" style="text-align:right;font-weight:600;">Total</td>
+                <td class="num" style="font-weight:600;" id="rptShareTotalUsed">0.00</td>
+                <td></td>
+                <td class="num" style="font-weight:600;" id="rptShareTotalProfit">0.00</td>
+              </tr>
+            </tfoot>
           </table>
         </div>
       </div>
@@ -845,7 +885,7 @@
   byId('invAllocSave').addEventListener('click', function () {
     var rows = allocWorking
       .filter(function (r) { return r.percent > 0; })
-      .map(function (r) { return { investor_id: r.investor_id, percent: Math.round(r.percent * 100) / 100 }; });
+      .map(function (r) { return { investor_id: r.investor_id, percent: Math.round(r.percent * 1000000) / 1000000 }; });
     run('save_fund_shares', {
       activity_id: allocActivityId,
       rows: JSON.stringify(rows)
@@ -1127,7 +1167,14 @@
     var share = byId('rptShareBody');
     usage.innerHTML = ''; sales.innerHTML = ''; dist.innerHTML = ''; share.innerHTML = '';
 
+    var usageTotals = { deposits: 0, support: 0, icu: 0, related: 0, remain: 0 };
     state.investors.forEach(function (inv) {
+      var remain = inv.icu - inv.related;
+      usageTotals.deposits += inv.deposits;
+      usageTotals.support += inv.support;
+      usageTotals.icu += inv.icu;
+      usageTotals.related += inv.related;
+      usageTotals.remain += remain;
       var tr = document.createElement('tr');
       tr.innerHTML =
         '<td>' + esc(inv.name) + '</td>' +
@@ -1135,12 +1182,20 @@
         '<td class="num">' + fmt(inv.support) + '</td>' +
         '<td class="num">' + fmt(inv.icu) + '</td>' +
         '<td class="num">' + fmt(inv.related) + '</td>' +
-        '<td class="num">' + fmt(inv.icu - inv.related) + '</td>';
+        '<td class="num">' + fmt(remain) + '</td>';
       usage.appendChild(tr);
     });
     if (!usage.children.length) emptyRow('rptUsageBody', 6, 'No investors yet.');
+    byId('rptUsageTotalDeposits').textContent = fmt(usageTotals.deposits);
+    byId('rptUsageTotalSupport').textContent = fmt(usageTotals.support);
+    byId('rptUsageTotalIcu').textContent = fmt(usageTotals.icu);
+    byId('rptUsageTotalRelated').textContent = fmt(usageTotals.related);
+    byId('rptUsageTotalRemain').textContent = fmt(usageTotals.remain);
 
+    var salesTotals = { sales: 0, cost: 0 };
     state.activities.forEach(function (a) {
+      salesTotals.sales += a.sales;
+      salesTotals.cost += a.cost;
       var tr = document.createElement('tr');
       tr.innerHTML =
         '<td>' + esc(a.label) + '</td>' +
@@ -1149,8 +1204,20 @@
       sales.appendChild(tr);
     });
     if (!sales.children.length) emptyRow('rptSalesBody', 3, 'No activity codes.');
+    byId('rptSalesTotalSales').textContent = fmt(salesTotals.sales);
+    byId('rptSalesTotalCost').textContent = fmt(salesTotals.cost);
 
+    var distTotals = { cost: 0, fund: 0, company: 0, sales: 0, gross: 0, zakat: 0, net: 0, distribution: 0 };
+    var shareTotals = { used: 0, profit: 0 };
     state.activities.forEach(function (a) {
+      distTotals.cost += a.cost;
+      distTotals.fund += a.investor_used;
+      distTotals.company += a.company;
+      distTotals.sales += a.sales;
+      distTotals.gross += a.gross;
+      distTotals.zakat += a.zakat;
+      distTotals.net += a.net;
+      distTotals.distribution += a.distribution;
       var badge = a.net < 0 ? ' <span class="badge badge-danger">RUGI</span>' : '';
       var tr = document.createElement('tr');
       tr.innerHTML =
@@ -1168,6 +1235,8 @@
       dist.appendChild(tr);
 
       a.investors.forEach(function (r) {
+        shareTotals.used += r.used;
+        shareTotals.profit += r.profit;
         var tr2 = document.createElement('tr');
         tr2.innerHTML =
           '<td>' + esc(a.label) + '</td>' +
@@ -1180,6 +1249,16 @@
     });
     if (!dist.children.length) emptyRow('rptDistBody', 11, 'No activity codes.');
     if (!share.children.length) emptyRow('rptShareBody', 5, 'No investor share yet.');
+    byId('rptDistTotalCost').textContent = fmt(distTotals.cost);
+    byId('rptDistTotalFund').textContent = fmt(distTotals.fund);
+    byId('rptDistTotalCompany').textContent = fmt(distTotals.company);
+    byId('rptDistTotalSales').textContent = fmt(distTotals.sales);
+    byId('rptDistTotalGross').textContent = fmt(distTotals.gross);
+    byId('rptDistTotalZakat').textContent = fmt(distTotals.zakat);
+    byId('rptDistTotalNet').textContent = fmt(distTotals.net);
+    byId('rptDistTotalDistribution').textContent = fmt(distTotals.distribution);
+    byId('rptShareTotalUsed').textContent = fmt(shareTotals.used);
+    byId('rptShareTotalProfit').textContent = fmt(shareTotals.profit);
   }
 
   // Tab 4

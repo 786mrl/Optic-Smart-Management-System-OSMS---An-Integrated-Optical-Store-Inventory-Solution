@@ -291,7 +291,6 @@ function inv_compute(): array
         $raw   = array_sum($parts);
         $cost  = round($act['cost'], 2);
         $used  = min($raw, $cost);
-        $scale = $raw > 0 ? $used / $raw : 0.0;
         $company = max(0.0, $cost - $used);
 
         $gross = round($act['sales'] - $cost, 2);
@@ -299,9 +298,61 @@ function inv_compute(): array
         $net   = round($gross - $zakat, 2);
         $distribution = round($net * $act['pdp'] / 100, 2);
 
+        // ---- Alokasi dana per investor (water-filling dua tahap) ----
+        // Investor yang sudah mengalokasikan SELURUH ICU-nya ke activity ini
+        // ("capped": c >= icu - epsilon, yaitu Share = 100% dari ICU-nya sendiri
+        // untuk project ini) SELALU dapat porsi penuh (c), TIDAK pernah ikut
+        // di-scale turun. Sisa budget project (cost - total capped) baru dibagi
+        // ke investor yang masih "ada ruang" (partial), di-scale proporsional
+        // kalau total kontribusi mereka melebihi sisa budget itu. Ini beda dari
+        // versi lama yang men-scale SEMUA investor dulu (termasuk yang capped)
+        // lalu menambal sisa pembulatan ke satu investor — itu tetap menggerus
+        // investor capped walau Share-nya tertulis 100%.
+        // Fallback: kalau total capped SENDIRI sudah melebihi cost (kasus
+        // ekstrem, seharusnya jarang/tidak terjadi karena validasi alokasi),
+        // semua investor (termasuk capped) di-scale proporsional seperti versi
+        // lama, supaya company additional tidak pernah negatif.
+        $EPS = 0.01;
+        $cappedIds  = [];
+        $partialIds = [];
+        foreach ($parts as $iid => $c) {
+            $icu = $investors[$iid]['icu'] ?? 0.0;
+            if ($c >= $icu - $EPS) {
+                $cappedIds[] = $iid;
+            } else {
+                $partialIds[] = $iid;
+            }
+        }
+        $cappedSum = 0.0;
+        foreach ($cappedIds as $iid) {
+            $cappedSum += $parts[$iid];
+        }
+
+        $usedByInvestor = [];
+        if (empty($partialIds) || $cappedSum <= $cost + $EPS) {
+            foreach ($cappedIds as $iid) {
+                $usedByInvestor[$iid] = min($parts[$iid], $cost);
+            }
+            $remaining  = max(0.0, $cost - min($cappedSum, $cost));
+            $partialSum = 0.0;
+            foreach ($partialIds as $iid) {
+                $partialSum += $parts[$iid];
+            }
+            $scalePartial = $partialSum > 0 ? min(1.0, $remaining / $partialSum) : 0.0;
+            foreach ($partialIds as $iid) {
+                $usedByInvestor[$iid] = $parts[$iid] * $scalePartial;
+            }
+        } else {
+            // Kasus ekstrem: total capped saja sudah melebihi cost.
+            $scaleAll = $raw > 0 ? $used / $raw : 0.0;
+            foreach ($parts as $iid => $c) {
+                $usedByInvestor[$iid] = $c * $scaleAll;
+            }
+        }
+
         $investorRows = [];
         foreach ($parts as $iid => $c) {
-            $usedI  = round($c * $scale, 2);
+            $usedI  = round($usedByInvestor[$iid] ?? 0.0, 2);
             $ratio  = $used > 0 ? $usedI / $used : 0.0;
             $profit = round($distribution * $ratio, 2);
 
@@ -314,6 +365,50 @@ function inv_compute(): array
             ];
             $investors[$iid]['related'] += $usedI;
             $investors[$iid]['tp']      += $profit;
+        }
+
+        // Koreksi drift pembulatan (sisa noise dari round() per investor): tanpa
+        // ini, total 'used' antar investor bisa beda sen dari $used (cost asli).
+        // Selisihnya ditimpakan ke investor PARTIAL (masih ada ruang) dengan
+        // 'used' terbesar, supaya investor capped tidak pernah tersentuh di sini
+        // juga. Kalau tidak ada partial (semua capped, atau fallback scale-all),
+        // baru ke investor dengan 'used' terbesar secara umum.
+        if (!empty($investorRows)) {
+            $sumUsed = 0.0;
+            foreach ($investorRows as $r) {
+                $sumUsed += $r['used'];
+            }
+            $drift = round($used - $sumUsed, 2);
+            if (abs($drift) >= 0.01) {
+                $partialIdSet = array_flip($partialIds);
+                $maxIdx = null;
+                foreach ($investorRows as $idx => $r) {
+                    if (!isset($partialIdSet[$r['investor_id']])) {
+                        continue;
+                    }
+                    if ($maxIdx === null || $r['used'] > $investorRows[$maxIdx]['used']) {
+                        $maxIdx = $idx;
+                    }
+                }
+                if ($maxIdx === null) {
+                    $maxIdx = 0;
+                    foreach ($investorRows as $idx => $r) {
+                        if ($r['used'] > $investorRows[$maxIdx]['used']) {
+                            $maxIdx = $idx;
+                        }
+                    }
+                }
+                $row = &$investorRows[$maxIdx];
+                $row['used'] = round($row['used'] + $drift, 2);
+                $newRatio    = $used > 0 ? $row['used'] / $used : 0.0;
+                $newProfit   = round($distribution * $newRatio, 2);
+                $iid         = $row['investor_id'];
+                $investors[$iid]['related'] += $drift;
+                $investors[$iid]['tp']      += $newProfit - $row['profit'];
+                $row['ratio']   = round($newRatio * 100, 2);
+                $row['profit']  = $newProfit;
+                unset($row);
+            }
         }
 
         $activityOut[] = [
@@ -601,7 +696,7 @@ try {
             $clean = [];
             foreach ($rows as $row) {
                 $investorId = (int) ($row['investor_id'] ?? 0);
-                $pct        = round((float) ($row['percent'] ?? 0), 2);
+                $pct        = round((float) ($row['percent'] ?? 0), 6);
                 if ($investorId <= 0 || $pct <= 0) {
                     continue; // treated as "not linked", same as leaving it out
                 }

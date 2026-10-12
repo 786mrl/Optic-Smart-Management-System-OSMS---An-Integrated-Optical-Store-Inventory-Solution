@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Oct 12, 2026 at 05:34 AM
+-- Generation Time: Oct 12, 2026 at 07:10 AM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -157,7 +157,7 @@ CREATE TABLE `investor_activity_allocations` (
   `id` int(10) UNSIGNED NOT NULL,
   `investor_id` int(10) UNSIGNED NOT NULL,
   `activity_id` int(10) UNSIGNED NOT NULL,
-  `allocation_percent` decimal(5,2) NOT NULL,
+  `allocation_percent` decimal(9,6) NOT NULL,
   `created_by` int(10) UNSIGNED DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
@@ -435,7 +435,7 @@ CREATE TABLE `users` (
 --
 
 INSERT INTO `users` (`user_id`, `username`, `password_hash`, `role`, `is_approved`, `created_at`, `last_login`, `session_token`, `session_expires`) VALUES
-(1, 'Rais786', '$2y$10$QciWVGPK9aGHjy05rBoXgOWfCAesfocowc0vt4QCMHVeVzsVuGDS6', 'admin', 1, '2026-09-10 21:34:57', '2026-10-12 04:44:06', NULL, NULL);
+(1, 'Rais786', '$2y$10$QciWVGPK9aGHjy05rBoXgOWfCAesfocowc0vt4QCMHVeVzsVuGDS6', 'admin', 1, '2026-09-10 21:34:57', '2026-10-12 05:36:20', '299c73a68fb195c70c9333b6d4afcfa3193e10da349c0085ce294d03c0d1e76b', '2026-10-12 13:36:20');
 
 --
 -- Indexes for dumped tables

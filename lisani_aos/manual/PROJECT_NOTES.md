@@ -346,9 +346,52 @@ Perlu konfirmasi keputusan:
   `total_price` pada `price_adjustment` (dipakai rumus gross di §5.14; asumsi positif, dikurangkan) — ini sebenarnya
   milik modul Sales, bukan Investor, tapi memengaruhi rumus laporan Investor; kelas `.input-uppercase` jalan tanpa
   `flexOverlays` untuk 2 modal `invPickerOverlay`/`invPwOverlay` (kalau masih dipakai — cek apakah sudah terpakai di
-  kode saat ini); auto-balance cascading equal-IDR (§5.13) untuk 3+ investor dengan kombinasi ICU kecil/besar.
+  kode saat ini).
 
 ### Log terbaru (belum dites di server; lebur ke §4–7 setelah dites, lalu hapus dari sini)
+- **12 Okt 2026, Bug: Fund Used < ICU walau Share 100%** (`investor_content.php` + `investor_api.php` + migration):
+  - Gejala: investor dialokasikan 100% di fly window Share of Investor Fund, tersimpan Share=100%, tapi di tab
+    Investment "Fund Used (IDR)" lebih kecil dari ICU-nya (selisih bisa puluhan ribu rupiah untuk ICU besar).
+  - Sebab: `allocRecalc()` (client) hitung `percent` investor lain (bukan yang sedang diedit) dengan presisi penuh,
+    tapi saat Save dibulatkan ke 2 desimal (`Math.round(r.percent*100)/100`) sebelum dikirim; `save_fund_shares`
+    (server) bulatkan lagi ke 2 desimal sebelum INSERT. Untuk ICU besar, pembulatan 0,01% = puluhan ribu rupiah,
+    bikin total alokasi (`raw`) sedikit melebihi total cost. `inv_compute()` lalu men-scale **semua** investor
+    activity itu secara proporsional (sesuai aturan #13, dana terpakai dibatasi ≤ cost) — termasuk investor yang
+    sebenarnya sudah capped 100% ICU-nya, jadi Fund Used-nya ikut tergerus meski Share tertulis 100%.
+  - Fix: presisi percent yang disimpan dinaikkan dari 2 → 6 desimal, baik di client (`invAllocSave` handler) maupun
+    server (`save_fund_shares`). Kolom `investor_activity_allocations.allocation_percent` diperbesar dari
+    `DECIMAL(5,2)` ke `DECIMAL(9,6)` (`migration_allocation_percent_precision.sql`, jalankan sekali). Logic cap/scale
+    di `inv_compute()` TIDAK diubah (masih sesuai aturan #13) — akar masalahnya murni presisi penyimpanan, bukan
+    logic cap-nya.
+  - Ini sekaligus menjawab item "auto-balance cascading equal-IDR (§5.13) untuk 3+ investor dengan kombinasi ICU
+    kecil/besar" yang sebelumnya di §8 perlu-konfirmasi — dengan presisi 6 desimal, kombinasi ICU kecil/besar tidak
+    lagi overshoot cost secara material.
+  - Sisa noise floating-point (puluhan sen, dari rantai pembagian di `allocRecalc()`) masih mungkin ada meski sudah
+    presisi 6 desimal. **Percobaan pertama** (epsilon: anggap `$cost = $raw` kalau selisihnya kecil) ternyata salah —
+    bikin total "Fund Used" lebih besar dari cost asli project (bukan cost yang nambah, tapi semua investor jadi
+    dapat porsi `raw` bukan `cost`). **Percobaan kedua** (koreksi drift largest-remainder: `$scale` seragam dulu ke
+    SEMUA investor, baru selisih pembulatan ditambal ke satu investor yang masih "ada ruang") **TERBUKTI MASIH SALAH**
+    saat dites user di server sungguhan (2 investor share project: investor A Share 100% ICU Rp100.000.000, investor B
+    Share 54,82%; fly window preview sudah benar — A=Rp100jt pas, B=Rp767.442.000 pas — tapi setelah Save, tab
+    Investment malah tampil A=Rp99.999.999,54, B=Rp767.442.000,46). Sebabnya: `$scale` seragam tetap diterapkan ke
+    SEMUA investor dulu (termasuk yang capped) SEBELUM koreksi drift; koreksi drift cuma menambal sisa pembulatan
+    (receh), bukan membatalkan scale-down yang sudah kadung mengenai investor capped.
+  - **Fix final (struktural, bukan patch lagi)**: alokasi per activity sekarang water-filling dua tahap, bukan
+    scale-seragam-lalu-tambal. Investor **capped** (`c >= icu - 0,01`, Share=100% dari ICU-nya sendiri untuk project
+    ini) SELALU dapat porsi penuh (`c`), TIDAK PERNAH ikut di-scale sama sekali. Sisa budget (`cost − total capped`)
+    baru dibagi ke investor **partial** (masih ada ruang), di-scale proporsional kalau jumlah mereka melebihi sisa
+    budget itu. Fallback (kasus ekstrem total capped saja > cost): scale semua investor seperti versi lama, supaya
+    company additional tidak negatif. Koreksi drift largest-remainder (sisa pembulatan sen) tetap ada tapi sekarang
+    HANYA menyasar investor partial, tidak pernah investor capped. `$cost`/`$used` activity tetap tidak pernah
+    digeser (aturan #13 tidak berubah — hanya cara distribusi antar investor yang diperbaiki).
+  - **Sudah ditest manual dengan kalkulasi ulang dari screenshot user** (bukan dites di server oleh Claude — sandbox
+    tidak punya PHP) dan angkanya cocok persis dengan yang diharapkan di fly window. **User tetap perlu test ulang di
+    server** untuk konfirmasi final sebelum lebur ke §4–7.
+- **12 Okt 2026, Total di tfoot tabel tab Report (Investor)**: hanya `investor_content.php`, tanpa migration/endpoint baru.
+  Keempat tabel di tab Report (Investor Fund Usage Details, Sales Report per Project, Investment Profit Distribution,
+  Per Investor Share) kini punya `<tfoot>` baris Total untuk tiap kolom angka (dijumlah di JS dalam `renderReport()`,
+  pola sama seperti `txTotal` yang sudah ada di tabel Project Expenses tab Investment). Kolom non-angka (pdp %, Ratio %,
+  Actions) dibiarkan kosong di tfoot karena jumlahnya tidak bermakna.
 - **6 Okt 2026, Kategori Disbursement** (hanya label pengelompokan uang keluar; tidak memecah total/saldo/chart):
   - DB: tabel baru `disbursement_categories` (id, category_name UNIQUE, created_by, created_at), seed PURCHASE PAYMENT /
     CLEARANCE FEES / OPERATIONAL EXPENSES; kolom baru `transaction_disbursements.category_id` (NOT NULL, indeks, tanpa FK,
