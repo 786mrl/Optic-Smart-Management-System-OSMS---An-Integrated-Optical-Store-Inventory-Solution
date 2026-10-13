@@ -359,7 +359,7 @@ function sync_data_literal_folders() {
     return ['qrcodes', 'main_qrcodes', 'pdf_file', 'data_json', 'database'];
 }
 
-function sync_build_data_tree($appDir, $conn) {
+function sync_build_data_tree($appDir, $conn, $lisaniConn = null) {
     $tree = [];
     foreach (sync_data_literal_folders() as $folderName) {
         $folderPath = $appDir . '/' . $folderName;
@@ -393,6 +393,30 @@ function sync_build_data_tree($appDir, $conn) {
     }
     if (!empty($tableChildren)) {
         $tree[] = ['type' => 'folder', 'name' => 'optic_pos_db', 'children' => $tableChildren];
+    }
+
+    // Same idea for lisani_aos_db, if this device has it set up — mirrors
+    // the optic_pos_db virtual folder above exactly, just a separate DB
+    // connection and a separate path prefix ("lisani_aos_db/<table>") so
+    // the two never collide even when table names match (e.g. "users").
+    if ($lisaniConn !== null) {
+        $lisaniTableChildren = [];
+        $lisaniTablesResult = $lisaniConn->query("SHOW TABLES");
+        if ($lisaniTablesResult) {
+            while ($row = $lisaniTablesResult->fetch_array()) {
+                $table = $row[0];
+                $countResult = $lisaniConn->query("SELECT COUNT(*) AS c FROM `$table`");
+                $count = $countResult ? (int) $countResult->fetch_assoc()['c'] : 0;
+                $lisaniTableChildren[] = [
+                    'type' => 'file',
+                    'path' => 'lisani_aos_db/' . $table,
+                    'size' => $count . ' row' . ($count === 1 ? '' : 's'),
+                ];
+            }
+        }
+        if (!empty($lisaniTableChildren)) {
+            $tree[] = ['type' => 'folder', 'name' => 'lisani_aos_db', 'children' => $lisaniTableChildren];
+        }
     }
 
     return $tree;
@@ -668,16 +692,20 @@ function sync_reconcile_table_structures($conn, $sqlContent) {
  * selections never touch the filesystem — they're exported as REPLACE INTO
  * SQL and embedded as _custom_data_update.sql at the zip root.
  */
-function sync_build_data_custom_zip($appDir, $conn, $selectedPaths, $zipFile, $deleteFilePaths = []) {
+function sync_build_data_custom_zip($appDir, $conn, $selectedPaths, $zipFile, $deleteFilePaths = [], $lisaniConn = null) {
     if (!class_exists('ZipArchive')) {
         return ['ok' => false, 'message' => 'PHP ZipArchive extension is not enabled on this server.'];
     }
     $tablePrefix = 'optic_pos_db/';
+    $lisaniTablePrefix = 'lisani_aos_db/';
     $fileSelections = [];
     $tableSelections = [];
+    $lisaniTableSelections = [];
     foreach ($selectedPaths as $p) {
         if (strpos($p, $tablePrefix) === 0) {
             $tableSelections[] = substr($p, strlen($tablePrefix));
+        } elseif (strpos($p, $lisaniTablePrefix) === 0) {
+            $lisaniTableSelections[] = substr($p, strlen($lisaniTablePrefix));
         } else {
             $fileSelections[] = $p;
         }
@@ -710,7 +738,19 @@ function sync_build_data_custom_zip($appDir, $conn, $selectedPaths, $zipFile, $d
     }
     $tableSelections = array_values(array_intersect($tableSelections, $actualTables));
 
-    if (empty($fileSelections) && empty($tableSelections) && empty($deleteFilePaths)) {
+    // Same validation for lisani_aos_db tables, against ITS own table list —
+    // never cross-checked against $actualTables (optic's), so a same-named
+    // table can't accidentally validate against the wrong database.
+    $actualLisaniTables = [];
+    if ($lisaniConn !== null) {
+        $ltr = $lisaniConn->query("SHOW TABLES");
+        if ($ltr) {
+            while ($row = $ltr->fetch_array()) $actualLisaniTables[] = $row[0];
+        }
+    }
+    $lisaniTableSelections = array_values(array_intersect($lisaniTableSelections, $actualLisaniTables));
+
+    if (empty($fileSelections) && empty($tableSelections) && empty($lisaniTableSelections) && empty($deleteFilePaths)) {
         return ['ok' => false, 'message' => 'No valid files, tables, or deletions selected.'];
     }
 
@@ -747,6 +787,29 @@ function sync_build_data_custom_zip($appDir, $conn, $selectedPaths, $zipFile, $d
         }
     }
 
+    // Same export for lisani_aos_db's selected tables — written to its OWN
+    // SQL file and PK manifest inside the zip, kept fully separate from
+    // optic's above so the applying side can import each against its
+    // correct connection ($conn vs $lisani_conn) without mixing them up.
+    $lisaniTableCount = 0;
+    if (!empty($lisaniTableSelections) && $lisaniConn !== null) {
+        $lisaniSql = "SET FOREIGN_KEY_CHECKS=0;\nSTART TRANSACTION;\n";
+        $lisaniPkManifest = [];
+        foreach ($lisaniTableSelections as $table) {
+            $exp = sync_export_full_table_replace($lisaniConn, $table);
+            $lisaniSql .= $exp['sql'];
+            if ($exp['pk_col'] !== null) {
+                $lisaniPkManifest[] = ['table' => $table, 'pk_col' => $exp['pk_col'], 'pk_values' => $exp['pk_values']];
+            }
+            $lisaniTableCount++;
+        }
+        $lisaniSql .= "COMMIT;\nSET FOREIGN_KEY_CHECKS=1;\n";
+        $zip->addFromString('_custom_data_update_lisani.sql', $lisaniSql);
+        if (!empty($lisaniPkManifest)) {
+            $zip->addFromString('_custom_data_table_pks_lisani.json', json_encode($lisaniPkManifest));
+        }
+    }
+
     if (!empty($deleteFilePaths)) {
         $zip->addFromString('_custom_data_deletes.json', json_encode($deleteFilePaths));
     }
@@ -754,9 +817,10 @@ function sync_build_data_custom_zip($appDir, $conn, $selectedPaths, $zipFile, $d
     $zip->close();
     return [
         'ok' => true,
-        'message' => "Custom data zip created with $fileCount file(s), $tableCount table(s), " . count($deleteFilePaths) . ' deletion(s).',
+        'message' => "Custom data zip created with $fileCount file(s), $tableCount optic table(s), $lisaniTableCount lisani table(s), " . count($deleteFilePaths) . ' deletion(s).',
         'file_count' => $fileCount,
         'table_count' => $tableCount,
+        'lisani_table_count' => $lisaniTableCount,
         'delete_count' => count($deleteFilePaths),
     ];
 }
@@ -769,7 +833,7 @@ function sync_build_data_custom_zip($appDir, $conn, $selectedPaths, $zipFile, $d
  * over. Then verifies every extracted file's checksum against the zip.
  * Shared by both "Update Source Code" and "Custom Update Source Code".
  */
-function sync_fetch_and_apply_code_zip($sourceUrl, $appDir, $htdocsDir, $conn = null, $ownRole = null) {
+function sync_fetch_and_apply_code_zip($sourceUrl, $appDir, $htdocsDir, $conn = null, $ownRole = null, $lisaniConn = null) {
     $tmpZip = sys_get_temp_dir() . '/' . SYNC_APP_FOLDER_NAME . '_code_incoming_' . uniqid() . '.zip';
     $ctx = stream_context_create(['http' => ['timeout' => 60, 'ignore_errors' => true]]);
     $data = @file_get_contents($sourceUrl, false, $ctx);
@@ -878,6 +942,42 @@ function sync_fetch_and_apply_code_zip($sourceUrl, $appDir, $htdocsDir, $conn = 
         }));
     }
 
+    // Same handling for lisani_aos_db's own custom-update SQL, imported
+    // against $lisaniConn (NEVER $conn — different database entirely).
+    // Uses the plain PHP mysqli import rather than the native-CLI fast path:
+    // these are small incremental table updates, not full dumps, so the
+    // extra speed isn't needed, and it avoids having to teach the native
+    // dispatcher about a second database name here.
+    $lisaniDbUpdateNote = null;
+    $lisaniDataSqlPath = $htdocsDir . '/_custom_data_update_lisani.sql';
+    if (file_exists($lisaniDataSqlPath)) {
+        if ($lisaniConn !== null) {
+            try {
+                $lisaniStructureNote = null;
+                $lisaniSqlContentForReconcile = file_get_contents($lisaniDataSqlPath);
+                if ($lisaniSqlContentForReconcile !== false) {
+                    $lisaniReconcileResult = sync_reconcile_table_structures($lisaniConn, $lisaniSqlContentForReconcile);
+                    if (!empty($lisaniReconcileResult['altered_tables'])) {
+                        $lisaniStructureNote = 'Structure updated for ' . count($lisaniReconcileResult['altered_tables']) . ' table(s) (' . implode(', ', $lisaniReconcileResult['altered_tables']) . ').';
+                    }
+                    if (!empty($lisaniReconcileResult['errors'])) {
+                        $lisaniStructureNote = ($lisaniStructureNote !== null ? $lisaniStructureNote . ' ' : '') . 'Structure update failed for: ' . implode('; ', $lisaniReconcileResult['errors']) . '.';
+                    }
+                }
+                $lisaniImportResult = sync_import_sql_file($lisaniConn, $lisaniDataSqlPath);
+                $lisaniDbUpdateNote = 'Lisani AOS tables: ' . ($lisaniStructureNote !== null ? $lisaniStructureNote . ' ' : '') . $lisaniImportResult['message'];
+            } catch (\mysqli_sql_exception $e) {
+                $lisaniDbUpdateNote = 'Lisani AOS tables: import failed — ' . $e->getMessage();
+            }
+        } else {
+            $lisaniDbUpdateNote = 'Lisani AOS tables: skipped (no DB connection available for this apply).';
+        }
+        @unlink($lisaniDataSqlPath);
+        $updatedFiles = array_values(array_filter($updatedFiles, function ($f) {
+            return basename($f['path']) !== '_custom_data_update_lisani.sql';
+        }));
+    }
+
     // Mirror-delete: for each synced table that carried a PK manifest, remove
     // any LOCAL row whose key isn't in the source's current set — REPLACE
     // INTO alone can only add/update, never delete rows the source removed.
@@ -940,6 +1040,51 @@ function sync_fetch_and_apply_code_zip($sourceUrl, $appDir, $htdocsDir, $conn = 
         }
     }
 
+    // Same mirror-delete for lisani_aos_db's PK manifest, against $lisaniConn.
+    $lisaniPkManifestPath = $htdocsDir . '/_custom_data_table_pks_lisani.json';
+    $lisaniDeletedRowsNote = null;
+    if (file_exists($lisaniPkManifestPath)) {
+        $lisaniPkManifest = json_decode(file_get_contents($lisaniPkManifestPath), true);
+        @unlink($lisaniPkManifestPath);
+        $updatedFiles = array_values(array_filter($updatedFiles, function ($f) {
+            return basename($f['path']) !== '_custom_data_table_pks_lisani.json';
+        }));
+        if ($lisaniConn !== null && is_array($lisaniPkManifest)) {
+            $localLisaniTables = [];
+            $ltr = $lisaniConn->query("SHOW TABLES");
+            if ($ltr) {
+                while ($row = $ltr->fetch_array()) $localLisaniTables[] = $row[0];
+            }
+            $totalLisaniDeletedRows = 0;
+            $skippedLisaniTables = [];
+            foreach ($lisaniPkManifest as $entry) {
+                $table = $entry['table'] ?? null;
+                $pkCol = $entry['pk_col'] ?? null;
+                $pkValues = $entry['pk_values'] ?? [];
+                if ($table === null || $pkCol === null) continue;
+                if (!in_array($table, $localLisaniTables, true)) {
+                    $skippedLisaniTables[] = $table;
+                    continue;
+                }
+                try {
+                    if (empty($pkValues)) {
+                        $lisaniConn->query("DELETE FROM `$table`");
+                    } else {
+                        $quoted = array_map(function ($v) use ($lisaniConn) { return "'" . $lisaniConn->real_escape_string($v) . "'"; }, $pkValues);
+                        $lisaniConn->query("DELETE FROM `$table` WHERE `$pkCol` NOT IN (" . implode(',', $quoted) . ")");
+                    }
+                    $totalLisaniDeletedRows += $lisaniConn->affected_rows > 0 ? $lisaniConn->affected_rows : 0;
+                } catch (\mysqli_sql_exception $e) {
+                    $skippedLisaniTables[] = $table;
+                }
+            }
+            $lisaniDeletedRowsNote = "Mirrored $totalLisaniDeletedRows local lisani row(s) removed to match the source.";
+            if (!empty($skippedLisaniTables)) {
+                $lisaniDeletedRowsNote .= ' Skipped mirror-delete for ' . count($skippedLisaniTables) . ' lisani table(s) not present locally (' . implode(', ', array_unique($skippedLisaniTables)) . ').';
+            }
+        }
+    }
+
     // Explicit local file deletions (files confirmed missing at the source,
     // via Verify Full Sync, that the user chose to also remove here).
     $deleteManifestPath = $htdocsDir . '/_custom_data_deletes.json';
@@ -986,7 +1131,7 @@ function sync_fetch_and_apply_code_zip($sourceUrl, $appDir, $htdocsDir, $conn = 
 
     return [
         'ok' => $extracted,
-        'message' => ($extracted ? "Source code updated — $numFiles file(s) overlaid from PC." : 'Extraction failed.') . ($syncPhpVerifyNote ? ' ' . $syncPhpVerifyNote : '') . ($dbUpdateNote ? ' ' . $dbUpdateNote : '') . ($deletedRowsNote ? ' ' . $deletedRowsNote : '') . ($deletedFilesNote ? ' ' . $deletedFilesNote : ''),
+        'message' => ($extracted ? "Source code updated — $numFiles file(s) overlaid from PC." : 'Extraction failed.') . ($syncPhpVerifyNote ? ' ' . $syncPhpVerifyNote : '') . ($dbUpdateNote ? ' ' . $dbUpdateNote : '') . ($lisaniDbUpdateNote ? ' ' . $lisaniDbUpdateNote : '') . ($deletedRowsNote ? ' ' . $deletedRowsNote : '') . ($lisaniDeletedRowsNote ? ' ' . $lisaniDeletedRowsNote : '') . ($deletedFilesNote ? ' ' . $deletedFilesNote : ''),
         'updated_files' => $updatedFiles,
         'verification' => [
             'available' => true,
@@ -1303,7 +1448,7 @@ function sync_import_sql_file($conn, $sqlFile) {
  * caller should treat null as "not available, fall back to the PHP method",
  * so this is purely an optimization and never a hard dependency.
  */
-function sync_import_sql_native_android($sqlFile) {
+function sync_import_sql_native_android($sqlFile, $dbName = 'optic_pos_db') {
     if (!function_exists('shell_exec') || stripos((string) ini_get('disable_functions'), 'shell_exec') !== false) {
         return null;
     }
@@ -1322,7 +1467,7 @@ function sync_import_sql_native_android($sqlFile) {
 
     $socket = '/data/data/com.termux/files/usr/var/run/mysqld.sock';
     $cmd = escapeshellarg($binary) . ' --socket=' . escapeshellarg($socket)
-        . ' -u root optic_pos_db < ' . escapeshellarg($sqlFile) . ' 2>&1';
+        . ' -u root ' . escapeshellarg($dbName) . ' < ' . escapeshellarg($sqlFile) . ' 2>&1';
     $output = @shell_exec($cmd);
     $output = ($output === null) ? '' : trim($output);
 
@@ -1554,10 +1699,19 @@ function sync_compute_per_table_hashes($conn) {
  * confirm PC and Android are identical, AND to pinpoint exactly which
  * files/tables differ when they aren't — without transferring anything.
  */
-function sync_compute_full_state_hash($appDir, $conn) {
+function sync_compute_full_state_hash($appDir, $conn, $lisaniConn = null) {
     $fileCrcMap = sync_build_file_crc_manifest($appDir);
     ksort($fileCrcMap);
     $tableHashes = sync_compute_per_table_hashes($conn);
+    // Merge lisani_aos_db's tables into the SAME combined state, prefixed
+    // so a same-named table (e.g. "users" exists in both DBs) can never
+    // collide or silently overwrite the optic one in the hash map.
+    if ($lisaniConn !== null) {
+        $lisaniTableHashes = sync_compute_per_table_hashes($lisaniConn);
+        foreach ($lisaniTableHashes as $lisaniTable => $lisaniHash) {
+            $tableHashes['lisani:' . $lisaniTable] = $lisaniHash;
+        }
+    }
     ksort($tableHashes);
     return [
         'file_hash' => hash('sha256', json_encode($fileCrcMap)),
@@ -1604,6 +1758,54 @@ $conn->set_charset("utf8");
 if (!function_exists('close_db_connection')) {
     function close_db_connection($conn) {
         if ($conn) { $conn->close(); }
+    }
+}
+?>
+DBEOF;
+}
+
+/**
+ * Same idea as sync_db_config_content() above, but for lisani_aos/db_config.php
+ * (separate DB, separate variable names — $lisani_conn, not $conn).
+ */
+function sync_db_config_content_lisani($variant) {
+    if ($variant === 'android') {
+        return <<<'DBEOF'
+<?php
+// lisani_aos/db_config.php
+$lisani_servername = "localhost";
+$lisani_db_username = "root";
+$lisani_db_password = "";
+$lisani_dbname = "lisani_aos_db";
+$lisani_socket = "/data/data/com.termux/files/usr/var/run/mysqld.sock";
+$lisani_conn = new mysqli($lisani_servername, $lisani_db_username, $lisani_db_password, $lisani_dbname, 3306, $lisani_socket);
+if ($lisani_conn->connect_error) {
+    die("Lisani AOS DB connection failed: " . $lisani_conn->connect_error);
+}
+$lisani_conn->set_charset("utf8");
+if (!function_exists('close_lisani_db_connection')) {
+    function close_lisani_db_connection($lisani_conn) {
+        if ($lisani_conn) { $lisani_conn->close(); }
+    }
+}
+?>
+DBEOF;
+    }
+    return <<<'DBEOF'
+<?php
+// lisani_aos/db_config.php
+$lisani_servername = "localhost";
+$lisani_db_username = "root";
+$lisani_db_password = "";
+$lisani_dbname = "lisani_aos_db";
+$lisani_conn = new mysqli($lisani_servername, $lisani_db_username, $lisani_db_password, $lisani_dbname);
+if ($lisani_conn->connect_error) {
+    die("Lisani AOS DB connection failed: " . $lisani_conn->connect_error);
+}
+$lisani_conn->set_charset("utf8");
+if (!function_exists('close_lisani_db_connection')) {
+    function close_lisani_db_connection($lisani_conn) {
+        if ($lisani_conn) { $lisani_conn->close(); }
     }
 }
 ?>
@@ -1833,7 +2035,10 @@ if (isset($_GET['action']) && $_GET['action'] === 'list_data_files') {
         exit();
     }
     include 'db_config.php'; // provides $conn, needed to list tables for the virtual optic_pos_db folder
-    $tree = sync_build_data_tree($appDir, $conn);
+    $lisaniConnPath = $appDir . '/lisani_aos/db_config.php';
+    $lisani_conn = null;
+    if (file_exists($lisaniConnPath)) { include $lisaniConnPath; } // provides $lisani_conn, if present
+    $tree = sync_build_data_tree($appDir, $conn, $lisani_conn);
     if (ob_get_level() > 0) ob_clean();
     header('Content-Type: application/json');
     if (ob_get_level() > 0) { ob_clean(); }
@@ -1872,9 +2077,12 @@ if (isset($_GET['action']) && $_GET['action'] === 'serve_data_custom') {
     }
 
     include 'db_config.php'; // provides $conn for table exports
+    $lisaniConnPath = $appDir . '/lisani_aos/db_config.php';
+    $lisani_conn = null;
+    if (file_exists($lisaniConnPath)) { include $lisaniConnPath; } // provides $lisani_conn, if present
 
     $zipPath = sys_get_temp_dir() . '/' . SYNC_APP_FOLDER_NAME . '_data_custom_' . uniqid() . '.zip';
-    $zipResult = sync_build_data_custom_zip($appDir, $conn, $requestedPaths, $zipPath, $deletePaths);
+    $zipResult = sync_build_data_custom_zip($appDir, $conn, $requestedPaths, $zipPath, $deletePaths, $lisani_conn);
     if (!$zipResult['ok']) {
         @unlink($zipPath);
         http_response_code(500);
@@ -1911,7 +2119,10 @@ if (isset($_GET['action']) && $_GET['action'] === 'get_full_state_hash') {
         exit();
     }
     include 'db_config.php'; // provides $conn
-    $state = sync_compute_full_state_hash($appDir, $conn);
+    $lisaniConnPath = $appDir . '/lisani_aos/db_config.php';
+    $lisani_conn = null;
+    if (file_exists($lisaniConnPath)) { include $lisaniConnPath; } // provides $lisani_conn, if present
+    $state = sync_compute_full_state_hash($appDir, $conn, $lisani_conn);
     if (ob_get_level() > 0) ob_clean();
     header('Content-Type: application/json');
     if (ob_get_level() > 0) { ob_clean(); }
@@ -1965,6 +2176,9 @@ if ($current_role !== 'admin') {
 include 'db_config.php';
 include 'config_helper.php';
 include 'auth_check.php';
+$lisaniConnPath = $appDir . '/lisani_aos/db_config.php';
+$lisani_conn = null;
+if (file_exists($lisaniConnPath)) { include $lisaniConnPath; } // provides $lisani_conn, if present
 
 // --- Fetch the configured Main Admin username (used to gate the Full System card) ---
 $sync_main_admin_username = '';
@@ -2500,7 +2714,10 @@ if (isset($_POST['action'])) {
             exit();
         }
         $sourceUrl .= "&files=" . urlencode(json_encode($selectedFiles)) . "&deletes=" . urlencode(json_encode($deleteFiles));
-        $result = sync_fetch_and_apply_code_zip($sourceUrl, $appDir, $htdocsDir, $conn, $syncOwnRole);
+        $lisaniConnPath = $appDir . '/lisani_aos/db_config.php';
+        $lisani_conn = null;
+        if (file_exists($lisaniConnPath)) { include $lisaniConnPath; } // provides $lisani_conn, if present
+        $result = sync_fetch_and_apply_code_zip($sourceUrl, $appDir, $htdocsDir, $conn, $syncOwnRole, $lisani_conn);
         if (ob_get_level() > 0) { ob_clean(); }
         echo json_encode($result);
         exit();
@@ -2514,6 +2731,20 @@ if (isset($_POST['action'])) {
             if (ob_get_level() > 0) { ob_clean(); }
             echo json_encode(['ok' => false, 'message' => 'DB export failed: ' . $dbResult['message']]);
             exit();
+        }
+        // Also export lisani_aos_db, if lisani_aos's own db_config.php is present —
+        // dumped INSIDE lisani_aos/database/ so sync_zip_folder($appDir, ...)
+        // below (which zips the whole appDir) picks it up automatically.
+        $lisaniDumpResult = ['ok' => true, 'message' => ''];
+        if (file_exists($appDir . '/lisani_aos/db_config.php')) {
+            include $appDir . '/lisani_aos/db_config.php'; // provides $lisani_conn
+            if (!is_dir($appDir . '/lisani_aos/database')) mkdir($appDir . '/lisani_aos/database', 0755, true);
+            $lisaniDumpResult = sync_export_db_to_sql($lisani_conn, $appDir . '/lisani_aos/database/lisani_aos_db.sql');
+            if (!$lisaniDumpResult['ok']) {
+                if (ob_get_level() > 0) { ob_clean(); }
+                echo json_encode(['ok' => false, 'message' => 'Lisani AOS DB export failed: ' . $lisaniDumpResult['message']]);
+                exit();
+            }
         }
         $zipPath = $htdocsDir . '/' . SYNC_APP_FOLDER_NAME . '.zip';
         $zipResult = sync_zip_folder($appDir, $zipPath, [SYNC_APP_FOLDER_NAME . '.zip']);
@@ -2594,6 +2825,12 @@ if (isset($_POST['action'])) {
         // Backup current DB before overwriting — stored per-IP with 7-file retention
         if (!is_dir($appDir . '/database')) mkdir($appDir . '/database', 0755, true);
         $backupResult = sync_backup_db_with_retention($conn, $appDir, 7);
+        // Same for lisani_aos_db, if it's set up on this device yet.
+        if (file_exists($appDir . '/lisani_aos/db_config.php')) {
+            include $appDir . '/lisani_aos/db_config.php'; // provides $lisani_conn
+            if (!is_dir($appDir . '/lisani_aos/database')) mkdir($appDir . '/lisani_aos/database', 0755, true);
+            sync_backup_db_with_retention($lisani_conn, $appDir . '/lisani_aos', 7);
+        }
 
         // Extract on top of htdocs, deleting anything local that isn't in the
         // incoming zip (true mirror overwrite). The local backups folder is
@@ -2638,6 +2875,12 @@ if (isset($_POST['action'])) {
 
         // Regenerate db_config.php for THIS device's environment
         file_put_contents($appDir . '/db_config.php', sync_db_config_content($dbConfigTpl));
+        // Same for lisani_aos's own db_config.php — the copy that just landed
+        // from the extraction came from the SOURCE device and would otherwise
+        // be wrong here (e.g. missing the Termux socket on Android).
+        if (is_dir($appDir . '/lisani_aos')) {
+            file_put_contents($appDir . '/lisani_aos/db_config.php', sync_db_config_content_lisani($dbConfigTpl));
+        }
 
         // Android/Termux ships a newer PHP where mysqli::ping() is deprecated.
         // config_helper.php coming FROM the PC still calls it, which prints a
@@ -2695,10 +2938,43 @@ if (isset($_POST['action'])) {
         }
         $freshConn->close();
 
+        // Same import step for lisani_aos_db, if the dump arrived in the zip
+        // (it will have, as long as the source device had lisani_aos set up
+        // when it ran "Create Local ZIP").
+        $lisaniImportResult = null;
+        $incomingLisaniDump = $appDir . '/lisani_aos/database/lisani_aos_db.sql';
+        if (is_dir($appDir . '/lisani_aos') && file_exists($incomingLisaniDump)) {
+            if ($dbConfigTpl === 'android') {
+                $freshLisaniConn = @new mysqli('localhost', 'root', '', 'lisani_aos_db', 3306, '/data/data/com.termux/files/usr/var/run/mysqld.sock');
+            } else {
+                $freshLisaniConn = @new mysqli('localhost', 'root', '', 'lisani_aos_db');
+            }
+            if ($freshLisaniConn->connect_error) {
+                $lisaniImportResult = ['ok' => false, 'message' => 'Lisani AOS DB reconnect failed: ' . $freshLisaniConn->connect_error];
+            } else {
+                $freshLisaniConn->set_charset('utf8');
+                if ($target === 'pc') {
+                    $lisaniImportResult = sync_import_sql_native_android($incomingLisaniDump, 'lisani_aos_db');
+                } elseif ($target === 'android') {
+                    $lisaniImportResult = sync_import_sql_native_pc($incomingLisaniDump);
+                }
+                if ($lisaniImportResult === null) {
+                    $lisaniImportResult = sync_import_sql_file($freshLisaniConn, $incomingLisaniDump);
+                }
+                $freshLisaniConn->close();
+            }
+        }
+
+        $combinedMessage = $extractResult['message'] . ' | ' . $importResult['message'];
+        if ($lisaniImportResult !== null) {
+            $combinedMessage .= ' | Lisani AOS: ' . $lisaniImportResult['message'];
+        }
+        $combinedOk = $importResult['ok'] && ($lisaniImportResult === null || $lisaniImportResult['ok']);
+
         if (ob_get_level() > 0) { ob_clean(); }
         echo json_encode([
-            'ok' => $importResult['ok'],
-            'message' => $extractResult['message'] . ' | ' . $importResult['message'],
+            'ok' => $combinedOk,
+            'message' => $combinedMessage,
             'manifest_compare' => $manifestCompare,
         ]);
         exit();

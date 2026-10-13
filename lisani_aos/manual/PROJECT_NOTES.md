@@ -23,7 +23,7 @@ optic_pos/
     ├── logistic_content.php       Logistic: List, Movements, Create New Logistic
     ├── settings_content.php       Company Documents & Company Bank Accounts
     ├── report_content.php         Report: Finance Report
-    ├── investor_content.php       Investor: Investors, Investment, Report, Profit Payment & Rolled Capital (lihat Log terbaru)
+    ├── investor_content.php       Investor: Investors, Investment, Report, Profit Payment & Rolled Capital
     ├── ajax/                      semua endpoint (§7); _invoice_pdf.php, _require_reverify.php, _order_patterns.php;
     │                              investor_api.php (endpoint tunggal modul Investor)
     ├── json_file/                 departments.json, packaging units, bank_accounts.json, order_patterns/
@@ -104,6 +104,9 @@ optic_pos/
 - **defective_stock_events**: logistic_id, event_type (saat ini hanya `repaired_to_normal`), qty, created_by.
 - Lain: `logistic_documents` (key activity_id, dibagi semua produk dalam activity code), `transactions` + tabel bantu
   (Disbursement), company documents & bank accounts (Settings).
+- **disbursement_categories**: id, category_name (UNIQUE), created_by, created_at. Seed: PURCHASE PAYMENT / CLEARANCE
+  FEES / OPERATIONAL EXPENSES. **transaction_disbursements.category_id** (NOT NULL, indeks, tanpa FK, validasi di PHP)
+  menunjuk ke sini — label pengelompokan uang keluar (tidak memecah total/saldo/chart, hanya tampilan & filter).
 - `logistics.defective_reference_price` sudah tidak dipakai (drop opsional, lihat §8).
 - **investors**: id, name. **investor_deposits**: investor_id, date, currency, amount, rate (nullable, hanya valas),
   final (IDR), notes. **investor_support_expenses**: investor_id, date, category (`return_capital`/`aid`/`other`),
@@ -152,12 +155,18 @@ optic_pos/
 13. **Investor — ICU & dana project**: ICU (Investor Capital Utilized) = Σdeposits − Σnon-project expenses; ini total
     dana investor yang tersedia (bukan akumulator, turun kalau ada return_capital/aid/other). Total cost per activity =
     `SUM(transactions.final_amount_idr) JOIN transaction_disbursements` (category=disbursement). Dana investor terpakai
-    per project = Σ(%alokasi × ICU investor), **dibatasi ≤ total cost** project itu (kalau total alokasi melebihi cost,
-    proporsinya di-scale turun); sisanya = company additional contribution. "Share of Investor Fund (%)" (fly window)
-    auto-balance investor lain memakai pembagian **nilai rupiah sama rata** (bukan %) dari sisa cost yang belum
-    dialokasikan investor yang sedang diedit; investor yang ICU-nya tidak cukup menampung bagian rupiah rata itu
-    di-cap 100% ICU, kekurangannya dilempar & dibagi rata lagi ke investor tersisa (cascading, lihat `allocRecalc()`
-    di `investor_content.php`).
+    per project = Σ(%alokasi × ICU investor), **dibatasi ≤ total cost** project itu. Kalau total alokasi melebihi cost,
+    pembagiannya **water-filling dua tahap** (`inv_compute()` di `investor_api.php`): investor yang sudah **capped**
+    (alokasi = 100% dari ICU-nya sendiri untuk project ini) **selalu dapat porsi penuh**, tidak pernah ikut di-scale
+    turun; sisa budget (`cost − total capped`) baru dibagi ke investor **partial** (masih ada ruang), di-scale
+    proporsional kalau jumlah mereka melebihi sisa budget itu. Fallback (kasus ekstrem total capped sendiri > cost):
+    semua investor (termasuk capped) di-scale proporsional, supaya company additional tidak negatif. Sisanya dari
+    `cost` = company additional contribution. "Share of Investor Fund (%)" (fly window) auto-balance investor lain
+    memakai pembagian **nilai rupiah sama rata** (bukan %) dari sisa cost yang belum dialokasikan investor yang sedang
+    diedit; investor yang ICU-nya tidak cukup menampung bagian rupiah rata itu di-cap 100% ICU, kekurangannya
+    dilempar & dibagi rata lagi ke investor tersisa (cascading, lihat `allocRecalc()` di `investor_content.php`).
+    `allocation_percent` disimpan presisi 6 desimal (`DECIMAL(9,6)`) supaya pembulatan tidak bikin total alokasi
+    overshoot cost secara material.
 14. **Investor — rumus laporan**: gross = sales aktual (dari `logistic_movements`, out−in−price_adjustment) − cost;
     zakat 2.5% dari gross (0 bila ≤0); net = gross − zakat; distribusi investor = net × pdp (pdp per activity code);
     rasio tiap investor dihitung **per project** (bukan gabungan semua project). TP (Total Profit) = Σ profit semua
@@ -180,7 +189,27 @@ saat section Transactions dibuka.
 **Input Transaction / Disbursement**: OCR Tesseract.js di browser (semi-otomatis, hasil selalu bisa diedit), viewer
 layar penuh, wizard; simpan ke `transactions`. Belum ada: list/edit/delete transaksi tersimpan, kategori Other.
 Viewer + OCR dipakai bersama dengan upload bukti pembayaran (satu instance, dipilah lewat `activeCapGroup`/`data-cap-group`).
-Auto-isi rekening setelah scan nomor rekening: lihat Log terbaru (7 Okt 2026).
+- **Category** (wizard step 3, Details): dropdown **wajib**, di antara Cashflow Type dan Transaction Purpose. Opsi
+  "+ Add new category…" (uppercase; nama yang sudah ada dipakai ulang, bukan error). Tombol **Manage** = Rename/Delete
+  **tanpa password** (keputusan user); Delete ditolak bila kategori sudah dipakai transaksi. Overlay
+  `disbManageCategoryOverlay` terdaftar di `flexOverlays`. Berlaku untuk semua departemen.
+- **Auto-isi rekening dari OCR**: setelah OCR membaca nomor rekening, dicocokkan ke `bank_accounts.json` (via
+  `list_bank_accounts.php`, diambil segar tiap pencarian). Disbursement = **source** account number → isi Source Bank,
+  Source Account Name, Currency (+ exchange rate muncul bila non-IDR). Jalan setelah scan OCR **dan** saat ketik manual
+  (event `change` = blur/Enter, bukan tiap ketukan). Aturan cocok (`parseScannedAccount()`, `acctFindMatches()`): nomor
+  penuh → sama persis (spasi/strip diabaikan); nomor tertutup → cocok 4 digit terakhir (OCR tidak pernah membaca `*`
+  dengan benar, jadi **karakter non-digit apa pun** selain spasi/titik/strip dianggap tertutup; juga tertutup bila ≤4
+  karakter; tanpa 4 digit di ujung → diabaikan). Hasil: 1 cocok → langsung isi; >1 cocok (beda bank) → fly window
+  `acctPickOverlay` pilih manual; 0 cocok → fly window `acctRegisterOverlay` (daftar rekening baru; bank/nama/currency
+  diisi dari form bila ada; nomor penuh wajib diketik bila hanya 4 digit). Kedua overlay di `flexOverlays`, z-index
+  2200 (di atas viewer & field picker). Saat cocok/terdaftar, kolom nomor **diganti dengan nomor penuh milik JSON**
+  (supaya Finance Report yang join lewat bank_name+account_number tetap cocok; bisa dibatalkan kalau user maunya nomor
+  apa adanya dari slip). Daftar rekening baru = **password pola (b)** (`verify_password.php` lalu
+  `save_bank_account.php` dengan `require_reverify=1`; Settings tetap bisa tanpa password). **Pencocokan dari nama bank
+  saja** (`lookupAccountByBank()`, `acctBankMatches()`) dipakai kalau nomor/nama akun tidak terbaca di slip, hanya nama
+  bank — jalan saat field Bank terisi **dan** Account Number masih kosong (begitu nomor terisi, pencocokan nomor di
+  atas yang menang); 0 cocok → `acctRegisterOverlay` lewat `openAcctRegisterByBank()` (bank sudah terisi). Fungsi inti
+  `openAcctRegisterCore()` dipakai bersama alur nomor & bank-saja.
 
 **Settings**: Company Documents (upload/edit/delete→recycle/share WA/download) dan Company Bank Accounts (autocomplete
 bank/nama, duplikat per bank, share WA). Edit/Delete/Share pola (b).
@@ -209,10 +238,14 @@ bank/nama, duplikat per bank, share WA). Edit/Delete/Share pola (b).
   `open`. Apply Credit hanya untuk invoice open. Refund ada di tab ini.
 - *Add Payment*: upload bukti (viewer + OCR). Field: source bank, source account number, source account name,
   destination bank, destination account number, destination account name (semua uppercase, editable). Datalist
-  destination diisi dari `ajax/list_bank_accounts.php`. Notes auto-fill via `recalcPayCapNotes()`, dibandingkan ke
-  outstanding saat form dibuka (`total_amount − paid_amount`); berhenti begitu user mengetik manual di Notes.
-  Overpayment ditolak (bukan di-clamp). Bukti di `selling/{year}/{customer}/payments/`. Setelah Save, kartu customer
-  di-refresh (`refreshStCustomerCard`).
+  destination diisi dari `ajax/list_bank_accounts.php`, dimuat ulang (`loadDestBankAccounts`) tiap form dibuka dan
+  setelah rekening baru didaftarkan. Notes auto-fill via `recalcPayCapNotes()`, dibandingkan ke outstanding saat form
+  dibuka (`total_amount − paid_amount`); berhenti begitu user mengetik manual di Notes. Overpayment ditolak (bukan
+  di-clamp). Bukti di `selling/{year}/{customer}/payments/`. Setelah Save, kartu customer di-refresh
+  (`refreshStCustomerCard`). **Auto-isi rekening dari OCR**: nomor rekening hasil scan dicocokkan ke
+  `bank_accounts.json` sebagai **destination** → isi Destination Bank & Name (tidak ada currency: form &
+  `invoice_payments` memang tak punya kolomnya); aturan cocok, fly window pilih/daftar, dan pencocokan-by-bank-saja
+  sama seperti di Input Transaction / Disbursement (lihat bagian itu untuk detail).
 - *Returns*: pesan WA retur → tiap produk dialokasikan FIFO otomatis ke pickup (bisa dikoreksi, `+ Split`). Tiap split
   punya disposition Good / Defective / Price Adjustment. Review (`dry_run`) → password (pola b) → simpan berurutan
   `create_return.php` lalu `create_price_adjustment.php` (dua transaksi, tidak atomik; kegagalan sebagian dilaporkan).
@@ -246,8 +279,13 @@ invoice tab Customers):
 saldo kumulatif, saldo per rekening), ledger gabungan + Export CSV, snapshot piutang/credit. Data dari
 `ajax/get_finance_report.php`: outflow (`transactions` category=disbursement), inflow (`invoice_payments`), outflow refund
 (`invoice_refunds`), dicocokkan ke `bank_accounts.json` via bank_name+account_number (bukan FK). Saldo mulai 0 (keputusan
-user). Refresh lewat event `aos:section-shown`. Investor Report = placeholder kosong. Lebar: Ledger `min-width:640px`,
-tabel piutang 420px, `.table-wrapper` `overflow-x:auto` di semua lebar.
+user). Refresh lewat event `aos:section-shown`. Investor Report = placeholder kosong. Lebar: Ledger `min-width:640px` →
+760px (setelah kolom Category ditambahkan), tabel piutang 420px, `.table-wrapper` `overflow-x:auto` di semua lebar.
+Ledger kini punya kolom **Category** (disbursement = nama kategori dari `disbursement_categories`, **invoice payment
+tetap `SALES PAYMENT`**, refund = null) + Export CSV. Nominal ledger: inflow hijau, outflow merah, negatif pakai kurung
+`(Rp …)` bukan minus (helper `fmtIDRParen`, hanya di ledger; kartu ringkasan tetap `fmtIDR`; CSV tetap angka mentah +
+kolom Type). Belum ada: edit kategori transaksi yang sudah tersimpan (list/edit/delete transaksi tersimpan memang
+belum dibangun).
 
 **Investor** (`investor_content.php` + `ajax/investor_api.php`, satu endpoint untuk semua aksi; rumus & invarian di
 §4–5 di atas; triple-click login untuk masuk extended mode, lihat §1):
@@ -255,8 +293,11 @@ tabel piutang 420px, `.table-wrapper` `overflow-x:auto` di semua lebar.
   Projects/TP/PP/Rolled Capital; card ringkasan di atas tabel: Total ICU, Total Used in Projects, Total Remaining,
   dijumlahkan dari kolom yang sama) / **Investment** (pilih investor dulu lewat `fundChangeBtn`, lalu 3 card
   collapsible: Investment Input, Non-Project Expenses, Investor Fund Utilization — lihat gotcha collapsible di
-  bawah) / Report (usage per investor, sales per project, profit distribution + share per investor) / Profit
-  Payment & Rolled Capital. Hapus pakai password pola (a) langsung.
+  bawah) / **Report** (4 tabel: Investor Fund Usage Details, Sales Report per Project, Investment Profit
+  Distribution, Per Investor Share — tiap tabel punya `<tfoot>` baris Total untuk tiap kolom angka, dijumlah di JS
+  dalam `renderReport()`, pola sama seperti `txTotal` di tabel Project Expenses tab Investment; kolom non-angka
+  seperti pdp %, Ratio %, Actions dibiarkan kosong karena jumlahnya tidak bermakna) / Profit Payment & Rolled
+  Capital. Hapus pakai password pola (a) langsung.
 - Card header "Selected investor" (tab Investment) menampilkan Available (ICU), Used in Projects, Remaining untuk
   investor yang sedang dipilih — field sama dengan tabel Investors (`findInv().icu`/`.related`), diisi di
   `renderFund()`.
@@ -293,7 +334,9 @@ tabel piutang 420px, `.table-wrapper` `overflow-x:auto` di semua lebar.
 - **Auth/util**: `verify_password.php`, `_require_reverify.php`, `_order_patterns.php`, `_invoice_pdf.php`.
 - **Activity/Customer/Settings**: `create|update|delete|list|preview_activity_code`, `manage_departments`,
   `create|update|delete|list_customers`, `*_customer_item_price(s)`, `list_priceable_products`,
-  `upload|update|delete|download|share|list_documents`, `list|save_bank_account(s)`, `create_disbursement`.
+  `upload|update|delete|download|share|list_documents`, `list|save_bank_account(s)` (`save_bank_account.php` butuh
+  `require_reverify=1` saat dipanggil dari auto-isi rekening OCR, Settings tetap tanpa password),
+  `create_disbursement` (kini wajib `category_id`), `list|save|update|delete_disbursement_category`.
 - **Logistic**: `list_logistics`, `list_logistic_activities` (balikin `has_logistic` + `existing_products[]`),
   `upload_logistic_document`, `manage_packaging_units?kind=primary|secondary`, `list_logistic_movements` (nested
   tahun/bulan/hari + `total_out/in/adjustment`, `*_normal_qty`, `total_taken_qty`, `by_customer`), `manage_defective_stock`.
@@ -342,98 +385,12 @@ Perlu konfirmasi keputusan:
   bawah satu header activity code. Pertimbangkan pengelompokan kalau terasa berantakan.
 - Audit scroll horizontal menu lain setelah perbaikan `.app`/`.main` (global): Transactions, Logistic, Settings, Dashboard
   dicek di 3 ukuran (HP ≤767px, tablet 768–1023px, jendela setengah layar ~900–1000px).
-- Modul Investor belum dites sama sekali di server (seluruh fitur §6 Investor). Perlu dicek khusus: tanda
-  `total_price` pada `price_adjustment` (dipakai rumus gross di §5.14; asumsi positif, dikurangkan) — ini sebenarnya
-  milik modul Sales, bukan Investor, tapi memengaruhi rumus laporan Investor; kelas `.input-uppercase` jalan tanpa
-  `flexOverlays` untuk 2 modal `invPickerOverlay`/`invPwOverlay` (kalau masih dipakai — cek apakah sudah terpakai di
-  kode saat ini).
-
-### Log terbaru (belum dites di server; lebur ke §4–7 setelah dites, lalu hapus dari sini)
-- **12 Okt 2026, Bug: Fund Used < ICU walau Share 100%** (`investor_content.php` + `investor_api.php` + migration):
-  - Gejala: investor dialokasikan 100% di fly window Share of Investor Fund, tersimpan Share=100%, tapi di tab
-    Investment "Fund Used (IDR)" lebih kecil dari ICU-nya (selisih bisa puluhan ribu rupiah untuk ICU besar).
-  - Sebab: `allocRecalc()` (client) hitung `percent` investor lain (bukan yang sedang diedit) dengan presisi penuh,
-    tapi saat Save dibulatkan ke 2 desimal (`Math.round(r.percent*100)/100`) sebelum dikirim; `save_fund_shares`
-    (server) bulatkan lagi ke 2 desimal sebelum INSERT. Untuk ICU besar, pembulatan 0,01% = puluhan ribu rupiah,
-    bikin total alokasi (`raw`) sedikit melebihi total cost. `inv_compute()` lalu men-scale **semua** investor
-    activity itu secara proporsional (sesuai aturan #13, dana terpakai dibatasi ≤ cost) — termasuk investor yang
-    sebenarnya sudah capped 100% ICU-nya, jadi Fund Used-nya ikut tergerus meski Share tertulis 100%.
-  - Fix: presisi percent yang disimpan dinaikkan dari 2 → 6 desimal, baik di client (`invAllocSave` handler) maupun
-    server (`save_fund_shares`). Kolom `investor_activity_allocations.allocation_percent` diperbesar dari
-    `DECIMAL(5,2)` ke `DECIMAL(9,6)` (`migration_allocation_percent_precision.sql`, jalankan sekali). Logic cap/scale
-    di `inv_compute()` TIDAK diubah (masih sesuai aturan #13) — akar masalahnya murni presisi penyimpanan, bukan
-    logic cap-nya.
-  - Ini sekaligus menjawab item "auto-balance cascading equal-IDR (§5.13) untuk 3+ investor dengan kombinasi ICU
-    kecil/besar" yang sebelumnya di §8 perlu-konfirmasi — dengan presisi 6 desimal, kombinasi ICU kecil/besar tidak
-    lagi overshoot cost secara material.
-  - Sisa noise floating-point (puluhan sen, dari rantai pembagian di `allocRecalc()`) masih mungkin ada meski sudah
-    presisi 6 desimal. **Percobaan pertama** (epsilon: anggap `$cost = $raw` kalau selisihnya kecil) ternyata salah —
-    bikin total "Fund Used" lebih besar dari cost asli project (bukan cost yang nambah, tapi semua investor jadi
-    dapat porsi `raw` bukan `cost`). **Percobaan kedua** (koreksi drift largest-remainder: `$scale` seragam dulu ke
-    SEMUA investor, baru selisih pembulatan ditambal ke satu investor yang masih "ada ruang") **TERBUKTI MASIH SALAH**
-    saat dites user di server sungguhan (2 investor share project: investor A Share 100% ICU Rp100.000.000, investor B
-    Share 54,82%; fly window preview sudah benar — A=Rp100jt pas, B=Rp767.442.000 pas — tapi setelah Save, tab
-    Investment malah tampil A=Rp99.999.999,54, B=Rp767.442.000,46). Sebabnya: `$scale` seragam tetap diterapkan ke
-    SEMUA investor dulu (termasuk yang capped) SEBELUM koreksi drift; koreksi drift cuma menambal sisa pembulatan
-    (receh), bukan membatalkan scale-down yang sudah kadung mengenai investor capped.
-  - **Fix final (struktural, bukan patch lagi)**: alokasi per activity sekarang water-filling dua tahap, bukan
-    scale-seragam-lalu-tambal. Investor **capped** (`c >= icu - 0,01`, Share=100% dari ICU-nya sendiri untuk project
-    ini) SELALU dapat porsi penuh (`c`), TIDAK PERNAH ikut di-scale sama sekali. Sisa budget (`cost − total capped`)
-    baru dibagi ke investor **partial** (masih ada ruang), di-scale proporsional kalau jumlah mereka melebihi sisa
-    budget itu. Fallback (kasus ekstrem total capped saja > cost): scale semua investor seperti versi lama, supaya
-    company additional tidak negatif. Koreksi drift largest-remainder (sisa pembulatan sen) tetap ada tapi sekarang
-    HANYA menyasar investor partial, tidak pernah investor capped. `$cost`/`$used` activity tetap tidak pernah
-    digeser (aturan #13 tidak berubah — hanya cara distribusi antar investor yang diperbaiki).
-  - **Sudah ditest manual dengan kalkulasi ulang dari screenshot user** (bukan dites di server oleh Claude — sandbox
-    tidak punya PHP) dan angkanya cocok persis dengan yang diharapkan di fly window. **User tetap perlu test ulang di
-    server** untuk konfirmasi final sebelum lebur ke §4–7.
-- **12 Okt 2026, Total di tfoot tabel tab Report (Investor)**: hanya `investor_content.php`, tanpa migration/endpoint baru.
-  Keempat tabel di tab Report (Investor Fund Usage Details, Sales Report per Project, Investment Profit Distribution,
-  Per Investor Share) kini punya `<tfoot>` baris Total untuk tiap kolom angka (dijumlah di JS dalam `renderReport()`,
-  pola sama seperti `txTotal` yang sudah ada di tabel Project Expenses tab Investment). Kolom non-angka (pdp %, Ratio %,
-  Actions) dibiarkan kosong di tfoot karena jumlahnya tidak bermakna.
-- **6 Okt 2026, Kategori Disbursement** (hanya label pengelompokan uang keluar; tidak memecah total/saldo/chart):
-  - DB: tabel baru `disbursement_categories` (id, category_name UNIQUE, created_by, created_at), seed PURCHASE PAYMENT /
-    CLEARANCE FEES / OPERATIONAL EXPENSES; kolom baru `transaction_disbursements.category_id` (NOT NULL, indeks, tanpa FK,
-    validasi di PHP). Migrasi: `migration_disbursement_categories.sql` (jalankan sekali).
-  - Wizard step 3 (Details): dropdown Category **wajib**, di antara Cashflow Type dan Transaction Purpose. Opsi
-    "+ Add new category…" (uppercase; nama yang sudah ada dipakai ulang, bukan error). Tombol **Manage** = Rename/Delete
-    **tanpa password** (keputusan user); Delete ditolak bila kategori sudah dipakai transaksi. Overlay
-    `disbManageCategoryOverlay` terdaftar di `flexOverlays`. Berlaku untuk semua departemen.
-  - Endpoint baru: `list|save|update|delete_disbursement_category.php`. `create_disbursement.php` kini wajib `category_id`.
-  - Finance Report: `get_finance_report.php` menambah field `category` di ledger (disbursement = nama kategori,
-    **invoice payment = tetap `SALES PAYMENT`**, refund = null). `report_content.php`: kolom Category di ledger + Export CSV,
-    `min-width` ledger 640 → 760px. Nominal ledger: inflow hijau, outflow merah, negatif pakai kurung `(Rp …)` bukan minus
-    (helper `fmtIDRParen`, hanya di ledger; kartu ringkasan tetap `fmtIDR`; CSV tetap angka mentah + kolom Type).
-  - Belum ada: edit kategori transaksi yang sudah tersimpan (list/edit/delete transaksi tersimpan memang belum dibangun).
-- **7 Okt 2026, Auto-isi rekening dari OCR** (tanpa migration; hanya `transaction_content.php` + `save_bank_account.php`):
-  - Setelah OCR membaca nomor rekening, dicocokkan ke `bank_accounts.json` (via `list_bank_accounts.php`, diambil segar tiap
-    pencarian). Disbursement = **source** account number → isi Source Bank, Source Account Name, Currency (+ exchange rate
-    muncul bila non-IDR). Add Payment = **destination** account number → isi Destination Bank & Name (tidak ada currency:
-    form & `invoice_payments` memang tak punya kolomnya). Jalan setelah scan OCR **dan** saat ketik manual (event `change` =
-    blur/Enter, bukan tiap ketukan, supaya angka yang baru separuh diketik tidak dikira 4 digit terakhir).
-  - Aturan cocok (`parseScannedAccount()`, `acctFindMatches()`): nomor penuh → sama persis (spasi/strip diabaikan); nomor
-    tertutup → cocok 4 digit terakhir. OCR tidak pernah membaca `*` dengan benar (jadi huruf, mis. `SSSSSSSSS8393`), maka
-    **karakter non-digit apa pun** (selain spasi/titik/strip) = tertutup; nomor rekening asli selalu digit. Juga tertutup bila ≤4
-    karakter. Tanpa 4 digit di ujung → diabaikan.
-  - Hasil: 1 cocok → langsung isi; >1 cocok (beda bank) → fly window `acctPickOverlay` pilih manual; 0 cocok → fly window
-    `acctRegisterOverlay` (daftar rekening baru; bank/nama/currency diisi dari form bila ada; nomor penuh wajib diketik bila
-    hanya 4 digit). Kedua overlay terdaftar di `flexOverlays`, z-index 2200 (di atas viewer & field picker).
-  - Saat cocok/terdaftar, kolom nomor **diganti dengan nomor penuh milik JSON** (supaya Finance Report yang join lewat
-    bank_name+account_number tetap cocok); pilihan ini bisa dibatalkan kalau user maunya nomor apa adanya dari slip.
-  - Daftar rekening baru = **password pola (b)**: `verify_password.php` lalu `save_bank_account.php` dengan
-    `require_reverify=1` (endpoint memanggil `aos_require_recent_reverify()` hanya bila `id` ada ATAU flag itu dikirim;
-    Settings tetap membuat rekening baru tanpa password).
-  - Datalist destination Add Payment (`loadDestBankAccounts`) dimuat ulang tiap form dibuka dan setelah rekening baru didaftarkan,
-    jadi tidak perlu refresh halaman.
-  - **Pencocokan hanya dari nama bank** (`lookupAccountByBank()`, `acctBankMatches()`): dipakai kalau nomor/nama akun tidak
-    terbaca sama sekali di slip, hanya nama bank. Jalan saat field Bank (scan OCR atau selesai ketik) berisi nilai **dan**
-    field Account Number untuk wizard itu masih kosong — begitu nomor terisi, pencocokan nomor di atas yang menang.
-    Dicocokkan ke `bank_name` persis (tanpa spasi di pinggir, tanpa pandang besar/kecil huruf). 1 cocok → isi nomor, nama,
-    currency. >1 cocok (bank sama, >1 rekening) → `acctPickOverlay`. 0 cocok → `acctRegisterOverlay` lewat
-    `openAcctRegisterByBank()` (bank sudah terisi, nomor & nama kosong menunggu diisi manual; password tetap wajib).
-    `openAcctPicker()`/`openAcctRegister()` dirombak jadi fungsi inti (`openAcctRegisterCore`) dipakai bersama kedua alur
-    (nomor & bank-saja) supaya tidak dobel kode.
+- Modul Investor: alokasi dana (Fund Used/Share) & total tfoot tab Report sudah dites & jalan benar di server (12 Okt
+  2026). Masih perlu dicek: tanda `total_price` pada `price_adjustment` (dipakai rumus gross di §5.14; asumsi positif,
+  dikurangkan) — ini sebenarnya milik modul Sales, bukan Investor, tapi memengaruhi rumus laporan Investor; kelas
+  `.input-uppercase` jalan tanpa `flexOverlays` untuk 2 modal `invPickerOverlay`/`invPwOverlay` (kalau masih dipakai —
+  cek apakah sudah terpakai di kode saat ini). Fitur lain di §6 Investor (Investment Input, Non-Project Expenses,
+  Profit Payment & Rolled Capital, delete investor) belum dikonfirmasi ditest terpisah.
 
 ## 9. Cara lanjut di sesi baru
 1. Upload PROJECT_NOTES.md ini + hanya file kode yang relevan (Sales: `transaction_content.php` + `ajax/` terkait;
