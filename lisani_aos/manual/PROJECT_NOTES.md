@@ -72,10 +72,25 @@ optic_pos/
      harus tetap tabel perlu override `display` eksplisit.
   8. Chart.js dari cdnjs bisa diblokir jaringan user. Error di `renderCharts()` harus ditangkap (try/catch) agar
      bagian lain report tetap tampil.
-- **Menu**: sidebar = Dashboard, Transactions, Logistic (teks saja, tanpa ikon), Report; menu lain pakai ikon Tabler.
+- **Menu**: sidebar = Dashboard, Transactions, Logistic, Report, Investor — semua pakai ikon Tabler (Logistic sempat
+  tanpa ikon, diperbaiki 16 Okt 2026 jadi `ti-truck-delivery`, berlaku di sidebar desktop & bottom-nav mobile).
   Settings & Exit di dropdown avatar. Ganti section lewat `[data-target]` (footer.php → `setActive()`), yang juga
   `dispatchEvent('aos:section-shown', {detail:{target}})`. Section yang fetch-nya cuma sekali bisa listen event ini
   untuk refresh live (pola generik, tidak perlu ubah footer.php).
+- **Branding** (16 Okt 2026): nama resmi **"LISANI AOS"** (huruf besar semua), AOS = *Lisani Administration Operating
+  System*. Topbar (`index.php` → `.header-title`/`.header-sub`) pakai nama + subtitle lengkap + logo
+  `assets/img/lisani_logo.png` (`.header-logo`). Sidebar (`partials/sidebar.php` → `.brand`) pakai logo yang sama
+  (ganti ikon kacamata lama di `.brand-mark`) + "LISANI AOS" saja, **tanpa** subtitle (disengaja, beda dari topbar).
+  CSS untuk `.header-brand`/`.header-logo`/`.brand-logo` ditulis inline di `index.php`/`sidebar.php` sendiri (bukan di
+  `theme.css`) karena saat ditulis belum sempat ditambahkan ke situ — kalau nanti dirapikan ke `theme.css`, hapus
+  duplikatnya dari kedua file itu.
+- **Sidebar show/hide toggle** (16 Okt 2026): tombol `#sidebarToggleBtn` di topbar (`.header-brand`, sebelah logo),
+  **desktop-only (≥1024px)** — `.app` punya 3 mode lebar sidebar dari `responsive.css` (desktop 240px / tablet rail
+  64px / mobile `display:none` + `.bottom-nav`), jadi toggle ini cuma override mode desktop lewat class
+  `.app.sidebar-collapsed` (grid-template-columns 0 + `.sidebar{width:0}`, transisi `.18s`), disembunyikan total di
+  <1024px lewat media query supaya tidak tabrakan sama mode tablet/mobile. Status diingat di `localStorage`
+  (`aos_sidebar_collapsed`), ikon tombol ganti `ti-layout-sidebar-left-collapse` ⇄ `-expand`. CSS & JS-nya di
+  `index.php` (bukan `theme.css`/`footer.php`), sama alasannya dengan poin Branding di atas.
 
 ## 4. Model data (cocokkan dengan `DESCRIBE` sebelum menulis query baru)
 - **activities**: id, activity_name, cashflow (inflow/outflow/in-out), relative_path (UNIQUE, `input/{year}/{deptKey}/{code}/`),
@@ -100,13 +115,17 @@ optic_pos/
 - **invoice_payments**: pembayaran cicilan per invoice. Kolom bank: source_bank, source_account_number, source_account_name,
   destination_bank, destination_account_number, destination_account_name. `proof_path`/`proof_original_name` nullable.
   Method "CREDIT BALANCE" = baris tanpa file (Apply Credit).
-- **invoice_refunds**: refund dari kredit; kolom source_bank, source_account_number, source_account_name (nullable, opsional).
+- **invoice_refunds**: refund dari kredit; kolom source_bank, source_account_number, source_account_name (nullable,
+  opsional). **Tidak punya `invoice_id` maupun `activity_id`** (dikonfirmasi `DESCRIBE`, 12 Okt 2026) — tidak bisa
+  ditelusuri ke invoice/activity code tertentu, lihat §6 Report untuk konsekuensinya ke filter.
 - **defective_stock_events**: logistic_id, event_type (saat ini hanya `repaired_to_normal`), qty, created_by.
 - Lain: `logistic_documents` (key activity_id, dibagi semua produk dalam activity code), `transactions` + tabel bantu
   (Disbursement), company documents & bank accounts (Settings).
 - **disbursement_categories**: id, category_name (UNIQUE), created_by, created_at. Seed: PURCHASE PAYMENT / CLEARANCE
   FEES / OPERATIONAL EXPENSES. **transaction_disbursements.category_id** (NOT NULL, indeks, tanpa FK, validasi di PHP)
   menunjuk ke sini — label pengelompokan uang keluar (tidak memecah total/saldo/chart, hanya tampilan & filter).
+  **transaction_disbursements.activity_id** (NOT NULL, indeks, tanpa FK) juga ada — dipakai filter Activity Code di
+  Report (lihat §6 Report).
 - `logistics.defective_reference_price` sudah tidak dipakai (drop opsional, lihat §8).
 - **investors**: id, name. **investor_deposits**: investor_id, date, currency, amount, rate (nullable, hanya valas),
   final (IDR), notes. **investor_support_expenses**: investor_id, date, category (`return_capital`/`aid`/`other`),
@@ -275,17 +294,37 @@ invoice tab Customers):
   Lalu tab WA dibuka synchronous (anti popup-blocker), PDF di-fetch dan diunduh sebagai `Invoice-<no>.pdf`, tab
   diarahkan ke `wa.me/<telp>?text=…` (telp digit saja, awalan 0 → 62). Teks: "Yth. {sapaan} {nama}, …".
 
-**Report**: `report_content.php` tab Finance Report: ringkasan saldo per rekening, Chart.js (inflow/outflow per bulan,
-saldo kumulatif, saldo per rekening), ledger gabungan + Export CSV, snapshot piutang/credit. Data dari
-`ajax/get_finance_report.php`: outflow (`transactions` category=disbursement), inflow (`invoice_payments`), outflow refund
-(`invoice_refunds`), dicocokkan ke `bank_accounts.json` via bank_name+account_number (bukan FK). Saldo mulai 0 (keputusan
-user). Refresh lewat event `aos:section-shown`. Investor Report = placeholder kosong. Lebar: Ledger `min-width:640px` →
+**Report**: `report_content.php` — **tidak ada tab lagi** (dihapus 12 Okt 2026; Investor Report yang dulu cuma
+placeholder kosong ikut dihapus total, bukan disembunyikan). Sekarang isinya langsung satu-satunya: Finance Report —
+ringkasan saldo per rekening, Chart.js (inflow/outflow per bulan, saldo kumulatif, saldo per rekening), ledger
+gabungan + Export CSV, snapshot piutang/credit. Data dari `ajax/get_finance_report.php`: outflow (`transactions`
+category=disbursement), inflow (`invoice_payments`), outflow refund (`invoice_refunds`), dicocokkan ke
+`bank_accounts.json` via bank_name+account_number (bukan FK). Saldo mulai 0 (keputusan user). Refresh lewat event
+`aos:section-shown` (karena tidak ada lagi tab-click untuk trigger load pertama). Lebar: Ledger `min-width:640px` →
 760px (setelah kolom Category ditambahkan), tabel piutang 420px, `.table-wrapper` `overflow-x:auto` di semua lebar.
-Ledger kini punya kolom **Category** (disbursement = nama kategori dari `disbursement_categories`, **invoice payment
+Ledger punya kolom **Category** (disbursement = nama kategori dari `disbursement_categories`, **invoice payment
 tetap `SALES PAYMENT`**, refund = null) + Export CSV. Nominal ledger: inflow hijau, outflow merah, negatif pakai kurung
 `(Rp …)` bukan minus (helper `fmtIDRParen`, hanya di ledger; kartu ringkasan tetap `fmtIDR`; CSV tetap angka mentah +
 kolom Type). Belum ada: edit kategori transaksi yang sudah tersimpan (list/edit/delete transaksi tersimpan memang
 belum dibangun).
+- **Urutan ledger** (12 Okt 2026): tanggal terlama → terbaru (ASC), baik dari tiap query SQL (`ORDER BY ... ASC`) maupun
+  `usort` final di `get_finance_report.php` — jadi running balance di JS tinggal akumulasi apa adanya tanpa re-sort.
+  Tabel ledger punya `<tfoot>` baris **Total** (kolom Amount = net total bertanda, kolom Running Balance = saldo akhir;
+  dua-duanya sama angkanya karena saldo selalu mulai dari 0).
+- **Filter Activity Code** (12 Okt 2026): dropdown `#rptActivityFilter`, diisi dari `ajax/list_activity_codes.php`
+  (endpoint yang sama dipakai tab Transactions > Activity Code > Preview — reuse, bukan endpoint baru), value = `id`,
+  label `{activity_code} — {activity_name}`. Dikirim sebagai `activity_id` ke `get_finance_report.php`. Per sumber:
+  - **Disbursement (outflow)**: difilter langsung via `transaction_disbursements.activity_id` (kolom ini memang ada,
+    NOT NULL, dikonfirmas lewat `DESCRIBE`).
+  - **Invoice payment (inflow)**: difilter via `EXISTS` ke `logistic_movements` (`invoice_id`) JOIN `logistics`
+    (`activity_id`). **Tidak dipecah proporsional** — satu invoice bisa berisi produk dari beberapa activity code
+    sekaligus; kalau SALAH SATU produknya dari activity code yang difilter, payment itu ikut tampil **utuh** (bukan
+    nilai yang dipecah). Keputusan user, 12 Okt 2026.
+  - **Refund**: **TIDAK difilter sama sekali, selalu tampil apa adanya**, berapa pun activity code yang dipilih.
+    `invoice_refunds` tidak punya kolom `invoice_id` maupun `activity_id` (dikonfirmasi `DESCRIBE`) — refund mengurangi
+    `customers.credit_balance` yang akumulasinya lintas invoice/activity code, jadi secara skema memang tidak bisa
+    ditelusuri ke satu activity code. Ini keputusan sadar user (12 Okt 2026), **bukan bug** — jangan "perbaiki" tanpa
+    nambah kolom baru + migration data lama kalau suatu saat mau diubah.
 
 **Investor** (`investor_content.php` + `ajax/investor_api.php`, satu endpoint untuk semua aksi; rumus & invarian di
 §4–5 di atas; triple-click login untuk masuk extended mode, lihat §1):

@@ -1,6 +1,6 @@
 <?php
 // lisani_aos/ajax/get_finance_report.php
-// Finance Report (Report menu > Finance Report tab).
+// Finance Report (Report menu — no tabs; this is the whole Report section).
 // Aggregates three money-movement sources into one ledger + per-account balances:
 //   - outflow: transactions (category='disbursement') -> source_bank/source_account_number
 //             (+ ledger 'category' = disbursement_categories.category_name; invoice payments = fixed 'SALES PAYMENT'; refunds = null; display-only grouping label)
@@ -11,7 +11,23 @@
 // whitespace-insensitive, since the same account can be typed slightly differently.
 // Balance starts from 0 (per user decision, 2 Okt 2026): purely from recorded movements.
 //
-// GET params (all optional): date_from, date_to (Y-m-d)
+// GET params (all optional): date_from, date_to (Y-m-d), activity_id (int)
+//
+// activity_id filter (added 12 Okt 2026), per source:
+//   - disbursement : transaction_disbursements.activity_id (direct column)
+//   - inflow       : invoice_payments -> EXISTS against logistic_movements/logistics
+//                     for that invoice (an invoice can mix products from several
+//                     activity codes; a payment is NOT split proportionally — it is
+//                     included whole if ANY product on the invoice belongs to the
+//                     filtered activity code; user decision, 12 Okt 2026)
+//   - refund       : invoice_refunds has NO invoice_id / activity_id column at all
+//                     (confirmed via DESCRIBE, 12 Okt 2026) — a refund reduces
+//                     customers.credit_balance, which can accumulate from returns
+//                     across many invoices/activity codes, so it cannot be traced to
+//                     one activity code. Refunds therefore ALWAYS show, regardless of
+//                     the activity_id filter (user decision, 12 Okt 2026). Deliberate,
+//                     not a bug — do not "fix" this without a schema change.
+//
 // Response: { ok, data: { accounts:[...], unassigned:{...}, ledger:[...], monthly:[...],
 //             receivables:{...}, totals:{...} } }
 
@@ -63,6 +79,10 @@ $dateFrom = get_str('date_from');
 $dateTo   = get_str('date_to');
 $hasFrom  = (bool)DateTime::createFromFormat('Y-m-d', $dateFrom);
 $hasTo    = (bool)DateTime::createFromFormat('Y-m-d', $dateTo);
+
+$activityIdRaw = get_str('activity_id');
+$hasActivity   = ($activityIdRaw !== '' && ctype_digit($activityIdRaw));
+$activityId    = $hasActivity ? (int)$activityIdRaw : 0;
 
 // ---------- Company bank accounts (source of truth for "our accounts") ----------
 $jsonPath = dirname(__DIR__) . '/json_file/bank_accounts.json';
@@ -134,10 +154,14 @@ $sql = "SELECT t.id, t.transaction_date, t.source_bank, t.source_account_number,
         FROM transactions t
         JOIN transaction_disbursements d ON d.transaction_id = t.id
         LEFT JOIN disbursement_categories dc ON dc.id = d.category_id
-        WHERE t.category = 'disbursement' AND $whereDate
+        WHERE t.category = 'disbursement' AND $whereDate" .
+        ($hasActivity ? " AND d.activity_id = ?" : "") . "
         ORDER BY t.transaction_date ASC, t.id ASC";
+$outflowParams = $params;
+$outflowTypes  = $types;
+if ($hasActivity) { $outflowParams[] = $activityId; $outflowTypes .= 'i'; }
 $stmt = $lisani_conn->prepare($sql);
-if ($params) { $stmt->bind_param($types, ...$params); }
+if ($outflowParams) { $stmt->bind_param($outflowTypes, ...$outflowParams); }
 $stmt->execute();
 $res = $stmt->get_result();
 while ($row = $res->fetch_assoc()) {
@@ -172,10 +196,18 @@ $sql = "SELECT p.id, p.payment_date, p.destination_bank, p.destination_account_n
         FROM invoice_payments p
         JOIN customers c ON c.id = p.customer_id
         JOIN invoices i ON i.id = p.invoice_id
-        WHERE 1=1" . ($hasFrom ? ' AND p.payment_date >= ?' : '') . ($hasTo ? ' AND p.payment_date <= ?' : '') . "
+        WHERE 1=1" . ($hasFrom ? ' AND p.payment_date >= ?' : '') . ($hasTo ? ' AND p.payment_date <= ?' : '') .
+        ($hasActivity ? ' AND EXISTS (
+            SELECT 1 FROM logistic_movements lm
+            JOIN logistics lg ON lg.id = lm.logistic_id
+            WHERE lm.invoice_id = i.id AND lg.activity_id = ?
+        )' : '') . "
         ORDER BY p.payment_date ASC, p.id ASC";
+$paymentParams = $params;
+$paymentTypes  = $types;
+if ($hasActivity) { $paymentParams[] = $activityId; $paymentTypes .= 'i'; }
 $stmt = $lisani_conn->prepare($sql);
-if ($params) { $stmt->bind_param($types, ...$params); }
+if ($paymentParams) { $stmt->bind_param($paymentTypes, ...$paymentParams); }
 $stmt->execute();
 $res = $stmt->get_result();
 while ($row = $res->fetch_assoc()) {
@@ -205,6 +237,8 @@ while ($row = $res->fetch_assoc()) {
 $stmt->close();
 
 // ---------- Outflow: refunds ----------
+// Intentionally NOT filtered by activity_id — see header comment: invoice_refunds
+// has no invoice_id/activity_id, so it cannot be traced to one activity code.
 $sql = "SELECT r.id, r.refund_date, r.source_bank, r.source_account_number,
                r.amount, r.method, r.notes, c.customer_name
         FROM invoice_refunds r

@@ -2,30 +2,36 @@
 // This file is included by index.php, REPLACING the static "Report" placeholder
 // <div class="menu-section" data-section="report" ...> entirely — same pattern as
 // transaction_content.php / logistic_content.php. Own IIFE, own scope.
+// No tabs (removed 12 Okt 2026) — this is just the Finance Report, full stop.
 ?>
 <div class="menu-section" data-section="report" style="display:none;">
 <div class="card" style="width:100%;">
-
-  <div class="tab-group" id="reportTabGroup">
-    <div class="tab active" data-report-tab="finance">Finance Report</div>
-    <div class="tab" data-report-tab="investor">Investor Report</div>
-  </div>
 
   <!-- ===================== Finance Report ===================== -->
   <div id="reportFinancePane">
 
     <div class="rpt-toolbar">
-      <div class="form-group">
-        <div class="label">From</div>
-        <input type="date" class="input" id="rptDateFrom">
+      <div class="rpt-toolbar-fields">
+        <div class="form-group">
+          <div class="label">From</div>
+          <input type="date" class="input" id="rptDateFrom">
+        </div>
+        <div class="form-group">
+          <div class="label">To</div>
+          <input type="date" class="input" id="rptDateTo">
+        </div>
+        <div class="form-group">
+          <div class="label">Activity Code</div>
+          <select class="select" id="rptActivityFilter">
+            <option value="">All Activity Codes</option>
+          </select>
+        </div>
       </div>
-      <div class="form-group">
-        <div class="label">To</div>
-        <input type="date" class="input" id="rptDateTo">
+      <div class="rpt-toolbar-actions">
+        <button type="button" class="btn btn-secondary" id="rptApplyFilter">Apply</button>
+        <button type="button" class="btn btn-secondary" id="rptClearFilter">Clear</button>
+        <button type="button" class="btn btn-secondary" id="rptExportCsv">Export CSV</button>
       </div>
-      <button type="button" class="btn btn-secondary" id="rptApplyFilter">Apply</button>
-      <button type="button" class="btn btn-secondary" id="rptClearFilter">Clear</button>
-      <button type="button" class="btn btn-secondary" id="rptExportCsv">Export CSV</button>
     </div>
 
     <details class="card rpt-collapsible" data-rpt-accordion>
@@ -77,19 +83,11 @@
           <tbody id="rptLedgerBody">
             <tr><td colspan="7" class="empty-sub">Loading...</td></tr>
           </tbody>
+          <tfoot id="rptLedgerFoot"></tfoot>
         </table>
       </div>
     </div>
 
-  </div>
-
-  <!-- ===================== Investor Report ===================== -->
-  <div id="reportInvestorPane" style="display:none;">
-    <div class="empty-state">
-      <i class="ti ti-chart-infographic"></i>
-      <div class="empty-title">Investor Report</div>
-      <div class="empty-sub">No content yet.</div>
-    </div>
   </div>
 
 </div>
@@ -103,12 +101,14 @@
     box-sizing:border-box; max-width:100%; min-width:0;
     overflow-x:clip; /* safety net: anything that still leaks is clipped, never widens the page */
   }
-  #reportFinancePane, #reportInvestorPane { min-width:0; max-width:100%; }
+  #reportFinancePane { min-width:0; max-width:100%; }
   #reportFinancePane .card { box-sizing:border-box; max-width:100%; min-width:0; }
 
-  .rpt-toolbar { display:flex; flex-wrap:wrap; gap:var(--space-2); align-items:flex-end; margin:var(--space-3) 0; }
-  .rpt-toolbar .form-group { flex:1 1 140px; min-width:0; }
-  .rpt-toolbar .input { width:100%; min-width:0; box-sizing:border-box; }
+  .rpt-toolbar { display:flex; flex-direction:column; gap:var(--space-2); margin:var(--space-3) 0; }
+  .rpt-toolbar-fields { display:flex; flex-wrap:wrap; gap:var(--space-2); align-items:flex-end; }
+  .rpt-toolbar-fields .form-group { flex:1 1 140px; min-width:0; }
+  .rpt-toolbar-fields .input, .rpt-toolbar-fields .select { width:100%; min-width:0; box-sizing:border-box; }
+  .rpt-toolbar-actions { display:flex; flex-wrap:wrap; gap:var(--space-2); }
 
   .rpt-collapsible { margin-bottom:var(--space-3); }
   .rpt-collapsible summary { margin-bottom:var(--space-2); list-style:none; }
@@ -126,6 +126,7 @@
   /* Ledger amounts: inflow green, outflow / negative balance red (shown in parentheses, no minus sign). */
   #rptLedgerTable .rpt-amt-in  { color:var(--success,#2ecc71); }
   #rptLedgerTable .rpt-amt-out { color:var(--danger,#e74c3c); }
+  #rptLedgerTable tfoot .rpt-ledger-total-row td { border-top:2px solid var(--border,#333); font-weight:600; }
 
   /* Chart.js needs a position:relative parent with min-width:0, otherwise the
      canvas keeps its old (wide) size and drags the whole page wider. */
@@ -152,6 +153,7 @@
   #rptLedgerTable, .rpt-receivables table { display:table !important; }
   #rptLedgerTable thead, .rpt-receivables table thead { display:table-header-group !important; }
   #rptLedgerTable tbody, .rpt-receivables table tbody { display:table-row-group !important; }
+  #rptLedgerTable tfoot { display:table-footer-group !important; }
   #rptLedgerTable tr, .rpt-receivables table tr { display:table-row !important; }
   #rptLedgerTable th, #rptLedgerTable td,
   .rpt-receivables table th, .rpt-receivables table td { display:table-cell !important; }
@@ -176,11 +178,6 @@
 (function () {
   'use strict';
 
-  var financePane = document.getElementById('reportFinancePane');
-  var investorPane = document.getElementById('reportInvestorPane');
-  var tabGroup = document.getElementById('reportTabGroup');
-  var loaded = false;
-
   // Accordion: opening one of the two summary cards (Totals / Bank Accounts)
   // closes the other, instead of both staying open independently.
   document.querySelectorAll('[data-rpt-accordion]').forEach(function (el) {
@@ -192,19 +189,6 @@
     });
   });
 
-  tabGroup.addEventListener('click', function (e) {
-    var btn = e.target.closest('[data-report-tab]');
-    if (!btn) return;
-    tabGroup.querySelectorAll('.tab').forEach(function (t) { t.classList.remove('active'); });
-    btn.classList.add('active');
-    var tab = btn.getAttribute('data-report-tab');
-    financePane.style.display = tab === 'finance' ? '' : 'none';
-    investorPane.style.display = tab === 'investor' ? '' : 'none';
-    if (tab === 'finance' && !loaded) {
-      loadFinanceReport();
-    }
-  });
-
   // footer.php dispatches this on every sidebar section switch (confirmed
   // 2 Okt 2026 — see "Each *_content.php is its own IIFE..." comment there),
   // so any section left stale after a show/hide can refresh itself live.
@@ -213,6 +197,26 @@
       loadFinanceReport();
     }
   });
+
+  // Activity Code filter dropdown — loaded once, reuses the same endpoint as
+  // Transactions > Activity Code > Preview (list_activity_codes.php), so we
+  // don't duplicate field names or add a new endpoint.
+  function loadActivityCodeFilter() {
+    fetch('ajax/list_activity_codes.php')
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (!res.ok) return;
+        var sel = document.getElementById('rptActivityFilter');
+        res.data.forEach(function (a) {
+          var opt = document.createElement('option');
+          opt.value = a.id;
+          opt.textContent = a.activity_code + ' \u2014 ' + a.activity_name;
+          sel.appendChild(opt);
+        });
+      })
+      .catch(function () { /* filter stays "All" only — non-fatal */ });
+  }
+  loadActivityCodeFilter();
 
   function fmtIDR(n) {
     var sign = n < 0 ? '-' : '';
@@ -234,12 +238,13 @@
   var chartMonthly = null, chartCumulative = null, chartAccounts = null;
 
   function loadFinanceReport() {
-    loaded = true;
     var from = document.getElementById('rptDateFrom').value;
     var to = document.getElementById('rptDateTo').value;
+    var activityId = document.getElementById('rptActivityFilter').value;
     var qs = [];
     if (from) qs.push('date_from=' + encodeURIComponent(from));
     if (to) qs.push('date_to=' + encodeURIComponent(to));
+    if (activityId) qs.push('activity_id=' + encodeURIComponent(activityId));
 
     document.getElementById('rptTotalsGrid').innerHTML = '<div class="empty-sub">Loading...</div>';
     document.getElementById('rptAccountsGrid').innerHTML = '<div class="empty-sub">Loading...</div>';
@@ -371,10 +376,15 @@
 
   function renderLedger(ledger) {
     var tbody = document.getElementById('rptLedgerBody');
+    var tfoot = document.getElementById('rptLedgerFoot');
     if (!ledger.length) {
       tbody.innerHTML = '<tr><td colspan="7" class="empty-sub">No transactions in this period.</td></tr>';
+      tfoot.innerHTML = '';
       return;
     }
+    // Ledger arrives oldest -> newest already (get_finance_report.php sorts
+    // ASC per source + a final usort ASC), so running balance here just
+    // accumulates in that same order — no re-sort needed.
     var running = 0;
     tbody.innerHTML = ledger.map(function (row) {
       running += row.type === 'inflow' ? row.amount : -row.amount;
@@ -396,12 +406,22 @@
         '<td>' + balCell + '</td>' +
         '</tr>';
     }).join('');
+
+    // running now holds the final balance, which equals the net total (sum
+    // of all signed amounts) since balance always starts at 0.
+    var totalCell = '<span class="' + (running < 0 ? 'rpt-amt-out' : 'rpt-amt-in') + '">' + fmtIDRParen(running) + '</span>';
+    tfoot.innerHTML = '<tr class="rpt-ledger-total-row">' +
+      '<td colspan="5" style="text-align:right; font-weight:600;">Total</td>' +
+      '<td>' + totalCell + '</td>' +
+      '<td>' + totalCell + '</td>' +
+      '</tr>';
   }
 
   document.getElementById('rptApplyFilter').addEventListener('click', loadFinanceReport);
   document.getElementById('rptClearFilter').addEventListener('click', function () {
     document.getElementById('rptDateFrom').value = '';
     document.getElementById('rptDateTo').value = '';
+    document.getElementById('rptActivityFilter').value = '';
     loadFinanceReport();
   });
 
