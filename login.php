@@ -199,7 +199,7 @@ close_db_connection($conn);
 </head>
 <body style="overflow: hidden; margin: 0;">
     <div class="login-card">
-        <div class="login-logo">🔐</div>
+        <div class="login-logo" id="loginLogo">🔐</div>
 
         <h2>Welcome</h2>
         <p class="subtitle">Please login to access your dashboard</p>
@@ -261,29 +261,46 @@ close_db_connection($conn);
         }
 
         // ------------------------------------------------------------
-        // Triple-click / triple-tap detection for LOGIN button
-        // 1x click  -> normal mode  (welcome.php)
-        // 3x clicks within 600ms -> extended mode (./lisani_aos/index.php)
+        // Logo-arm + single LOGIN click detection
+        // - Click lock logo (🔐) once -> arms extended mode (no time limit)
+        // - Click LOGIN TO SYSTEM once -> submits form
+        //     - if armed -> extended mode (./lisani_aos/index.php)
+        //     - if not armed -> normal mode (welcome.php)
+        // - Pressing Enter in the form always submits in normal mode
         // ------------------------------------------------------------
         (function () {
-            var clickCount = 0;
-            var clickTimer = null;
-            var CLICK_WINDOW_MS = 600;
+            var extendedArmed = false;
 
+            var logo = document.getElementById('loginLogo');
             var submitBtn = document.getElementById('loginSubmitBtn');
             var form = document.getElementById('loginForm');
             var accessModeInput = document.getElementById('accessModeInput');
 
+            if (logo) {
+                logo.style.cursor = 'pointer';
+                logo.addEventListener('click', function () {
+                    extendedArmed = true;
+                });
+            }
+
+            function doSubmit() {
+                accessModeInput.value = extendedArmed ? 'extended' : 'normal';
+                extendedArmed = false;
+                form.submit();
+            }
+
             submitBtn.addEventListener('click', function (e) {
                 e.preventDefault();
-                clickCount++;
-                clearTimeout(clickTimer);
+                doSubmit();
+            });
 
-                clickTimer = setTimeout(function () {
-                    accessModeInput.value = (clickCount >= 3) ? 'extended' : 'normal';
-                    clickCount = 0;
-                    form.submit();
-                }, CLICK_WINDOW_MS);
+            // Fix: button is type="button" so Enter never submitted the form.
+            // Listen for Enter on the username/password fields and submit.
+            form.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    doSubmit();
+                }
             });
         })();
     </script>

@@ -112,11 +112,14 @@
 
 /* ===== Modal / Dialog ===== */
 .modal { width: min(480px, 90vw); border-radius: var(--radius-lg); }
-@media (max-width: 479px) {
-  .modal {
-    width: 100%; margin: 0;
-    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-    position: fixed; bottom: 0; left: 0; right: 0;
+@media (max-width: 767px) {
+  /* Keep the overlay's horizontal centering (justify-content:center, from
+     theme.css), just pin the modal near the bottom of the screen instead
+     of dead-center vertically — matches the "centered, but toward the
+     bottom" request instead of the old edge-to-edge bottom sheet. */
+  .modal-overlay {
+    align-items: flex-end;
+    padding-bottom: calc(var(--space-6) + env(safe-area-inset-bottom));
   }
 }
 
