@@ -409,6 +409,28 @@ belum dibangun).
   (pernah jadi bug diam-diam, lihat §8 kalau perlu detail).
 
 ## 8. Pekerjaan terbuka
+
+### Log terbaru (belum dites, jangan lebur ke §6 sebelum dikonfirmasi)
+- **Adjustable OCR crop box** (`transaction_content.php`, Input Transaction/Disbursement & Invoice Payment, shared
+  viewer): setelah drag awal (`endDrag`), box TIDAK langsung di-OCR — masuk `enterAdjustMode()`: box jadi persisten
+  dengan 8 handle resize (sudut+tengah sisi, `ADJUST_HANDLE_DIRS`), bisa digeser mouse & touch
+  (`resizeAdjustBox`/`renderAdjustUI`, posisi dihitung ulang dari `adjustBox` yang disimpan dalam **canvas pixel
+  space**, bukan client space, supaya tahan zoom/scroll — resync di `applyCapZoom()` & scroll `capStage`). Dua tombol
+  baru muncul di hint bar: **Read** (`btnCapReadSelection`, lanjut `runOcrOnRegion` seperti biasa) dan **Redraw**
+  (`btnCapRedrawSelection`, buang box & kembali ke mode drag). Mousedown/touchstart di canvas sekarang juga dicek
+  `|| adjustBox` supaya tidak mulai drag baru selagi masih adjust. `closeCapViewer()` dan tombol Prev/Next Page
+  panggil `exitAdjustMode()` untuk bersih-bersih handle yang menggantung.
+  - **Shortcut tap**: selain tombol, double-tap di mana saja dalam `capStage` = Read, triple-tap = Redraw
+    (`adjustTapCount`/`adjustTapTimer`, pola sama dengan tap-counter arming field, listener di `capStage` bukan
+    `document` supaya tombol viewer bar lain tidak ikut kehitung; tap di handle sendiri diabaikan via
+    `e.target.dataset.dir`).
+  - **Bug yang sudah diperbaiki**: `renderAdjustUI()` sempat dipanggil SEBELUM `capAdjustControls` (tombol
+    Read/Redraw) ditampilkan, padahal tombol itu menambah tinggi hint bar dan mendorong `capStage`/canvas turun —
+    akibatnya box tertinggal di posisi lama. Fix: tampilkan `capAdjustControls` dulu, baru `renderAdjustUI()`
+    (baca `getBoundingClientRect()` setelah reflow).
+  - Belum dites ulang oleh user pasca-fix. Setelah dites: kalau OK, lebur poin ini ke §6 (Input Transaction /
+    Disbursement) & hapus dari log ini.
+
 Belum dibangun (disengaja, bukan bug):
 - Fitur pembayaran bersama (disebut user saat desain Create New Logistic). Baru placeholder di form.
 - Filter/pagination Movements; retention `storage/recycle/`; `customers.profit`; edit/hapus alias & order; aturan stok minus;

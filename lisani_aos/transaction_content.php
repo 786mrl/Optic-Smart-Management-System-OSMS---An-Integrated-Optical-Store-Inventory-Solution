@@ -293,6 +293,10 @@ $currentYear     = date('Y');
       </div>
     </div>
     <div class="cap-viewer-hint" id="capBlockHint" style="display:none;"></div>
+    <div class="cap-adjust-controls" id="capAdjustControls" style="display:none;">
+      <button type="button" class="btn btn-primary" id="btnCapReadSelection">Read</button>
+      <button type="button" class="btn btn-secondary" id="btnCapRedrawSelection">Redraw</button>
+    </div>
     <div class="cap-viewer-hint" id="capOcrBusy" style="display:none;">Reading selection…</div>
     <div class="cap-viewer-stage" id="capStage">
       <canvas id="capCanvas"></canvas>
@@ -1720,6 +1724,19 @@ $currentYear     = date('Y');
     color: var(--accent);
     background: var(--bg-surface);
   }
+  /* Read/Redraw controls shown while the crop box is being nudged into
+     place (enterAdjustMode). Sits right under capBlockHint's instruction text. */
+  .cap-adjust-controls {
+    display: none;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    background: var(--bg-surface);
+  }
+  .cap-adjust-controls .btn {
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--text-sm);
+    justify-content: center;
+  }
   .cap-viewer-stage {
     flex: 1 1 auto; min-height: 0;
     overflow: auto; overscroll-behavior: contain;
@@ -2466,6 +2483,7 @@ $currentYear     = date('Y');
     capCanvas.style.width = Math.round(fitW * capZoom) + 'px';
     capCanvas.style.height = 'auto';
     capZoomLabel.textContent = Math.round(capZoom * 100) + '%';
+    if (adjustBox) renderAdjustUI(); // zoom changed the canvas's on-screen rect, resync the overlay
   }
 
   function openCapViewer() {
@@ -2494,6 +2512,7 @@ $currentYear     = date('Y');
 
   // Closes the viewer and cancels any half-finished "arm a field" state.
   function closeCapViewer() {
+    exitAdjustMode();
     hide(capFieldPickerOverlay);
     capViewerWrap.style.display = 'none';
     armedScanField = null;
@@ -2537,10 +2556,10 @@ $currentYear     = date('Y');
   }
 
   btnCapPrevPage.addEventListener('click', function () {
-    if (capCurrentPage > 1) { capCurrentPage--; renderCapPage(); }
+    if (capCurrentPage > 1) { exitAdjustMode(); capCurrentPage--; renderCapPage(); }
   });
   btnCapNextPage.addEventListener('click', function () {
-    if (capCurrentPage < capNumPages) { capCurrentPage++; renderCapPage(); }
+    if (capCurrentPage < capNumPages) { exitAdjustMode(); capCurrentPage++; renderCapPage(); }
   });
 
   // --- Field metadata, built from the Scan buttons' own data attributes so
@@ -2737,8 +2756,161 @@ $currentYear     = date('Y');
     dragStart = null;
 
     if (w < 6 || h < 6) return; // treat as an accidental click/tap, not a real box
-    runOcrOnRegion(x, y, w, h);
+    enterAdjustMode(x, y, w, h);
   }
+
+  // ---- Adjustable crop box: after the initial drag, the box stays on
+  // screen with 8 resize handles so a slightly-off selection can be nudged
+  // into place before OCR actually runs. User taps "Read" when happy, or
+  // "Redraw" to throw the box away and drag a fresh one.
+  var adjustBox = null;       // {x,y,w,h} in canvas pixel space, or null when not adjusting
+  var adjustBoxEl = null;     // fixed-position dashed outline (visual only)
+  var adjustHandleEls = [];   // the 8 fixed-position resize handles
+  var activeHandleDir = null; // which handle is currently being dragged, or null
+  var ADJUST_MIN = 6;         // minimum box side, in canvas pixels (same floor as the initial drag)
+  var ADJUST_HANDLE_DIRS = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
+  var ADJUST_HANDLE_CURSOR = {
+    nw: 'nwse-resize', n: 'ns-resize', ne: 'nesw-resize', e: 'ew-resize',
+    se: 'nwse-resize', s: 'ns-resize', sw: 'nesw-resize', w: 'ew-resize'
+  };
+
+  // canvas pixel space -> on-screen fixed-position rect, using the canvas's
+  // current CSS size (same scale math as canvasPointFromEvent, inverted).
+  function canvasRectToClient(box) {
+    var rect = capCanvas.getBoundingClientRect();
+    var scaleX = rect.width / capCanvas.width;
+    var scaleY = rect.height / capCanvas.height;
+    return {
+      left: rect.left + box.x * scaleX,
+      top: rect.top + box.y * scaleY,
+      width: box.w * scaleX,
+      height: box.h * scaleY
+    };
+  }
+
+  function handlePositionFor(dir, r) {
+    var x = dir.indexOf('w') !== -1 ? r.left : dir.indexOf('e') !== -1 ? r.left + r.width : r.left + r.width / 2;
+    var y = dir.indexOf('n') !== -1 ? r.top : dir.indexOf('s') !== -1 ? r.top + r.height : r.top + r.height / 2;
+    return { x: x, y: y };
+  }
+
+  // Re-syncs the on-screen box + handles to adjustBox. Called after every
+  // resize, and also on zoom/scroll since those change the canvas's CSS
+  // rect without changing adjustBox's own (canvas-pixel) coordinates.
+  function renderAdjustUI() {
+    if (!adjustBox || !adjustBoxEl) return;
+    var r = canvasRectToClient(adjustBox);
+    adjustBoxEl.style.left = r.left + 'px';
+    adjustBoxEl.style.top = r.top + 'px';
+    adjustBoxEl.style.width = r.width + 'px';
+    adjustBoxEl.style.height = r.height + 'px';
+    adjustHandleEls.forEach(function (el) {
+      var p = handlePositionFor(el.dataset.dir, r);
+      el.style.left = p.x + 'px';
+      el.style.top = p.y + 'px';
+    });
+  }
+
+  function createAdjustHandle(dir) {
+    var el = document.createElement('div');
+    el.dataset.dir = dir;
+    el.style.cssText = 'position:fixed; width:16px; height:16px; margin:-8px 0 0 -8px; border-radius:50%; ' +
+      'background:var(--accent); border:2px solid #fff; z-index:10000; touch-action:none; cursor:' + ADJUST_HANDLE_CURSOR[dir] + ';';
+    document.body.appendChild(el);
+    el.addEventListener('mousedown', function (e) { e.preventDefault(); e.stopPropagation(); activeHandleDir = dir; });
+    el.addEventListener('touchstart', function (e) { e.preventDefault(); e.stopPropagation(); activeHandleDir = dir; }, { passive: false });
+    return el;
+  }
+
+  function enterAdjustMode(x, y, w, h) {
+    adjustBox = { x: x, y: y, w: w, h: h };
+    adjustBoxEl = document.createElement('div');
+    adjustBoxEl.style.cssText = 'position:fixed; border:2px dashed var(--accent); background:rgba(0,120,255,0.1); pointer-events:none; z-index:9999;';
+    document.body.appendChild(adjustBoxEl);
+    adjustHandleEls = ADJUST_HANDLE_DIRS.map(createAdjustHandle);
+
+    capBlockHint.textContent = 'Field: "' + currentArmedFieldLabel() + '". Geser titik di tiap sisi untuk merapikan blok, lalu tap Read (atau ketuk dua kali = Read, tiga kali = Redraw).';
+    capBlockHint.style.display = 'block';
+    capAdjustControls.style.display = 'flex'; // grows the hint bar, which can push capStage/canvas down — show it BEFORE measuring
+
+    renderAdjustUI(); // measured only now, after the layout above has settled, so the box lines up with the (possibly shifted) canvas
+  }
+
+  function exitAdjustMode() {
+    adjustBox = null;
+    activeHandleDir = null;
+    if (adjustBoxEl && adjustBoxEl.parentNode) adjustBoxEl.parentNode.removeChild(adjustBoxEl);
+    adjustBoxEl = null;
+    adjustHandleEls.forEach(function (el) { if (el.parentNode) el.parentNode.removeChild(el); });
+    adjustHandleEls = [];
+    capAdjustControls.style.display = 'none';
+  }
+
+  function resizeAdjustBox(clientX, clientY) {
+    if (!adjustBox || !activeHandleDir) return;
+    var pt = canvasPointFromEvent({ clientX: clientX, clientY: clientY });
+    var left = adjustBox.x, top = adjustBox.y, right = adjustBox.x + adjustBox.w, bottom = adjustBox.y + adjustBox.h;
+    var dir = activeHandleDir;
+    var px = Math.max(0, Math.min(capCanvas.width, pt.x));
+    var py = Math.max(0, Math.min(capCanvas.height, pt.y));
+
+    if (dir.indexOf('w') !== -1) left = Math.min(px, right - ADJUST_MIN);
+    if (dir.indexOf('e') !== -1) right = Math.max(px, left + ADJUST_MIN);
+    if (dir.indexOf('n') !== -1) top = Math.min(py, bottom - ADJUST_MIN);
+    if (dir.indexOf('s') !== -1) bottom = Math.max(py, top + ADJUST_MIN);
+
+    adjustBox = { x: left, y: top, w: right - left, h: bottom - top };
+    renderAdjustUI();
+  }
+
+  document.addEventListener('mousemove', function (e) { resizeAdjustBox(e.clientX, e.clientY); });
+  document.addEventListener('mouseup', function () { activeHandleDir = null; });
+  document.addEventListener('touchmove', function (e) {
+    if (!activeHandleDir || e.touches.length < 1) return;
+    resizeAdjustBox(e.touches[0].clientX, e.touches[0].clientY);
+    e.preventDefault();
+  }, { passive: false });
+  document.addEventListener('touchend', function () { activeHandleDir = null; });
+  document.addEventListener('touchcancel', function () { activeHandleDir = null; });
+
+  // Zoom and scrolling move the canvas's on-screen rect without touching
+  // adjustBox's own (canvas-pixel) coordinates, so the overlay needs a resync.
+  capStage.addEventListener('scroll', function () { if (adjustBox) renderAdjustUI(); });
+
+  var capAdjustControls    = document.getElementById('capAdjustControls');
+  var btnCapReadSelection  = document.getElementById('btnCapReadSelection');
+  var btnCapRedrawSelection = document.getElementById('btnCapRedrawSelection');
+
+  btnCapReadSelection.addEventListener('click', function () {
+    if (!adjustBox) return;
+    var box = adjustBox;
+    exitAdjustMode();
+    runOcrOnRegion(box.x, box.y, box.w, box.h);
+  });
+  btnCapRedrawSelection.addEventListener('click', function () {
+    exitAdjustMode();
+    blockModeArmed = true;
+    capCanvas.style.cursor = 'crosshair';
+    capBlockHint.textContent = capBlockHintDraggingText(currentArmedFieldLabel());
+    capBlockHint.style.display = 'block';
+  });
+
+  // Shortcut for the same two actions: double-tap anywhere in the document
+  // area = Read, triple-tap = Redraw (same TAP_WINDOW_MS/counting pattern as
+  // the arming tap-counter above, but only live while a box is being adjusted).
+  var adjustTapCount = 0;
+  var adjustTapTimer = null;
+  capStage.addEventListener('click', function (e) {
+    if (!adjustBox) return;
+    if (e.target && e.target.dataset && e.target.dataset.dir) return; // landed on a resize handle, not a confirm tap
+    adjustTapCount++;
+    if (adjustTapTimer) clearTimeout(adjustTapTimer);
+    adjustTapTimer = setTimeout(function () {
+      if (adjustTapCount === 2) btnCapReadSelection.click();
+      else if (adjustTapCount >= 3) btnCapRedrawSelection.click();
+      adjustTapCount = 0;
+    }, TAP_WINDOW_MS);
+  });
 
   function positionDragBox(x1, y1, x2, y2) {
     var left = Math.min(x1, x2), top = Math.min(y1, y2);
@@ -2750,7 +2922,7 @@ $currentYear     = date('Y');
 
   // --- Mouse ---
   capCanvas.addEventListener('mousedown', function (e) {
-    if (!armedScanField || !blockModeArmed) return; // still scrolling/hunting, not ready to draw yet
+    if (!armedScanField || !blockModeArmed || adjustBox) return; // still scrolling/hunting, or already adjusting a box
     beginDrag(canvasPointFromEvent(e));
     e.preventDefault();
   });
@@ -2766,7 +2938,7 @@ $currentYear     = date('Y');
   // preventDefault()'d (needs passive:false) so the drag draws a box instead
   // of scrolling the page.
   capCanvas.addEventListener('touchstart', function (e) {
-    if (!armedScanField || !blockModeArmed || e.touches.length !== 1) return;
+    if (!armedScanField || !blockModeArmed || adjustBox || e.touches.length !== 1) return;
     beginDrag(canvasPointFromEvent(e.touches[0]));
     e.preventDefault();
   }, { passive: false });
