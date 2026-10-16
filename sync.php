@@ -378,7 +378,14 @@ function sync_build_data_tree($appDir, $conn, $lisaniConn = null) {
     // whole table's current data", handled server-side as a table pull, not
     // a file copy.
     $tableChildren = [];
-    $tablesResult = $conn->query("SHOW TABLES");
+    // "SHOW FULL TABLES ... Table_type='BASE TABLE'" (not plain SHOW TABLES)
+    // deliberately excludes VIEWs — a VIEW has no storage of its own to
+    // REPLACE INTO, and its content can legitimately differ every time it's
+    // queried (joins, computed columns), so including one here would offer a
+    // selection that either errors out or can never actually reach "synced".
+    // The view's underlying real tables are still synced normally; the view
+    // just recomputes itself from them automatically, nothing is lost.
+    $tablesResult = $conn->query("SHOW FULL TABLES WHERE Table_type = 'BASE TABLE'");
     if ($tablesResult) {
         while ($row = $tablesResult->fetch_array()) {
             $table = $row[0];
@@ -401,7 +408,7 @@ function sync_build_data_tree($appDir, $conn, $lisaniConn = null) {
     // the two never collide even when table names match (e.g. "users").
     if ($lisaniConn !== null) {
         $lisaniTableChildren = [];
-        $lisaniTablesResult = $lisaniConn->query("SHOW TABLES");
+        $lisaniTablesResult = $lisaniConn->query("SHOW FULL TABLES WHERE Table_type = 'BASE TABLE'");
         if ($lisaniTablesResult) {
             while ($row = $lisaniTablesResult->fetch_array()) {
                 $table = $row[0];
@@ -503,13 +510,38 @@ function sync_export_full_table_replace($conn, $table) {
             $sql .= $createStmt . ";\n";
         }
     }
-    if ($dataResult && $dataResult->num_rows > 0) {
+    if ($dataResult) {
         $fields = $dataResult->fetch_fields();
         $fieldNames = array_map(function ($f) { return "`{$f->name}`"; }, $fields);
         $fieldList = implode(', ', $fieldNames);
         $isUsersTable = (strtolower($table) === 'users');
         $columnNamesLower = array_map(function ($f) { return strtolower($f->name); }, $fields);
         $pkIdx = $pkCol !== null ? array_search(strtolower($pkCol), $columnNamesLower, true) : false;
+
+        // ALWAYS wipe the table first, then insert the source's current rows
+        // fresh — for every table, not just ones without a primary key.
+        //
+        // The old behavior only did this for PK-less tables and used
+        // REPLACE INTO for the rest, on the theory that REPLACE INTO would
+        // cleanly overwrite-by-PK. In practice REPLACE INTO matches on ANY
+        // unique key that collides, not just the PRIMARY KEY. If a table
+        // has a second unique key (e.g. a customer code/phone/email column)
+        // and a source row's unique-key value collides with a DIFFERENT
+        // local row (different PK), REPLACE INTO silently deletes that
+        // local row and inserts the source row under its own PK instead of
+        // adding a new row — so the local row count never grows to match
+        // the source even though the import reports "success" with no SQL
+        // error. That's what caused customer_list to report "imported
+        // successfully" while staying stuck at 30 local rows vs 36 on the
+        // source, with mirror-delete finding 0 rows to remove.
+        //
+        // DELETE-then-INSERT has no such ambiguity: the table is empty
+        // before any row lands, so there is nothing for a unique key to
+        // collide with. Safe here because this always runs inside the
+        // caller's transaction (SET FOREIGN_KEY_CHECKS=0 / START
+        // TRANSACTION / COMMIT).
+        $sql .= "DELETE FROM `$table`;\n";
+
         while ($row = $dataResult->fetch_row()) {
             if ($pkIdx !== false) $pkValues[] = $row[$pkIdx];
             $values = [];
@@ -520,7 +552,7 @@ function sync_export_full_table_replace($conn, $table) {
                 }
                 $values[] = ($val === null) ? 'NULL' : "'" . $conn->real_escape_string($val) . "'";
             }
-            $sql .= "REPLACE INTO `$table` ($fieldList) VALUES (" . implode(', ', $values) . ");\n";
+            $sql .= "INSERT INTO `$table` ($fieldList) VALUES (" . implode(', ', $values) . ");\n";
         }
     }
     return ['sql' => $sql, 'pk_col' => $pkCol, 'pk_values' => $pkValues];
@@ -730,9 +762,10 @@ function sync_build_data_custom_zip($appDir, $conn, $selectedPaths, $zipFile, $d
         return in_array(explode('/', $p)[0], $allowedTopFolders, true);
     }));
 
-    // Validate tables against what actually exists
+    // Validate tables against what actually exists — BASE TABLE only, same
+    // reasoning as sync_build_data_tree(): a VIEW can't be REPLACE INTO'd.
     $actualTables = [];
-    $tr = $conn->query("SHOW TABLES");
+    $tr = $conn->query("SHOW FULL TABLES WHERE Table_type = 'BASE TABLE'");
     if ($tr) {
         while ($row = $tr->fetch_array()) $actualTables[] = $row[0];
     }
@@ -743,7 +776,7 @@ function sync_build_data_custom_zip($appDir, $conn, $selectedPaths, $zipFile, $d
     // table can't accidentally validate against the wrong database.
     $actualLisaniTables = [];
     if ($lisaniConn !== null) {
-        $ltr = $lisaniConn->query("SHOW TABLES");
+        $ltr = $lisaniConn->query("SHOW FULL TABLES WHERE Table_type = 'BASE TABLE'");
         if ($ltr) {
             while ($row = $ltr->fetch_array()) $actualLisaniTables[] = $row[0];
         }
@@ -901,6 +934,7 @@ function sync_fetch_and_apply_code_zip($sourceUrl, $appDir, $htdocsDir, $conn = 
     // Custom Update Data may have embedded a whole-table sync SQL file at
     // the zip root — import it and remove the stray file if so.
     $dbUpdateNote = null;
+    $dbImportOk = true; // stays true unless a DB import is actually attempted and fails
     $dataSqlPath = $htdocsDir . '/_custom_data_update.sql';
     if (file_exists($dataSqlPath)) {
         if ($conn !== null) {
@@ -924,15 +958,18 @@ function sync_fetch_and_apply_code_zip($sourceUrl, $appDir, $htdocsDir, $conn = 
 
                 $importResult = sync_import_sql_native_dispatch($dataSqlPath, $ownRole, $conn);
                 $dbUpdateNote = 'Database tables: ' . ($structureNote !== null ? $structureNote . ' ' : '') . $importResult['message'];
+                $dbImportOk = ($importResult['ok'] ?? false) === true;
             } catch (\mysqli_sql_exception $e) {
                 // A table in the dump may not exist locally yet (different
                 // schema/setup state on this device). Report it and keep
                 // going instead of aborting the rest of the apply (mirror-
                 // delete step, file deletions, etc. below still need to run).
                 $dbUpdateNote = 'Database tables: import failed — ' . $e->getMessage();
+                $dbImportOk = false;
             }
         } else {
             $dbUpdateNote = 'Database tables: skipped (no DB connection available for this apply).';
+            $dbImportOk = false;
         }
         @unlink($dataSqlPath);
         // It was extracted as a regular "file" too — exclude it from the file
@@ -949,6 +986,7 @@ function sync_fetch_and_apply_code_zip($sourceUrl, $appDir, $htdocsDir, $conn = 
     // extra speed isn't needed, and it avoids having to teach the native
     // dispatcher about a second database name here.
     $lisaniDbUpdateNote = null;
+    $lisaniDbImportOk = true; // stays true unless a lisani DB import is actually attempted and fails
     $lisaniDataSqlPath = $htdocsDir . '/_custom_data_update_lisani.sql';
     if (file_exists($lisaniDataSqlPath)) {
         if ($lisaniConn !== null) {
@@ -966,11 +1004,14 @@ function sync_fetch_and_apply_code_zip($sourceUrl, $appDir, $htdocsDir, $conn = 
                 }
                 $lisaniImportResult = sync_import_sql_file($lisaniConn, $lisaniDataSqlPath);
                 $lisaniDbUpdateNote = 'Lisani AOS tables: ' . ($lisaniStructureNote !== null ? $lisaniStructureNote . ' ' : '') . $lisaniImportResult['message'];
+                $lisaniDbImportOk = ($lisaniImportResult['ok'] ?? false) === true;
             } catch (\mysqli_sql_exception $e) {
                 $lisaniDbUpdateNote = 'Lisani AOS tables: import failed — ' . $e->getMessage();
+                $lisaniDbImportOk = false;
             }
         } else {
             $lisaniDbUpdateNote = 'Lisani AOS tables: skipped (no DB connection available for this apply).';
+            $lisaniDbImportOk = false;
         }
         @unlink($lisaniDataSqlPath);
         $updatedFiles = array_values(array_filter($updatedFiles, function ($f) {
@@ -989,7 +1030,9 @@ function sync_fetch_and_apply_code_zip($sourceUrl, $appDir, $htdocsDir, $conn = 
         $updatedFiles = array_values(array_filter($updatedFiles, function ($f) {
             return basename($f['path']) !== '_custom_data_table_pks.json';
         }));
-        if ($conn !== null && is_array($pkManifest)) {
+        // Mirror-delete only runs if the import above succeeded — otherwise it
+        // could delete local rows without the replacement rows having arrived.
+        if ($conn !== null && is_array($pkManifest) && $dbImportOk) {
             // Only tables that actually exist locally can be mirror-deleted —
             // a table the source has (even with 0 rows) may not exist yet on
             // this device (different schema/setup state). Querying a
@@ -1005,6 +1048,7 @@ function sync_fetch_and_apply_code_zip($sourceUrl, $appDir, $htdocsDir, $conn = 
 
             $totalDeletedRows = 0;
             $skippedTables = [];
+            $countMismatches = [];
             foreach ($pkManifest as $entry) {
                 $table = $entry['table'] ?? null;
                 $pkCol = $entry['pk_col'] ?? null;
@@ -1028,12 +1072,27 @@ function sync_fetch_and_apply_code_zip($sourceUrl, $appDir, $htdocsDir, $conn = 
                         $conn->query($deleteQuery);
                     }
                     $totalDeletedRows += $conn->affected_rows > 0 ? $conn->affected_rows : 0;
+
+                    // Post-sync verification: local row count must now equal
+                    // the number of PKs the source reported for this table.
+                    $cntRes = $conn->query("SELECT COUNT(*) AS c FROM `$table`");
+                    if ($cntRes) {
+                        $localCnt = (int) $cntRes->fetch_assoc()['c'];
+                        $sourceCnt = count($pkValues);
+                        if ($localCnt !== $sourceCnt) {
+                            $countMismatches[] = "$table (source $sourceCnt row, local $localCnt row)";
+                        }
+                    }
                 } catch (\mysqli_sql_exception $e) {
                     // Don't let one bad table abort the rest of the apply.
                     $skippedTables[] = $table;
                 }
             }
             $deletedRowsNote = "Mirrored $totalDeletedRows local row(s) removed to match the source.";
+            if (!empty($countMismatches)) {
+                $deletedRowsNote .= ' ⚠️ Row count still differs after sync: ' . implode('; ', $countMismatches) . '.';
+                $dbImportOk = false; // surface as a failure instead of a false "success"
+            }
             if (!empty($skippedTables)) {
                 $deletedRowsNote .= ' Skipped mirror-delete for ' . count($skippedTables) . ' table(s) not present locally (' . implode(', ', array_unique($skippedTables)) . ').';
             }
@@ -1129,8 +1188,16 @@ function sync_fetch_and_apply_code_zip($sourceUrl, $appDir, $htdocsDir, $conn = 
         }
     }
 
+    // NOTE: 'ok' used to reflect ONLY whether the zip extraction succeeded —
+    // a database import failure (wrong SQL, missing table, lost connection,
+    // etc.) was reported in the message text but never flipped 'ok' to
+    // false. Since the UI treats 'ok'===true as full success (it shows
+    // "Update Completed" and auto-logs-out), a failed table import looked
+    // IDENTICAL to a successful one. Now it also requires both DB imports
+    // (optic + lisani) to have actually succeeded.
+    $allOk = $extracted && $dbImportOk && $lisaniDbImportOk;
     return [
-        'ok' => $extracted,
+        'ok' => $allOk,
         'message' => ($extracted ? "Source code updated — $numFiles file(s) overlaid from PC." : 'Extraction failed.') . ($syncPhpVerifyNote ? ' ' . $syncPhpVerifyNote : '') . ($dbUpdateNote ? ' ' . $dbUpdateNote : '') . ($lisaniDbUpdateNote ? ' ' . $lisaniDbUpdateNote : '') . ($deletedRowsNote ? ' ' . $deletedRowsNote : '') . ($lisaniDeletedRowsNote ? ' ' . $lisaniDeletedRowsNote : '') . ($deletedFilesNote ? ' ' . $deletedFilesNote : ''),
         'updated_files' => $updatedFiles,
         'verification' => [
@@ -1428,14 +1495,46 @@ function sync_import_sql_file($conn, $sqlFile) {
     if (!file_exists($sqlFile)) return ['ok' => false, 'message' => "SQL file not found: $sqlFile"];
     $sql = file_get_contents($sqlFile);
     if ($sql === false || trim($sql) === '') return ['ok' => false, 'message' => "SQL file is empty or unreadable"];
-    if (!$conn->multi_query($sql)) return ['ok' => false, 'message' => "Import failed: " . $conn->error];
+
+    // TEMP DEBUG: keep a copy of every incoming data-sync SQL file plus a
+    // per-run log of what actually happened, so a "reports success but data
+    // didn't change" mismatch can be diagnosed without guessing. Safe to
+    // remove once the customer_list issue is resolved.
+    $debugDir = dirname($sqlFile) . '/sync_debug_log';
+    if (!is_dir($debugDir)) @mkdir($debugDir, 0755, true);
+    $debugStamp = date('Ymd_His');
+    @file_put_contents($debugDir . '/' . $debugStamp . '_' . basename($sqlFile), $sql);
+    $debugLog = "=== " . date('Y-m-d H:i:s') . " import of " . basename($sqlFile) . " ===\n";
+    $debugLog .= "SQL length: " . strlen($sql) . " bytes\n";
+
+    if (!$conn->multi_query($sql)) {
+        $debugLog .= "multi_query() FAILED immediately: " . $conn->error . "\n";
+        @file_put_contents($debugDir . '/' . $debugStamp . '_log.txt', $debugLog);
+        return ['ok' => false, 'message' => "Import failed: " . $conn->error];
+    }
 
     $statementCount = 0;
     do {
         if ($result = $conn->store_result()) $result->free();
         $statementCount++;
-        if ($conn->error) return ['ok' => false, 'message' => "Import error at statement $statementCount: " . $conn->error];
+        $debugLog .= "Statement $statementCount: affected_rows=" . $conn->affected_rows . ", error=" . ($conn->error ?: '(none)') . "\n";
+        if ($conn->error) {
+            @file_put_contents($debugDir . '/' . $debugStamp . '_log.txt', $debugLog);
+            return ['ok' => false, 'message' => "Import error at statement $statementCount: " . $conn->error];
+        }
     } while ($conn->more_results() && $conn->next_result());
+
+    // If next_result() itself returned false, the loop above exits silently
+    // and the error of a LATER statement (e.g. a duplicate-key failure on
+    // REPLACE INTO) would be missed, wrongly reporting success. Check here.
+    if ($conn->errno) {
+        $debugLog .= "Error after statement $statementCount (next_result failed): [" . $conn->errno . "] " . $conn->error . "\n";
+        @file_put_contents($debugDir . '/' . $debugStamp . '_log.txt', $debugLog);
+        return ['ok' => false, 'message' => "Import error after statement $statementCount: " . $conn->error];
+    }
+
+    $debugLog .= "TOTAL statements: $statementCount\n";
+    @file_put_contents($debugDir . '/' . $debugStamp . '_log.txt', $debugLog);
 
     return ['ok' => true, 'message' => "Database imported successfully ($statementCount statements)."];
 }
@@ -1448,7 +1547,34 @@ function sync_import_sql_file($conn, $sqlFile) {
  * caller should treat null as "not available, fall back to the PHP method",
  * so this is purely an optimization and never a hard dependency.
  */
+/**
+ * DISABLED for now: this had the exact same flaw documented below for
+ * sync_import_sql_native_pc() — success was inferred purely from the
+ * ABSENCE of certain words ("error", "denied", "not found") in shell_exec's
+ * captured output, never from the command's real exit status. If the
+ * MariaDB socket path was wrong, or the Termux root account actually
+ * requires a password (common on a fresh install — `mysql -u root` with no
+ * `-p` then fails to authenticate), the shell command could fail to import
+ * anything while printing nothing that matched those keywords, so this
+ * silently returned 'ok' => true and the caller reported "imported
+ * successfully" even though zero rows were written. That's what caused
+ * customer_list (and anything else synced this way) to keep reporting a
+ * successful update while never actually gaining the new/changed rows on
+ * Android. Until this can be rewritten with a strict success check (real
+ * exit code via proc_open, not keyword-sniffing of stdout/stderr text),
+ * this always returns null so callers fall back to the proven PHP mysqli
+ * import path (sync_import_sql_file), which surfaces real errors via
+ * $conn->error instead of guessing from text.
+ */
 function sync_import_sql_native_android($sqlFile, $dbName = 'optic_pos_db') {
+    return null; // disabled — see comment above. Falls back to sync_import_sql_file().
+}
+
+/**
+ * (Kept for future reference, currently unreachable while the function
+ * above returns null unconditionally.)
+ */
+function sync_import_sql_native_android_UNUSED($sqlFile, $dbName = 'optic_pos_db') {
     if (!function_exists('shell_exec') || stripos((string) ini_get('disable_functions'), 'shell_exec') !== false) {
         return null;
     }
@@ -1618,6 +1744,13 @@ function sync_build_file_crc_manifest($appDir, $excludeDirNames = ['.git', '.svn
     // filter above — qrcodes, main_qrcodes, pdf_file, data_json, and the
     // rest of database/ are all still compared as normal.)
     $excludedFiles = ['db_config.php', '.gitignore', '.htaccess', 'sync_pending_signal.json'];
+    // Manual DB backup dumps (from "Backup Database Now") are per-device,
+    // point-in-time snapshots — not something any sync action ever transfers
+    // (sync_build_code_tree already excludes the whole "database" folder from
+    // Create Local Zip / Pull). They're excluded here too, by their fixed
+    // relative paths, so Verify Full Sync never flags them as a mismatch —
+    // a difference there is expected, not a real sync problem.
+    $excludedRelPaths = ['database/optic_pos_db.sql', 'lisani_aos/database/lisani_aos_db.sql'];
     $dirIterator = new RecursiveDirectoryIterator($appDir, FilesystemIterator::SKIP_DOTS);
     $filtered = new RecursiveCallbackFilterIterator($dirIterator, function ($current) use ($excludeDirNames) {
         if ($current->isDir() && in_array($current->getFilename(), $excludeDirNames, true)) return false;
@@ -1628,6 +1761,7 @@ function sync_build_file_crc_manifest($appDir, $excludeDirNames = ['.git', '.svn
         if ($item->isDir()) continue;
         if (in_array($item->getFilename(), $excludedFiles, true)) continue;
         $rel = str_replace('\\', '/', substr($item->getPathname(), strlen($appDir) + 1));
+        if (in_array($rel, $excludedRelPaths, true)) continue;
         $files[$rel] = sprintf('%08x', crc32(file_get_contents($item->getPathname())));
     }
     return $files;
@@ -1640,7 +1774,12 @@ function sync_build_file_crc_manifest($appDir, $excludeDirNames = ['.git', '.svn
  */
 function sync_compute_per_table_hashes($conn) {
     $hashes = [];
-    $tablesResult = $conn->query("SHOW TABLES");
+    // BASE TABLE only — a VIEW is excluded here for the same reason it's
+    // excluded from the Custom Update Data table list: its content is
+    // recomputed from other tables every time it's queried and isn't
+    // something REPLACE INTO can write to, so hashing it would create a
+    // mismatch that syncing the underlying tables can never actually fix.
+    $tablesResult = $conn->query("SHOW FULL TABLES WHERE Table_type = 'BASE TABLE'");
     if (!$tablesResult) return $hashes;
     while ($row = $tablesResult->fetch_array()) {
         $table = $row[0];
@@ -1669,11 +1808,23 @@ function sync_compute_per_table_hashes($conn) {
         if ($dataResult) {
             $fields = $dataResult->fetch_fields();
             $isUsersTable = (strtolower($table) === 'users');
+            // customer_list.updated_at is ON UPDATE CURRENT_TIMESTAMP, so every
+            // REPLACE INTO run by the sync apply step re-stamps it with the
+            // RECEIVING device's local time, never the source's original value
+            // — making it permanently diverge between devices regardless of how
+            // many times the row content is actually synced. Excluded from the
+            // hash for the same reason users.session_token etc. are: it's a
+            // legitimate per-device artifact, not real data drift.
+            $isCustomerListTable = (strtolower($table) === 'customer_list');
             $colsLower = array_map(function ($f) { return strtolower($f->name); }, $fields);
             while ($r = $dataResult->fetch_row()) {
                 $vals = [];
                 foreach ($r as $idx => $v) {
                     if ($isUsersTable && in_array($colsLower[$idx], ['session_token', 'session_expires', 'last_login'], true)) {
+                        $vals[] = 'NULL';
+                        continue;
+                    }
+                    if ($isCustomerListTable && $colsLower[$idx] === 'updated_at') {
                         $vals[] = 'NULL';
                         continue;
                     }
@@ -2179,6 +2330,7 @@ include 'auth_check.php';
 $lisaniConnPath = $appDir . '/lisani_aos/db_config.php';
 $lisani_conn = null;
 if (file_exists($lisaniConnPath)) { include $lisaniConnPath; } // provides $lisani_conn, if present
+$lisaniConfigured = ($lisani_conn !== null); // gates the Lisani AOS Database Management card below
 
 // --- Fetch the configured Main Admin username (used to gate the Full System card) ---
 $sync_main_admin_username = '';
@@ -2288,7 +2440,7 @@ if (isset($_POST['action'])) {
             exit();
         }
 
-        $ownState = sync_compute_full_state_hash($appDir, $conn);
+        $ownState = sync_compute_full_state_hash($appDir, $conn, $lisani_conn);
 
         $ctx = stream_context_create(['http' => ['timeout' => 60, 'ignore_errors' => true]]);
         $response = @file_get_contents($otherUrl, false, $ctx);
@@ -2388,7 +2540,7 @@ if (isset($_POST['action'])) {
             exit();
         }
 
-        $ownState = sync_compute_full_state_hash($appDir, $conn);
+        $ownState = sync_compute_full_state_hash($appDir, $conn, $lisani_conn);
 
         $ctx = stream_context_create(['http' => ['timeout' => 60, 'ignore_errors' => true]]);
         $response = @file_get_contents($otherUrl, false, $ctx);
@@ -2605,6 +2757,89 @@ if (isset($_POST['action'])) {
         }
 
         $result = sync_import_sql_native_dispatch($file, $syncOwnRole, $conn);
+        if (ob_get_level() > 0) { ob_clean(); }
+        echo json_encode(['ok' => $result['ok'], 'message' => $result['message']]);
+        exit();
+    }
+
+    // ================================================================
+    // Database Management — LISANI AOS (separate from the optic_pos_db
+    // tools above; same behavior, own fixed backup file and own per-IP
+    // auto-backup folder, operating on $lisani_conn instead of $conn).
+    // ================================================================
+
+    // ---- Manual DB backup: always overwrites lisani_aos/database/lisani_aos_db.sql ----
+    if ($action === 'lisani_backup_db_now') {
+        if ($lisani_conn === null) {
+            if (ob_get_level() > 0) { ob_clean(); }
+            echo json_encode(['ok' => false, 'message' => 'Lisani AOS database is not set up on this device (no lisani_aos/db_config.php found).']);
+            exit();
+        }
+        if (!is_dir($appDir . '/lisani_aos/database')) mkdir($appDir . '/lisani_aos/database', 0755, true);
+        $result = sync_export_db_to_sql($lisani_conn, $appDir . '/lisani_aos/database/lisani_aos_db.sql');
+        if (ob_get_level() > 0) { ob_clean(); }
+        echo json_encode(['ok' => $result['ok'], 'message' => $result['ok'] ? 'Backup saved to lisani_aos/database/lisani_aos_db.sql — ' . $result['message'] : $result['message']]);
+        exit();
+    }
+
+    // ---- Restore from the fixed manual backup: lisani_aos/database/lisani_aos_db.sql ----
+    if ($action === 'lisani_restore_fixed_backup') {
+        if ($lisani_conn === null) {
+            if (ob_get_level() > 0) { ob_clean(); }
+            echo json_encode(['ok' => false, 'message' => 'Lisani AOS database is not set up on this device (no lisani_aos/db_config.php found).']);
+            exit();
+        }
+        $file = $appDir . '/lisani_aos/database/lisani_aos_db.sql';
+        if (!file_exists($file)) {
+            if (ob_get_level() > 0) { ob_clean(); }
+            echo json_encode(['ok' => false, 'message' => 'No backup found at lisani_aos/database/lisani_aos_db.sql yet. Use "Backup Now" first.']);
+            exit();
+        }
+        $result = sync_import_sql_file($lisani_conn, $file);
+        if (ob_get_level() > 0) { ob_clean(); }
+        echo json_encode(['ok' => $result['ok'], 'message' => $result['message']]);
+        exit();
+    }
+
+    // ---- List this device's auto-generated per-IP lisani backups (lisani_aos/database/backups/<ip>/) ----
+    if ($action === 'lisani_list_ip_backups') {
+        $ownIpFolder = sync_sanitize_ip_folder_name($_SERVER['SERVER_ADDR'] ?? 'unknown_ip');
+        $backupDir = $appDir . '/lisani_aos/database/backups/' . $ownIpFolder;
+        $files = [];
+        if (is_dir($backupDir)) {
+            foreach (glob($backupDir . '/backup_*.sql') as $f) {
+                $files[] = [
+                    'name' => basename($f),
+                    'size' => sync_format_bytes(filesize($f)),
+                    'modified' => date('Y-m-d H:i:s', filemtime($f)),
+                ];
+            }
+            usort($files, function ($a, $b) { return strcmp($b['name'], $a['name']); }); // newest first
+        }
+        if (ob_get_level() > 0) { ob_clean(); }
+        echo json_encode(['ok' => true, 'ip_folder' => $ownIpFolder, 'files' => $files]);
+        exit();
+    }
+
+    // ---- Restore a specific auto-generated per-IP lisani backup, chosen from the list above ----
+    if ($action === 'lisani_restore_ip_backup') {
+        if ($lisani_conn === null) {
+            if (ob_get_level() > 0) { ob_clean(); }
+            echo json_encode(['ok' => false, 'message' => 'Lisani AOS database is not set up on this device (no lisani_aos/db_config.php found).']);
+            exit();
+        }
+        $ownIpFolder = sync_sanitize_ip_folder_name($_SERVER['SERVER_ADDR'] ?? 'unknown_ip');
+        $backupDir = $appDir . '/lisani_aos/database/backups/' . $ownIpFolder;
+        $requested = basename($_POST['file'] ?? ''); // basename() blocks path traversal
+        $file = $backupDir . '/' . $requested;
+
+        if (!preg_match('/^backup_\d{8}_\d{6}\.sql$/', $requested) || !file_exists($file)) {
+            if (ob_get_level() > 0) { ob_clean(); }
+            echo json_encode(['ok' => false, 'message' => 'Backup file not found or invalid.']);
+            exit();
+        }
+
+        $result = sync_import_sql_file($lisani_conn, $file);
         if (ob_get_level() > 0) { ob_clean(); }
         echo json_encode(['ok' => $result['ok'], 'message' => $result['message']]);
         exit();
@@ -3902,6 +4137,36 @@ if (isset($_POST['action'])) {
 
                         </div>
                     </div>
+
+                    <?php if ($lisaniConfigured): ?>
+                    <div class="sync-card collapsible-section" id="dbManagementLisaniCard">
+                        <div class="section-header" role="button" tabindex="0" aria-expanded="false">
+                            <span><span class="card-icon-trigger" onclick="event.stopPropagation(); showCardInfo('Database Management — Lisani AOS', <?php echo htmlspecialchars(json_encode('Same manual backup/restore tools as Database Management above, but for the separate lisani_aos_db database instead of optic_pos_db. Backup Now saves to a fixed file; Restore Manual Backup loads it back; Restore from Auto Backups picks from the automatic backups made before every Pull.<br><br>Each of these three actions asks you to re-enter your own login password first, to confirm it\'s really you before anything runs.'), ENT_QUOTES); ?>);">🗄️</span> Database Management — Lisani AOS</span>
+                            <span class="section-toggle-icon">▸</span>
+                        </div>
+                        <div class="config-body">
+
+                            <div style="font-size:13px; color:#9a9da1; font-weight:600; margin-bottom:8px;">💾 BACKUP NOW</div>
+                            <button class="sync-btn" id="btnBackupNowLisani" onclick="requestPasswordThen('lisani_backup_now', this, 'statusBackupNowLisani')">💾 Backup Now</button>
+                            <div class="sync-status" id="statusBackupNowLisani"></div>
+
+                            <hr style="border: none; border-top: 1px solid rgba(255,255,255,0.06); margin: 18px 0;">
+
+                            <div style="font-size:13px; color:#9a9da1; font-weight:600; margin-bottom:8px;">♻️ RESTORE MANUAL BACKUP</div>
+                            <p class="desc">Restores <code>lisani_aos/database/lisani_aos_db.sql</code> into this device's live lisani_aos_db database.</p>
+                            <button class="sync-btn warn" id="btnRestoreFixedLisani" onclick="requestPasswordThen('lisani_restore_fixed', this, 'statusRestoreFixedLisani')">♻️ Restore</button>
+                            <div class="sync-status" id="statusRestoreFixedLisani"></div>
+
+                            <hr style="border: none; border-top: 1px solid rgba(255,255,255,0.06); margin: 18px 0;">
+
+                            <div style="font-size:13px; color:#9a9da1; font-weight:600; margin-bottom:8px;">🗂️ RESTORE FROM AUTO BACKUPS</div>
+                            <p class="desc">Browse this device's automatic pre-Pull lisani_aos_db backups and pick one to restore.</p>
+                            <button class="sync-btn" id="btnBrowseBackupsLisani" onclick="requestPasswordThen('lisani_browse_backups', this, 'statusBrowseBackupsLisani')">🗂️ Browse Backups</button>
+                            <div class="sync-status" id="statusBrowseBackupsLisani"></div>
+
+                        </div>
+                    </div>
+                    <?php endif; ?>
                 </div>
             </div>
                     
@@ -4090,6 +4355,15 @@ if (isset($_POST['action'])) {
             </div>
         </div>
 
+        <!-- Fly window: pick a per-IP auto backup to restore (Lisani AOS) -->
+        <div class="iphelp-backdrop" id="backupListBackdropLisani" onclick="if(event.target===this) closeBackupListLisani()">
+            <div class="iphelp-modal">
+                <h2>🗂️ Auto Backups (Lisani AOS) — <span id="backupListIpLabelLisani"></span></h2>
+                <div id="backupListBodyLisani" style="color:#c9cbce; font-size:13px; line-height:1.6;">Loading...</div>
+                <button type="button" class="iphelp-close-btn" onclick="closeBackupListLisani()">Close</button>
+            </div>
+        </div>
+
         <!-- Fly window: confirm the logged-in user's own password before Backup Now / Restore / Browse Backups run -->
         <div class="iphelp-backdrop" id="passwordConfirmBackdrop" onclick="if(event.target===this) closePasswordConfirm()">
             <div class="iphelp-modal" style="max-width:400px; text-align:center;">
@@ -4175,7 +4449,18 @@ if (isset($_POST['action'])) {
                 const cleanedFilePaths = fileDiffs
                     .map(d => d.replace(/\s*\(.*\)$/, '').replace(/^optic_pos\//, ''))
                     .filter(p => !syncLastVerifyMissingOnOther.includes(p));
-                syncLastVerifyDiffPaths = cleanedFilePaths.concat(tableDiffs.map(t => 'optic_pos_db/' + t));
+                // Table diffs come back as either a plain name ("customers" —
+                // an optic table) or "lisani:customers" (see the "lisani:"
+                // prefix added in sync_compute_full_state_hash on the PHP
+                // side) — route each to its own virtual folder so the
+                // checklist pre-checks the right one instead of always
+                // assuming optic_pos_db.
+                const tableDiffPaths = tableDiffs.map(t => {
+                    return t.startsWith('lisani:')
+                        ? 'lisani_aos_db/' + t.slice('lisani:'.length)
+                        : 'optic_pos_db/' + t;
+                });
+                syncLastVerifyDiffPaths = cleanedFilePaths.concat(tableDiffPaths);
 
                 if (fileDiffs.length === 0 && tableDiffs.length === 0) {
                     // Everything matched — nothing to show, and neither Custom
@@ -4291,7 +4576,7 @@ if (isset($_POST['action'])) {
             // Backups). After any of these finish successfully, the currently
             // logged-in session is forced to log out so nobody keeps working
             // against data that's just been replaced underneath them.
-            const LOGOUT_AFTER_ACTIONS = ['pull', 'pull_code_custom', 'pull_data_custom', 'restore_fixed_backup', 'restore_ip_backup'];
+            const LOGOUT_AFTER_ACTIONS = ['pull', 'pull_code_custom', 'pull_data_custom', 'restore_fixed_backup', 'restore_ip_backup', 'lisani_restore_fixed_backup', 'lisani_restore_ip_backup'];
             function scheduleLogoutAfterSync(statusEl) {
                 if (statusEl) {
                     statusEl.textContent += '\n🔒 Update completed — logging out to keep data valid...';
@@ -4586,6 +4871,13 @@ if (isset($_POST['action'])) {
                     runAction('restore_fixed_backup', {}, pending.btn, pending.statusId);
                 } else if (pending.kind === 'browse_backups') {
                     openBackupList(pending.btn);
+                } else if (pending.kind === 'lisani_backup_now') {
+                    runAction('lisani_backup_db_now', {}, pending.btn, pending.statusId);
+                } else if (pending.kind === 'lisani_restore_fixed') {
+                    if (!confirm('This will REPLACE this device\'s current lisani_aos_db database with lisani_aos/database/lisani_aos_db.sql. Continue?')) return;
+                    runAction('lisani_restore_fixed_backup', {}, pending.btn, pending.statusId);
+                } else if (pending.kind === 'lisani_browse_backups') {
+                    openBackupListLisani(pending.btn);
                 }
             }
 
@@ -4788,6 +5080,54 @@ if (isset($_POST['action'])) {
                 statusEl.classList.remove('ok', 'err');
                 statusEl.textContent = 'Restoring...';
                 fetch('sync.php', { method: 'POST', body: new URLSearchParams({ action: 'restore_ip_backup', file: fileName }) })
+                    .then(r => r.json())
+                    .then(data => {
+                        setStatus(statusEl, data.ok, data.message);
+                        if (data.ok) scheduleLogoutAfterSync(statusEl);
+                    })
+                    .catch(err => setStatus(statusEl, false, 'Request error: ' + err));
+            }
+
+            // ---- Restore from Auto Backups — Lisani AOS (mirrors the block above) ----
+            function openBackupListLisani(btn) {
+                const body = document.getElementById('backupListBodyLisani');
+                const ipLabel = document.getElementById('backupListIpLabelLisani');
+                body.textContent = 'Loading...';
+                document.getElementById('backupListBackdropLisani').classList.add('active');
+
+                fetch('sync.php', { method: 'POST', body: new URLSearchParams({ action: 'lisani_list_ip_backups' }) })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (!data.ok) { body.textContent = 'Could not load backups.'; return; }
+                        ipLabel.textContent = data.ip_folder;
+                        if (!data.files || data.files.length === 0) {
+                            body.textContent = 'No auto backups found yet for this device — they get created automatically right before each Pull.';
+                            return;
+                        }
+                        body.innerHTML = '';
+                        data.files.forEach(f => {
+                            const item = document.createElement('button');
+                            item.type = 'button';
+                            item.className = 'sync-btn';
+                            item.style.cssText = 'margin-bottom:10px; text-align:left; display:flex; flex-direction:column; align-items:flex-start; gap:2px; font-size:13px;';
+                            item.innerHTML = `<span>📄 ${f.name}</span><span style="font-weight:400; font-size:11px; opacity:0.85;">${f.modified} — ${f.size}</span>`;
+                            item.onclick = () => restoreIpBackupLisani(f.name);
+                            body.appendChild(item);
+                        });
+                    })
+                    .catch(() => { body.textContent = 'Request error while loading backups.'; });
+            }
+            function closeBackupListLisani() {
+                document.getElementById('backupListBackdropLisani').classList.remove('active');
+            }
+            function restoreIpBackupLisani(fileName) {
+                if (!confirm(`This will REPLACE this device's current lisani_aos_db database with "${fileName}". Continue?`)) return;
+                closeBackupListLisani();
+                const statusEl = document.getElementById('statusBrowseBackupsLisani');
+                statusEl.classList.add('show');
+                statusEl.classList.remove('ok', 'err');
+                statusEl.textContent = 'Restoring...';
+                fetch('sync.php', { method: 'POST', body: new URLSearchParams({ action: 'lisani_restore_ip_backup', file: fileName }) })
                     .then(r => r.json())
                     .then(data => {
                         setStatus(statusEl, data.ok, data.message);
