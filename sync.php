@@ -1496,20 +1496,7 @@ function sync_import_sql_file($conn, $sqlFile) {
     $sql = file_get_contents($sqlFile);
     if ($sql === false || trim($sql) === '') return ['ok' => false, 'message' => "SQL file is empty or unreadable"];
 
-    // TEMP DEBUG: keep a copy of every incoming data-sync SQL file plus a
-    // per-run log of what actually happened, so a "reports success but data
-    // didn't change" mismatch can be diagnosed without guessing. Safe to
-    // remove once the customer_list issue is resolved.
-    $debugDir = dirname($sqlFile) . '/sync_debug_log';
-    if (!is_dir($debugDir)) @mkdir($debugDir, 0755, true);
-    $debugStamp = date('Ymd_His');
-    @file_put_contents($debugDir . '/' . $debugStamp . '_' . basename($sqlFile), $sql);
-    $debugLog = "=== " . date('Y-m-d H:i:s') . " import of " . basename($sqlFile) . " ===\n";
-    $debugLog .= "SQL length: " . strlen($sql) . " bytes\n";
-
     if (!$conn->multi_query($sql)) {
-        $debugLog .= "multi_query() FAILED immediately: " . $conn->error . "\n";
-        @file_put_contents($debugDir . '/' . $debugStamp . '_log.txt', $debugLog);
         return ['ok' => false, 'message' => "Import failed: " . $conn->error];
     }
 
@@ -1517,9 +1504,7 @@ function sync_import_sql_file($conn, $sqlFile) {
     do {
         if ($result = $conn->store_result()) $result->free();
         $statementCount++;
-        $debugLog .= "Statement $statementCount: affected_rows=" . $conn->affected_rows . ", error=" . ($conn->error ?: '(none)') . "\n";
         if ($conn->error) {
-            @file_put_contents($debugDir . '/' . $debugStamp . '_log.txt', $debugLog);
             return ['ok' => false, 'message' => "Import error at statement $statementCount: " . $conn->error];
         }
     } while ($conn->more_results() && $conn->next_result());
@@ -1528,13 +1513,8 @@ function sync_import_sql_file($conn, $sqlFile) {
     // and the error of a LATER statement (e.g. a duplicate-key failure on
     // REPLACE INTO) would be missed, wrongly reporting success. Check here.
     if ($conn->errno) {
-        $debugLog .= "Error after statement $statementCount (next_result failed): [" . $conn->errno . "] " . $conn->error . "\n";
-        @file_put_contents($debugDir . '/' . $debugStamp . '_log.txt', $debugLog);
         return ['ok' => false, 'message' => "Import error after statement $statementCount: " . $conn->error];
     }
-
-    $debugLog .= "TOTAL statements: $statementCount\n";
-    @file_put_contents($debugDir . '/' . $debugStamp . '_log.txt', $debugLog);
 
     return ['ok' => true, 'message' => "Database imported successfully ($statementCount statements)."];
 }
