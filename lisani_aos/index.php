@@ -92,6 +92,9 @@ include 'partials/header.php';
       <!-- Logistic -->
       <?php include 'logistic_content.php'; ?>
 
+      <!-- Document Tools -->
+      <?php include 'document_tools_content.php'; ?>
+
       <!-- Report -->
       <?php include 'report_content.php'; ?>
 

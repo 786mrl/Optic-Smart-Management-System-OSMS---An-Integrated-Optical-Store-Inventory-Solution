@@ -1,0 +1,6 @@
+{
+  "presets": [
+    { "id": "standard-1", "label": "2.18\" x 1.46\"", "height_in": 1.46, "width_in": 2.18 },
+    { "id": "standard-2", "label": "3.05\" x 1.46\"", "height_in": 1.46, "width_in": 3.05 }
+  ]
+}
