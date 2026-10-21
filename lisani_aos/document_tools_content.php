@@ -102,6 +102,16 @@
             </div>
           </div>
 
+          <div class="sig-editor-group">
+            <div class="sig-editor-group-label">Ink Contrast</div>
+            <div class="sig-editor-group-controls">
+              <button type="button" class="btn btn-secondary doc-zoom-btn" id="sigInkContrastMinusBtn" aria-label="Lower ink contrast">-</button>
+              <input type="range" id="sigInkContrast" min="0" max="100" value="0" style="width:140px;">
+              <button type="button" class="btn btn-secondary doc-zoom-btn" id="sigInkContrastPlusBtn" aria-label="Raise ink contrast">+</button>
+              <span class="header-sub" id="sigInkContrastValue">0</span>
+            </div>
+          </div>
+
         </div>
 
         <form id="sigEditorSaveForm" class="settings-form" style="margin-top:18px;">
@@ -483,13 +493,30 @@
   .sig-canvas-outer {
     width: 100%;
     max-width: 600px;
+    /* Container size is independent from the Zoom slider now (21 Okt 2026,
+       user request): previously this had no fixed height, so it just grew
+       taller along with .sig-canvas-zoom-wrap's zoomed-up width, making the
+       container LOOK like it was zooming too. Now it has its own fixed
+       height and the user can drag-resize it directly from its bottom-right
+       corner (native CSS `resize`, no JS needed) - independent of whatever
+       zoom % the canvas inside is at. overflow:auto scrolls to reach any
+       part of the canvas that's bigger than this box, both from zoom and
+       from manual resize. */
+    height: 360px;
+    min-width: 260px;
+    min-height: 160px;
+    resize: both;
     overflow: auto;
     border: 1px dashed rgba(255, 255, 255, 0.18);
     border-radius: var(--radius-md, 10px);
   }
   .sig-canvas-zoom-wrap {
-    width: 100%;
-    transition: width 0.15s ease;
+    /* Sized to the canvas's own pixel dimensions (via JS, see
+       syncZoomWrapBaseSize()) scaled by zoomPercent - NOT width:100% of the
+       outer container anymore, so resizing the outer box no longer stretches
+       the canvas, and zooming the canvas no longer resizes the outer box. */
+    width: 600px;
+    transition: width 0.15s ease, height 0.15s ease;
     /* 21 Okt 2026: diganti dari checkerboard gelap ke putih polos + garis
        kotak-kotak halus (bukan checkerboard transparansi lagi) - kebanyakan
        ttd warnanya hitam, jadi butuh latar terang biar jelas saat crop/erase.
@@ -1311,6 +1338,10 @@
   var bgThresholdValue = document.getElementById('sigBgThresholdValue');
   var thresholdMinusBtn = document.getElementById('sigThresholdMinusBtn');
   var thresholdPlusBtn = document.getElementById('sigThresholdPlusBtn');
+  var inkContrastInput = document.getElementById('sigInkContrast');
+  var inkContrastValue = document.getElementById('sigInkContrastValue');
+  var inkContrastMinusBtn = document.getElementById('sigInkContrastMinusBtn');
+  var inkContrastPlusBtn = document.getElementById('sigInkContrastPlusBtn');
   var clearUploadBtn = document.getElementById('sigClearUploadBtn');
   var canvasOuter = document.getElementById('sigEditorCanvasOuter');
   var canvasWrap = document.getElementById('sigEditorCanvasWrap');
@@ -1396,17 +1427,29 @@
     eraseUndoBtn.style.display = eraseUndoStack.length > 0 ? 'inline-flex' : 'none';
   }
 
-  /* ---- Zoom In/Out: ubah width% .sig-canvas-zoom-wrap di dalam viewport
-     scroll, canvas pixel asli tidak berubah (lihat komentar di deklarasi
-     zoomPercent di atas). canvasPointFromEvent() otomatis tetap akurat
-     karena masih pakai rasio canvas.width/rect.width. ---- */
+  /* ---- Zoom In/Out: ubah width (px) .sig-canvas-zoom-wrap, canvas pixel
+     asli tidak berubah (lihat komentar di deklarasi zoomPercent di atas).
+     canvasPointFromEvent() otomatis tetap akurat karena masih pakai rasio
+     canvas.width/rect.width.
+     21 Okt 2026 (revisi "container tidak ikut zoom"): sebelumnya width
+     wrap dihitung SEBAGAI PERSENTASE DARI CONTAINER (#sigEditorCanvasOuter,
+     width:100%), jadi membesarkan zoom otomatis "mendorong" lebar efektif
+     konten melebihi container lalu meluap lewat scroll - keliatannya
+     seperti container ikut membesar/mengecil mengikuti zoom. Sekarang
+     container (.sig-canvas-outer) punya ukuran sendiri yang TETAP (fixed
+     height + resizable manual via CSS `resize:both`, lihat <style> di
+     atas), dan wrap dihitung sebagai PIXEL ABSOLUT = lebar asli canvas
+     (editorCanvas.width) × zoomPercent/100 - jadi item (canvas) yang
+     membesar/mengecil saat zoom, container-nya diam, cukup di-scroll
+     (overflow:auto) kalau item lebih besar dari container. */
   // syncSlider=false dipakai saat dipanggil DARI slider's own 'input' event
   // itu sendiri, supaya tidak muter balik set value ke slider yang sedang
   // digeser user (percuma, tapi aman) - selain itu (tombol -/+/Reset, atau
   // clearEditorCanvas()) selalu true supaya slider ikut pindah posisinya.
   function setZoomPercent(pct, syncSlider) {
     zoomPercent = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, pct));
-    canvasWrap.style.width = zoomPercent + '%';
+    var baseW = editorCanvas.width || DEFAULT_CANVAS_W;
+    canvasWrap.style.width = Math.round(baseW * zoomPercent / 100) + 'px';
     zoomLevelLabel.textContent = zoomPercent + '%';
     if (syncSlider !== false) zoomSlider.value = zoomPercent;
   }
@@ -1422,18 +1465,35 @@
   /* ---- Render = threshold (near-white -> transparent) + erase mask,
      always re-derived from originalPhotoImageData so neither step
      degrades the image when repeated. ---- */
+  /* ---- #Ink Contrast (21 Okt 2026): slider terpisah dari threshold
+     background. threshold hanya menentukan transparan/tidak; slider ini
+     menebalkan pixel TINTA (yang lolos/tidak-transparan) yang sering
+     pudar/abu-abu dari hasil foto - sekaligus 2 efek sesuai permintaan
+     user ("keduanya saja"): (a) RGB didorong ke arah hitam (0,0,0)
+     sebanding jarak dari putih, (b) alpha didorong ke arah 255 (solid).
+     factor 0 = tidak berubah sama sekali (default, backward-compatible
+     dengan behavior lama), factor 1 = RGB jadi hitam pekat + alpha solid.
+     Selalu dihitung ulang dari originalPhotoImageData (non-destructive,
+     pola sama seperti threshold - lihat komentar di atas). ---- */
   function renderEditor() {
     if (!originalPhotoImageData) return;
     var threshold = parseInt(bgThresholdInput.value, 10);
+    var inkFactor = (parseInt(inkContrastInput.value, 10) || 0) / 100;
     var src = originalPhotoImageData.data;
     var w = originalPhotoImageData.width, h = originalPhotoImageData.height;
     var out = editorCtx.createImageData(w, h);
     var dst = out.data;
     for (var i = 0, p = 0; i < src.length; i += 4, p++) {
       var r = src[i], g = src[i + 1], b = src[i + 2], a = src[i + 3];
-      dst[i] = r; dst[i + 1] = g; dst[i + 2] = b;
       var transparent = (r >= threshold && g >= threshold && b >= threshold) ||
         (erasedMask && erasedMask[p] === 1);
+      if (!transparent && inkFactor > 0) {
+        r = r * (1 - inkFactor);
+        g = g * (1 - inkFactor);
+        b = b * (1 - inkFactor);
+        a = a + (255 - a) * inkFactor;
+      }
+      dst[i] = r; dst[i + 1] = g; dst[i + 2] = b;
       dst[i + 3] = transparent ? 0 : a;
     }
     editorCtx.putImageData(out, 0, 0);
@@ -1496,6 +1556,23 @@
   }
   thresholdMinusBtn.addEventListener('click', function () { stepThreshold(-5); });
   thresholdPlusBtn.addEventListener('click', function () { stepThreshold(5); });
+
+  /* ---- Ink Contrast: slider terpisah untuk menebalkan warna tinta
+     (lihat komentar di renderEditor()), pola event sama seperti
+     threshold di atas. ---- */
+  inkContrastInput.addEventListener('input', function () {
+    inkContrastValue.textContent = inkContrastInput.value;
+    renderEditor();
+  });
+  function stepInkContrast(delta) {
+    var next = (parseInt(inkContrastInput.value, 10) || 0) + delta;
+    next = Math.max(0, Math.min(100, next));
+    inkContrastInput.value = next;
+    inkContrastValue.textContent = next;
+    renderEditor();
+  }
+  inkContrastMinusBtn.addEventListener('click', function () { stepInkContrast(-5); });
+  inkContrastPlusBtn.addEventListener('click', function () { stepInkContrast(5); });
 
   /* ---- #3: Erase Part - brush that permanently marks pixels transparent
      via erasedMask, independent of the threshold slider. Undo Erase (21 Okt
@@ -1685,6 +1762,10 @@
     editorCanvas.height = newH;
     originalPhotoImageData = newImgData;
     erasedMask = newMask;
+    // Canvas's native pixel size just changed (crop) - refresh the zoom
+    // wrap's px width so it still matches zoomPercent of the NEW size,
+    // not the pre-crop one.
+    setZoomPercent(zoomPercent);
     exitCropMode();
     renderEditor();
   });

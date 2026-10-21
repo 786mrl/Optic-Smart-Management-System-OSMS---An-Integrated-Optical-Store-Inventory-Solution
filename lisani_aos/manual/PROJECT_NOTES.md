@@ -413,6 +413,32 @@ belum dibangun).
 ## 8. Pekerjaan terbuka
 
 ### Log terbaru (belum dites, jangan lebur ke §6 sebelum dikonfirmasi)
+- **21 Okt 2026, Signature Editor: container canvas tidak lagi ikut membesar saat Zoom
+  (belum dites)**: laporan user - secara fungsi Zoom sudah benar, tapi viewport-nya
+  (`#sigEditorCanvasOuter`, `.sig-canvas-outer`) ikut "membesar/mengecil" mengikuti persentase
+  zoom, padahal maunya cuma ITEM (canvas) di dalamnya yang zoom, container-nya diam dengan ukuran
+  sendiri. Akar masalah: `.sig-canvas-zoom-wrap` sebelumnya di-resize via `width` dalam PERSEN,
+  dan `.sig-canvas-outer` (parent-nya) punya `width:100%` tanpa tinggi tetap - jadi walau
+  `overflow:auto` ada di outer, lebar efektif wrap yang berubah-ubah bikin outer ikut terasa
+  "mengikuti" zoom. **Fix**: `.sig-canvas-outer` sekarang punya `height:360px` tetap +
+  `resize:both` (CSS native, bukan JS - muncul handle drag di pojok kanan-bawah, browser modern
+  semua dukung ini) supaya user bisa memperbesar/perkecil container-nya sendiri secara manual;
+  `.sig-canvas-zoom-wrap` width-nya diganti dari persentase (`zoomPercent + '%'`) jadi PIXEL
+  ABSOLUT = `editorCanvas.width (lebar asli canvas) × zoomPercent / 100` (`setZoomPercent()` di
+  JS) - jadi cuma canvas yang membesar/mengecil, container tetap diam di ukuran yang di-set user,
+  cukup di-scroll (`overflow:auto`, sudah ada) kalau canvas lebih besar dari container.
+  `setZoomPercent()` juga dipanggil ulang setelah Apply Crop (ukuran native canvas berubah),
+  supaya wrap tetap sinkron ke persentase zoom yang sedang aktif pakai ukuran baru. Tidak ada
+  perubahan pada logic crop/erase/threshold/ink contrast - semuanya masih pakai
+  `canvasPointFromEvent()` dengan rasio `canvas.width/rect.width` yang sama seperti sebelumnya,
+  jadi posisi klik tetap akurat di ukuran container/zoom berapa pun.
+  **Perlu dites user**: (1) drag resize handle di pojok kanan-bawah container berfungsi di
+  desktop (dan cek juga apakah perlu fallback untuk HP/touch - `resize:both` CSS umumnya tidak
+  muncul di browser mobile); (2) Zoom In/Out/slider/Reset masih membesarkan HANYA canvas, bukan
+  container; (3) posisi klik Crop/Erase tetap akurat di berbagai kombinasi ukuran container ×
+  level zoom; (4) crop lalu zoom (urutan: upload → crop → ubah zoom) tidak membuat canvas
+  "terpotong" tampilannya di wrap.
+
 - **21 Okt 2026, BUG FATAL & FIX: Zoom slider Signature Editor mengecil terus, tidak bisa
   dibesarkan lagi** (laporan user via 2 screenshot - gambar 1 sebelum zoom diapa-apakan, gambar
   2 setelah digeser langsung mentok sangat kecil & tidak bisa dibesarkan). Akar masalah: seluruh
@@ -866,6 +892,23 @@ belum dibangun).
      ke toolbar. **Root cause TIDAK DITEMUKAN** - user bilang abaikan dulu, lanjut ke hal lain. Kalau mau
      dilanjutkan nanti: minta user screenshot panel **Computed** (bukan Styles) DevTools dari salah satu tombol
      toolbar pas zoom 20% vs 65% (font-size/padding), biar ketauan browser override dari CSS mana.
+
+  **FITUR BARU: Ink Contrast (21 Okt 2026, belum dites user)**: grup baru "Ink Contrast" ditambahkan di
+  Signature Editor, PERSIS setelah grup "Remove White Background" (slider `sigInkContrast` 0-100 default 0 +
+  tombol -/+ `sigInkContrastMinusBtn`/`sigInkContrastPlusBtn` + label `sigInkContrastValue`, pola HTML/JS
+  disalin dari `sigBgThreshold` yang sudah ada). User konfirmasi: BUKAN soal transparansi background (itu
+  tetap 100% punya `threshold`/`sigBgThreshold`, tidak disentuh) - ini soal pixel TINTA (yang lolos/tidak-
+  transparan) yang sering pudar/abu-abu dari hasil foto, dan user mau **keduanya sekaligus** (gelapkan warna
+  + tebalkan opacity) dalam SATU slider. Diterapkan di `renderEditor()`: `inkFactor = sigInkContrast/100`;
+  kalau pixel tidak transparan dan `inkFactor>0`, RGB dikali `(1-inkFactor)` (dorong ke hitam sebanding jarak
+  dari putih) DAN alpha didorong ke 255 lewat `a + (255-a)*inkFactor`. factor=0 = tidak berubah sama sekali
+  (backward-compatible, default slider 0). Selalu dihitung ulang dari `originalPhotoImageData` tiap render
+  (non-destructive, pola sama persis seperti threshold - tidak ada degradasi kalau slider digeser bolak-
+  balik). TIDAK direset ke 0 saat upload foto baru/Clear - sengaja konsisten dengan `sigBgThreshold` yang
+  juga tidak direset (lihat kode lama, satu-satunya reset eksplisit cuma lewat tombol -/+/slider itu sendiri).
+  **Perlu dites user**: (1) apakah efek gelap+opacity sekaligus ini pas/cukup jadi 1 kontrol, atau user
+  akhirnya mau 2 slider terpisah (gelap vs opacity sendiri-sendiri); (2) interaksi visualnya dengan slider
+  threshold yang sudah ada saat sama-sama digeser.
 
 Belum dibangun (disengaja, bukan bug):
 - Fitur pembayaran bersama (disebut user saat desain Create New Logistic). Baru placeholder di form.
