@@ -62,7 +62,7 @@
             <div class="sig-editor-group-label">Zoom</div>
             <div class="sig-editor-group-controls">
               <button type="button" class="btn btn-secondary doc-zoom-btn" id="sigZoomOutBtn" aria-label="Zoom out"><i class="ti ti-zoom-out"></i></button>
-              <input type="range" id="sigZoomSlider" min="50" max="300" step="5" value="100" style="width:140px;">
+              <input type="range" id="sigZoomSlider" min="50" max="1000" step="5" value="100" style="width:140px;">
               <button type="button" class="btn btn-secondary doc-zoom-btn" id="sigZoomInBtn" aria-label="Zoom in"><i class="ti ti-zoom-in"></i></button>
               <span class="header-sub" id="sigZoomLevel">100%</span>
               <button type="button" class="btn btn-secondary" id="sigZoomResetBtn">Reset</button>
@@ -1383,7 +1383,7 @@
   // #sigEditorCanvasOuter), TIDAK mengubah resolusi pixel canvas asli
   // (editorCanvas.width/height tetap sama) - jadi tidak memengaruhi
   // originalPhotoImageData/erasedMask atau hasil Crop/Erase sama sekali.
-  var ZOOM_MIN = 50, ZOOM_MAX = 300, ZOOM_STEP = 25;
+  var ZOOM_MIN = 50, ZOOM_MAX = 1000, ZOOM_STEP = 25;
   var zoomPercent = 100;
 
   var eraseMode = false, eraseDragging = false;
@@ -1457,7 +1457,7 @@
   zoomOutBtn.addEventListener('click', function () { setZoomPercent(zoomPercent - ZOOM_STEP); });
   zoomResetBtn.addEventListener('click', function () { setZoomPercent(100); });
   // Slider: diatur bebas (bukan cuma step tombol -/+/Reset) - drag ke
-  // persentase berapa pun antara 50%-300% langsung diterapkan.
+  // persentase berapa pun antara 50%-1000% langsung diterapkan.
   zoomSlider.addEventListener('input', function () {
     setZoomPercent(parseInt(zoomSlider.value, 10) || 100, false);
   });
@@ -2041,9 +2041,9 @@
   // declared earlier in this SAME top-level IIFE (both are `var`, both in
   // the same function scope). Whichever block ran last on page load silently
   // overwrote the other's values - in practice the Document Editor's
-  // 0.1/3/0.15 clobbered the Signature Editor's 50/300/25, so dragging the
+  // 0.1/3/0.15 clobbered the Signature Editor's 50/1000/25, so dragging the
   // Signature Editor's zoom SLIDER got clamped to a 0.1-3 range instead of
-  // 50-300 (looked like "zoom shrinks and can't be enlarged again"). Renamed
+  // 50-1000 (looked like "zoom shrinks and can't be enlarged again"). Renamed
   // with a DOC_ prefix so the two blocks can never collide again - if you add
   // more module-scoped constants in this file, give each section's
   // constants a distinct prefix for the same reason.
@@ -2365,7 +2365,7 @@
       // Outside fullscreen the wrap is capped by CSS max-height (75vh), so
       // keep fitting both width AND height like before.
       var availableHeight = docEditorCanvasWrap.clientHeight - 4;
-      if (availableHeight <= 0) availableHeight = Math.max(300, Math.round(window.innerHeight * 0.65));
+      if (availableHeight <= 0) availableHeight = Math.max(1000, Math.round(window.innerHeight * 0.65));
       fit = Math.min(available / page.width, availableHeight / page.height);
     }
     applyZoom(fit);
