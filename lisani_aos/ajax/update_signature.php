@@ -2,8 +2,10 @@
 // lisani_aos/ajax/update_signature.php
 // Edit pola (b): client sudah panggil ajax/verify_password.php lebih dulu
 // (set $_SESSION['aos_reverify_at']), endpoint ini tinggal cek via
-// _require_reverify.php. Hanya mengubah signature_name/signature_date;
-// file di disk tidak disentuh (sama seperti update_document.php).
+// _require_reverify.php. Hanya mengubah signature_name/signature_date/
+// is_main; company_name/origin (menentukan folder di disk) TIDAK bisa
+// diubah di sini (sama seperti activity_title sebelumnya) - lihat
+// PROJECT_NOTES.md §8. File di disk tidak disentuh.
 session_start();
 header('Content-Type: application/json');
 
@@ -30,6 +32,7 @@ function sanitize_signature_name_for_update(string $name): string
 $id = isset($_POST['id']) ? (int) $_POST['id'] : 0;
 $signatureName = sanitize_signature_name_for_update($_POST['signature_name'] ?? '');
 $signatureDate = $_POST['signature_date'] ?? '';
+$isMain = (isset($_POST['is_main']) && $_POST['is_main'] === '1') ? 1 : 0;
 
 if ($id <= 0 || $signatureName === '') {
     echo json_encode(['success' => false, 'message' => 'Missing required fields.']);
@@ -43,9 +46,9 @@ if (!$dateObj) {
 }
 
 $stmt = $lisani_conn->prepare(
-    'UPDATE signature_library SET signature_name = ?, signature_date = ? WHERE id = ?'
+    'UPDATE signature_library SET signature_name = ?, signature_date = ?, is_main = ? WHERE id = ?'
 );
-$stmt->bind_param('ssi', $signatureName, $signatureDate, $id);
+$stmt->bind_param('ssii', $signatureName, $signatureDate, $isMain, $id);
 
 if (!$stmt->execute()) {
     echo json_encode(['success' => false, 'message' => 'Failed to update signature record.']);

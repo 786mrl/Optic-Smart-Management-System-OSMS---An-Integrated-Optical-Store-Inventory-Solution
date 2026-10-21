@@ -2,14 +2,21 @@
 // lisani_aos/ajax/upload_signature.php
 // Document Tools > Signature Library.
 //
-// Storage pattern (16 Okt 2026, berlaku untuk seluruh Document Tools ke
-// depan, bukan cuma Signature Library - lihat PROJECT_NOTES.md §13):
-//   storage/company_activity/{year}/{month}/{judul_kegiatan_slug}/{file}
-// - year/month diambil dari signature_date (tanggal file), bukan tanggal upload.
-// - judul_kegiatan diinput manual oleh user, dan daftarnya disimpan ke
-//   json_file/document_activities.json supaya bisa dipilih ulang lain kali
-//   (lihat ajax/list_activities.php). Nama folder = versi slug dari judul
-//   itu; judul aslinya (apa adanya) disimpan di kolom activity_title.
+// Storage pattern (21 Okt 2026, menggantikan pola company_activity khusus
+// untuk Signature - lihat PROJECT_NOTES.md §8):
+//   storage/signature/{company_name_slug}/{origin_slug}/{file}
+// - company_name & origin diinput manual oleh user di Signature Editor,
+//   disimpan apa adanya (hanya dirapikan whitespace/slash) ke kolom
+//   company_name/origin, DAN dislugify untuk nama foldernya.
+// - Judul Kegiatan/activity_title SUDAH DIHAPUS dari Signature (tabel
+//   signature_library tidak lagi punya kolom ini - lihat
+//   sql/migration_signature_library_company_origin.sql). Document Editor's
+//   own activity_title (json_file/document_activities.json) tidak kena
+//   dampak, itu fitur terpisah.
+// - Signature Library sekarang HANYA bisa diisi lewat Signature Editor
+//   (canvas Upload Photo + Crop + Erase Part + remove background), form
+//   upload manual lama sudah dihapus dari UI - endpoint ini masih menerima
+//   file lewat field 'file' (sekarang selalu PNG blob hasil export canvas).
 session_start();
 header('Content-Type: application/json');
 
@@ -24,9 +31,6 @@ require_once __DIR__ . '/../db_config.php';
 if (!defined('AOS_STORAGE_BASE')) {
     define('AOS_STORAGE_BASE', dirname(__DIR__) . '/storage');
 }
-if (!defined('AOS_ACTIVITIES_JSON')) {
-    define('AOS_ACTIVITIES_JSON', dirname(__DIR__) . '/json_file/document_activities.json');
-}
 
 function sanitize_signature_name(string $name): string
 {
@@ -38,10 +42,10 @@ function sanitize_signature_name(string $name): string
     return trim($name);
 }
 
-// Same cleanup as the signature name, but allows a slightly wider charset
-// (title case, punctuation people actually type in an activity name) since
-// this one is only ever shown to the user, never used raw as a path.
-function sanitize_activity_title(string $name): string
+// Same light cleanup for Company Name / Origin as the old activity title:
+// only shown to the user / stored in the DB, never used raw as a path
+// (slugify_folder() below handles that separately).
+function sanitize_folder_label(string $name): string
 {
     $name = trim($name);
     $name = preg_replace('/[\/\\\\]+/', '-', $name);
@@ -49,64 +53,33 @@ function sanitize_activity_title(string $name): string
     return trim($name);
 }
 
-// Filesystem-safe folder name derived from the activity title.
-function slugify_activity(string $name): string
+// Filesystem-safe folder segment derived from a label.
+function slugify_folder(string $name): string
 {
     $slug = strtolower($name);
     $slug = preg_replace('/[^a-z0-9]+/', '_', $slug);
     $slug = trim($slug, '_');
-    return $slug !== '' ? $slug : 'kegiatan';
-}
-
-// Append $title to the known-activities JSON list if it's not already
-// there (case-insensitive compare). Best-effort: a race here just means a
-// duplicate entry in the dropdown next time, never a hard failure.
-function remember_activity_title(string $title): void
-{
-    $dir = dirname(AOS_ACTIVITIES_JSON);
-    if (!is_dir($dir)) {
-        @mkdir($dir, 0755, true);
-    }
-
-    $activities = [];
-    if (is_file(AOS_ACTIVITIES_JSON)) {
-        $raw = file_get_contents(AOS_ACTIVITIES_JSON);
-        $decoded = json_decode($raw, true);
-        if (is_array($decoded) && isset($decoded['activities']) && is_array($decoded['activities'])) {
-            $activities = $decoded['activities'];
-        }
-    }
-
-    $exists = false;
-    foreach ($activities as $existing) {
-        if (strcasecmp($existing, $title) === 0) {
-            $exists = true;
-            break;
-        }
-    }
-
-    if (!$exists) {
-        $activities[] = $title;
-        sort($activities, SORT_FLAG_CASE | SORT_STRING);
-        @file_put_contents(
-            AOS_ACTIVITIES_JSON,
-            json_encode(['activities' => $activities], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE),
-            LOCK_EX
-        );
-    }
+    return $slug !== '' ? $slug : 'unspecified';
 }
 
 $signatureName = sanitize_signature_name($_POST['signature_name'] ?? '');
 $signatureDate = $_POST['signature_date'] ?? '';
-$activityTitle = sanitize_activity_title($_POST['activity_title'] ?? '');
+$companyName = sanitize_folder_label($_POST['company_name'] ?? '');
+$origin = sanitize_folder_label($_POST['origin'] ?? '');
+$isMain = (isset($_POST['is_main']) && $_POST['is_main'] === '1') ? 1 : 0;
 
 if ($signatureName === '') {
     echo json_encode(['success' => false, 'message' => 'Signature name is required.']);
     exit;
 }
 
-if ($activityTitle === '') {
-    echo json_encode(['success' => false, 'message' => 'Activity title (judul kegiatan) is required.']);
+if ($companyName === '') {
+    echo json_encode(['success' => false, 'message' => 'Company Name is required.']);
+    exit;
+}
+
+if ($origin === '') {
+    echo json_encode(['success' => false, 'message' => 'Origin is required.']);
     exit;
 }
 
@@ -121,11 +94,10 @@ if (!isset($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {
     exit;
 }
 
-$year = $dateObj->format('Y');
-$month = $dateObj->format('m');
-$activitySlug = slugify_activity($activityTitle);
+$companySlug = slugify_folder($companyName);
+$originSlug = slugify_folder($origin);
 
-$relativeDir = "company_activity/{$year}/{$month}/{$activitySlug}";
+$relativeDir = "signature/{$companySlug}/{$originSlug}";
 $targetDir = AOS_STORAGE_BASE . '/' . $relativeDir;
 
 if (!is_dir($targetDir)) {
@@ -164,14 +136,16 @@ $relativePath = $relativeDir . '/' . $storedFilename;
 
 $stmt = $lisani_conn->prepare(
     "INSERT INTO signature_library
-        (signature_name, signature_date, activity_title, original_filename, stored_filename, file_path, file_ext, file_size, uploaded_by)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        (signature_name, signature_date, company_name, origin, is_main, original_filename, stored_filename, file_path, file_ext, file_size, uploaded_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 );
 $stmt->bind_param(
-    'sssssssii',
+    'ssssissssii',
     $signatureName,
     $signatureDate,
-    $activityTitle,
+    $companyName,
+    $origin,
+    $isMain,
     $originalFilename,
     $storedFilename,
     $relativePath,
@@ -185,7 +159,5 @@ if (!$stmt->execute()) {
     echo json_encode(['success' => false, 'message' => 'Failed to save signature record.']);
     exit;
 }
-
-remember_activity_title($activityTitle);
 
 echo json_encode(['success' => true, 'id' => $stmt->insert_id]);

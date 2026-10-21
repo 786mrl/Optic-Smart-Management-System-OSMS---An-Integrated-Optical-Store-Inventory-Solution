@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Oct 18, 2026 at 07:40 AM
+-- Generation Time: Oct 21, 2026 at 12:11 PM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -154,6 +154,14 @@ CREATE TABLE `edited_documents` (
   `uploaded_by` int(11) NOT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `edited_documents`
+--
+
+INSERT INTO `edited_documents` (`id`, `document_name`, `document_date`, `activity_title`, `source_filename`, `signature_ids`, `page_count`, `stored_filename`, `file_path`, `file_ext`, `file_size`, `uploaded_by`, `created_at`) VALUES
+(1, 'ttd try', '2026-10-20', 'try', 'Surat Perjanjian Kerja Sama.pdf', '1', 2, 'ttd_try.pdf', 'company_activity/2026/10/try/edited_documents/ttd_try.pdf', 'pdf', 116854, 1, '2026-10-20 10:42:16'),
+(2, 'ttd try 2', '2026-10-20', 'try', 'Surat Perjanjian Kerja Sama.pdf', '1', 2, 'ttd_try_2.pdf', 'company_activity/2026/10/try/edited_documents/ttd_try_2.pdf', 'pdf', 163225, 1, '2026-10-20 10:52:44');
 
 -- --------------------------------------------------------
 
@@ -400,7 +408,9 @@ CREATE TABLE `signature_library` (
   `id` int(10) UNSIGNED NOT NULL,
   `signature_name` varchar(191) NOT NULL COMMENT 'Final name, pattern: [name]_[year]',
   `signature_date` date NOT NULL,
-  `activity_title` varchar(191) NOT NULL DEFAULT '',
+  `company_name` varchar(191) NOT NULL DEFAULT '',
+  `origin` varchar(191) NOT NULL DEFAULT '',
+  `is_main` tinyint(1) UNSIGNED NOT NULL DEFAULT 0,
   `original_filename` varchar(255) NOT NULL,
   `stored_filename` varchar(255) NOT NULL COMMENT 'Actual filename on disk',
   `file_path` varchar(255) NOT NULL COMMENT 'Relative path under storage/document_tools/signatures/',
@@ -410,6 +420,14 @@ CREATE TABLE `signature_library` (
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `signature_library`
+--
+
+INSERT INTO `signature_library` (`id`, `signature_name`, `signature_date`, `company_name`, `origin`, `is_main`, `original_filename`, `stored_filename`, `file_path`, `file_ext`, `file_size`, `uploaded_by`, `created_at`, `updated_at`) VALUES
+(1, 'lisani_2026', '2026-10-18', '', '', 0, 'signature.png', 'lisani_2026.png', 'company_activity/2026/10/sign/lisani_2026.png', 'png', 63899, 1, '2026-10-18 12:47:06', '2026-10-18 12:47:06'),
+(2, 'lisani with duty stamp_2026', '2026-10-18', '', '', 0, 'signature.png', 'lisani_with_duty_stamp_2026.png', 'company_activity/2026/10/sign/lisani_with_duty_stamp_2026.png', 'png', 120956, 1, '2026-10-18 12:47:39', '2026-10-18 12:47:39');
 
 -- --------------------------------------------------------
 
@@ -478,7 +496,7 @@ CREATE TABLE `users` (
 --
 
 INSERT INTO `users` (`user_id`, `username`, `password_hash`, `role`, `is_approved`, `created_at`, `last_login`, `session_token`, `session_expires`) VALUES
-(1, 'Rais786', '$2y$10$QciWVGPK9aGHjy05rBoXgOWfCAesfocowc0vt4QCMHVeVzsVuGDS6', 'admin', 1, '2026-09-10 21:34:57', '2026-10-18 05:59:55', 'b53f20f3742b4115b3e747ef56d2b16b270682b4adaf2e6f1fde3101206c902f', '2026-10-18 13:59:55');
+(1, 'Rais786', '$2y$10$QciWVGPK9aGHjy05rBoXgOWfCAesfocowc0vt4QCMHVeVzsVuGDS6', 'admin', 1, '2026-09-10 21:34:57', '2026-10-21 12:04:08', 'b1ec00b8b7cb6ad1b65524f2686d2fa23b5c7fb23af3f992958e2387e8259d26', '2026-10-21 20:04:08');
 
 --
 -- Indexes for dumped tables
@@ -636,7 +654,8 @@ ALTER TABLE `logistic_movements`
 ALTER TABLE `signature_library`
   ADD PRIMARY KEY (`id`),
   ADD KEY `idx_signature_date` (`signature_date`),
-  ADD KEY `idx_activity_title` (`activity_title`);
+  ADD KEY `idx_company_origin` (`company_name`,`origin`),
+  ADD KEY `idx_is_main` (`is_main`);
 
 --
 -- Indexes for table `transactions`
@@ -706,7 +725,7 @@ ALTER TABLE `disbursement_categories`
 -- AUTO_INCREMENT for table `edited_documents`
 --
 ALTER TABLE `edited_documents`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
 -- AUTO_INCREMENT for table `investors`
@@ -778,7 +797,7 @@ ALTER TABLE `logistic_movements`
 -- AUTO_INCREMENT for table `signature_library`
 --
 ALTER TABLE `signature_library`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
 -- AUTO_INCREMENT for table `transactions`

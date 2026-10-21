@@ -6,24 +6,30 @@
 // that wrapper (outside it) so it still renders while the section is
 // display:none.
 //
-// Signature Library below is a straight copy of the Settings > Company
-// Documents pattern (settings_content.php + ajax/*_document.php) - only the
-// storage folder (storage/document_tools/signatures/ instead of
-// storage/company/legal_document/) and the table (signature_library instead
-// of company_documents) are new. All element ids are prefixed "sig"/
-// "docTools" (instead of "doc"/"settings") because both this file and
+// Signature Library (merged with the former Signature Editor, 21 Okt 2026 -
+// see the comment right above #cardSignatures below) started as a straight
+// copy of the Settings > Company Documents pattern (settings_content.php +
+// ajax/*_document.php); table is signature_library, storage is now
+// storage/signature/{company_name}/{origin}/. All element ids are prefixed
+// "sig"/"docTools" (instead of "doc"/"settings") because both this file and
 // settings_content.php are included on the same page at once, and ids must
 // stay unique across the whole document.
 ?>
 <div class="menu-section" data-section="document_tools" style="display:none;">
 <div class="settings-stack">
 
-  <!-- Signature Library -->
+  <!-- Signature Library (merged with the former Signature Editor - 21 Okt
+       2026: separate manual-upload form removed, editor is now the ONLY
+       way to add a signature; its canvas gained Crop + Erase Part, the
+       Draw tab was dropped, and Remove White Background got +/- step
+       buttons. Storage/grouping changed from Judul Kegiatan to
+       Company Name + Origin, plus a per-signature "Main" flag. See
+       PROJECT_NOTES.md §8. -->
   <div class="card doctools-collapsible" id="cardSignatures">
     <button type="button" class="doctools-collapsible-header" id="cardSignaturesHeader">
       <div>
         <div class="empty-title" style="text-align:left;">Signature Library</div>
-        <div class="header-sub">Upload, download, and manage signature images (PNG/JPG)</div>
+        <div class="header-sub">Upload a photo, crop/erase/remove its background, then save straight to the library</div>
       </div>
       <i class="ti ti-chevron-down doctools-collapsible-chevron"></i>
     </button>
@@ -31,39 +37,103 @@
     <div class="doctools-collapsible-body" id="cardSignaturesBody">
       <div class="doctools-collapsible-body-inner">
 
-        <form id="sigUploadForm" class="settings-form">
+        <div class="sig-canvas-outer" id="sigEditorCanvasOuter">
+          <div class="sig-canvas-zoom-wrap" id="sigEditorCanvasWrap">
+            <canvas id="sigEditorCanvas" width="600" height="220"></canvas>
+          </div>
+        </div>
+
+        <!-- 21 Okt 2026: toolbar dirapikan jadi grup-grup terpisah (card kecil
+             per grup, label di atas tiap grup) - sebelumnya Upload/Crop/Erase/
+             Remove Background semua nyampur jadi satu baris panjang. Tiap
+             grup punya header kecil ("Photo", "Crop", "Erase Part", "Remove
+             White Background") supaya jelas tombol mana milik fitur apa. -->
+        <div class="sig-editor-toolbar">
+
+          <div class="sig-editor-group">
+            <div class="sig-editor-group-label">Photo</div>
+            <div class="sig-editor-group-controls">
+              <input type="file" class="input" id="sigEditorFileInput" accept="image/*" style="max-width:220px;">
+              <button type="button" class="btn btn-secondary" id="sigClearUploadBtn"><i class="ti ti-trash"></i> Clear All</button>
+            </div>
+          </div>
+
+          <div class="sig-editor-group">
+            <div class="sig-editor-group-label">Zoom</div>
+            <div class="sig-editor-group-controls">
+              <button type="button" class="btn btn-secondary doc-zoom-btn" id="sigZoomOutBtn" aria-label="Zoom out"><i class="ti ti-zoom-out"></i></button>
+              <input type="range" id="sigZoomSlider" min="50" max="300" step="5" value="100" style="width:140px;">
+              <button type="button" class="btn btn-secondary doc-zoom-btn" id="sigZoomInBtn" aria-label="Zoom in"><i class="ti ti-zoom-in"></i></button>
+              <span class="header-sub" id="sigZoomLevel">100%</span>
+              <button type="button" class="btn btn-secondary" id="sigZoomResetBtn">Reset</button>
+            </div>
+          </div>
+
+          <div class="sig-editor-group">
+            <div class="sig-editor-group-label">Crop</div>
+            <div class="sig-editor-group-controls">
+              <button type="button" class="btn btn-secondary" id="sigCropBtn"><i class="ti ti-crop"></i> Crop</button>
+              <button type="button" class="btn btn-secondary" id="sigCropUndoBtn" style="display:none;"><i class="ti ti-arrow-back-up"></i> Undo Crop</button>
+            </div>
+            <div class="sig-editor-group-controls" id="sigEditorCropControls" style="display:none;">
+              <span class="header-sub">Drag to select the crop area, then drag its edges/corners to adjust, or drag inside to move it.</span>
+              <button type="button" class="btn btn-primary" id="sigCropApplyBtn">Apply Crop</button>
+              <button type="button" class="btn btn-secondary" id="sigCropCancelBtn">Cancel Crop</button>
+            </div>
+          </div>
+
+          <div class="sig-editor-group">
+            <div class="sig-editor-group-label">Erase Part</div>
+            <div class="sig-editor-group-controls">
+              <button type="button" class="btn btn-secondary" id="sigEraseBtn"><i class="ti ti-eraser"></i> Erase Part</button>
+              <button type="button" class="btn btn-secondary" id="sigEraseUndoBtn" style="display:none;"><i class="ti ti-arrow-back-up"></i> Undo Erase</button>
+              <label class="label" id="sigEraseSizeLabel" style="margin:0;display:none;">Eraser Size</label>
+              <input type="range" id="sigEraseSize" min="4" max="40" value="12" style="display:none;width:90px;">
+            </div>
+          </div>
+
+          <div class="sig-editor-group">
+            <div class="sig-editor-group-label">Remove White Background</div>
+            <div class="sig-editor-group-controls">
+              <button type="button" class="btn btn-secondary doc-zoom-btn" id="sigThresholdMinusBtn" aria-label="Lower threshold">-</button>
+              <input type="range" id="sigBgThreshold" min="0" max="255" value="235" style="width:140px;">
+              <button type="button" class="btn btn-secondary doc-zoom-btn" id="sigThresholdPlusBtn" aria-label="Raise threshold">+</button>
+              <span class="header-sub" id="sigBgThresholdValue">235</span>
+            </div>
+          </div>
+
+        </div>
+
+        <form id="sigEditorSaveForm" class="settings-form" style="margin-top:18px;">
           <div class="settings-form-grid">
             <div class="form-group">
               <label class="label">Signature Name</label>
-              <input type="text" class="input" id="sigNameInput" placeholder="e.g. John Doe" required>
+              <input type="text" class="input" id="sigEditorNameInput" placeholder="e.g. John Doe" required>
             </div>
             <div class="form-group">
               <label class="label">Date</label>
-              <input type="date" class="input" id="sigDateInput" required>
+              <input type="date" class="input" id="sigEditorDateInput" required>
             </div>
             <div class="form-group">
-              <label class="label">File</label>
-              <input type="file" class="input" id="sigFileInput" accept="image/*,.pdf" required>
+              <label class="label">Company Name</label>
+              <input type="text" class="input" id="sigEditorCompanyInput" placeholder="e.g. PT Lisani Optik" required>
+            </div>
+            <div class="form-group">
+              <label class="label">Origin</label>
+              <input type="text" class="input" id="sigEditorOriginInput" placeholder="e.g. Jakarta, Indonesia" required>
             </div>
           </div>
+          <div class="header-sub" id="sigEditorCompanyHint" style="display:none;">Menentukan folder penyimpanan di storage/signature/.../, tidak bisa diubah lewat Edit.</div>
 
-          <div class="form-group">
-            <label class="label">Judul Kegiatan</label>
-            <input type="text" class="input" id="sigActivityInput" list="sigActivityOptions"
-                   placeholder="Pilih yang sudah ada, atau ketik judul baru" required>
-            <div class="header-sub" id="sigActivityHint" style="display:none;">Menentukan folder penyimpanan di storage/company_activity/.../</div>
-          </div>
+          <label class="doc-editor-checkbox" style="margin-top:10px;">
+            <input type="checkbox" id="sigEditorMainCheckbox"> Set as Main signature (always on top of the list)
+          </label>
 
-          <div class="form-group">
-            <label class="label">Final File Name (edit before saving)</label>
-            <input type="text" class="input" id="sigFinalNameInput" placeholder="Will be generated automatically">
-          </div>
-
-          <div id="sigUploadMessage" class="settings-message"></div>
+          <div id="sigEditorMessage" class="settings-message"></div>
 
           <div class="settings-form-actions">
             <button type="button" class="btn btn-secondary" id="sigCancelEditBtn" style="display:none;">Cancel Edit</button>
-            <button type="submit" class="btn btn-primary" id="sigSubmitBtn">Upload Signature</button>
+            <button type="submit" class="btn btn-primary" id="sigEditorSaveBtn">Save to Library</button>
           </div>
         </form>
 
@@ -82,74 +152,6 @@
         <div class="doc-accordion" id="sigAccordionList">
           <div class="empty-sub">Loading...</div>
         </div>
-
-      </div>
-    </div>
-  </div>
-
-  <!-- Signature Editor -->
-  <div class="card doctools-collapsible" id="cardSigEditor">
-    <button type="button" class="doctools-collapsible-header" id="cardSigEditorHeader">
-      <div>
-        <div class="empty-title" style="text-align:left;">Signature Editor</div>
-        <div class="header-sub">Draw a signature, or upload a photo and remove its white background, then save straight to the library</div>
-      </div>
-      <i class="ti ti-chevron-down doctools-collapsible-chevron"></i>
-    </button>
-
-    <div class="doctools-collapsible-body" id="cardSigEditorBody">
-      <div class="doctools-collapsible-body-inner">
-
-        <div class="sig-editor-tabs">
-          <button type="button" class="sig-editor-tab active" id="sigEditorTabDraw" data-mode="draw">
-            <i class="ti ti-pencil"></i> Draw
-          </button>
-          <button type="button" class="sig-editor-tab" id="sigEditorTabUpload" data-mode="upload">
-            <i class="ti ti-upload"></i> Upload Photo
-          </button>
-        </div>
-
-        <div class="sig-editor-canvas-wrap">
-          <canvas id="sigEditorCanvas" width="600" height="220"></canvas>
-        </div>
-
-        <div class="sig-editor-controls" id="sigEditorDrawControls">
-          <label class="label" style="margin:0;">Pen Size</label>
-          <input type="range" id="sigPenSize" min="1" max="12" value="3">
-          <button type="button" class="btn btn-secondary" id="sigClearBtn"><i class="ti ti-eraser"></i> Clear</button>
-        </div>
-
-        <div class="sig-editor-controls" id="sigEditorUploadControls" style="display:none;">
-          <input type="file" class="input" id="sigEditorFileInput" accept="image/*" style="max-width:260px;">
-          <label class="label" style="margin:0;">Remove White Background</label>
-          <input type="range" id="sigBgThreshold" min="0" max="255" value="235">
-          <span class="header-sub" id="sigBgThresholdValue">235</span>
-          <button type="button" class="btn btn-secondary" id="sigClearUploadBtn"><i class="ti ti-eraser"></i> Clear</button>
-        </div>
-
-        <form id="sigEditorSaveForm" class="settings-form" style="margin-top:18px;">
-          <div class="settings-form-grid">
-            <div class="form-group">
-              <label class="label">Signature Name</label>
-              <input type="text" class="input" id="sigEditorNameInput" placeholder="e.g. John Doe" required>
-            </div>
-            <div class="form-group">
-              <label class="label">Date</label>
-              <input type="date" class="input" id="sigEditorDateInput" required>
-            </div>
-            <div class="form-group">
-              <label class="label">Judul Kegiatan</label>
-              <input type="text" class="input" id="sigEditorActivityInput" list="sigActivityOptions"
-                     placeholder="Pilih yang sudah ada, atau ketik judul baru" required>
-            </div>
-          </div>
-
-          <div id="sigEditorMessage" class="settings-message"></div>
-
-          <div class="settings-form-actions">
-            <button type="submit" class="btn btn-primary" id="sigEditorSaveBtn">Save to Library</button>
-          </div>
-        </form>
 
       </div>
     </div>
@@ -441,36 +443,63 @@
   }
   .doc-accordion-actions .btn { display: inline-flex; align-items: center; gap: 6px; width: auto; }
 
-  .sig-editor-tabs { display: flex; gap: 8px; margin-bottom: 14px; }
-  .sig-editor-tab {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 8px 14px;
+  /* #6 (21 Okt 2026): group wrapper per Company Name di atas
+     .doc-accordion-item biasa - sengaja dibuat mandiri (bukan nested
+     accordion-item) supaya bisa dibuka/ditutup independen tanpa exclusive
+     seperti openSigItem()/closeSigItem() per item di dalamnya. */
+  .doc-group {
     border-radius: var(--radius-md, 10px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    background: transparent;
-    color: inherit;
-    cursor: pointer;
-    font: inherit;
-    font-size: 13px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    overflow: hidden;
   }
-  .sig-editor-tab.active { background: var(--primary, #6c5ce7); border-color: transparent; color: #fff; }
+  .doc-group + .doc-group { margin-top: 10px; }
+  .doc-group-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    cursor: pointer;
+    background: rgba(255, 255, 255, 0.04);
+  }
+  .doc-group-title { flex: 1; font-weight: 700; display: flex; align-items: center; }
+  .doc-group-chevron { font-size: 18px; transition: transform 0.2s ease; flex-shrink: 0; }
+  .doc-group.open .doc-group-chevron { transform: rotate(180deg); }
+  .doc-group-body { max-height: 0; overflow: hidden; transition: max-height 0.2s ease; }
+  .doc-group-body .doc-accordion { padding: 10px; }
 
-  .sig-editor-canvas-wrap {
+  /* 21 Okt 2026: nama class diganti dari .sig-editor-canvas-wrap jadi
+     .sig-canvas-outer/.sig-canvas-zoom-wrap (dedicated, bukan reuse) -
+     .sig-editor-canvas-wrap masih dipakai docEditorCanvasWrap di Document
+     Editor (digabung dengan .doc-editor-canvas-wrap miliknya sendiri),
+     jadi sengaja TIDAK dipakai ulang di sini supaya style Zoom/background
+     putih baru TIDAK bocor ke kanvas Document Editor (lihat gotcha soal
+     reuse nama class tanpa scope di PROJECT_NOTES.md §3).
+     #sigEditorCanvasOuter adalah viewport yang scroll (untuk Zoom In/Out) -
+     .sig-canvas-zoom-wrap di dalamnya yang diperbesar via width (%), BUKAN
+     transform:scale, supaya koordinat pointer tetap bisa dihitung lewat
+     getBoundingClientRect() seperti biasa di canvasPointFromEvent() (scale
+     canvas.width/rect.width otomatis menyesuaikan, tidak perlu ubah logic
+     crop/erase sama sekali). */
+  .sig-canvas-outer {
     width: 100%;
     max-width: 600px;
+    overflow: auto;
     border: 1px dashed rgba(255, 255, 255, 0.18);
     border-radius: var(--radius-md, 10px);
-    overflow: hidden;
-    /* Checkerboard so transparent areas of the signature are visible. */
+  }
+  .sig-canvas-zoom-wrap {
+    width: 100%;
+    transition: width 0.15s ease;
+    /* 21 Okt 2026: diganti dari checkerboard gelap ke putih polos + garis
+       kotak-kotak halus (bukan checkerboard transparansi lagi) - kebanyakan
+       ttd warnanya hitam, jadi butuh latar terang biar jelas saat crop/erase.
+       Garis kotak-kotak di sini murni garis bantu visual (grid), BUKAN
+       indikator transparansi lagi. */
+    background-color: #ffffff;
     background-image:
-      linear-gradient(45deg, rgba(255,255,255,0.06) 25%, transparent 25%),
-      linear-gradient(-45deg, rgba(255,255,255,0.06) 25%, transparent 25%),
-      linear-gradient(45deg, transparent 75%, rgba(255,255,255,0.06) 75%),
-      linear-gradient(-45deg, transparent 75%, rgba(255,255,255,0.06) 75%);
+      linear-gradient(to right, rgba(0,0,0,0.06) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(0,0,0,0.06) 1px, transparent 1px);
     background-size: 20px 20px;
-    background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
   }
   #sigEditorCanvas { display: block; width: 100%; height: auto; touch-action: none; cursor: crosshair; }
 
@@ -481,6 +510,42 @@
     gap: 12px;
     margin-top: 12px;
   }
+  .sig-editor-controls .btn.active { background: var(--primary, #6c5ce7); border-color: transparent; color: #fff; }
+
+  /* 21 Okt 2026: toolbar canvas dirapikan jadi kartu-kartu kecil per grup
+     (Photo/Zoom/Crop/Erase Part/Remove White Background) - gantinya baris
+     tombol panjang yang nyampur semua fitur jadi satu. */
+  .sig-editor-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 12px;
+  }
+  .sig-editor-group {
+    flex: 1 1 220px;
+    min-width: 200px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: var(--radius-md, 10px);
+    background: rgba(255, 255, 255, 0.02);
+    padding: 10px 12px;
+  }
+  .sig-editor-group-label {
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted, #9a9a9a);
+    margin-bottom: 8px;
+  }
+  .sig-editor-group-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+  .sig-editor-group-controls + .sig-editor-group-controls { margin-top: 8px; }
+  .sig-editor-group-controls .btn { display: inline-flex; align-items: center; gap: 6px; width: auto; }
+  .sig-editor-group-controls .btn.active { background: var(--primary, #6c5ce7); border-color: transparent; color: #fff; }
 
   .doc-editor-toolbar {
     display: flex;
@@ -574,12 +639,15 @@
      grid, so it stays a thin strip under the canvas rather than competing
      with it for height. */
   .doc-editor-fullscreen #docEditorSaveForm {
-    flex: 0 0 auto;
-    margin-top: 10px !important;
+    display: none !important;
   }
-  .doc-editor-fullscreen #docEditorSaveForm .settings-form-grid {
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-    gap: 10px;
+  /* Signature picker ("Insert Signature") must out-stack the fullscreen
+     workspace itself (z-index 2147483647 above) - it's reparented to
+     <body> right after the workspace in setFullscreen() so DOM order also
+     puts it on top, but the explicit z-index here is what actually wins
+     the stacking fight against theme.css's normal .modal-overlay z-index. */
+  #docSigPickerOverlay.modal-overlay {
+    z-index: 2147483647 !important;
   }
   .doc-editor-checkbox {
     display: inline-flex;
@@ -795,16 +863,28 @@
   }
 
   /* =====================================================================
-     SIGNATURE LIBRARY
+     SIGNATURE LIBRARY (merged with the former Signature Editor, 21 Okt
+     2026 - see the HTML comment above #cardSignatures)
      ===================================================================== */
-  var sigNameInput = document.getElementById('sigNameInput');
-  var sigDateInput = document.getElementById('sigDateInput');
-  var sigFileInput = document.getElementById('sigFileInput');
-  var sigActivityInput = document.getElementById('sigActivityInput');
-  var sigFinalNameInput = document.getElementById('sigFinalNameInput');
-  var sigUploadForm = document.getElementById('sigUploadForm');
-  var sigUploadMessage = document.getElementById('sigUploadMessage');
-  var sigSubmitBtn = document.getElementById('sigSubmitBtn');
+  var sigEditorNameInput = document.getElementById('sigEditorNameInput');
+  var sigEditorDateInput = document.getElementById('sigEditorDateInput');
+  // #4 (21 Okt 2026): default Date = hari ini saat kartu baru dibuka (bukan
+  // cuma saat reset setelah Save/Cancel - lihat todayDateInputValue() di
+  // bawah untuk versi yang dipakai ulang oleh resetSignatureForm()).
+  (function setInitialDateDefault() {
+    var now = new Date();
+    var y = now.getFullYear();
+    var m = String(now.getMonth() + 1).padStart(2, '0');
+    var d = String(now.getDate()).padStart(2, '0');
+    sigEditorDateInput.value = y + '-' + m + '-' + d;
+  })();
+  var sigEditorCompanyInput = document.getElementById('sigEditorCompanyInput');
+  var sigEditorOriginInput = document.getElementById('sigEditorOriginInput');
+  var sigEditorCompanyHint = document.getElementById('sigEditorCompanyHint');
+  var sigEditorMainCheckbox = document.getElementById('sigEditorMainCheckbox');
+  var sigEditorSaveForm = document.getElementById('sigEditorSaveForm');
+  var sigEditorMessage = document.getElementById('sigEditorMessage');
+  var sigEditorSaveBtn = document.getElementById('sigEditorSaveBtn');
   var sigCancelEditBtn = document.getElementById('sigCancelEditBtn');
   var sigAccordionList = document.getElementById('sigAccordionList');
   var sigSelectAll = document.getElementById('sigSelectAll');
@@ -813,7 +893,6 @@
 
   var editingSignatureId = null;
   var signaturesCache = [];
-  var finalNameManuallyEdited = false;
 
   function yearFromDateInput(value) {
     if (!value) return CURRENT_YEAR_FALLBACK;
@@ -821,32 +900,30 @@
     return isNaN(y) ? CURRENT_YEAR_FALLBACK : y;
   }
 
-  function updateFinalNamePreview() {
-    if (finalNameManuallyEdited) return;
-    var name = sigNameInput.value.trim();
-    var year = yearFromDateInput(sigDateInput.value);
-    sigFinalNameInput.value = name ? (name + '_' + year) : '';
+  // #4 (21 Okt 2026): default Date ke hari ini (local time, bukan UTC) tiap
+  // form di-reset (buka pertama kali / Save selesai / Cancel Edit) - hanya
+  // dipakai saat ADD, openEditSignatureForm() tetap override dengan
+  // sig.signature_date yang sesungguhnya.
+  function todayDateInputValue() {
+    var now = new Date();
+    var y = now.getFullYear();
+    var m = String(now.getMonth() + 1).padStart(2, '0');
+    var d = String(now.getDate()).padStart(2, '0');
+    return y + '-' + m + '-' + d;
   }
 
-  sigNameInput.addEventListener('input', updateFinalNamePreview);
-  sigDateInput.addEventListener('input', updateFinalNamePreview);
-  sigFinalNameInput.addEventListener('input', function () {
-    finalNameManuallyEdited = true;
-  });
-
   function resetSignatureForm() {
-    sigUploadForm.reset();
-    finalNameManuallyEdited = false;
-    sigFinalNameInput.value = '';
+    sigEditorSaveForm.reset();
     editingSignatureId = null;
-    sigFileInput.required = true;
-    sigFileInput.closest('.form-group').style.display = '';
-    sigActivityInput.disabled = false;
-    sigActivityInput.required = true;
-    sigSubmitBtn.textContent = 'Upload Signature';
+    sigEditorCompanyInput.disabled = false;
+    sigEditorOriginInput.disabled = false;
+    sigEditorCompanyHint.style.display = 'none';
+    sigEditorSaveBtn.textContent = 'Save to Library';
     sigCancelEditBtn.style.display = 'none';
-    sigUploadMessage.textContent = '';
-    sigUploadMessage.className = 'settings-message';
+    sigEditorMessage.textContent = '';
+    sigEditorMessage.className = 'settings-message';
+    clearEditorCanvas();
+    sigEditorDateInput.value = todayDateInputValue();
   }
 
   sigCancelEditBtn.addEventListener('click', resetSignatureForm);
@@ -869,10 +946,21 @@
       });
   }
 
+  // #6: tiap item buka/tutup, grup induknya (.doc-group-body) juga perlu
+  // re-sync max-height, sama seperti gotcha #2 di PROJECT_NOTES §3 (isi
+  // collapsible berubah saat terbuka -> re-sync max-height-nya).
+  function resyncParentGroupHeight(item) {
+    var group = item.closest('.doc-group');
+    if (!group || !group.classList.contains('open')) return;
+    var groupBody = group.querySelector('.doc-group-body');
+    groupBody.style.maxHeight = groupBody.scrollHeight + 'px';
+  }
+
   function closeSigItem(item) {
     item.classList.remove('open');
     var body = item.querySelector('.doc-accordion-body');
     body.style.maxHeight = null;
+    resyncParentGroupHeight(item);
   }
 
   function openSigItem(item) {
@@ -882,8 +970,138 @@
     item.classList.add('open');
     var body = item.querySelector('.doc-accordion-body');
     body.style.maxHeight = body.scrollHeight + 'px';
+    resyncParentGroupHeight(item);
   }
 
+  // #6 (21 Okt 2026): satu signature accordion-item, dipisah dari
+  // renderSignatureList() supaya bisa dipakai ulang per grup Company.
+  function buildSigAccordionItem(sig) {
+    var item = document.createElement('div');
+    item.className = 'doc-accordion-item';
+
+    var header = document.createElement('div');
+    header.className = 'doc-accordion-header';
+
+    var cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.className = 'sig-row-checkbox';
+    cb.value = sig.id;
+    cb.addEventListener('click', function (e) { e.stopPropagation(); });
+    cb.addEventListener('change', updateSigSelectionUI);
+
+    var name = document.createElement('div');
+    name.className = 'doc-accordion-name';
+    name.textContent = sig.signature_name;
+    if (sig.is_main == 1 || sig.is_main === true) {
+      var mainBadge = document.createElement('span');
+      mainBadge.className = 'badge badge-success';
+      mainBadge.style.marginLeft = '8px';
+      mainBadge.textContent = 'MAIN';
+      name.appendChild(mainBadge);
+    }
+
+    var chevron = document.createElement('i');
+    chevron.className = 'ti ti-chevron-down doc-accordion-chevron';
+
+    header.appendChild(cb);
+    header.appendChild(name);
+    header.appendChild(chevron);
+    header.addEventListener('click', function () {
+      if (item.classList.contains('open')) {
+        closeSigItem(item);
+      } else {
+        openSigItem(item);
+      }
+      refreshOpenHeight(document.getElementById('cardSignatures'));
+    });
+
+    var body = document.createElement('div');
+    body.className = 'doc-accordion-body';
+
+    var bodyInner = document.createElement('div');
+    bodyInner.className = 'doc-accordion-body-inner';
+
+    var rowDate = document.createElement('div');
+    rowDate.className = 'doc-meta-row';
+    rowDate.innerHTML = '<span class="doc-meta-label">Date</span><span>' +
+      escapeHtml(sig.signature_date) + '</span>';
+
+    var rowCompany = document.createElement('div');
+    rowCompany.className = 'doc-meta-row';
+    rowCompany.innerHTML = '<span class="doc-meta-label">Company Name</span><span>' +
+      escapeHtml(sig.company_name) + '</span>';
+
+    var rowOrigin = document.createElement('div');
+    rowOrigin.className = 'doc-meta-row';
+    rowOrigin.innerHTML = '<span class="doc-meta-label">Origin</span><span>' +
+      escapeHtml(sig.origin) + '</span>';
+
+    var rowFile = document.createElement('div');
+    rowFile.className = 'doc-meta-row';
+    rowFile.innerHTML = '<span class="doc-meta-label">Original File</span><span>' +
+      escapeHtml(sig.original_filename) + '</span>';
+
+    var actions = document.createElement('div');
+    actions.className = 'doc-accordion-actions';
+
+    var btnDownload = document.createElement('a');
+    btnDownload.href = 'ajax/download_signature.php?id=' + sig.id;
+    btnDownload.className = 'btn btn-secondary';
+    btnDownload.innerHTML = '<i class="ti ti-download"></i> Download';
+
+    var btnEdit = document.createElement('button');
+    btnEdit.type = 'button';
+    btnEdit.className = 'btn btn-secondary';
+    btnEdit.innerHTML = '<i class="ti ti-pencil"></i> Edit';
+    btnEdit.addEventListener('click', function (e) {
+      e.stopPropagation();
+      openEditSignatureForm(sig);
+    });
+
+    var btnDelete = document.createElement('button');
+    btnDelete.type = 'button';
+    btnDelete.className = 'btn btn-danger';
+    btnDelete.innerHTML = '<i class="ti ti-trash"></i> Delete';
+    btnDelete.addEventListener('click', function (e) {
+      e.stopPropagation();
+      confirmDeleteSignature(sig);
+    });
+
+    actions.appendChild(btnDownload);
+    actions.appendChild(btnEdit);
+    actions.appendChild(btnDelete);
+
+    bodyInner.appendChild(rowDate);
+    bodyInner.appendChild(rowCompany);
+    bodyInner.appendChild(rowOrigin);
+    bodyInner.appendChild(rowFile);
+    bodyInner.appendChild(actions);
+    body.appendChild(bodyInner);
+
+    item.appendChild(header);
+    item.appendChild(body);
+    return item;
+  }
+
+  function closeSigGroup(group) {
+    group.classList.remove('open');
+    var body = group.querySelector('.doc-group-body');
+    body.style.maxHeight = null;
+  }
+
+  function openSigGroup(group) {
+    group.classList.add('open');
+    var body = group.querySelector('.doc-group-body');
+    body.style.maxHeight = body.scrollHeight + 'px';
+  }
+
+  // #6 (21 Okt 2026): list dikelompokkan per Company Name - header grup
+  // collapsible (dibuka/ditutup independen per grup, bukan exclusive
+  // seperti accordion item di dalamnya), signature-signature di bawahnya.
+  // Urutan grup & urutan dalam grup MENGIKUTI urutan dari signaturesCache
+  // apa adanya (sudah terurut is_main DESC, signature_date DESC dari
+  // list_signatures.php) - group-by di sini cuma mengelompokkan ulang
+  // tampilannya, TIDAK mengubah urutan/prioritas Main yang sudah ada.
   function renderSignatureList() {
     sigAccordionList.innerHTML = '';
     if (signaturesCache.length === 0) {
@@ -892,99 +1110,68 @@
       return;
     }
 
+    var groupOrder = [];
+    var groupMap = {};
     signaturesCache.forEach(function (sig) {
-      var item = document.createElement('div');
-      item.className = 'doc-accordion-item';
+      var key = sig.company_name || '';
+      if (!groupMap[key]) {
+        groupMap[key] = [];
+        groupOrder.push(key);
+      }
+      groupMap[key].push(sig);
+    });
 
-      var header = document.createElement('div');
-      header.className = 'doc-accordion-header';
+    groupOrder.forEach(function (companyName, groupIndex) {
+      var sigsInGroup = groupMap[companyName];
 
-      var cb = document.createElement('input');
-      cb.type = 'checkbox';
-      cb.className = 'sig-row-checkbox';
-      cb.value = sig.id;
-      cb.addEventListener('click', function (e) { e.stopPropagation(); });
-      cb.addEventListener('change', updateSigSelectionUI);
+      var group = document.createElement('div');
+      group.className = 'doc-group';
 
-      var name = document.createElement('div');
-      name.className = 'doc-accordion-name';
-      name.textContent = sig.signature_name;
+      var groupHeader = document.createElement('div');
+      groupHeader.className = 'doc-group-header';
 
-      var chevron = document.createElement('i');
-      chevron.className = 'ti ti-chevron-down doc-accordion-chevron';
+      var groupTitle = document.createElement('div');
+      groupTitle.className = 'doc-group-title';
+      groupTitle.textContent = companyName || '(No Company Name)';
 
-      header.appendChild(cb);
-      header.appendChild(name);
-      header.appendChild(chevron);
-      header.addEventListener('click', function () {
-        if (item.classList.contains('open')) {
-          closeSigItem(item);
+      var groupCount = document.createElement('span');
+      groupCount.className = 'badge';
+      groupCount.style.marginLeft = '8px';
+      groupCount.textContent = sigsInGroup.length;
+      groupTitle.appendChild(groupCount);
+
+      var groupChevron = document.createElement('i');
+      groupChevron.className = 'ti ti-chevron-down doc-group-chevron';
+
+      groupHeader.appendChild(groupTitle);
+      groupHeader.appendChild(groupChevron);
+      groupHeader.addEventListener('click', function () {
+        if (group.classList.contains('open')) {
+          closeSigGroup(group);
         } else {
-          openSigItem(item);
+          openSigGroup(group);
         }
         refreshOpenHeight(document.getElementById('cardSignatures'));
       });
 
-      var body = document.createElement('div');
-      body.className = 'doc-accordion-body';
+      var groupBody = document.createElement('div');
+      groupBody.className = 'doc-group-body';
 
-      var bodyInner = document.createElement('div');
-      bodyInner.className = 'doc-accordion-body-inner';
+      var groupBodyInner = document.createElement('div');
+      groupBodyInner.className = 'doc-accordion';
 
-      var rowDate = document.createElement('div');
-      rowDate.className = 'doc-meta-row';
-      rowDate.innerHTML = '<span class="doc-meta-label">Date</span><span>' +
-        escapeHtml(sig.signature_date) + '</span>';
-
-      var rowActivity = document.createElement('div');
-      rowActivity.className = 'doc-meta-row';
-      rowActivity.innerHTML = '<span class="doc-meta-label">Kegiatan</span><span>' +
-        escapeHtml(sig.activity_title) + '</span>';
-
-      var rowFile = document.createElement('div');
-      rowFile.className = 'doc-meta-row';
-      rowFile.innerHTML = '<span class="doc-meta-label">Original File</span><span>' +
-        escapeHtml(sig.original_filename) + '</span>';
-
-      var actions = document.createElement('div');
-      actions.className = 'doc-accordion-actions';
-
-      var btnDownload = document.createElement('a');
-      btnDownload.href = 'ajax/download_signature.php?id=' + sig.id;
-      btnDownload.className = 'btn btn-secondary';
-      btnDownload.innerHTML = '<i class="ti ti-download"></i> Download';
-
-      var btnEdit = document.createElement('button');
-      btnEdit.type = 'button';
-      btnEdit.className = 'btn btn-secondary';
-      btnEdit.innerHTML = '<i class="ti ti-pencil"></i> Edit';
-      btnEdit.addEventListener('click', function (e) {
-        e.stopPropagation();
-        openEditSignatureForm(sig);
+      sigsInGroup.forEach(function (sig) {
+        groupBodyInner.appendChild(buildSigAccordionItem(sig));
       });
 
-      var btnDelete = document.createElement('button');
-      btnDelete.type = 'button';
-      btnDelete.className = 'btn btn-danger';
-      btnDelete.innerHTML = '<i class="ti ti-trash"></i> Delete';
-      btnDelete.addEventListener('click', function (e) {
-        e.stopPropagation();
-        confirmDeleteSignature(sig);
-      });
+      groupBody.appendChild(groupBodyInner);
+      group.appendChild(groupHeader);
+      group.appendChild(groupBody);
+      sigAccordionList.appendChild(group);
 
-      actions.appendChild(btnDownload);
-      actions.appendChild(btnEdit);
-      actions.appendChild(btnDelete);
-
-      bodyInner.appendChild(rowDate);
-      bodyInner.appendChild(rowActivity);
-      bodyInner.appendChild(rowFile);
-      bodyInner.appendChild(actions);
-      body.appendChild(bodyInner);
-
-      item.appendChild(header);
-      item.appendChild(body);
-      sigAccordionList.appendChild(item);
+      // First group open by default so the list doesn't look empty on load;
+      // the rest start collapsed (same spirit as single accordion items).
+      if (groupIndex === 0) openSigGroup(group);
     });
 
     updateSigSelectionUI();
@@ -1017,95 +1204,23 @@
 
   function openEditSignatureForm(sig) {
     editingSignatureId = sig.id;
-    sigNameInput.value = sig.signature_name;
-    sigDateInput.value = sig.signature_date;
-    finalNameManuallyEdited = true;
-    sigFinalNameInput.value = sig.signature_name;
-    sigFileInput.required = false;
-    sigFileInput.closest('.form-group').style.display = 'none';
-    // Judul Kegiatan menentukan folder di disk - belum ada fitur pindah
-    // folder, jadi saat edit cuma ditampilkan, tidak bisa diubah di sini.
-    sigActivityInput.value = sig.activity_title;
-    sigActivityInput.disabled = true;
-    sigActivityInput.required = false;
-    sigSubmitBtn.textContent = 'Update Signature';
+    sigEditorNameInput.value = sig.signature_name;
+    sigEditorDateInput.value = sig.signature_date;
+    // Company Name/Origin menentukan folder di disk - belum ada fitur
+    // pindah folder, jadi saat edit cuma ditampilkan, tidak bisa diubah.
+    sigEditorCompanyInput.value = sig.company_name;
+    sigEditorOriginInput.value = sig.origin;
+    sigEditorCompanyInput.disabled = true;
+    sigEditorOriginInput.disabled = true;
+    sigEditorCompanyHint.style.display = 'block';
+    sigEditorMainCheckbox.checked = (sig.is_main == 1 || sig.is_main === true);
+    clearEditorCanvas();
+    sigEditorSaveBtn.textContent = 'Update Signature';
     sigCancelEditBtn.style.display = 'inline-flex';
-    sigUploadMessage.textContent = '';
-    sigNameInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    sigEditorMessage.textContent = '';
+    sigEditorMessage.className = 'settings-message';
+    sigEditorNameInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
-
-  sigUploadForm.addEventListener('submit', function (e) {
-    e.preventDefault();
-    sigUploadMessage.textContent = '';
-    sigUploadMessage.className = 'settings-message';
-
-    if (editingSignatureId) {
-      var sigId = editingSignatureId;
-      openConfirmModal(
-        'Confirm Edit',
-        'You are about to update this signature\'s name/date. Enter your password to continue.',
-        function () {
-          var fd = new FormData();
-          fd.append('id', sigId);
-          fd.append('signature_name', sigFinalNameInput.value.trim() || sigNameInput.value.trim());
-          fd.append('signature_date', sigDateInput.value);
-
-          fetch('ajax/update_signature.php', { method: 'POST', body: fd })
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-              if (!data.success) {
-                confirmModalError(data.message || 'Failed to update signature.');
-                return;
-              }
-              hideModal(confirmOverlay);
-              resetSignatureForm();
-              loadSignatures();
-            })
-            .catch(function () { confirmModalError('Network error.'); });
-        }
-      );
-      return;
-    }
-
-    // Create (no password needed).
-    if (!sigFileInput.files || sigFileInput.files.length === 0) {
-      sigUploadMessage.textContent = 'Please choose a file.';
-      sigUploadMessage.className = 'settings-message settings-message-error';
-      return;
-    }
-
-    if (!sigActivityInput.value.trim()) {
-      sigUploadMessage.textContent = 'Please fill in Judul Kegiatan.';
-      sigUploadMessage.className = 'settings-message settings-message-error';
-      return;
-    }
-
-    var fd = new FormData();
-    fd.append('signature_name', sigFinalNameInput.value.trim() || sigNameInput.value.trim());
-    fd.append('signature_date', sigDateInput.value);
-    fd.append('activity_title', sigActivityInput.value.trim());
-    fd.append('file', sigFileInput.files[0]);
-
-    sigSubmitBtn.disabled = true;
-    fetch('ajax/upload_signature.php', { method: 'POST', body: fd })
-      .then(function (r) { return r.json(); })
-      .then(function (data) {
-        sigSubmitBtn.disabled = false;
-        if (!data.success) {
-          sigUploadMessage.textContent = data.message || 'Failed to upload signature.';
-          sigUploadMessage.className = 'settings-message settings-message-error';
-          return;
-        }
-        resetSignatureForm();
-        loadSignatures();
-        loadActivities();
-      })
-      .catch(function () {
-        sigSubmitBtn.disabled = false;
-        sigUploadMessage.textContent = 'Network error.';
-        sigUploadMessage.className = 'settings-message settings-message-error';
-      });
-  });
 
   function confirmDeleteSignature(sig) {
     openConfirmModal(
@@ -1170,60 +1285,160 @@
   });
 
   /* =====================================================================
-     SIGNATURE EDITOR (canvas) - draw a signature freehand, or upload a
-     photo of one and strip its (usually white/paper) background, then
-     save straight to the library via the SAME ajax/upload_signature.php
-     endpoint used above (the canvas is just exported as a PNG Blob and
-     sent as the 'file' field).
-     ===================================================================== */
+     SIGNATURE EDITOR (canvas) - upload a photo of a signature, Crop to
+     the relevant area, Erase Part to wipe stray marks, and remove the
+     white/paper background with a threshold slider (+/- step buttons
+     alongside it), then save straight to the library via
+     ajax/upload_signature.php (canvas exported as a PNG Blob, sent as
+     the 'file' field). The "Draw" tab that used to live here was
+     dropped entirely (21 Okt 2026 - user said it's not needed).
+     This same form/canvas doubles as the Edit form for an existing
+     signature's name/date/Main flag - see openEditSignatureForm() above
+     and the submit handler below. ---- */
   var editorCanvas = document.getElementById('sigEditorCanvas');
   var editorCtx = editorCanvas.getContext('2d');
-  var tabDraw = document.getElementById('sigEditorTabDraw');
-  var tabUpload = document.getElementById('sigEditorTabUpload');
-  var drawControls = document.getElementById('sigEditorDrawControls');
-  var uploadControls = document.getElementById('sigEditorUploadControls');
-  var penSizeInput = document.getElementById('sigPenSize');
-  var clearBtn = document.getElementById('sigClearBtn');
   var editorFileInput = document.getElementById('sigEditorFileInput');
+  var cropBtn = document.getElementById('sigCropBtn');
+  var cropUndoBtn = document.getElementById('sigCropUndoBtn');
+  var cropControls = document.getElementById('sigEditorCropControls');
+  var cropApplyBtn = document.getElementById('sigCropApplyBtn');
+  var cropCancelBtn = document.getElementById('sigCropCancelBtn');
+  var eraseBtn = document.getElementById('sigEraseBtn');
+  var eraseUndoBtn = document.getElementById('sigEraseUndoBtn');
+  var eraseSizeLabel = document.getElementById('sigEraseSizeLabel');
+  var eraseSizeInput = document.getElementById('sigEraseSize');
   var bgThresholdInput = document.getElementById('sigBgThreshold');
   var bgThresholdValue = document.getElementById('sigBgThresholdValue');
+  var thresholdMinusBtn = document.getElementById('sigThresholdMinusBtn');
+  var thresholdPlusBtn = document.getElementById('sigThresholdPlusBtn');
   var clearUploadBtn = document.getElementById('sigClearUploadBtn');
-  var editorSaveForm = document.getElementById('sigEditorSaveForm');
-  var editorNameInput = document.getElementById('sigEditorNameInput');
-  var editorDateInput = document.getElementById('sigEditorDateInput');
-  var editorActivityInput = document.getElementById('sigEditorActivityInput');
-  var editorMessage = document.getElementById('sigEditorMessage');
-  var editorSaveBtn = document.getElementById('sigEditorSaveBtn');
+  var canvasOuter = document.getElementById('sigEditorCanvasOuter');
+  var canvasWrap = document.getElementById('sigEditorCanvasWrap');
+  var zoomInBtn = document.getElementById('sigZoomInBtn');
+  var zoomOutBtn = document.getElementById('sigZoomOutBtn');
+  var zoomResetBtn = document.getElementById('sigZoomResetBtn');
+  var zoomSlider = document.getElementById('sigZoomSlider');
+  var zoomLevelLabel = document.getElementById('sigZoomLevel');
 
-  var editorMode = 'draw';
-  var isDrawing = false;
+  var DEFAULT_CANVAS_W = 600, DEFAULT_CANVAS_H = 220;
   var hasContent = false;
-  // Full-resolution pixel data of the last uploaded photo (before any
-  // threshold is applied), so moving the slider always re-derives from the
-  // original instead of degrading an already-processed image.
+  // Full-resolution pixel data of the current (post-crop) photo, before
+  // threshold/erase are applied, so both can always re-derive from this
+  // instead of degrading an already-processed image.
   var originalPhotoImageData = null;
+  // Parallel 1-byte-per-pixel mask (same w*h as originalPhotoImageData):
+  // 1 = user erased this pixel with "Erase Part", kept transparent no
+  // matter what the threshold slider says.
+  var erasedMask = null;
+
+  var cropMode = false, cropDragging = false, cropStart = null, cropRect = null;
+  // #2 (21 Okt 2026): crop box sekarang bisa diedit lewat 8 resize handle
+  // (sudut+tepi) atau digeser (drag dari tengah) SEBELUM Apply Crop - bukan
+  // cuma gambar ulang kotak baru tiap drag. cropHandleHit menyimpan handle
+  // mana yang sedang di-drag ('nw','n','ne','e','se','s','sw','w','move')
+  // atau null kalau sedang menggambar kotak baru dari nol.
+  var cropHandleHit = null;
+  var cropDragOffset = null; // dipakai saat handle === 'move': {dx, dy} dari pojok kiri-atas kotak
+  var CROP_HANDLE_SIZE = 10; // radius deteksi handle dalam px canvas
+  // Snapshot untuk Undo Crop (#2): simpan originalPhotoImageData+erasedMask+
+  // ukuran canvas SEBELUM Apply Crop memotongnya, supaya bisa dikembalikan
+  // 1 langkah. Hanya menyimpan 1 langkah terakhir (bukan history berlapis) -
+  // Crop jarang dipakai berkali-kali berturut-turut seperti Erase, jadi
+  // tetap 1 langkah (beda sengaja dari Erase yang sekarang history stack).
+  var cropUndoSnapshot = null;
+
+  // Zoom In/Out (21 Okt 2026) - murni ukuran TAMPILAN canvas (CSS width%
+  // dari .sig-canvas-zoom-wrap di dalam viewport scroll
+  // #sigEditorCanvasOuter), TIDAK mengubah resolusi pixel canvas asli
+  // (editorCanvas.width/height tetap sama) - jadi tidak memengaruhi
+  // originalPhotoImageData/erasedMask atau hasil Crop/Erase sama sekali.
+  var ZOOM_MIN = 50, ZOOM_MAX = 300, ZOOM_STEP = 25;
+  var zoomPercent = 100;
+
+  var eraseMode = false, eraseDragging = false;
+  // #3 (21 Okt 2026, direvisi lagi 21 Okt 2026 jadi HISTORY STACK - user
+  // minta Undo Erase bisa dipakai berkali-kali, bukan cuma 1 langkah):
+  // tiap stroke brush (dari pointerdown sampai pointerup/leave) push 1
+  // snapshot erasedMask SEBELUM stroke itu ke eraseUndoStack. Tiap klik
+  // Undo Erase pop 1 snapshot dan pasang balik sebagai erasedMask, jadi
+  // bisa mundur selangkah demi selangkah sampai stack habis. Direset
+  // (dikosongkan) oleh clearEditorCanvas() dan saat upload foto baru -
+  // tidak masuk akal mundur ke stroke dari foto yang berbeda.
+  var eraseUndoStack = [];
+
+  function resetCanvasSize() {
+    editorCanvas.width = DEFAULT_CANVAS_W;
+    editorCanvas.height = DEFAULT_CANVAS_H;
+  }
 
   function clearEditorCanvas() {
+    resetCanvasSize();
     editorCtx.clearRect(0, 0, editorCanvas.width, editorCanvas.height);
     hasContent = false;
     originalPhotoImageData = null;
-  }
-
-  function setEditorMode(mode) {
-    editorMode = mode;
-    tabDraw.classList.toggle('active', mode === 'draw');
-    tabUpload.classList.toggle('active', mode === 'upload');
-    drawControls.style.display = mode === 'draw' ? 'flex' : 'none';
-    uploadControls.style.display = mode === 'upload' ? 'flex' : 'none';
-    clearEditorCanvas();
+    erasedMask = null;
     editorFileInput.value = '';
+    cropUndoSnapshot = null;
+    eraseUndoStack = [];
+    updateCropUndoBtn();
+    updateEraseUndoBtn();
+    exitCropMode();
+    setEraseMode(false);
+    setZoomPercent(100);
   }
 
-  tabDraw.addEventListener('click', function () { setEditorMode('draw'); });
-  tabUpload.addEventListener('click', function () { setEditorMode('upload'); });
+  function updateCropUndoBtn() {
+    cropUndoBtn.style.display = cropUndoSnapshot ? 'inline-flex' : 'none';
+  }
+  // #3: tombol Undo Erase tetap kelihatan selama stack masih ada isinya
+  // (bisa diklik berkali-kali), baru hilang saat stack kosong.
+  function updateEraseUndoBtn() {
+    eraseUndoBtn.style.display = eraseUndoStack.length > 0 ? 'inline-flex' : 'none';
+  }
 
-  /* ---- Draw mode: freehand strokes directly on a transparent canvas,
-     so no background-removal step is needed for drawn signatures. ---- */
+  /* ---- Zoom In/Out: ubah width% .sig-canvas-zoom-wrap di dalam viewport
+     scroll, canvas pixel asli tidak berubah (lihat komentar di deklarasi
+     zoomPercent di atas). canvasPointFromEvent() otomatis tetap akurat
+     karena masih pakai rasio canvas.width/rect.width. ---- */
+  // syncSlider=false dipakai saat dipanggil DARI slider's own 'input' event
+  // itu sendiri, supaya tidak muter balik set value ke slider yang sedang
+  // digeser user (percuma, tapi aman) - selain itu (tombol -/+/Reset, atau
+  // clearEditorCanvas()) selalu true supaya slider ikut pindah posisinya.
+  function setZoomPercent(pct, syncSlider) {
+    zoomPercent = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, pct));
+    canvasWrap.style.width = zoomPercent + '%';
+    zoomLevelLabel.textContent = zoomPercent + '%';
+    if (syncSlider !== false) zoomSlider.value = zoomPercent;
+  }
+  zoomInBtn.addEventListener('click', function () { setZoomPercent(zoomPercent + ZOOM_STEP); });
+  zoomOutBtn.addEventListener('click', function () { setZoomPercent(zoomPercent - ZOOM_STEP); });
+  zoomResetBtn.addEventListener('click', function () { setZoomPercent(100); });
+  // Slider: diatur bebas (bukan cuma step tombol -/+/Reset) - drag ke
+  // persentase berapa pun antara 50%-300% langsung diterapkan.
+  zoomSlider.addEventListener('input', function () {
+    setZoomPercent(parseInt(zoomSlider.value, 10) || 100, false);
+  });
+
+  /* ---- Render = threshold (near-white -> transparent) + erase mask,
+     always re-derived from originalPhotoImageData so neither step
+     degrades the image when repeated. ---- */
+  function renderEditor() {
+    if (!originalPhotoImageData) return;
+    var threshold = parseInt(bgThresholdInput.value, 10);
+    var src = originalPhotoImageData.data;
+    var w = originalPhotoImageData.width, h = originalPhotoImageData.height;
+    var out = editorCtx.createImageData(w, h);
+    var dst = out.data;
+    for (var i = 0, p = 0; i < src.length; i += 4, p++) {
+      var r = src[i], g = src[i + 1], b = src[i + 2], a = src[i + 3];
+      dst[i] = r; dst[i + 1] = g; dst[i + 2] = b;
+      var transparent = (r >= threshold && g >= threshold && b >= threshold) ||
+        (erasedMask && erasedMask[p] === 1);
+      dst[i + 3] = transparent ? 0 : a;
+    }
+    editorCtx.putImageData(out, 0, 0);
+  }
+
   function canvasPointFromEvent(e) {
     var rect = editorCanvas.getBoundingClientRect();
     var scaleX = editorCanvas.width / rect.width;
@@ -1234,150 +1449,427 @@
     };
   }
 
-  editorCanvas.addEventListener('pointerdown', function (e) {
-    if (editorMode !== 'draw') return;
-    isDrawing = true;
-    hasContent = true;
-    var p = canvasPointFromEvent(e);
-    editorCtx.beginPath();
-    editorCtx.moveTo(p.x, p.y);
-    editorCanvas.setPointerCapture(e.pointerId);
-  });
-
-  editorCanvas.addEventListener('pointermove', function (e) {
-    if (editorMode !== 'draw' || !isDrawing) return;
-    var p = canvasPointFromEvent(e);
-    editorCtx.lineCap = 'round';
-    editorCtx.lineJoin = 'round';
-    editorCtx.lineWidth = parseInt(penSizeInput.value, 10) || 3;
-    editorCtx.strokeStyle = '#000000';
-    editorCtx.lineTo(p.x, p.y);
-    editorCtx.stroke();
-  });
-
-  function stopDrawing() { isDrawing = false; }
-  editorCanvas.addEventListener('pointerup', stopDrawing);
-  editorCanvas.addEventListener('pointercancel', stopDrawing);
-  editorCanvas.addEventListener('pointerleave', stopDrawing);
-
-  clearBtn.addEventListener('click', clearEditorCanvas);
-  clearUploadBtn.addEventListener('click', function () {
-    clearEditorCanvas();
-    editorFileInput.value = '';
-  });
-
-  /* ---- Upload Photo mode: draw the photo onto the canvas (fit/center),
-     keep its raw pixels in originalPhotoImageData, then derive a
-     transparent version from that on every slider move. ---- */
+  /* ---- Upload Photo: draw the photo onto the canvas (fit/center),
+     keep its raw pixels in originalPhotoImageData. ---- */
   editorFileInput.addEventListener('change', function () {
     var file = editorFileInput.files && editorFileInput.files[0];
     if (!file) return;
 
     var img = new Image();
     img.onload = function () {
-      clearEditorCanvas();
+      resetCanvasSize();
+      exitCropMode();
+      setEraseMode(false);
       var cw = editorCanvas.width, ch = editorCanvas.height;
+      editorCtx.clearRect(0, 0, cw, ch);
       var scale = Math.min(cw / img.width, ch / img.height);
       var w = img.width * scale, h = img.height * scale;
       var x = (cw - w) / 2, y = (ch - h) / 2;
       editorCtx.drawImage(img, x, y, w, h);
       originalPhotoImageData = editorCtx.getImageData(0, 0, cw, ch);
+      erasedMask = new Uint8Array(cw * ch);
       hasContent = true;
-      applyBackgroundThreshold(parseInt(bgThresholdInput.value, 10));
+      cropUndoSnapshot = null;
+      eraseUndoStack = [];
+      updateCropUndoBtn();
+      updateEraseUndoBtn();
+      renderEditor();
       URL.revokeObjectURL(img.src);
     };
     img.src = URL.createObjectURL(file);
   });
 
-  function applyBackgroundThreshold(threshold) {
-    if (!originalPhotoImageData) return;
-    var src = originalPhotoImageData.data;
-    var out = editorCtx.createImageData(originalPhotoImageData.width, originalPhotoImageData.height);
-    var dst = out.data;
-    for (var i = 0; i < src.length; i += 4) {
-      var r = src[i], g = src[i + 1], b = src[i + 2], a = src[i + 3];
-      dst[i] = r; dst[i + 1] = g; dst[i + 2] = b;
-      // Near-white (paper/background) and above the threshold -> transparent.
-      dst[i + 3] = (r >= threshold && g >= threshold && b >= threshold) ? 0 : a;
-    }
-    editorCtx.putImageData(out, 0, 0);
-  }
+  clearUploadBtn.addEventListener('click', clearEditorCanvas);
 
+  /* ---- #4: Remove White Background threshold, with +/- step buttons
+     alongside the slider so it can be nudged without dragging. ---- */
   bgThresholdInput.addEventListener('input', function () {
     bgThresholdValue.textContent = bgThresholdInput.value;
-    applyBackgroundThreshold(parseInt(bgThresholdInput.value, 10));
+    renderEditor();
+  });
+  function stepThreshold(delta) {
+    var next = (parseInt(bgThresholdInput.value, 10) || 0) + delta;
+    next = Math.max(0, Math.min(255, next));
+    bgThresholdInput.value = next;
+    bgThresholdValue.textContent = next;
+    renderEditor();
+  }
+  thresholdMinusBtn.addEventListener('click', function () { stepThreshold(-5); });
+  thresholdPlusBtn.addEventListener('click', function () { stepThreshold(5); });
+
+  /* ---- #3: Erase Part - brush that permanently marks pixels transparent
+     via erasedMask, independent of the threshold slider. Undo Erase (21 Okt
+     2026) restores the mask to how it was right before the last stroke. ---- */
+  function setEraseMode(on) {
+    eraseMode = on;
+    eraseBtn.classList.toggle('active', on);
+    eraseSizeLabel.style.display = on ? 'inline' : 'none';
+    eraseSizeInput.style.display = on ? 'inline-block' : 'none';
+    if (on) exitCropMode();
+  }
+  eraseBtn.addEventListener('click', function () { setEraseMode(!eraseMode); });
+
+  function eraseAt(x, y) {
+    if (!erasedMask) return;
+    var w = editorCanvas.width, h = editorCanvas.height;
+    var radius = parseInt(eraseSizeInput.value, 10) || 10;
+    var minX = Math.max(0, Math.floor(x - radius)), maxX = Math.min(w - 1, Math.ceil(x + radius));
+    var minY = Math.max(0, Math.floor(y - radius)), maxY = Math.min(h - 1, Math.ceil(y + radius));
+    for (var py = minY; py <= maxY; py++) {
+      for (var px = minX; px <= maxX; px++) {
+        var dx = px - x, dy = py - y;
+        if (dx * dx + dy * dy <= radius * radius) erasedMask[py * w + px] = 1;
+      }
+    }
+  }
+
+  // #3: pop 1 snapshot dari stack tiap klik - bisa dipakai berkali-kali
+  // berturut-turut sampai stack kosong (mundur ke kondisi sebelum Erase
+  // Part pertama kali dipakai di foto ini).
+  eraseUndoBtn.addEventListener('click', function () {
+    if (eraseUndoStack.length === 0 || !erasedMask) return;
+    erasedMask = eraseUndoStack.pop();
+    updateEraseUndoBtn();
+    renderEditor();
   });
 
-  /* ---- Save to Library: export canvas as PNG, reuse upload_signature.php ---- */
-  editorSaveForm.addEventListener('submit', function (e) {
-    e.preventDefault();
-    editorMessage.textContent = '';
-    editorMessage.className = 'settings-message';
+  /* ---- #2: Crop - drag a rectangle, then adjust it via 8 resize handles
+     (corners/edges) or move it by dragging inside, before Apply Crop trims
+     the canvas (and both originalPhotoImageData + erasedMask) down to that
+     area. Undo Crop (21 Okt 2026) restores the pre-crop snapshot. ---- */
+  function enterCropMode() {
+    if (!hasContent) return;
+    cropMode = true;
+    cropRect = null;
+    setEraseMode(false);
+    cropBtn.classList.add('active');
+    cropControls.style.display = 'flex';
+  }
+  function exitCropMode() {
+    cropMode = false;
+    cropDragging = false;
+    cropHandleHit = null;
+    cropDragOffset = null;
+    cropStart = null;
+    cropRect = null;
+    cropBtn.classList.remove('active');
+    cropControls.style.display = 'none';
+    editorCanvas.style.cursor = 'crosshair';
+    if (hasContent) renderEditor();
+  }
+  cropBtn.addEventListener('click', function () {
+    if (cropMode) { exitCropMode(); } else { enterCropMode(); }
+  });
+  cropCancelBtn.addEventListener('click', exitCropMode);
 
-    if (!hasContent) {
-      editorMessage.textContent = editorMode === 'draw'
-        ? 'Please draw a signature first.'
-        : 'Please upload a photo first.';
-      editorMessage.className = 'settings-message settings-message-error';
+  cropUndoBtn.addEventListener('click', function () {
+    if (!cropUndoSnapshot) return;
+    editorCanvas.width = cropUndoSnapshot.w;
+    editorCanvas.height = cropUndoSnapshot.h;
+    originalPhotoImageData = cropUndoSnapshot.imageData;
+    erasedMask = cropUndoSnapshot.mask;
+    cropUndoSnapshot = null;
+    updateCropUndoBtn();
+    exitCropMode();
+    renderEditor();
+  });
+
+  function normalizedCropRect() {
+    if (!cropRect) return null;
+    var x = Math.min(cropRect.x, cropRect.x + cropRect.w);
+    var y = Math.min(cropRect.y, cropRect.y + cropRect.h);
+    return { x: x, y: y, w: Math.abs(cropRect.w), h: Math.abs(cropRect.h) };
+  }
+
+  // Returns which handle (if any) the point is over, for an existing
+  // cropRect: 'nw'|'n'|'ne'|'e'|'se'|'s'|'sw'|'w' (edge/corner resize) or
+  // 'move' (inside the box, not near an edge).
+  function hitTestCropHandle(p) {
+    var r = normalizedCropRect();
+    if (!r) return null;
+    var hs = CROP_HANDLE_SIZE;
+    var left = r.x, right = r.x + r.w, top = r.y, bottom = r.y + r.h;
+    var midX = r.x + r.w / 2, midY = r.y + r.h / 2;
+    var corners = [
+      { id: 'nw', x: left, y: top }, { id: 'ne', x: right, y: top },
+      { id: 'sw', x: left, y: bottom }, { id: 'se', x: right, y: bottom },
+      { id: 'n', x: midX, y: top }, { id: 's', x: midX, y: bottom },
+      { id: 'w', x: left, y: midY }, { id: 'e', x: right, y: midY },
+    ];
+    for (var i = 0; i < corners.length; i++) {
+      var c = corners[i];
+      if (Math.abs(p.x - c.x) <= hs && Math.abs(p.y - c.y) <= hs) return c.id;
+    }
+    if (p.x >= left && p.x <= right && p.y >= top && p.y <= bottom) return 'move';
+    return null;
+  }
+
+  function cursorForHandle(h) {
+    switch (h) {
+      case 'nw': case 'se': return 'nwse-resize';
+      case 'ne': case 'sw': return 'nesw-resize';
+      case 'n': case 's': return 'ns-resize';
+      case 'e': case 'w': return 'ew-resize';
+      case 'move': return 'move';
+      default: return 'crosshair';
+    }
+  }
+
+  function clampCropRectToCanvas() {
+    if (!cropRect) return;
+    var r = normalizedCropRect();
+    r.x = Math.max(0, Math.min(r.x, editorCanvas.width - 1));
+    r.y = Math.max(0, Math.min(r.y, editorCanvas.height - 1));
+    r.w = Math.max(4, Math.min(r.w, editorCanvas.width - r.x));
+    r.h = Math.max(4, Math.min(r.h, editorCanvas.height - r.y));
+    cropRect = r;
+  }
+
+  function drawCropOverlay() {
+    renderEditor();
+    var r = normalizedCropRect();
+    if (!r) return;
+    editorCtx.save();
+    editorCtx.strokeStyle = '#6c5ce7';
+    editorCtx.lineWidth = 2;
+    editorCtx.setLineDash([6, 4]);
+    editorCtx.strokeRect(r.x, r.y, r.w, r.h);
+    editorCtx.setLineDash([]);
+    // Resize handles, drawn as small filled squares on every corner/edge
+    // midpoint so the user can see exactly where to grab.
+    editorCtx.fillStyle = '#6c5ce7';
+    var hs = 7;
+    var left = r.x, right = r.x + r.w, top = r.y, bottom = r.y + r.h;
+    var midX = r.x + r.w / 2, midY = r.y + r.h / 2;
+    var pts = [[left, top], [right, top], [left, bottom], [right, bottom], [midX, top], [midX, bottom], [left, midY], [right, midY]];
+    pts.forEach(function (pt) {
+      editorCtx.fillRect(pt[0] - hs / 2, pt[1] - hs / 2, hs, hs);
+    });
+    editorCtx.restore();
+  }
+
+  cropApplyBtn.addEventListener('click', function () {
+    var r = normalizedCropRect();
+    if (!r || r.w < 4 || r.h < 4 || !originalPhotoImageData) {
+      exitCropMode();
+      return;
+    }
+    // Snapshot BEFORE cropping so Undo Crop can restore it.
+    cropUndoSnapshot = {
+      w: editorCanvas.width,
+      h: editorCanvas.height,
+      imageData: originalPhotoImageData,
+      mask: erasedMask,
+    };
+    updateCropUndoBtn();
+
+    var w = editorCanvas.width;
+    var srcData = originalPhotoImageData.data;
+    var sx = Math.round(r.x), sy = Math.round(r.y);
+    var newW = Math.round(r.w), newH = Math.round(r.h);
+    var newImgData = editorCtx.createImageData(newW, newH);
+    var newMask = new Uint8Array(newW * newH);
+    for (var row = 0; row < newH; row++) {
+      for (var col = 0; col < newW; col++) {
+        var srcX = sx + col, srcY = sy + row;
+        var srcIdx = (srcY * w + srcX) * 4;
+        var dstIdx = (row * newW + col) * 4;
+        newImgData.data[dstIdx] = srcData[srcIdx];
+        newImgData.data[dstIdx + 1] = srcData[srcIdx + 1];
+        newImgData.data[dstIdx + 2] = srcData[srcIdx + 2];
+        newImgData.data[dstIdx + 3] = srcData[srcIdx + 3];
+        newMask[row * newW + col] = erasedMask[srcY * w + srcX];
+      }
+    }
+    editorCanvas.width = newW;
+    editorCanvas.height = newH;
+    originalPhotoImageData = newImgData;
+    erasedMask = newMask;
+    exitCropMode();
+    renderEditor();
+  });
+
+  /* ---- Shared pointer handlers: branch by mode (crop draw/resize/move,
+     or erase brush); plain Upload mode with neither active does nothing. ---- */
+  editorCanvas.addEventListener('pointerdown', function (e) {
+    if (!hasContent) return;
+    var p = canvasPointFromEvent(e);
+    if (cropMode) {
+      var hit = cropRect ? hitTestCropHandle(p) : null;
+      if (hit) {
+        // Adjusting an existing box: resize from a handle, or move it.
+        cropHandleHit = hit;
+        cropDragging = true;
+        var r = normalizedCropRect();
+        if (hit === 'move') {
+          cropDragOffset = { dx: p.x - r.x, dy: p.y - r.y, w: r.w, h: r.h };
+        } else {
+          cropStart = { x: r.x, y: r.y, w: r.w, h: r.h };
+        }
+      } else {
+        // No box yet, or clicked outside it: start a brand-new box.
+        cropHandleHit = null;
+        cropDragging = true;
+        cropStart = p;
+        cropRect = { x: p.x, y: p.y, w: 0, h: 0 };
+      }
+      editorCanvas.setPointerCapture(e.pointerId);
+      drawCropOverlay();
+    } else if (eraseMode) {
+      // New stroke starting: push the mask-before-this-stroke onto the
+      // undo stack (once per stroke, not per dab), so each Undo Erase
+      // click reverts exactly one whole stroke, repeatable.
+      if (erasedMask) {
+        eraseUndoStack.push(erasedMask.slice());
+        // Batasi stack supaya tidak numpuk memori tanpa batas kalau user
+        // erase berkali-kali sekali duduk - 30 langkah mundur sudah lebih
+        // dari cukup untuk kebutuhan koreksi normal.
+        if (eraseUndoStack.length > 30) eraseUndoStack.shift();
+      }
+      updateEraseUndoBtn();
+      eraseDragging = true;
+      eraseAt(p.x, p.y);
+      renderEditor();
+      editorCanvas.setPointerCapture(e.pointerId);
+    }
+  });
+
+  editorCanvas.addEventListener('pointermove', function (e) {
+    var p = canvasPointFromEvent(e);
+    if (cropMode && cropDragging) {
+      if (cropHandleHit === 'move' && cropDragOffset) {
+        var newX = p.x - cropDragOffset.dx, newY = p.y - cropDragOffset.dy;
+        cropRect = { x: newX, y: newY, w: cropDragOffset.w, h: cropDragOffset.h };
+        clampCropRectToCanvas();
+      } else if (cropHandleHit && cropStart) {
+        // Resize from the grabbed handle; opposite edge(s) stay fixed.
+        var left = cropStart.x, top = cropStart.y, right = cropStart.x + cropStart.w, bottom = cropStart.y + cropStart.h;
+        if (cropHandleHit.indexOf('w') !== -1) left = p.x;
+        if (cropHandleHit.indexOf('e') !== -1) right = p.x;
+        if (cropHandleHit.indexOf('n') !== -1) top = p.y;
+        if (cropHandleHit.indexOf('s') !== -1) bottom = p.y;
+        cropRect = { x: left, y: top, w: right - left, h: bottom - top };
+      } else if (cropStart) {
+        // Drawing a brand-new box from scratch.
+        cropRect = {
+          x: Math.min(cropStart.x, p.x),
+          y: Math.min(cropStart.y, p.y),
+          w: Math.abs(p.x - cropStart.x),
+          h: Math.abs(p.y - cropStart.y),
+        };
+      }
+      drawCropOverlay();
+    } else if (cropMode && !cropDragging) {
+      var hit = cropRect ? hitTestCropHandle(p) : null;
+      editorCanvas.style.cursor = cursorForHandle(hit);
+    } else if (eraseMode && eraseDragging) {
+      eraseAt(p.x, p.y);
+      renderEditor();
+    }
+  });
+
+  function stopPointerAction() {
+    if (cropDragging && cropRect) clampCropRectToCanvas();
+    cropDragging = false;
+    cropHandleHit = null;
+    cropDragOffset = null;
+    eraseDragging = false;
+  }
+  editorCanvas.addEventListener('pointerup', stopPointerAction);
+  editorCanvas.addEventListener('pointercancel', stopPointerAction);
+  editorCanvas.addEventListener('pointerleave', stopPointerAction);
+
+  /* ---- Save to Library / Update: create via upload_signature.php when
+     adding a brand-new signature (canvas content required), or update
+     name/date/Main via update_signature.php when editingSignatureId is
+     set (no canvas/file involved - same restriction as before: Company
+     Name/Origin can't be changed here because they determine the folder
+     on disk). ---- */
+  sigEditorSaveForm.addEventListener('submit', function (e) {
+    e.preventDefault();
+    sigEditorMessage.textContent = '';
+    sigEditorMessage.className = 'settings-message';
+
+    if (editingSignatureId) {
+      var sigId = editingSignatureId;
+      openConfirmModal(
+        'Confirm Edit',
+        'You are about to update this signature\'s name/date/Main flag. Enter your password to continue.',
+        function () {
+          var fd = new FormData();
+          fd.append('id', sigId);
+          fd.append('signature_name', sigEditorNameInput.value.trim());
+          fd.append('signature_date', sigEditorDateInput.value);
+          fd.append('is_main', sigEditorMainCheckbox.checked ? '1' : '0');
+
+          fetch('ajax/update_signature.php', { method: 'POST', body: fd })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+              if (!data.success) {
+                confirmModalError(data.message || 'Failed to update signature.');
+                return;
+              }
+              hideModal(confirmOverlay);
+              resetSignatureForm();
+              loadSignatures();
+            })
+            .catch(function () { confirmModalError('Network error.'); });
+        }
+      );
       return;
     }
 
-    editorSaveBtn.disabled = true;
+    if (!hasContent) {
+      sigEditorMessage.textContent = 'Please upload a photo first.';
+      sigEditorMessage.className = 'settings-message settings-message-error';
+      return;
+    }
+    if (!sigEditorCompanyInput.value.trim() || !sigEditorOriginInput.value.trim()) {
+      sigEditorMessage.textContent = 'Please fill in Company Name and Origin.';
+      sigEditorMessage.className = 'settings-message settings-message-error';
+      return;
+    }
+
+    sigEditorSaveBtn.disabled = true;
     editorCanvas.toBlob(function (blob) {
       if (!blob) {
-        editorSaveBtn.disabled = false;
-        editorMessage.textContent = 'Failed to export signature image.';
-        editorMessage.className = 'settings-message settings-message-error';
+        sigEditorSaveBtn.disabled = false;
+        sigEditorMessage.textContent = 'Failed to export signature image.';
+        sigEditorMessage.className = 'settings-message settings-message-error';
         return;
       }
 
       var fd = new FormData();
-      var finalName = editorNameInput.value.trim();
-      var year = yearFromDateInput(editorDateInput.value);
+      var finalName = sigEditorNameInput.value.trim();
+      var year = yearFromDateInput(sigEditorDateInput.value);
       fd.append('signature_name', finalName ? (finalName + '_' + year) : finalName);
-      fd.append('signature_date', editorDateInput.value);
-      fd.append('activity_title', editorActivityInput.value.trim());
+      fd.append('signature_date', sigEditorDateInput.value);
+      fd.append('company_name', sigEditorCompanyInput.value.trim());
+      fd.append('origin', sigEditorOriginInput.value.trim());
+      fd.append('is_main', sigEditorMainCheckbox.checked ? '1' : '0');
       fd.append('file', blob, 'signature.png');
 
       fetch('ajax/upload_signature.php', { method: 'POST', body: fd })
         .then(function (r) { return r.json(); })
         .then(function (data) {
-          editorSaveBtn.disabled = false;
+          sigEditorSaveBtn.disabled = false;
           if (!data.success) {
-            editorMessage.textContent = data.message || 'Failed to save signature.';
-            editorMessage.className = 'settings-message settings-message-error';
+            sigEditorMessage.textContent = data.message || 'Failed to save signature.';
+            sigEditorMessage.className = 'settings-message settings-message-error';
             return;
           }
-          editorMessage.textContent = 'Saved to library.';
-          editorMessage.className = 'settings-message settings-message-success';
-          editorSaveForm.reset();
-          clearEditorCanvas();
+          sigEditorMessage.textContent = 'Saved to library.';
+          sigEditorMessage.className = 'settings-message settings-message-success';
+          resetSignatureForm();
           loadSignatures();
-          loadActivities();
         })
         .catch(function () {
-          editorSaveBtn.disabled = false;
-          editorMessage.textContent = 'Network error.';
-          editorMessage.className = 'settings-message settings-message-error';
+          sigEditorSaveBtn.disabled = false;
+          sigEditorMessage.textContent = 'Network error.';
+          sigEditorMessage.className = 'settings-message settings-message-error';
         });
     }, 'image/png');
   });
-
-  // The editor card also needs to run loadSignatures()/nothing special on
-  // open, but it DOES need its collapsible wired up - the generic loop at
-  // the top of this file only matches #cardSignatures, so wire this one
-  // explicitly here instead of broadening that selector.
-  (function () {
-    var editorCard = document.getElementById('cardSigEditor');
-    var editorHeader = document.getElementById('cardSigEditorHeader');
-    editorHeader.addEventListener('click', function () {
-      if (editorCard.classList.contains('open')) {
-        closeCollapsible(editorCard);
-      } else {
-        openCollapsible(editorCard);
-      }
-    });
-  })();
 
   // Refresh if the user navigates away and back to this section (same
   // generic pattern as other sections - see footer.php's 'aos:section-shown').
@@ -1463,10 +1955,21 @@
 
   // Zoom (Fabric's own setZoom + setDimensions, not CSS scaling - keeps
   // mouse coordinates for drawing/dragging accurate at any zoom level).
+  // NOTE (21 Okt 2026 bugfix): these used to be named ZOOM_MIN/ZOOM_MAX/
+  // ZOOM_STEP, identical to the Signature Editor's own zoom constants
+  // declared earlier in this SAME top-level IIFE (both are `var`, both in
+  // the same function scope). Whichever block ran last on page load silently
+  // overwrote the other's values - in practice the Document Editor's
+  // 0.1/3/0.15 clobbered the Signature Editor's 50/300/25, so dragging the
+  // Signature Editor's zoom SLIDER got clamped to a 0.1-3 range instead of
+  // 50-300 (looked like "zoom shrinks and can't be enlarged again"). Renamed
+  // with a DOC_ prefix so the two blocks can never collide again - if you add
+  // more module-scoped constants in this file, give each section's
+  // constants a distinct prefix for the same reason.
   var currentZoom = 1;
-  var ZOOM_MIN = 0.1;
-  var ZOOM_MAX = 3;
-  var ZOOM_STEP = 0.15;
+  var DOC_ZOOM_MIN = 0.1;
+  var DOC_ZOOM_MAX = 3;
+  var DOC_ZOOM_STEP = 0.15;
 
   var docEditorIsFullscreen = false;
   var docBodyOverflowBeforeFullscreen = '';
@@ -1754,7 +2257,7 @@
     var page = currentPage();
     if (!page || !page.width || !page.height) return;
     if (!isFinite(zoom) || zoom <= 0) return;
-    zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, zoom));
+    zoom = Math.max(DOC_ZOOM_MIN, Math.min(DOC_ZOOM_MAX, zoom));
     currentZoom = zoom;
     docFabricCanvas.setZoom(zoom);
     docFabricCanvas.setDimensions({
@@ -1769,14 +2272,21 @@
     if (!page || !page.width || !page.height) return; // not loaded yet - nothing to size
     var available = docEditorCanvasWrap.clientWidth - 4; // minus wrap border
     if (available <= 0) available = page.width;
-    // In fullscreen the wrap is a flex item that stretches to fill the
-    // remaining viewport height, so clientHeight is already the real
-    // available space; outside fullscreen it's capped by CSS max-height
-    // (75vh) instead, so fall back to that same ~estimate if clientHeight
-    // isn't ready yet (e.g. right after display:block, before layout).
-    var availableHeight = docEditorCanvasWrap.clientHeight - 4;
-    if (availableHeight <= 0) availableHeight = Math.max(300, Math.round(window.innerHeight * 0.65));
-    var fit = Math.min(available / page.width, availableHeight / page.height);
+    var fit;
+    if (docEditorIsFullscreen) {
+      // Fullscreen: fill the available WIDTH only, no matter how tall the
+      // page ends up - that's what "really full" (vs. the old behavior,
+      // which was identical to the normal "Fit to Page" min(width,height)
+      // fit) means here. Any vertical overflow just scrolls inside
+      // .doc-editor-canvas-wrap (already overflow:auto).
+      fit = available / page.width;
+    } else {
+      // Outside fullscreen the wrap is capped by CSS max-height (75vh), so
+      // keep fitting both width AND height like before.
+      var availableHeight = docEditorCanvasWrap.clientHeight - 4;
+      if (availableHeight <= 0) availableHeight = Math.max(300, Math.round(window.innerHeight * 0.65));
+      fit = Math.min(available / page.width, availableHeight / page.height);
+    }
     applyZoom(fit);
   }
 
@@ -1799,6 +2309,15 @@
      exit. ---- */
   var docWorkspaceOriginalParent = null;
   var docWorkspaceOriginalNextSibling = null;
+  // #2: docSigPickerOverlay lives in the DOM BEFORE the workspace gets
+  // reparented to <body> on fullscreen - once the workspace becomes body's
+  // LAST child (z-index 2147483647), the overlay (still sitting earlier in
+  // the document, at whatever z-index theme.css gives .modal-overlay) ends
+  // up stacked UNDER it, so "Insert Signature" looked like it did nothing
+  // in fullscreen. Reparenting the overlay to <body> right after the
+  // workspace (same trick as the workspace itself) fixes the stacking.
+  var docSigPickerOriginalParent = null;
+  var docSigPickerOriginalNextSibling = null;
 
   function setFullscreen(on) {
     docEditorIsFullscreen = on;
@@ -1806,10 +2325,18 @@
       docWorkspaceOriginalParent = docEditorWorkspace.parentNode;
       docWorkspaceOriginalNextSibling = docEditorWorkspace.nextSibling;
       document.body.appendChild(docEditorWorkspace);
-    } else if (docWorkspaceOriginalParent) {
-      // insertBefore(el, null) is just appendChild, so this still works
-      // even if the workspace used to be the last child.
-      docWorkspaceOriginalParent.insertBefore(docEditorWorkspace, docWorkspaceOriginalNextSibling);
+      docSigPickerOriginalParent = docSigPickerOverlay.parentNode;
+      docSigPickerOriginalNextSibling = docSigPickerOverlay.nextSibling;
+      document.body.appendChild(docSigPickerOverlay); // after the workspace - must stack above it
+    } else {
+      if (docWorkspaceOriginalParent) {
+        // insertBefore(el, null) is just appendChild, so this still works
+        // even if the workspace used to be the last child.
+        docWorkspaceOriginalParent.insertBefore(docEditorWorkspace, docWorkspaceOriginalNextSibling);
+      }
+      if (docSigPickerOriginalParent) {
+        docSigPickerOriginalParent.insertBefore(docSigPickerOverlay, docSigPickerOriginalNextSibling);
+      }
     }
     docEditorWorkspace.classList.toggle('doc-editor-fullscreen', on);
     docFullscreenIcon.setAttribute('d', on ? ICON_MINIMIZE_D : ICON_MAXIMIZE_D);
@@ -1836,11 +2363,11 @@
 
   docZoomInBtn.addEventListener('click', function () {
     if (!docEditorReady()) return;
-    applyZoom(currentZoom + ZOOM_STEP);
+    applyZoom(currentZoom + DOC_ZOOM_STEP);
   });
   docZoomOutBtn.addEventListener('click', function () {
     if (!docEditorReady()) return;
-    applyZoom(currentZoom - ZOOM_STEP);
+    applyZoom(currentZoom - DOC_ZOOM_STEP);
   });
   docZoomFitBtn.addEventListener('click', function () {
     if (!docEditorReady()) return;
@@ -2179,7 +2706,7 @@
   });
 
   // This card's collapsible isn't matched by the generic #cardSignatures
-  // query above, same reason as #cardSigEditor - wire it explicitly.
+  // query above, so wire it explicitly.
   (function () {
     var docEditorCard = document.getElementById('cardDocEditor');
     var docEditorHeader = document.getElementById('cardDocEditorHeader');

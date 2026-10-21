@@ -97,7 +97,7 @@
                 ],
                 "limits": {
                     "sph_from": -800,
-                    "sph_to": 500,
+                    "sph_to": 400,
                     "cyl_from": -25,
                     "cyl_to": -200,
                     "add_from": 0,

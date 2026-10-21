@@ -3,6 +3,7 @@ TRUNCATE TABLE company_documents;
 TRUNCATE TABLE customers;
 TRUNCATE TABLE customer_item_prices;
 TRUNCATE TABLE defective_stock_events;
+TRUNCATE TABLE edited_documents;
 TRUNCATE TABLE investors;
 TRUNCATE TABLE investor_activity_allocations;
 TRUNCATE TABLE investor_activity_settings;
@@ -15,6 +16,7 @@ TRUNCATE TABLE invoice_refunds;
 TRUNCATE TABLE logistics;
 TRUNCATE TABLE logistic_documents;
 TRUNCATE TABLE logistic_movements;
+TRUNCATE TABLE signature_library;
 TRUNCATE TABLE transactions;
 TRUNCATE TABLE transaction_disbursements;
 
