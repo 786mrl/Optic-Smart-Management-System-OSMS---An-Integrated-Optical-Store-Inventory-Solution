@@ -198,23 +198,49 @@
         <div class="doc-editor-toolbar">
           <div class="doc-editor-toolbar-group" title="Blocks">
             <button type="button" class="btn btn-secondary" id="docBlockTextBtn" disabled>
-              <i class="ti ti-crop"></i> Block: Top Text
-            </button>
-            <button type="button" class="btn btn-secondary" id="docBlockNamaBtn" disabled>
-              <i class="ti ti-crop"></i> Block: Name
+              <i class="ti ti-crop"></i> Block: Cut Area
             </button>
             <button type="button" class="btn btn-secondary" id="docGuideBoxBtn" disabled>
               <i class="ti ti-box-margin"></i> Add Guide Box
             </button>
             <select class="select doc-guide-box-select" id="docGuideBoxPresetSelect" disabled aria-label="Guide Box size"></select>
-            <label class="doc-editor-checkbox">
-              <input type="checkbox" id="docAutoShiftCheckbox" checked> Auto-shift Name with Guide Box
-            </label>
+          </div>
+
+          <!-- 24 Okt 2026: garis bantu horizontal/vertikal untuk membantu
+               pemposisian - bisa ditambah berkali-kali (tidak dibatasi 1),
+               masing-masing bisa digeser bebas sepanjang satu sumbu
+               (horizontal hanya naik/turun, vertikal hanya kiri/kanan),
+               lihat addGuideLine()/attachGuideLineClamp() di JS. Sama
+               seperti Guide Box: hanya alat bantu visual, dikecualikan saat
+               flatten/Save (lihat renderPageToDataURL()). -->
+          <div class="doc-editor-toolbar-group" title="Guide Lines">
+            <button type="button" class="btn btn-secondary" id="docAddHGuideBtn" disabled>
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="12" x2="21" y2="12"/></svg>
+              Add Horizontal Guide
+            </button>
+            <button type="button" class="btn btn-secondary" id="docAddVGuideBtn" disabled>
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="3" x2="12" y2="21"/></svg>
+              Add Vertical Guide
+            </button>
+          </div>
+
+          <!-- 24 Okt 2026: muncul HANYA selagi ada pending block rect (sudah
+               digambar, belum di-Apply) - lihat enterPendingAdjustMode() di
+               JS. Rect-nya sendiri adalah fabric.Rect biasa yang selectable,
+               jadi geser/resize per-sisi pakai kontrol bawaan Fabric, tidak
+               perlu hit-testing manual seperti Crop di Signature Editor. -->
+          <div class="doc-editor-toolbar-group" id="docBlockAdjustGroup" title="Adjust Block" style="display:none;">
+            <span class="header-sub">Drag the box or its handles to adjust, then Apply.</span>
+            <button type="button" class="btn btn-primary" id="docBlockApplyBtn">Apply Block</button>
+            <button type="button" class="btn btn-secondary" id="docBlockCancelBtn">Cancel Block</button>
           </div>
 
           <div class="doc-editor-toolbar-group" title="Actions">
             <button type="button" class="btn btn-secondary" id="docInsertSigBtn" disabled>
               <i class="ti ti-signature"></i> Insert Signature
+            </button>
+            <button type="button" class="btn btn-secondary" id="docUndoBtn" disabled>
+              <i class="ti ti-arrow-back-up"></i> Undo
             </button>
             <button type="button" class="btn btn-danger" id="docDeleteSelectedBtn" disabled>
               <i class="ti ti-trash"></i> Delete Selected
@@ -1986,12 +2012,16 @@
   var docEditorCanvasWrap = document.getElementById('docEditorCanvasWrap');
   var docEditorCanvasEl = document.getElementById('docEditorCanvas');
   var docBlockTextBtn = document.getElementById('docBlockTextBtn');
-  var docBlockNamaBtn = document.getElementById('docBlockNamaBtn');
+  var docAddHGuideBtn = document.getElementById('docAddHGuideBtn');
+  var docAddVGuideBtn = document.getElementById('docAddVGuideBtn');
   var docGuideBoxBtn = document.getElementById('docGuideBoxBtn');
-  var docAutoShiftCheckbox = document.getElementById('docAutoShiftCheckbox');
   var docInsertSigBtn = document.getElementById('docInsertSigBtn');
+  var docUndoBtn = document.getElementById('docUndoBtn');
   var docDeleteSelectedBtn = document.getElementById('docDeleteSelectedBtn');
   var docClearAllBtn = document.getElementById('docClearAllBtn');
+  var docBlockAdjustGroup = document.getElementById('docBlockAdjustGroup');
+  var docBlockApplyBtn = document.getElementById('docBlockApplyBtn');
+  var docBlockCancelBtn = document.getElementById('docBlockCancelBtn');
   var docZoomOutBtn = document.getElementById('docZoomOutBtn');
   var docZoomInBtn = document.getElementById('docZoomInBtn');
   var docZoomFitBtn = document.getElementById('docZoomFitBtn');
@@ -2025,14 +2055,31 @@
   var currentPageIndex = -1;
   var docFabricCanvas = null;
   var docSourceFilename = '';
-  var docDrawMode = null; // null | 'text' | 'nama'
+  var docDrawMode = null; // null | 'block'
   var docDrawingRect = null;
   var docDrawStart = null;
+  // 24 Okt 2026: rect yang baru digambar (mouse:up) TIDAK langsung dipotong
+  // lagi - dijadikan fabric object selectable ("pending"), user bisa
+  // geser/resize tiap sisinya pakai kontrol bawaan Fabric sebelum klik
+  // "Apply Block" (lihat enterPendingAdjustMode()/applyPendingBlock()).
+  // docPendingBlockType ikut diingat terpisah dari docDrawMode karena
+  // docDrawMode sendiri sudah di-null-kan begitu rect awal selesai digambar.
+  var pendingBlockRect = null;
+  var pendingBlockType = null;
   var guideBox = null;
-  var guideBoxInitialTop = 0;
-  var namaLayer = null;
-  var namaLayerInitialTop = 0;
   var insertedSignatureIds = {}; // set-like map, id -> true, collected across all pages
+
+  // 24 Okt 2026: Undo untuk Document Editor - history stack PER HALAMAN
+  // (disimpan di docPages[i].undoStack, bukan satu stack global, supaya
+  // pindah halaman tidak mencampur riwayat undo halaman lain). Snapshot
+  // diambil via docFabricCanvas.toJSON() SEBELUM aksi yang mengubah canvas
+  // (potong blok, insert ttd, delete, tambah guide box) - sama pola dengan
+  // eraseUndoStack di Signature Editor (push sebelum aksi, pop utk undo,
+  // dibatasi 20 langkah). Tombol Undo-nya tunggal utk semua jenis aksi di
+  // atas (bukan per-jenis seperti Undo Crop/Undo Erase terpisah di
+  // Signature Editor) karena semuanya sama-sama memodifikasi 1 canvas yang
+  // sama dan snapshot JSON sudah mencakup state canvas secara utuh.
+  var DOC_UNDO_LIMIT = 20;
 
   // Zoom (Fabric's own setZoom + setDimensions, not CSS scaling - keeps
   // mouse coordinates for drawing/dragging accurate at any zoom level).
@@ -2108,13 +2155,14 @@
   function currentPage() { return docPages[currentPageIndex]; }
 
   function setDocToolbarEnabled(enabled) {
-    [docBlockTextBtn, docBlockNamaBtn, docGuideBoxBtn, docGuideBoxPresetSelect, docInsertSigBtn, docClearAllBtn,
+    [docBlockTextBtn, docAddHGuideBtn, docAddVGuideBtn, docGuideBoxBtn, docGuideBoxPresetSelect, docInsertSigBtn, docClearAllBtn,
      docZoomOutBtn, docZoomInBtn, docZoomFitBtn, docFullscreenBtn].forEach(function (btn) {
       btn.disabled = !enabled;
     });
     docEditorSaveBtn.disabled = !enabled;
+    if (!enabled) docUndoBtn.disabled = true;
     docEditorHint.textContent = enabled
-      ? 'Draw a block, drag it into place, then insert a signature from the library. Switch pages with the tabs above if the document has more than one.'
+      ? 'Draw a block, adjust its edges, then Apply before inserting a signature from the library. Switch pages with the tabs above if the document has more than one.'
       : 'Upload a document first to enable the tools above.';
   }
 
@@ -2124,16 +2172,59 @@
     docDrawMode = null;
     docDrawingRect = null;
     docDrawStart = null;
+    pendingBlockRect = null;
+    pendingBlockType = null;
+    docBlockAdjustGroup.style.display = 'none';
     guideBox = null;
-    namaLayer = null;
     insertedSignatureIds = {};
     currentZoom = 1;
     docBlockTextBtn.classList.remove('active');
-    docBlockNamaBtn.classList.remove('active');
     docDeleteSelectedBtn.disabled = true;
+    docUndoBtn.disabled = true;
     docPageThumbsWrap.innerHTML = '';
     docPageThumbsWrap.style.display = 'none';
   }
+
+  /* ---- Undo: snapshot-based, 1 stack per page (page.undoStack). Dipanggil
+     SEBELUM aksi yang mengubah canvas (potong blok, insert ttd, delete,
+     tambah guide box) - lihat masing-masing pemanggil di bawah. ---- */
+  function pushDocUndoSnapshot() {
+    var page = currentPage();
+    if (!page || !docFabricCanvas) return;
+    if (!page.undoStack) page.undoStack = [];
+    page.undoStack.push(docFabricCanvas.toJSON(['blockType', 'isGuideBox', 'isGuideLine', 'guideOrientation']));
+    if (page.undoStack.length > DOC_UNDO_LIMIT) page.undoStack.shift();
+    updateDocUndoBtn();
+  }
+
+  function updateDocUndoBtn() {
+    var page = currentPage();
+    docUndoBtn.disabled = !page || !page.undoStack || page.undoStack.length === 0;
+  }
+
+  docUndoBtn.addEventListener('click', function () {
+    var page = currentPage();
+    if (!page || !page.undoStack || page.undoStack.length === 0 || !docFabricCanvas) return;
+    // Aksi yang sedang pending (block belum di-Apply) dibatalkan dulu -
+    // rect pending itu bukan bagian dari snapshot manapun (belum pernah
+    // "committed"), jadi tidak masuk akal ikut di-undo/redo.
+    if (pendingBlockRect) cancelPendingBlock();
+    var snapshot = page.undoStack.pop();
+    docFabricCanvas.loadFromJSON(snapshot, function () {
+      guideBox = null;
+      docFabricCanvas.getObjects().forEach(function (o) {
+        if (o.isGuideBox) {
+          guideBox = o;
+        }
+        if (o.isGuideLine) {
+          attachGuideLineClamp(o);
+        }
+      });
+      docFabricCanvas.requestRenderAll();
+      updateDocUndoBtn();
+      highlightActiveThumbnail();
+    });
+  });
 
   /* ---- Upload: image -> single page; PDF -> one page per PDF page via
      PDF.js (pure client-side, no server conversion needed). ---- */
@@ -2178,7 +2269,7 @@
         canvas.width = w; canvas.height = h;
         canvas.getContext('2d').drawImage(img, 0, 0, w, h);
         URL.revokeObjectURL(img.src);
-        resolve({ workingCanvas: canvas, width: w, height: h, json: null });
+        resolve({ workingCanvas: canvas, width: w, height: h, json: null, undoStack: [] });
       };
       img.onerror = reject;
       img.src = URL.createObjectURL(file);
@@ -2212,7 +2303,7 @@
       canvas.width = Math.round(viewport.width);
       canvas.height = Math.round(viewport.height);
       return page.render({ canvasContext: canvas.getContext('2d'), viewport: viewport }).promise.then(function () {
-        return { workingCanvas: canvas, width: canvas.width, height: canvas.height, json: null };
+        return { workingCanvas: canvas, width: canvas.width, height: canvas.height, json: null, undoStack: [] };
       });
     });
   }
@@ -2270,12 +2361,17 @@
      has never been opened/edited yet). ---- */
   function syncCurrentPageState() {
     if (docFabricCanvas && currentPageIndex >= 0 && docPages[currentPageIndex]) {
-      docPages[currentPageIndex].json = docFabricCanvas.toJSON(['blockType', 'isGuideBox']);
+      docPages[currentPageIndex].json = docFabricCanvas.toJSON(['blockType', 'isGuideBox', 'isGuideLine', 'guideOrientation']);
     }
   }
 
   function switchToPage(index) {
     if (!docPages[index]) return;
+    // A pending (not-yet-Applied) block rect belongs only to the canvas
+    // being left - it was never saved into page.json by syncCurrentPageState
+    // (not committed yet), so switching pages would silently drop it from
+    // view while leaving docBlockAdjustGroup shown. Cancel it explicitly.
+    if (pendingBlockRect) cancelPendingBlock();
     syncCurrentPageState();
     if (docFabricCanvas) {
       docFabricCanvas.dispose();
@@ -2295,20 +2391,17 @@
 
     function afterLoad() {
       guideBox = null;
-      namaLayer = null;
       docFabricCanvas.getObjects().forEach(function (o) {
         if (o.isGuideBox) {
           guideBox = o;
-          guideBoxInitialTop = o.top;
-          attachGuideBoxEvents(o);
         }
-        if (o.blockType === 'nama') {
-          namaLayer = o;
-          namaLayerInitialTop = o.top;
+        if (o.isGuideLine) {
+          attachGuideLineClamp(o);
         }
       });
       highlightActiveThumbnail();
       fitZoomToContainer();
+      updateDocUndoBtn();
       docFabricCanvas.requestRenderAll();
       if (docAutoFullscreenPending) {
         docAutoFullscreenPending = false;
@@ -2369,6 +2462,22 @@
       fit = Math.min(available / page.width, availableHeight / page.height);
     }
     applyZoom(fit);
+    // 24 Okt 2026 FIX (fullscreen bug): Fabric caches the canvas's on-screen
+    // bounding-rect offset (used by getPointer() to translate mouse clientX/
+    // clientY into canvas coordinates) and only recalculates it on its own
+    // 'resize' handling - NOT when the canvas's DOM container is simply
+    // reparented elsewhere, which is exactly what setFullscreen() does
+    // (moves #docEditorWorkspace, canvas included, to <body> with
+    // position:fixed). Outside fullscreen this never came up because the
+    // canvas never moved. Inside fullscreen the cached offset stayed stuck
+    // at the canvas's old inline position, so every click/drag landed at
+    // the wrong coordinates - Block: Top Text/Name looked like "nothing
+    // happens" because the rect WAS being drawn, just off in empty space
+    // outside the visible canvas. calcOffset() forces a fresh
+    // getBoundingClientRect() read; called here because fitZoomToContainer
+    // already runs after every layout-affecting change (page switch, zoom,
+    // and - via its own rAF - entering/exiting fullscreen).
+    if (docFabricCanvas) docFabricCanvas.calcOffset();
   }
 
   /* ---- Fullscreen: expands #docEditorWorkspace (upload field, toolbar,
@@ -2442,6 +2551,14 @@
     if (e.key === 'Escape' && docEditorIsFullscreen) setFullscreen(false);
   });
 
+  // Resizing/rotating the browser window while in fullscreen changes the
+  // canvas's on-screen position without any reparenting - re-run the same
+  // fit+calcOffset pass so pointer coordinates stay correct (see the
+  // calcOffset() comment inside fitZoomToContainer()).
+  window.addEventListener('resize', function () {
+    if (docEditorIsFullscreen && docEditorReady()) fitZoomToContainer();
+  });
+
   docZoomInBtn.addEventListener('click', function () {
     if (!docEditorReady()) return;
     applyZoom(currentZoom + DOC_ZOOM_STEP);
@@ -2463,6 +2580,30 @@
     docFabricCanvas.on('selection:created', syncDeleteBtn);
     docFabricCanvas.on('selection:updated', syncDeleteBtn);
     docFabricCanvas.on('selection:cleared', function () { docDeleteSelectedBtn.disabled = true; });
+
+    // Keep the pending block rect from being dragged/resized off the page
+    // while the user is adjusting it (before Apply). Only acts on
+    // pendingBlockRect - every other object (signature layers, guide box,
+    // already-cut blocks) is unaffected.
+    function clampPendingRect(e) {
+      if (!pendingBlockRect || e.target !== pendingBlockRect) return;
+      var page = currentPage();
+      if (!page) return;
+      var r = pendingBlockRect;
+      // Shrink first (so a resize that pushes past the right/bottom edge
+      // gets capped), then reposition (so a move/resize-from-top-left that
+      // pushes past the left/top edge gets capped too).
+      var w = Math.min(r.getScaledWidth(), page.width);
+      var h = Math.min(r.getScaledHeight(), page.height);
+      if (w !== r.getScaledWidth() && r.width) r.set('scaleX', w / r.width);
+      if (h !== r.getScaledHeight() && r.height) r.set('scaleY', h / r.height);
+      var left = Math.max(0, Math.min(r.left, page.width - w));
+      var top = Math.max(0, Math.min(r.top, page.height - h));
+      r.set({ left: left, top: top });
+      r.setCoords();
+    }
+    docFabricCanvas.on('object:moving', clampPendingRect);
+    docFabricCanvas.on('object:scaling', clampPendingRect);
   }
 
   function wireDocCanvasDrawing() {
@@ -2493,36 +2634,93 @@
 
     docFabricCanvas.on('mouse:up', function () {
       if (!docDrawMode || !docDrawingRect) return;
-      var rect = { left: docDrawingRect.left, top: docDrawingRect.top, width: docDrawingRect.width, height: docDrawingRect.height };
-      docFabricCanvas.remove(docDrawingRect);
+      var rect = docDrawingRect;
+      var blockType = docDrawMode;
       docDrawingRect = null;
 
       if (rect.width > 4 && rect.height > 4) {
-        cutBlockToLayer(rect, docDrawMode);
-        // Block made: tool did its job, switch back to the normal pointer.
+        // 24 Okt 2026: TIDAK langsung dipotong lagi - rect ini dijadikan
+        // object adjustable (enterPendingAdjustMode), baru dipotong
+        // beneran saat "Apply Block" diklik (applyPendingBlock()).
+        enterPendingAdjustMode(rect, blockType);
         docDrawMode = null;
         docBlockTextBtn.classList.remove('active');
-        docBlockNamaBtn.classList.remove('active');
         docEditorCanvasEl.style.cursor = '';
+      } else {
+        // Drag too small to count (stray click) - discard the sliver rect
+        // and KEEP the tool armed, same spirit as before: one press stays
+        // armed until an actual block is drawn, or the button is clicked
+        // again to cancel it.
+        docFabricCanvas.remove(rect);
       }
-      // else: the drag was too small to count (e.g. a stray click) - KEEP
-      // the tool armed instead of silently turning it off. Previously this
-      // always cleared docDrawMode here, so a single press of "Block: Top
-      // Text"/"Block: Name" followed by anything less than a clean drag
-      // quietly disarmed the tool, making it look like the button needed
-      // two presses to "really" start. Now one press stays armed until an
-      // actual block is drawn, or the user clicks the button again to
-      // cancel it.
       docFabricCanvas.requestRenderAll();
     });
   }
 
+  /* ---- #24 Okt 2026: adjustable pending block - the just-drawn rect
+     becomes a normal selectable/resizable Fabric object (its own built-in
+     corner + edge-midpoint handles cover "move it, resize every side",
+     no manual hit-testing needed like the Signature Editor's Crop does on
+     a plain <canvas>). Rotation is turned off (a block only needs to move/
+     resize, never rotate). The two new toolbar buttons (Apply/Cancel)
+     appear only while this is active; the Block button stays usable so
+     the user can restart with a fresh rect (that cancels the current one
+     first, see docBlockTextBtn handler below). ---- */
+  function enterPendingAdjustMode(rect, blockType) {
+    rect.set({
+      selectable: true, evented: true, hasControls: true, hasBorders: true,
+      lockRotation: true, strokeUniform: true,
+    });
+    rect.setControlsVisibility({ mtr: false });
+    pendingBlockRect = rect;
+    pendingBlockType = blockType;
+    docFabricCanvas.setActiveObject(rect);
+    docBlockAdjustGroup.style.display = 'flex';
+  }
+
+  function cancelPendingBlock() {
+    if (pendingBlockRect && docFabricCanvas) {
+      docFabricCanvas.remove(pendingBlockRect);
+      docFabricCanvas.requestRenderAll();
+    }
+    pendingBlockRect = null;
+    pendingBlockType = null;
+    docBlockAdjustGroup.style.display = 'none';
+  }
+
+  function applyPendingBlock() {
+    if (!pendingBlockRect || !docFabricCanvas) return;
+    var r = pendingBlockRect;
+    var rect = {
+      left: r.left,
+      top: r.top,
+      width: r.getScaledWidth(),
+      height: r.getScaledHeight(),
+    };
+    var blockType = pendingBlockType;
+    docFabricCanvas.remove(r);
+    pendingBlockRect = null;
+    pendingBlockType = null;
+    docBlockAdjustGroup.style.display = 'none';
+
+    if (rect.width > 4 && rect.height > 4) {
+      cutBlockToLayer(rect, blockType);
+    }
+  }
+
+  docBlockApplyBtn.addEventListener('click', applyPendingBlock);
+  docBlockCancelBtn.addEventListener('click', cancelPendingBlock);
+
   function startBlockDraw(mode, btn) {
     if (!docEditorReady()) return;
+    // Starting a fresh block while a previous one is still pending
+    // adjustment (not yet Applied) discards that one first - drawing a
+    // second box without resolving the first would leave an orphaned rect
+    // on the canvas.
+    if (pendingBlockRect) cancelPendingBlock();
     var turningOn = docDrawMode !== mode;
     docDrawMode = null;
     docBlockTextBtn.classList.remove('active');
-    docBlockNamaBtn.classList.remove('active');
     if (turningOn) {
       docDrawMode = mode;
       btn.classList.add('active');
@@ -2532,8 +2730,7 @@
     }
   }
 
-  docBlockTextBtn.addEventListener('click', function () { startBlockDraw('text', docBlockTextBtn); });
-  docBlockNamaBtn.addEventListener('click', function () { startBlockDraw('nama', docBlockNamaBtn); });
+  docBlockTextBtn.addEventListener('click', function () { startBlockDraw('block', docBlockTextBtn); });
 
   function cutBlockToLayer(rect, blockType) {
     var page = currentPage();
@@ -2543,6 +2740,8 @@
     var w = Math.min(Math.round(rect.width), page.width - x);
     var h = Math.min(Math.round(rect.height), page.height - y);
     if (w <= 0 || h <= 0) return;
+
+    pushDocUndoSnapshot();
 
     var pageCtx = page.workingCanvas.getContext('2d');
 
@@ -2570,28 +2769,64 @@
       img.set({ left: x, top: y, blockType: blockType });
       docFabricCanvas.add(img);
       docFabricCanvas.setActiveObject(img);
-      if (blockType === 'nama') {
-        namaLayer = img;
-        namaLayerInitialTop = img.top;
-      }
       docFabricCanvas.requestRenderAll();
     });
   }
 
-  function attachGuideBoxEvents(box) {
-    function applyGuideBoxShift() {
-      if (!docAutoShiftCheckbox.checked || !namaLayer) return;
-      var shift = box.top - guideBoxInitialTop;
-      namaLayer.set('top', namaLayerInitialTop + shift);
-      namaLayer.setCoords();
-      docFabricCanvas.requestRenderAll();
-    }
-    box.on('moving', applyGuideBoxShift);
-    box.on('scaling', applyGuideBoxShift);
+  /* ---- Guide lines (24 Okt 2026): garis bantu horizontal/vertikal untuk
+     pemposisian, bisa ditambah lebih dari satu. Direntangkan penuh satu sisi
+     halaman dan dikunci hanya bisa digeser di satu sumbu (horizontal =
+     naik/turun saja, vertikal = kiri/kanan saja); tidak bisa di-resize/
+     rotate (hasControls:false + lock*). `padding` memperbesar area klik/
+     drag tanpa mengubah tampilan garis yang tipis. Murni alat bantu visual
+     seperti Guide Box - dikecualikan saat flatten/Save
+     (lihat renderPageToDataURL()) dan ikut ditandai di toJSON (isGuideLine/
+     guideOrientation) supaya tersimpan per halaman & lewat Undo, tapi event
+     listener-nya (clamp) harus di-reattach manual tiap kali di-load ulang
+     dari JSON (lihat pemanggil attachGuideLineClamp() di afterLoad()/Undo). ---- */
+  function attachGuideLineClamp(line) {
+    line.on('moving', function () {
+      var page = currentPage();
+      if (!page) return;
+      if (line.guideOrientation === 'h') {
+        line.set('top', Math.max(0, Math.min(line.top, page.height)));
+      } else {
+        line.set('left', Math.max(0, Math.min(line.left, page.width)));
+      }
+      line.setCoords();
+    });
   }
+
+  function addGuideLine(orientation) {
+    if (!docEditorReady()) return;
+    var page = currentPage();
+    pushDocUndoSnapshot();
+    var line;
+    var commonOpts = {
+      stroke: '#00d2ff', strokeWidth: 1, strokeDashArray: [6, 4],
+      selectable: true, evented: true, hasControls: false, hasBorders: false,
+      lockScalingX: true, lockScalingY: true, lockRotation: true,
+      padding: 8, isGuideLine: true, guideOrientation: orientation,
+    };
+    if (orientation === 'h') {
+      var y = Math.round(page.height / 2);
+      line = new fabric.Line([0, y, page.width, y], Object.assign({ lockMovementX: true, hoverCursor: 'ns-resize' }, commonOpts));
+    } else {
+      var x = Math.round(page.width / 2);
+      line = new fabric.Line([x, 0, x, page.height], Object.assign({ lockMovementY: true, hoverCursor: 'ew-resize' }, commonOpts));
+    }
+    docFabricCanvas.add(line);
+    docFabricCanvas.setActiveObject(line);
+    attachGuideLineClamp(line);
+    docFabricCanvas.requestRenderAll();
+  }
+
+  docAddHGuideBtn.addEventListener('click', function () { addGuideLine('h'); });
+  docAddVGuideBtn.addEventListener('click', function () { addGuideLine('v'); });
 
   docGuideBoxBtn.addEventListener('click', function () {
     if (!docEditorReady()) return;
+    pushDocUndoSnapshot();
     if (guideBox) {
       docFabricCanvas.remove(guideBox);
     }
@@ -2612,10 +2847,8 @@
       cornerColor: '#ffa500', transparentCorners: false,
       isGuideBox: true,
     });
-    guideBoxInitialTop = guideBox.top;
     docFabricCanvas.add(guideBox);
     docFabricCanvas.setActiveObject(guideBox);
-    attachGuideBoxEvents(guideBox);
     docFabricCanvas.requestRenderAll();
   });
 
@@ -2623,8 +2856,8 @@
     if (!docEditorReady()) return;
     var active = docFabricCanvas.getActiveObject();
     if (!active) return;
+    pushDocUndoSnapshot();
     if (active === guideBox) guideBox = null;
-    if (active === namaLayer) namaLayer = null;
     docFabricCanvas.remove(active);
     docFabricCanvas.discardActiveObject();
     docFabricCanvas.requestRenderAll();
@@ -2696,6 +2929,7 @@
         docEditorMessage.className = 'settings-message settings-message-error';
         return;
       }
+      pushDocUndoSnapshot();
       // getScaledWidth()/getScaledHeight() instead of raw .width/.height:
       // dragging a guide box's corner handle changes its scaleX/scaleY in
       // Fabric, not .width/.height directly, so reading .width/.height here
@@ -2717,8 +2951,8 @@
     }, { crossOrigin: 'anonymous' });
   }
 
-  /* ---- Save: sync + flatten EVERY page (minus guide boxes, which are only
-     a visual aid) to a PNG, send them all to ajax/save_edited_document.php
+  /* ---- Save: sync + flatten EVERY page (minus guide boxes/guide lines,
+     which are only a visual aid) to a PNG, send them all to ajax/save_edited_document.php
      which combines them into one PDF with FPDF. Pages never opened keep
      their pristine bitmap and are sent as-is. ---- */
   function renderPageToDataURL(page) {
@@ -2729,7 +2963,7 @@
       }
       var tmp = new fabric.StaticCanvas(null, { width: page.width, height: page.height });
       tmp.loadFromJSON(page.json, function () {
-        tmp.getObjects().filter(function (o) { return o.isGuideBox; }).forEach(function (o) { tmp.remove(o); });
+        tmp.getObjects().filter(function (o) { return o.isGuideBox || o.isGuideLine; }).forEach(function (o) { tmp.remove(o); });
         tmp.renderAll();
         var dataUrl = tmp.toDataURL({ format: 'png' });
         tmp.dispose();
