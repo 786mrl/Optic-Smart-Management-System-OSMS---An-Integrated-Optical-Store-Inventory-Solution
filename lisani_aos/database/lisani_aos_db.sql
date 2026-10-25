@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Oct 21, 2026 at 12:11 PM
+-- Generation Time: Oct 25, 2026 at 11:09 AM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -146,6 +146,7 @@ CREATE TABLE `edited_documents` (
   `activity_title` varchar(255) NOT NULL,
   `source_filename` varchar(255) NOT NULL,
   `signature_ids` varchar(255) DEFAULT NULL,
+  `letterhead_ids` varchar(255) DEFAULT NULL,
   `page_count` smallint(5) UNSIGNED NOT NULL DEFAULT 1,
   `stored_filename` varchar(255) NOT NULL,
   `file_path` varchar(500) NOT NULL,
@@ -159,9 +160,8 @@ CREATE TABLE `edited_documents` (
 -- Dumping data for table `edited_documents`
 --
 
-INSERT INTO `edited_documents` (`id`, `document_name`, `document_date`, `activity_title`, `source_filename`, `signature_ids`, `page_count`, `stored_filename`, `file_path`, `file_ext`, `file_size`, `uploaded_by`, `created_at`) VALUES
-(1, 'ttd try', '2026-10-20', 'try', 'Surat Perjanjian Kerja Sama.pdf', '1', 2, 'ttd_try.pdf', 'company_activity/2026/10/try/edited_documents/ttd_try.pdf', 'pdf', 116854, 1, '2026-10-20 10:42:16'),
-(2, 'ttd try 2', '2026-10-20', 'try', 'Surat Perjanjian Kerja Sama.pdf', '1', 2, 'ttd_try_2.pdf', 'company_activity/2026/10/try/edited_documents/ttd_try_2.pdf', 'pdf', 163225, 1, '2026-10-20 10:52:44');
+INSERT INTO `edited_documents` (`id`, `document_name`, `document_date`, `activity_title`, `source_filename`, `signature_ids`, `letterhead_ids`, `page_count`, `stored_filename`, `file_path`, `file_ext`, `file_size`, `uploaded_by`, `created_at`) VALUES
+(1, 'spks - try', '2026-10-21', 'try', 'Surat Perjanjian Kerja Sama.pdf', '1', NULL, 2, 'spks_-_try.pdf', 'company_activity/2026/10/try/edited_documents/spks_-_try.pdf', 'pdf', 162332, 1, '2026-10-21 10:24:34');
 
 -- --------------------------------------------------------
 
@@ -331,6 +331,34 @@ CREATE TABLE `invoice_refunds` (
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `letterhead_library`
+--
+
+CREATE TABLE `letterhead_library` (
+  `id` int(10) UNSIGNED NOT NULL,
+  `letterhead_name` varchar(191) NOT NULL,
+  `company_name` varchar(191) NOT NULL,
+  `origin` varchar(191) NOT NULL,
+  `is_main` tinyint(1) UNSIGNED NOT NULL DEFAULT 0,
+  `header_original_filename` varchar(255) NOT NULL,
+  `header_stored_filename` varchar(255) NOT NULL,
+  `header_file_path` varchar(255) NOT NULL,
+  `header_file_ext` varchar(20) NOT NULL,
+  `header_file_size` int(10) UNSIGNED NOT NULL DEFAULT 0,
+  `has_footer` tinyint(1) UNSIGNED NOT NULL DEFAULT 0,
+  `footer_original_filename` varchar(255) DEFAULT NULL,
+  `footer_stored_filename` varchar(255) DEFAULT NULL,
+  `footer_file_path` varchar(255) DEFAULT NULL,
+  `footer_file_ext` varchar(20) DEFAULT NULL,
+  `footer_file_size` int(10) UNSIGNED DEFAULT NULL,
+  `uploaded_by` int(10) UNSIGNED DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `logistics`
 --
 
@@ -426,8 +454,8 @@ CREATE TABLE `signature_library` (
 --
 
 INSERT INTO `signature_library` (`id`, `signature_name`, `signature_date`, `company_name`, `origin`, `is_main`, `original_filename`, `stored_filename`, `file_path`, `file_ext`, `file_size`, `uploaded_by`, `created_at`, `updated_at`) VALUES
-(1, 'lisani_2026', '2026-10-18', '', '', 0, 'signature.png', 'lisani_2026.png', 'company_activity/2026/10/sign/lisani_2026.png', 'png', 63899, 1, '2026-10-18 12:47:06', '2026-10-18 12:47:06'),
-(2, 'lisani with duty stamp_2026', '2026-10-18', '', '', 0, 'signature.png', 'lisani_with_duty_stamp_2026.png', 'company_activity/2026/10/sign/lisani_with_duty_stamp_2026.png', 'png', 120956, 1, '2026-10-18 12:47:39', '2026-10-18 12:47:39');
+(1, 'lisani with stamp_2026', '2026-10-21', 'PT. LISANI ALAF JAYA', 'medan', 1, 'signature.png', 'lisani_with_stamp_2026.png', 'signature/pt_lisani_alaf_jaya/medan/lisani_with_stamp_2026.png', 'png', 63009, 1, '2026-10-21 17:21:41', '2026-10-21 17:21:41'),
+(2, 'lisani with duty stamp_2026', '2026-10-21', 'PT. LISANI ALAF JAYA', 'medan', 1, 'signature.png', 'lisani_with_duty_stamp_2026.png', 'signature/pt_lisani_alaf_jaya/medan/lisani_with_duty_stamp_2026.png', 'png', 121189, 1, '2026-10-21 17:22:51', '2026-10-21 17:22:51');
 
 -- --------------------------------------------------------
 
@@ -496,7 +524,7 @@ CREATE TABLE `users` (
 --
 
 INSERT INTO `users` (`user_id`, `username`, `password_hash`, `role`, `is_approved`, `created_at`, `last_login`, `session_token`, `session_expires`) VALUES
-(1, 'Rais786', '$2y$10$QciWVGPK9aGHjy05rBoXgOWfCAesfocowc0vt4QCMHVeVzsVuGDS6', 'admin', 1, '2026-09-10 21:34:57', '2026-10-21 12:04:08', 'b1ec00b8b7cb6ad1b65524f2686d2fa23b5c7fb23af3f992958e2387e8259d26', '2026-10-21 20:04:08');
+(1, 'Rais786', '$2y$10$QciWVGPK9aGHjy05rBoXgOWfCAesfocowc0vt4QCMHVeVzsVuGDS6', 'admin', 1, '2026-09-10 21:34:57', '2026-10-24 13:57:43', NULL, NULL);
 
 --
 -- Indexes for dumped tables
@@ -623,6 +651,14 @@ ALTER TABLE `invoice_refunds`
   ADD KEY `idx_invoice_refunds_customer` (`customer_id`);
 
 --
+-- Indexes for table `letterhead_library`
+--
+ALTER TABLE `letterhead_library`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `company_name` (`company_name`),
+  ADD KEY `is_main` (`is_main`);
+
+--
 -- Indexes for table `logistics`
 --
 ALTER TABLE `logistics`
@@ -725,7 +761,7 @@ ALTER TABLE `disbursement_categories`
 -- AUTO_INCREMENT for table `edited_documents`
 --
 ALTER TABLE `edited_documents`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `investors`
@@ -773,6 +809,12 @@ ALTER TABLE `invoice_payments`
 -- AUTO_INCREMENT for table `invoice_refunds`
 --
 ALTER TABLE `invoice_refunds`
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `letterhead_library`
+--
+ALTER TABLE `letterhead_library`
   MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --

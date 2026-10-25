@@ -12,6 +12,15 @@
 // optic_pos/fpdf/fpdf.php), ukuran tiap halaman PDF mengikuti rasio gambar
 // aslinya (bukan dipaksa A4) supaya tidak terdistorsi.
 //
+// REVISION 24 Oct 2026 (Stage 9 - Letterhead): letterhead_ids[] was added,
+// following the EXACT SAME pattern as signature_ids - a CSV of ids in the
+// letterhead_ids column (see migration_edited_documents_letterhead_ids.sql),
+// validated against letterhead_library, allowed to be empty. The letterhead
+// image itself is already flattened into each page's PNG by the frontend
+// (Fabric) before it's sent here - so this endpoint does NOT place the
+// letterhead separately; this column is purely metadata/history (same as
+// signature_ids).
+//
 // Storage pattern sama seperti ajax/upload_signature.php (PROJECT_NOTES.md
 // §13): storage/company_activity/{year}/{month}/{judul_kegiatan_slug}/edited_documents/{file}.pdf
 session_start();
@@ -58,24 +67,49 @@ function slugify_activity_local(string $name): string
     return $slug !== '' ? $slug : 'kegiatan';
 }
 
+// Shared by signature_ids AND letterhead_ids: dedup + keep only positive
+// integers, as a safety net against anything odd coming from the client.
+function clean_id_list($raw): array
+{
+    $ids = [];
+    if (is_array($raw)) {
+        foreach ($raw as $v) {
+            $v = (int) $v;
+            if ($v > 0 && !in_array($v, $ids, true)) {
+                $ids[] = $v;
+            }
+        }
+    }
+    return $ids;
+}
+
+// Confirms every id in $ids actually exists in $table, returns only the
+// valid ones as a CSV string (or null if none valid/none given).
+function valid_ids_csv(mysqli $conn, string $table, array $ids): ?string
+{
+    if (empty($ids)) {
+        return null;
+    }
+    $placeholders = implode(',', array_fill(0, count($ids), '?'));
+    $types = str_repeat('i', count($ids));
+    $stmt = $conn->prepare("SELECT id FROM {$table} WHERE id IN ($placeholders)");
+    $stmt->bind_param($types, ...$ids);
+    $stmt->execute();
+    $valid = [];
+    $res = $stmt->get_result();
+    while ($row = $res->fetch_assoc()) {
+        $valid[] = (int) $row['id'];
+    }
+    return empty($valid) ? null : implode(',', $valid);
+}
+
 $documentName   = sanitize_doc_name($_POST['document_name'] ?? '');
 $documentDate   = $_POST['document_date'] ?? '';
 $activityTitle  = sanitize_activity_title_local($_POST['activity_title'] ?? '');
 $sourceFilename = trim($_POST['source_filename'] ?? 'document.pdf');
 
-// signature_ids[] - dedup + keep only positive integers, as a safety net
-// against anything odd coming from the client.
-$signatureIdsRaw = $_POST['signature_ids'] ?? [];
-$signatureIds = [];
-if (is_array($signatureIdsRaw)) {
-    foreach ($signatureIdsRaw as $sid) {
-        $sid = (int) $sid;
-        if ($sid > 0 && !in_array($sid, $signatureIds, true)) {
-            $signatureIds[] = $sid;
-        }
-    }
-}
-$signatureIdsCsv = empty($signatureIds) ? null : implode(',', $signatureIds);
+$signatureIds = clean_id_list($_POST['signature_ids'] ?? []);
+$letterheadIds = clean_id_list($_POST['letterhead_ids'] ?? []);
 
 if ($documentName === '') {
     echo json_encode(['success' => false, 'message' => 'Document name is required.']);
@@ -111,21 +145,10 @@ for ($i = 0; $i < $pageCount; $i++) {
     $pageTmpPaths[] = $_FILES['pages']['tmp_name'][$i];
 }
 
-// Confirm any signature ids actually exist, silently dropping ones that
-// don't instead of failing the whole save.
-if (!empty($signatureIds)) {
-    $placeholders = implode(',', array_fill(0, count($signatureIds), '?'));
-    $types = str_repeat('i', count($signatureIds));
-    $checkStmt = $lisani_conn->prepare("SELECT id FROM signature_library WHERE id IN ($placeholders)");
-    $checkStmt->bind_param($types, ...$signatureIds);
-    $checkStmt->execute();
-    $validIds = [];
-    $res = $checkStmt->get_result();
-    while ($row = $res->fetch_assoc()) {
-        $validIds[] = (int) $row['id'];
-    }
-    $signatureIdsCsv = empty($validIds) ? null : implode(',', $validIds);
-}
+// Confirm any signature/letterhead ids actually exist, silently dropping
+// ones that don't instead of failing the whole save.
+$signatureIdsCsv = valid_ids_csv($lisani_conn, 'signature_library', $signatureIds);
+$letterheadIdsCsv = valid_ids_csv($lisani_conn, 'letterhead_library', $letterheadIds);
 
 $year = $dateObj->format('Y');
 $month = $dateObj->format('m');
@@ -189,16 +212,17 @@ $relativePath = $relativeDir . '/' . $storedFilename;
 
 $stmt = $lisani_conn->prepare(
     "INSERT INTO edited_documents
-        (document_name, document_date, activity_title, source_filename, signature_ids, page_count, stored_filename, file_path, file_size, uploaded_by)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        (document_name, document_date, activity_title, source_filename, signature_ids, letterhead_ids, page_count, stored_filename, file_path, file_size, uploaded_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 );
 $stmt->bind_param(
-    'sssssissii'
+    'ssssssissii'
     , $documentName
     , $documentDate
     , $activityTitle
     , $sourceFilename
     , $signatureIdsCsv
+    , $letterheadIdsCsv
     , $pageCount
     , $storedFilename
     , $relativePath

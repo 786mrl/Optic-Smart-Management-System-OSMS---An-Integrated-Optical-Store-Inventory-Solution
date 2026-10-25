@@ -167,6 +167,69 @@
     </div>
   </div>
 
+  <!-- Letterhead Library (Stage 9, 24 Oct 2026). 1 entry = header
+       (required) + footer (optional). No canvas editor like Signature -
+       the user just uploads a ready-made letterhead PNG. See
+       PROJECT_NOTES.md §8 / rangkuman_tool_ttd_dokumen.md §5. -->
+  <div class="card doctools-collapsible" id="cardLetterheads">
+    <button type="button" class="doctools-collapsible-header" id="cardLetterheadsHeader">
+      <div>
+        <div class="empty-title" style="text-align:left;">Letterhead Library</div>
+        <div class="header-sub">Upload a header image (and optionally a footer), then save straight to the library</div>
+      </div>
+      <i class="ti ti-chevron-down doctools-collapsible-chevron"></i>
+    </button>
+
+    <div class="doctools-collapsible-body" id="cardLetterheadsBody">
+      <div class="doctools-collapsible-body-inner">
+
+        <form id="lhSaveForm" class="settings-form">
+          <div class="settings-form-grid">
+            <div class="form-group">
+              <label class="label">Letterhead Name</label>
+              <input type="text" class="input" id="lhNameInput" style="text-transform:uppercase;" placeholder="E.G. OFFICIAL LETTERHEAD 2026" required>
+            </div>
+            <div class="form-group">
+              <label class="label">Company Name</label>
+              <input type="text" class="input" id="lhCompanyInput" style="text-transform:uppercase;" placeholder="E.G. PT LISANI OPTIK" required>
+            </div>
+            <div class="form-group">
+              <label class="label">Origin</label>
+              <input type="text" class="input" id="lhOriginInput" style="text-transform:uppercase;" placeholder="E.G. JAKARTA" required>
+            </div>
+          </div>
+          <div class="header-sub" id="lhCompanyHint">Determines the storage folder at storage/letterhead/.../, cannot be changed after saving.</div>
+
+          <div class="settings-form-grid" style="margin-top:10px;">
+            <div class="form-group">
+              <label class="label">Header Image (required)</label>
+              <input type="file" class="input" id="lhHeaderFileInput" accept="image/*" required>
+            </div>
+            <div class="form-group">
+              <label class="label">Footer Image (optional)</label>
+              <input type="file" class="input" id="lhFooterFileInput" accept="image/*">
+            </div>
+          </div>
+
+          <label class="doc-editor-checkbox" style="margin-top:10px;">
+            <input type="checkbox" id="lhMainCheckbox"> Set as Main letterhead (always on top of the list)
+          </label>
+
+          <div id="lhSaveMessage" class="settings-message"></div>
+
+          <div class="settings-form-actions">
+            <button type="submit" class="btn btn-primary" id="lhSaveBtn">Save to Library</button>
+          </div>
+        </form>
+
+        <div class="doc-accordion" id="lhAccordionList" style="margin-top:18px;">
+          <div class="empty-sub">Loading...</div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
   <!-- Document Editor -->
   <div class="card doctools-collapsible" id="cardDocEditor">
     <button type="button" class="doctools-collapsible-header" id="cardDocEditorHeader">
@@ -238,6 +301,9 @@
           <div class="doc-editor-toolbar-group" title="Actions">
             <button type="button" class="btn btn-secondary" id="docInsertSigBtn" disabled>
               <i class="ti ti-signature"></i> Insert Signature
+            </button>
+            <button type="button" class="btn btn-secondary" id="docInsertLetterheadBtn" disabled>
+              <i class="ti ti-file-text"></i> Insert Letterhead
             </button>
             <button type="button" class="btn btn-secondary" id="docUndoBtn" disabled>
               <i class="ti ti-arrow-back-up"></i> Undo
@@ -319,6 +385,22 @@
     </div>
     <div class="settings-form-actions">
       <button type="button" class="btn btn-secondary" id="docSigPickerCancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Letterhead picker for Document Editor's "Insert Letterhead" button -
+     own overlay/ids, same pattern as docSigPickerOverlay above. -->
+<div class="modal-overlay" id="docLhPickerOverlay" style="display:none;">
+  <div class="modal">
+    <div class="panel-header">
+      <div class="panel-title">Insert Letterhead</div>
+    </div>
+    <div class="doc-sig-pick-grid" id="docLhPickerList">
+      <div class="empty-sub">Loading...</div>
+    </div>
+    <div class="settings-form-actions">
+      <button type="button" class="btn btn-secondary" id="docLhPickerCancel">Cancel</button>
     </div>
   </div>
 </div>
@@ -2041,6 +2123,10 @@
   var docSigPickerOverlay = document.getElementById('docSigPickerOverlay');
   var docSigPickerList = document.getElementById('docSigPickerList');
   var docSigPickerCancel = document.getElementById('docSigPickerCancel');
+  var docInsertLetterheadBtn = document.getElementById('docInsertLetterheadBtn');
+  var docLhPickerOverlay = document.getElementById('docLhPickerOverlay');
+  var docLhPickerList = document.getElementById('docLhPickerList');
+  var docLhPickerCancel = document.getElementById('docLhPickerCancel');
 
   var MAX_DOC_WIDTH = 1400; // working-resolution cap per page, see PROJECT_NOTES.md note on 150-200 DPI being enough
 
@@ -2068,6 +2154,7 @@
   var pendingBlockType = null;
   var guideBox = null;
   var insertedSignatureIds = {}; // set-like map, id -> true, collected across all pages
+  var insertedLetterheadIds = {}; // same idea, for letterheads
 
   // 24 Okt 2026: Undo untuk Document Editor - history stack PER HALAMAN
   // (disimpan di docPages[i].undoStack, bukan satu stack global, supaya
@@ -2155,7 +2242,7 @@
   function currentPage() { return docPages[currentPageIndex]; }
 
   function setDocToolbarEnabled(enabled) {
-    [docBlockTextBtn, docAddHGuideBtn, docAddVGuideBtn, docGuideBoxBtn, docGuideBoxPresetSelect, docInsertSigBtn, docClearAllBtn,
+    [docBlockTextBtn, docAddHGuideBtn, docAddVGuideBtn, docGuideBoxBtn, docGuideBoxPresetSelect, docInsertSigBtn, docInsertLetterheadBtn, docClearAllBtn,
      docZoomOutBtn, docZoomInBtn, docZoomFitBtn, docFullscreenBtn].forEach(function (btn) {
       btn.disabled = !enabled;
     });
@@ -2177,6 +2264,7 @@
     docBlockAdjustGroup.style.display = 'none';
     guideBox = null;
     insertedSignatureIds = {};
+    insertedLetterheadIds = {};
     currentZoom = 1;
     docBlockTextBtn.classList.remove('active');
     docDeleteSelectedBtn.disabled = true;
@@ -2508,6 +2596,11 @@
   // workspace (same trick as the workspace itself) fixes the stacking.
   var docSigPickerOriginalParent = null;
   var docSigPickerOriginalNextSibling = null;
+  // Same reparenting trick, same reason, for the Letterhead picker added in
+  // Stage 9 - without this, "Insert Letterhead" would silently do nothing
+  // while in Fullscreen, exactly like Insert Signature used to.
+  var docLhPickerOriginalParent = null;
+  var docLhPickerOriginalNextSibling = null;
 
   function setFullscreen(on) {
     docEditorIsFullscreen = on;
@@ -2518,6 +2611,9 @@
       docSigPickerOriginalParent = docSigPickerOverlay.parentNode;
       docSigPickerOriginalNextSibling = docSigPickerOverlay.nextSibling;
       document.body.appendChild(docSigPickerOverlay); // after the workspace - must stack above it
+      docLhPickerOriginalParent = docLhPickerOverlay.parentNode;
+      docLhPickerOriginalNextSibling = docLhPickerOverlay.nextSibling;
+      document.body.appendChild(docLhPickerOverlay);
     } else {
       if (docWorkspaceOriginalParent) {
         // insertBefore(el, null) is just appendChild, so this still works
@@ -2526,6 +2622,9 @@
       }
       if (docSigPickerOriginalParent) {
         docSigPickerOriginalParent.insertBefore(docSigPickerOverlay, docSigPickerOriginalNextSibling);
+      }
+      if (docLhPickerOriginalParent) {
+        docLhPickerOriginalParent.insertBefore(docLhPickerOverlay, docLhPickerOriginalNextSibling);
       }
     }
     docEditorWorkspace.classList.toggle('doc-editor-fullscreen', on);
@@ -2951,6 +3050,76 @@
     }, { crossOrigin: 'anonymous' });
   }
 
+  /* ---- Insert Letterhead: reuses ajax/list_letterheads.php and
+     ajax/download_letterhead.php. Header is placed full-width pinned to the
+     top, footer (if the chosen letterhead has one) full-width pinned to the
+     bottom - both as separate fabric.Image objects so the user can freely
+     drag/resize each one afterward, same as a signature. ---- */
+  docInsertLetterheadBtn.addEventListener('click', function () {
+    if (!docEditorReady()) return;
+    docLhPickerList.innerHTML = '<div class="empty-sub">Loading...</div>';
+    showModal(docLhPickerOverlay);
+
+    fetch('ajax/list_letterheads.php')
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (!data.success || !data.letterheads.length) {
+          docLhPickerList.innerHTML = '<div class="empty-sub">No letterheads in the library yet.</div>';
+          return;
+        }
+        docLhPickerList.innerHTML = '';
+        data.letterheads.forEach(function (lh) {
+          var item = document.createElement('div');
+          item.className = 'doc-sig-pick-item';
+          var img = document.createElement('img');
+          img.src = 'ajax/download_letterhead.php?id=' + lh.id + '&part=header';
+          img.alt = lh.letterhead_name;
+          var label = document.createElement('span');
+          label.textContent = lh.letterhead_name + (lh.has_footer ? ' (+ footer)' : '');
+          item.appendChild(img);
+          item.appendChild(label);
+          item.addEventListener('click', function () { insertLetterheadOntoCanvas(lh); });
+          docLhPickerList.appendChild(item);
+        });
+      })
+      .catch(function () {
+        docLhPickerList.innerHTML = '<div class="empty-sub">Failed to load letterheads.</div>';
+      });
+  });
+
+  docLhPickerCancel.addEventListener('click', function () { hideModal(docLhPickerOverlay); });
+
+  // Places one image full-width, pinned to top (align='top') or bottom
+  // (align='bottom') of the current page, preserving aspect ratio. This
+  // only sets its STARTING position/size - it stays a normal
+  // selectable/resizable fabric object afterward, same as a signature.
+  function placeLetterheadPart(url, align) {
+    var page = currentPage();
+    fabric.Image.fromURL(url, function (img) {
+      if (!img || !img.width) {
+        docEditorMessage.textContent = 'Failed to load the selected letterhead image.';
+        docEditorMessage.className = 'settings-message settings-message-error';
+        return;
+      }
+      var scale = page.width / img.width;
+      var scaledH = img.height * scale;
+      var top = align === 'bottom' ? (page.height - scaledH) : 0;
+      img.set({ left: 0, top: top, scaleX: scale, scaleY: scale });
+      docFabricCanvas.add(img);
+      docFabricCanvas.requestRenderAll();
+    }, { crossOrigin: 'anonymous' });
+  }
+
+  function insertLetterheadOntoCanvas(lh) {
+    hideModal(docLhPickerOverlay);
+    pushDocUndoSnapshot();
+    placeLetterheadPart('ajax/download_letterhead.php?id=' + lh.id + '&part=header', 'top');
+    if (lh.has_footer) {
+      placeLetterheadPart('ajax/download_letterhead.php?id=' + lh.id + '&part=footer', 'bottom');
+    }
+    insertedLetterheadIds[lh.id] = true;
+  }
+
   /* ---- Save: sync + flatten EVERY page (minus guide boxes/guide lines,
      which are only a visual aid) to a PNG, send them all to ajax/save_edited_document.php
      which combines them into one PDF with FPDF. Pages never opened keep
@@ -2997,6 +3166,7 @@
         fd.append('activity_title', docEditorActivityInput.value.trim());
         fd.append('source_filename', docSourceFilename || 'document.pdf');
         Object.keys(insertedSignatureIds).forEach(function (id) { fd.append('signature_ids[]', id); });
+        Object.keys(insertedLetterheadIds).forEach(function (id) { fd.append('letterhead_ids[]', id); });
         blobs.forEach(function (b, i) { fd.append('pages[]', b, 'page_' + (i + 1) + '.png'); });
 
         return fetch('ajax/save_edited_document.php', { method: 'POST', body: fd });
@@ -3032,6 +3202,153 @@
         openCollapsible(docEditorCard);
       }
     });
+  })();
+
+  /* =====================================================================
+     LETTERHEAD LIBRARY (Stage 9, 24 Oct 2026). Same shared confirm modal
+     (openConfirmModal/confirmOverlay/confirmModalError) and showModal/
+     hideModal helpers as Signature Library above. v1: upload + list +
+     delete only (no Edit/Select-All/Share yet, unlike Signature Library).
+     Collapsible also isn't matched by the generic #cardSignatures query,
+     so it's wired explicitly here too.
+     ===================================================================== */
+  (function () {
+    var lhCard = document.getElementById('cardLetterheads');
+    var lhHeader = document.getElementById('cardLetterheadsHeader');
+    lhHeader.addEventListener('click', function () {
+      if (lhCard.classList.contains('open')) {
+        closeCollapsible(lhCard);
+      } else {
+        openCollapsible(lhCard);
+        loadLetterheads();
+      }
+    });
+
+    var lhSaveForm = document.getElementById('lhSaveForm');
+    var lhNameInput = document.getElementById('lhNameInput');
+    var lhCompanyInput = document.getElementById('lhCompanyInput');
+    var lhOriginInput = document.getElementById('lhOriginInput');
+    var lhHeaderFileInput = document.getElementById('lhHeaderFileInput');
+    var lhFooterFileInput = document.getElementById('lhFooterFileInput');
+    var lhMainCheckbox = document.getElementById('lhMainCheckbox');
+    var lhSaveMessage = document.getElementById('lhSaveMessage');
+    var lhSaveBtn = document.getElementById('lhSaveBtn');
+    var lhAccordionList = document.getElementById('lhAccordionList');
+
+    // Force these fields to uppercase as the user types (not just a CSS
+    // text-transform, which only affects the visual, not what gets sent
+    // to the server). Cursor stays at the end, which is fine for these
+    // short single-line fields - no mid-text editing scenario to preserve.
+    [lhNameInput, lhCompanyInput, lhOriginInput].forEach(function (el) {
+      el.addEventListener('input', function () {
+        el.value = el.value.toUpperCase();
+      });
+    });
+
+    // Bug fix (25 Oct 2026): the collapsible's max-height is fixed to
+    // whatever height the "Loading..." placeholder had at the moment the
+    // card was opened (see openCollapsible()). Re-rendering the list
+    // afterward (here, or after Save/Delete) changes the content height
+    // without updating that max-height, so the real list got visually cut
+    // off. refreshOpenHeight() recalculates it - must be called after
+    // EVERY innerHTML change below that can alter this card's height.
+    function loadLetterheads() {
+      lhAccordionList.innerHTML = '<div class="empty-sub">Loading...</div>';
+      fetch('ajax/list_letterheads.php')
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (!data.success || !data.letterheads.length) {
+            lhAccordionList.innerHTML = '<div class="empty-sub">No letterheads yet.</div>';
+            refreshOpenHeight(lhCard);
+            return;
+          }
+          lhAccordionList.innerHTML = '';
+          data.letterheads.forEach(function (lh) {
+            var row = document.createElement('div');
+            row.className = 'accordion-item';
+            row.innerHTML =
+              '<div class="accordion-row" style="display:flex;align-items:center;gap:12px;padding:10px 0;">' +
+              '<img src="ajax/download_letterhead.php?id=' + lh.id + '&part=header" alt="" style="height:36px;max-width:120px;object-fit:contain;background:#fff;border-radius:4px;">' +
+              '<div style="flex:1;">' +
+              '<div>' + lh.letterhead_name + (lh.is_main ? ' <span class="badge badge-success">Main</span>' : '') + '</div>' +
+              '<div class="header-sub">' + lh.company_name + ' &middot; ' + lh.origin + (lh.has_footer ? ' &middot; has footer' : '') + '</div>' +
+              '</div>' +
+              '<button type="button" class="btn btn-danger lh-delete-btn" data-id="' + lh.id + '" data-name="' + lh.letterhead_name + '"><i class="ti ti-trash"></i></button>' +
+              '</div>';
+            lhAccordionList.appendChild(row);
+          });
+
+          lhAccordionList.querySelectorAll('.lh-delete-btn').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+              confirmDeleteLetterhead(btn.getAttribute('data-id'), btn.getAttribute('data-name'));
+            });
+          });
+          refreshOpenHeight(lhCard);
+        })
+        .catch(function () {
+          lhAccordionList.innerHTML = '<div class="empty-sub">Failed to load letterheads.</div>';
+          refreshOpenHeight(lhCard);
+        });
+    };
+
+    lhSaveForm.addEventListener('submit', function (e) {
+      e.preventDefault();
+      lhSaveMessage.textContent = '';
+      lhSaveMessage.className = 'settings-message';
+
+      var fd = new FormData();
+      fd.append('letterhead_name', lhNameInput.value.trim());
+      fd.append('company_name', lhCompanyInput.value.trim());
+      fd.append('origin', lhOriginInput.value.trim());
+      fd.append('is_main', lhMainCheckbox.checked ? '1' : '0');
+      if (lhHeaderFileInput.files[0]) fd.append('header_file', lhHeaderFileInput.files[0]);
+      if (lhFooterFileInput.files[0]) fd.append('footer_file', lhFooterFileInput.files[0]);
+
+      lhSaveBtn.disabled = true;
+      fetch('ajax/upload_letterhead.php', { method: 'POST', body: fd })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          lhSaveBtn.disabled = false;
+          if (!data.success) {
+            lhSaveMessage.textContent = data.message || 'Failed to save letterhead.';
+            lhSaveMessage.className = 'settings-message settings-message-error';
+            return;
+          }
+          lhSaveMessage.textContent = 'Saved to library.';
+          lhSaveMessage.className = 'settings-message settings-message-success';
+          lhSaveForm.reset();
+          loadLetterheads();
+        })
+        .catch(function () {
+          lhSaveBtn.disabled = false;
+          lhSaveMessage.textContent = 'Network error.';
+          lhSaveMessage.className = 'settings-message settings-message-error';
+        });
+    });
+
+    // Same shared confirm modal (openConfirmModal) as Signature Library's
+    // confirmDeleteSignature() above - see that function for reference.
+    function confirmDeleteLetterhead(id, name) {
+      openConfirmModal(
+        'Delete Letterhead',
+        'This will permanently delete "' + name + '" and its file(s). This action cannot be undone. Enter your password to confirm.',
+        function () {
+          var fd = new FormData();
+          fd.append('id', id);
+          fetch('ajax/delete_letterhead.php', { method: 'POST', body: fd })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+              if (!data.success) {
+                confirmModalError(data.message || 'Failed to delete letterhead.');
+                return;
+              }
+              hideModal(confirmOverlay);
+              loadLetterheads();
+            })
+            .catch(function () { confirmModalError('Network error.'); });
+        }
+      );
+    }
   })();
 })();
 </script>
