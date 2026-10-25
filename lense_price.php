@@ -20,11 +20,64 @@
     $data = json_decode(file_get_contents($json_file), true);
     $message = '';
 
+    // --- Lens Feature Presets (features + sources) — managed in System Config, read-only here ---
+    $feature_presets_file = 'data_json/lens_feature_presets.json';
+    $preset_features_list = [];
+    $preset_sources_list  = [];
+    if (file_exists($feature_presets_file)) {
+        $preset_decoded = json_decode(file_get_contents($feature_presets_file), true);
+        if (is_array($preset_decoded)) {
+            $preset_features_list = is_array($preset_decoded['features'] ?? null) ? $preset_decoded['features'] : [];
+            $preset_sources_list  = is_array($preset_decoded['sources']  ?? null) ? $preset_decoded['sources']  : [];
+        }
+    }
+
     // Default limits template
     $DEFAULT_LIMITS = ['sph_from'=>0,'sph_to'=>0,'cyl_from'=>0,'cyl_to'=>0,'add_from'=>0,'add_to'=>0,'comb_max'=>0,'note'=>''];
 
     // Helper: uppercase a string safely (trim + strtoupper)
     function uc_trim($s) { return strtoupper(trim((string)$s)); }
+
+    // Known abbreviations that must stay fully UPPERCASE even inside Title Case text
+    // (e.g. "UV Protection", not "Uv Protection"; "AR Coating", not "Ar Coating").
+    // A word like "UV400" also matches since it starts with "UV".
+    $TITLE_CASE_KEEP_UPPER = ['UV', 'AR', 'IR', 'HD', 'UV400'];
+
+    // Title Case a string (first letter of each word uppercase, rest lowercase),
+    // except known abbreviations which stay fully uppercase, and hyphenated
+    // words where each segment is Title Cased individually (e.g. "Anti-Static").
+    // Collapses extra whitespace and trims the ends.
+    // Used only for Lens Feature Presets storage — does not affect how feature
+    // tags are cased on individual lenses (those stay UPPERCASE).
+    function title_case_words($s) {
+        global $TITLE_CASE_KEEP_UPPER;
+        $s = trim((string)$s);
+        $s = preg_replace('/\s+/', ' ', $s);
+        if ($s === '') return $s;
+
+        $words = explode(' ', $s);
+        $result_words = [];
+        foreach ($words as $word) {
+            // Handle hyphenated words segment by segment (e.g. "high-index" → "High-Index")
+            $segments = explode('-', $word);
+            $cased_segments = [];
+            foreach ($segments as $segment) {
+                if ($segment === '') { $cased_segments[] = $segment; continue; }
+                $upper_segment = mb_strtoupper($segment, 'UTF-8');
+                $is_known_abbrev = false;
+                foreach ($TITLE_CASE_KEEP_UPPER as $abbrev) {
+                    if (strpos($upper_segment, $abbrev) === 0) { $is_known_abbrev = true; break; }
+                }
+                if ($is_known_abbrev) {
+                    $cased_segments[] = $upper_segment;
+                } else {
+                    $cased_segments[] = mb_convert_case($segment, MB_CASE_TITLE, 'UTF-8');
+                }
+            }
+            $result_words[] = implode('-', $cased_segments);
+        }
+        return implode(' ', $result_words);
+    }
 
     // Migrate old data structure + uppercase category/lens/feature keys & values.
     // If collisions happen (e.g., "Single Vision" and "SINGLE VISION"), entries are merged.
@@ -84,6 +137,65 @@
 
     // ── POST handlers ──────────────────────────────────────────────────
     if ($_SERVER["REQUEST_METHOD"] == "POST") {
+
+        // ── AJAX: add a new custom feature to the Lens Feature Presets list ──
+        // Triggered whenever the "+ Add" button creates a feature that is not
+        // already in the preset list (from ANY lens card — Add New Lens form
+        // or any existing lens card). De-duplicates case-insensitively.
+        // Expects POST keys: add_feature_preset=1, feature_name.
+        // Responds with JSON; does NOT render the page.
+        if (isset($_POST['add_feature_preset'])) {
+            header('Content-Type: application/json; charset=utf-8');
+            $resp = ['ok' => false, 'message' => '', 'added' => false, 'features' => []];
+
+            $feature_name = trim($_POST['feature_name'] ?? '');
+            if ($feature_name === '') {
+                $resp['message'] = 'Feature name is empty.';
+                echo json_encode($resp); exit;
+            }
+            // Store presets in Title Case (e.g. "Blue Light Blocking"), regardless of how
+            // the feature tag itself is cased on the lens (which stays UPPERCASE as before).
+            $feature_name = title_case_words($feature_name);
+
+            // Re-read the presets file fresh (avoid clobbering concurrent edits from System Config)
+            $fp_decoded = [];
+            if (file_exists($feature_presets_file)) {
+                $fp_decoded = json_decode(file_get_contents($feature_presets_file), true);
+            }
+            if (!is_array($fp_decoded)) $fp_decoded = [];
+            $fp_features = is_array($fp_decoded['features'] ?? null) ? $fp_decoded['features'] : [];
+            $fp_sources  = is_array($fp_decoded['sources']  ?? null) ? $fp_decoded['sources']  : [];
+
+            // Check duplicate (case-insensitive) against the existing preset list
+            $already_exists = false;
+            foreach ($fp_features as $existing_feat) {
+                if (mb_strtolower(trim($existing_feat)) === mb_strtolower($feature_name)) {
+                    $already_exists = true;
+                    break;
+                }
+            }
+
+            if (!$already_exists) {
+                $fp_features[] = $feature_name;
+                $fp_data = ['features' => array_values($fp_features), 'sources' => array_values($fp_sources)];
+                $write_ok = @file_put_contents(
+                    $feature_presets_file,
+                    json_encode($fp_data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)
+                );
+                if ($write_ok === false) {
+                    $resp['message'] = 'Failed to write lens_feature_presets.json (check permissions).';
+                    echo json_encode($resp); exit;
+                }
+                $resp['added'] = true;
+                $resp['message'] = "\"$feature_name\" added to the preset list.";
+            } else {
+                $resp['message'] = "\"$feature_name\" already exists in the preset list.";
+            }
+
+            $resp['ok'] = true;
+            $resp['features'] = $fp_features;
+            echo json_encode($resp); exit;
+        }
 
         // ── AJAX: save ONE lens at a time (per-lens save) ────────────────
         // Avoids the "Save All" lost-update problem where a stale form would
@@ -315,6 +427,7 @@
             $new_name     = uc_trim($_POST['new_lense_name'] ?? '');
             $new_cost     = (float)$_POST['new_lense_price_cost'];
             $new_selling  = (float)$_POST['new_lense_price_selling'];
+            $new_source   = trim($_POST['new_lense_source'] ?? '');
             $features_raw = $_POST['new_lense_features'] ?? '';
             $new_features = array_values(array_filter(
                 array_map('uc_trim', explode(',', $features_raw)),
@@ -375,6 +488,7 @@
                 $data[$new_group][$new_cat][$save_name] = [
                     'cost'=>$new_cost,'selling'=>$new_selling,
                     'features'=>$new_features,'limits'=>$new_limits,
+                    'source'=>$new_source,
                 ];
                 $active_tab = 'add';
                 skip_save:;
@@ -1139,6 +1253,17 @@
                                         placeholder="e.g. SV-CRMC" required>
                                 </div>
 
+                                <div class="form-field">
+                                    <label>Source</label>
+                                    <select name="new_lense_source" id="new_lense_source_select" class="input-field">
+                                        <option value="">&mdash; Select source &mdash;</option>
+                                        <?php foreach ($preset_sources_list as $src): ?>
+                                            <option value="<?php echo htmlspecialchars($src); ?>"><?php echo htmlspecialchars($src); ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                    <p class="description" style="margin-top:6px;">Managed in System Config &rarr; Lens Feature Presets &rarr; Sources.</p>
+                                </div>
+
                                 <div class="lens-prices-row" style="margin:0;">
                                     <div class="price-col cost-col form-field" style="margin:0;">
                                         <label>Cost Price</label>
@@ -1669,21 +1794,9 @@
             }
 
             // ─── Feature tags ─────────────────────────────────────────────
-            // Preset feature options (order matters — shown as quick-select chips)
-            const PRESET_FEATURES = [
-                'UV Protection',
-                'High-Index UV400 Protection',
-                'Scratch-Resistant Coating',
-                'Anti-Reflective (AR) Coating',
-                'Smudge-Resistant',
-                'Hydrophobic',
-                'Super Hydrophobic',
-                'Anti-Static',
-                'Blue Light Blocking',
-                'Impact-Resistant',
-                'Photochromic',
-                'Night Drive Coating'
-            ];
+            // Preset feature options (order matters — shown as quick-select chips).
+            // Sourced from data_json/lens_feature_presets.json, managed in System Config.
+            const PRESET_FEATURES = <?php echo json_encode($preset_features_list, JSON_UNESCAPED_UNICODE); ?>;
             const lenseFeatures = {};
             function initFeatureTags(k, f) {
                 // Normalize existing features to UPPERCASE on load
@@ -1746,13 +1859,42 @@
                 if (arrow) arrow.style.transform = card.classList.contains('collapsed') ? '' : 'rotate(90deg)';
             }
             function removeFeatureTag(k,i) { if(lenseFeatures[k]) { lenseFeatures[k].splice(i,1); renderFeatureTags(k); } }
+
+            // Send a newly typed feature to the server so it becomes a permanent preset
+            // (data_json/lens_feature_presets.json). Fires from the "+ Add" button on
+            // ANY lens card — the Add New Lens form and every existing lens card.
+            // De-duplicated case-insensitively against the current PRESET_FEATURES list.
+            function pushFeatureToPresets(featureName) {
+                const presetUppers = PRESET_FEATURES.map(p => p.toUpperCase());
+                if (presetUppers.includes(featureName.toUpperCase())) return; // already a known preset, nothing to do
+
+                const body = new URLSearchParams();
+                body.set('add_feature_preset', '1');
+                body.set('feature_name', featureName);
+
+                fetch('lense_price.php', { method: 'POST', body: body })
+                    .then(r => r.json())
+                    .then(resp => {
+                        if (resp && resp.ok && Array.isArray(resp.features)) {
+                            // Refresh the in-memory preset list and re-render every open quick-select grid
+                            PRESET_FEATURES.length = 0;
+                            resp.features.forEach(f => PRESET_FEATURES.push(f));
+                            Object.keys(lenseFeatures).forEach(key => renderPresetFeatures(key));
+                        }
+                    })
+                    .catch(() => { /* Non-critical: preset sync failure should not block the UI */ });
+            }
+
             function addFeatureTag(k) {
                 const inp = document.getElementById('feat-input-'+k); if(!inp) return;
                 const v = inp.value.trim(); if(!v) return;
                 if(!lenseFeatures[k]) lenseFeatures[k]=[];
                 v.split(',').map(t=>t.trim().toUpperCase()).filter(t=>t).forEach(t=>{
                     // Avoid duplicates (case-insensitive since everything is uppercased)
-                    if (!lenseFeatures[k].includes(t)) lenseFeatures[k].push(t);
+                    if (!lenseFeatures[k].includes(t)) {
+                        lenseFeatures[k].push(t);
+                        pushFeatureToPresets(t);
+                    }
                 });
                 renderFeatureTags(k); inp.value=''; inp.focus();
             }

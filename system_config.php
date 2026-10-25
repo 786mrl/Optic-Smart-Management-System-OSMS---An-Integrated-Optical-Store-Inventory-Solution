@@ -30,6 +30,79 @@
         }
     }
 
+    // --- Lens Feature Presets: stored in a JSON file (not in the 'settings' DB table) ---
+    // Structure: { "features": ["Name1", "Name2", ...], "sources": ["Company1", "Company2", ...] }
+    // "features" and "sources" are two independent lists — they are not linked to each other.
+    define('LENS_FEATURE_PRESETS_FILE', __DIR__ . '/data_json/lens_feature_presets.json');
+
+    // Fallback seed used only if the JSON file does not exist yet or is unreadable/invalid
+    $DEFAULT_LENS_FEATURE_PRESETS = [
+        'features' => [
+            'UV Protection',
+            'High-Index UV400 Protection',
+            'Scratch-Resistant Coating',
+            'Anti-Reflective (AR) Coating',
+            'Smudge-Resistant',
+            'Hydrophobic',
+            'Super Hydrophobic',
+            'Anti-Static',
+            'Blue Light Blocking',
+            'Impact-Resistant',
+            'Photochromic',
+            'Night Drive Coating',
+        ],
+        'sources' => [
+            'Domas',
+            'Essilor',
+        ],
+    ];
+
+    // --- Read Lens Feature Presets from the JSON file (creates the file with the default seed if missing) ---
+    function read_lens_feature_presets($default_seed) {
+        if (!file_exists(LENS_FEATURE_PRESETS_FILE)) {
+            $dir = dirname(LENS_FEATURE_PRESETS_FILE);
+            if (!is_dir($dir)) mkdir($dir, 0777, true);
+            file_put_contents(LENS_FEATURE_PRESETS_FILE, json_encode($default_seed, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+            return $default_seed;
+        }
+
+        $raw = file_get_contents(LENS_FEATURE_PRESETS_FILE);
+        $decoded = json_decode($raw, true);
+        if (!is_array($decoded) || !isset($decoded['features']) || !isset($decoded['sources'])) {
+            return $default_seed;
+        }
+        return $decoded;
+    }
+
+    // --- Write Lens Feature Presets to the JSON file. Returns true on success. ---
+    function write_lens_feature_presets($features_array, $sources_array) {
+        $dir = dirname(LENS_FEATURE_PRESETS_FILE);
+        if (!is_dir($dir)) mkdir($dir, 0777, true);
+        $data = [
+            'features' => array_values($features_array),
+            'sources'  => array_values($sources_array),
+        ];
+        $json = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+        return file_put_contents(LENS_FEATURE_PRESETS_FILE, $json) !== false;
+    }
+
+    // --- De-duplicate a flat list of strings, case-insensitively, trimming empties ---
+    function dedupe_string_list($raw_list) {
+        $clean = [];
+        $seen = [];
+        if (is_array($raw_list)) {
+            foreach ($raw_list as $item) {
+                $item = trim((string)$item);
+                if ($item === '') continue;
+                $key = mb_strtolower($item);
+                if (isset($seen[$key])) continue;
+                $seen[$key] = true;
+                $clean[] = $item;
+            }
+        }
+        return $clean;
+    }
+
     // --- Determine if the currently logged-in user IS the Main Admin (used for both POST handling and HTML rendering) ---
     $current_main_admin_username = $settings['main_admin_username']['value'] ?? '';
     $is_main_admin_user = ($current_main_admin_username !== '' && ($_SESSION['username'] ?? '') === $current_main_admin_username);
@@ -189,6 +262,21 @@
                 }            }
         }
 
+        // --- Lens Feature Presets: validate, remove duplicates (case-insensitive) in each independent list, write to JSON file ---
+        // This is file-based (data_json/lens_feature_presets.json), not part of the 'settings' DB table/transaction.
+        // "features" and "sources" are two separate, unrelated lists.
+        if (isset($_POST['lens_feature_presets_features']) || isset($_POST['lens_feature_presets_sources'])) {
+            $decoded_features = json_decode($_POST['lens_feature_presets_features'] ?? '[]', true);
+            $decoded_sources  = json_decode($_POST['lens_feature_presets_sources'] ?? '[]', true);
+
+            $clean_features = dedupe_string_list($decoded_features);
+            $clean_sources  = dedupe_string_list($decoded_sources);
+
+            if (!write_lens_feature_presets($clean_features, $clean_sources)) {
+                $message = "<div class='alert-box error'>Error saving lens feature presets: could not write to " . htmlspecialchars(LENS_FEATURE_PRESETS_FILE) . "</div>";
+            }
+        }
+
         try {
             foreach ($_POST as $key => $value) {
                 if (in_array($key, $allowed_keys)) {
@@ -224,6 +312,9 @@
             }
         }
     }
+
+    // --- Resolve final Lens Feature Presets list: read fresh from the JSON file (reflects any update just saved above) ---
+    $lens_feature_presets_list = read_lens_feature_presets($DEFAULT_LENS_FEATURE_PRESETS);
 
     close_db_connection($conn);
 ?>
@@ -310,6 +401,46 @@
         .collapsible-section.is-open > .config-body {
             display: block;
         }
+
+        /* --- Lens Feature Presets card --- */
+        .lfp-tag-wrapper { display:flex; flex-wrap:wrap; gap:8px; min-height:24px; margin-bottom:15px; }
+        .lfp-tag {
+            display:inline-flex; align-items:center; gap:6px;
+            background:#162829; color:#2dd4bf; border:1px solid #1e4a4d;
+            border-radius:20px; padding:4px 10px; font-size:11px; font-weight:600;
+            cursor:pointer; transition:all .15s ease;
+        }
+        .lfp-tag:hover { background:#1b3335; border-color:#2dd4bf; }
+        .lfp-tag-dot { width:4px; height:4px; border-radius:50%; background:#2dd4bf; flex-shrink:0; }
+        .lfp-empty-text { font-size:11px; color:#3a3d44; font-style:italic; }
+        .lfp-subsection-label { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:var(--text-muted); margin-bottom:8px; }
+        .lfp-divider { border:none; border-top:1px solid rgba(255,255,255,0.06); margin:22px 0; }
+
+        .lfp-add-row { display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap; }
+        .lfp-add-row .input-group { flex:1; min-width:160px; margin:0; }
+        .lfp-add-row label { display:block; margin-bottom:4px; }
+        .btn-lfp-add {
+            background:#1a3a3c; color:#00adb5; border:1px solid #1e4a4d; border-radius:8px;
+            padding:9px 16px; font-size:12px; font-weight:600; cursor:pointer;
+            white-space:nowrap; transition:all .2s;
+        }
+        .btn-lfp-add:hover { background:#00adb5; color:#fff; border-color:#00adb5; }
+
+        .lfp-edit-box {
+            display:none; margin-top:15px; padding:12px; border-radius:10px;
+            background:rgba(255,255,255,0.02);
+            box-shadow: inset 3px 3px 6px var(--shadow-dark), inset -3px -3px 6px var(--shadow-light);
+        }
+        .lfp-edit-box.is-active { display:block; }
+        .lfp-edit-row { display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap; }
+        .lfp-edit-row .input-group { flex:1; min-width:140px; margin:0; }
+        .lfp-edit-row label { display:block; margin-bottom:4px; }
+        .btn-lfp-update { background:#17433a; color:#00ff88; border:1px solid #1d5c4d; border-radius:8px; padding:9px 14px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap; }
+        .btn-lfp-update:hover { background:#00ff88; color:#0b1a16; }
+        .btn-lfp-delete { background:#3a1717; color:#ff3131; border:1px solid #5c1d1d; border-radius:8px; padding:9px 14px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap; }
+        .btn-lfp-delete:hover { background:#ff3131; color:#fff; }
+        .btn-lfp-cancel { background:transparent; color:var(--text-muted); border:1px solid #2e3138; border-radius:8px; padding:9px 14px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap; }
+        .lfp-msg { font-size:11px; margin-top:8px; color:#ff3131; min-height:14px; }
     </style>
     <!-- button logout, back animation for logo -->
     <style>
@@ -638,7 +769,83 @@
         
                         </div>
                     </div>
-        
+
+                    <div class="config-section collapsible-section">
+                        <div class="section-header" role="button" tabindex="0" aria-expanded="false">
+                            <span>🏷️ Lens Feature Presets</span>
+                            <span class="section-toggle-icon">▸</span>
+                        </div>
+                        <div class="config-body">
+
+                        <!-- ── Features sub-section ── -->
+                        <div class="lfp-subsection-label">Features</div>
+                        <div class="lfp-tag-wrapper" id="lfpFeatureTagWrapper">
+                            <!-- Populated by JS from lfpFeatures -->
+                        </div>
+
+                        <div class="lfp-edit-box" id="lfpFeatureEditBox">
+                            <div class="lfp-edit-row">
+                                <div class="input-group">
+                                    <label>Feature Name</label>
+                                    <input type="text" class="input-field" id="lfpFeatureEditName" placeholder="e.g. UV Protection">
+                                </div>
+                                <button type="button" class="btn-lfp-update" onclick="lfpUpdateFeature()">Update</button>
+                                <button type="button" class="btn-lfp-delete" onclick="lfpDeleteFeature()">Delete</button>
+                                <button type="button" class="btn-lfp-cancel" onclick="lfpCancelFeatureEdit()">Cancel</button>
+                            </div>
+                        </div>
+
+                        <div class="input-grid" style="margin-top:15px;">
+                            <div class="input-group full-width">
+                                <label>Add New Feature</label>
+                                <div class="lfp-add-row">
+                                    <div class="input-group">
+                                        <input type="text" class="input-field" id="lfpNewFeatureName" placeholder="Feature name, e.g. Blue Light Blocking">
+                                    </div>
+                                    <button type="button" class="btn-lfp-add" onclick="lfpAddFeature()">+ Add Feature</button>
+                                </div>
+                                <p class="lfp-msg" id="lfpFeatureMsg"></p>
+                            </div>
+                        </div>
+
+                        <hr class="lfp-divider">
+
+                        <!-- ── Sources sub-section ── -->
+                        <div class="lfp-subsection-label">Sources (Company)</div>
+                        <div class="lfp-tag-wrapper" id="lfpSourceTagWrapper">
+                            <!-- Populated by JS from lfpSources -->
+                        </div>
+
+                        <div class="lfp-edit-box" id="lfpSourceEditBox">
+                            <div class="lfp-edit-row">
+                                <div class="input-group">
+                                    <label>Source Name</label>
+                                    <input type="text" class="input-field" id="lfpSourceEditName" placeholder="e.g. Essilor">
+                                </div>
+                                <button type="button" class="btn-lfp-update" onclick="lfpUpdateSource()">Update</button>
+                                <button type="button" class="btn-lfp-delete" onclick="lfpDeleteSource()">Delete</button>
+                                <button type="button" class="btn-lfp-cancel" onclick="lfpCancelSourceEdit()">Cancel</button>
+                            </div>
+                        </div>
+
+                        <div class="input-grid" style="margin-top:15px;">
+                            <div class="input-group full-width">
+                                <label>Add New Source</label>
+                                <div class="lfp-add-row">
+                                    <div class="input-group">
+                                        <input type="text" class="input-field" id="lfpNewSourceName" placeholder="Source / company name, e.g. Domas">
+                                    </div>
+                                    <button type="button" class="btn-lfp-add" onclick="lfpAddSource()">+ Add Source</button>
+                                </div>
+                                <p class="lfp-msg" id="lfpSourceMsg"></p>
+                            </div>
+                        </div>
+
+                        <input type="hidden" name="lens_feature_presets_features" id="lfpFeaturesHiddenInput" value="">
+                        <input type="hidden" name="lens_feature_presets_sources" id="lfpSourcesHiddenInput" value="">
+                        </div>
+                    </div>
+
                     <div class="config-section collapsible-section">
                         <div class="section-header" role="button" tabindex="0" aria-expanded="false">
                             <span>🔒 Main Admin</span>
@@ -846,6 +1053,148 @@
                 });
             });
         })();
+
+        // --- Lens Feature Presets logic ---
+        // Two independent, unrelated lists: "features" and "sources". Each uses the same generic engine below.
+        var lfpData = {
+            feature: {
+                list: <?php echo json_encode($lens_feature_presets_list['features'], JSON_UNESCAPED_UNICODE); ?>,
+                selectedIndex: -1,
+                wrapperId: 'lfpFeatureTagWrapper',
+                editBoxId: 'lfpFeatureEditBox',
+                editNameId: 'lfpFeatureEditName',
+                newNameId: 'lfpNewFeatureName',
+                msgId: 'lfpFeatureMsg',
+                hiddenInputId: 'lfpFeaturesHiddenInput',
+                emptyText: 'No preset features yet. Add one below.',
+                duplicateLabel: 'feature list'
+            },
+            source: {
+                list: <?php echo json_encode($lens_feature_presets_list['sources'], JSON_UNESCAPED_UNICODE); ?>,
+                selectedIndex: -1,
+                wrapperId: 'lfpSourceTagWrapper',
+                editBoxId: 'lfpSourceEditBox',
+                editNameId: 'lfpSourceEditName',
+                newNameId: 'lfpNewSourceName',
+                msgId: 'lfpSourceMsg',
+                hiddenInputId: 'lfpSourcesHiddenInput',
+                emptyText: 'No sources yet. Add one below.',
+                duplicateLabel: 'source list'
+            }
+        };
+
+        function lfpEscapeHtml(str) {
+            var div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        function lfpNormalize(name) {
+            return String(name).trim().toLowerCase();
+        }
+
+        function lfpFindDuplicateIndex(group, name, excludeIndex) {
+            var norm = lfpNormalize(name);
+            for (var i = 0; i < group.list.length; i++) {
+                if (i === excludeIndex) continue;
+                if (lfpNormalize(group.list[i]) === norm) return i;
+            }
+            return -1;
+        }
+
+        function lfpRenderTags(group) {
+            var wrapper = document.getElementById(group.wrapperId);
+            if (!group.list.length) {
+                wrapper.innerHTML = '<span class="lfp-empty-text">' + group.emptyText + '</span>';
+            } else {
+                wrapper.innerHTML = group.list.map(function (name, idx) {
+                    return '<span class="lfp-tag" onclick="lfpOpenEdit(\'' + group.key + '\', ' + idx + ')">' +
+                        '<span class="lfp-tag-dot"></span>' + lfpEscapeHtml(name) +
+                        '</span>';
+                }).join('');
+            }
+            document.getElementById(group.hiddenInputId).value = JSON.stringify(group.list);
+        }
+
+        function lfpSetMsg(group, text) {
+            document.getElementById(group.msgId).textContent = text || '';
+        }
+
+        function lfpAddToGroup(group) {
+            var nameInput = document.getElementById(group.newNameId);
+            var name = nameInput.value.trim();
+
+            if (name === '') {
+                lfpSetMsg(group, 'Name cannot be empty.');
+                return;
+            }
+            if (lfpFindDuplicateIndex(group, name, -1) !== -1) {
+                lfpSetMsg(group, '"' + name + '" already exists in the ' + group.duplicateLabel + '.');
+                return;
+            }
+
+            group.list.push(name);
+            nameInput.value = '';
+            lfpSetMsg(group, '');
+            lfpRenderTags(group);
+        }
+
+        function lfpOpenEdit(key, idx) {
+            var group = lfpData[key];
+            group.selectedIndex = idx;
+            document.getElementById(group.editNameId).value = group.list[idx];
+            document.getElementById(group.editBoxId).classList.add('is-active');
+            lfpSetMsg(group, '');
+        }
+
+        function lfpCancelEditGroup(group) {
+            group.selectedIndex = -1;
+            document.getElementById(group.editBoxId).classList.remove('is-active');
+            lfpSetMsg(group, '');
+        }
+
+        function lfpUpdateGroup(group) {
+            if (group.selectedIndex === -1) return;
+            var name = document.getElementById(group.editNameId).value.trim();
+
+            if (name === '') {
+                lfpSetMsg(group, 'Name cannot be empty.');
+                return;
+            }
+            var dupIdx = lfpFindDuplicateIndex(group, name, group.selectedIndex);
+            if (dupIdx !== -1) {
+                lfpSetMsg(group, '"' + name + '" already exists in the ' + group.duplicateLabel + '.');
+                return;
+            }
+
+            group.list[group.selectedIndex] = name;
+            lfpCancelEditGroup(group);
+            lfpRenderTags(group);
+        }
+
+        function lfpDeleteFromGroup(group) {
+            if (group.selectedIndex === -1) return;
+            group.list.splice(group.selectedIndex, 1);
+            lfpCancelEditGroup(group);
+            lfpRenderTags(group);
+        }
+
+        // Thin wrapper functions referenced directly from the HTML (feature group)
+        function lfpAddFeature() { lfpAddToGroup(lfpData.feature); }
+        function lfpUpdateFeature() { lfpUpdateGroup(lfpData.feature); }
+        function lfpDeleteFeature() { lfpDeleteFromGroup(lfpData.feature); }
+        function lfpCancelFeatureEdit() { lfpCancelEditGroup(lfpData.feature); }
+
+        // Thin wrapper functions referenced directly from the HTML (source group)
+        function lfpAddSource() { lfpAddToGroup(lfpData.source); }
+        function lfpUpdateSource() { lfpUpdateGroup(lfpData.source); }
+        function lfpDeleteSource() { lfpDeleteFromGroup(lfpData.source); }
+        function lfpCancelSourceEdit() { lfpCancelEditGroup(lfpData.source); }
+
+        lfpData.feature.key = 'feature';
+        lfpData.source.key = 'source';
+        lfpRenderTags(lfpData.feature);
+        lfpRenderTags(lfpData.source);
 
         // --- Main Admin unlock logic ---
         document.getElementById('mainAdminUnlockBtn').onclick = function () {
