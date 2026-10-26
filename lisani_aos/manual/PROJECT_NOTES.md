@@ -1,6 +1,6 @@
 # PROJECT_NOTES — lisani_aos
 
-> Versi ringkas (5 Okt 2026): hanya kondisi sekarang, aturan bisnis, peta file, dan pekerjaan terbuka.
+> Versi ringkas (26 Okt 2026): hanya kondisi sekarang, aturan bisnis, peta file, dan pekerjaan terbuka.
 > Riwayat per sesi ada di `NOTES_ARCHIVE.md` (upload hanya jika perlu tahu ALASAN keputusan lama).
 > Pekerjaan baru: tambahkan ±10 baris di "Log terbaru" (§8). Setelah dites, lebur ke modul terkait dan hapus dari log.
 
@@ -21,7 +21,7 @@ optic_pos/
     ├── assets/css/                theme.css (token + komponen), responsive.css (breakpoint)
     ├── transaction_content.php    Transactions: Activity Code, Customer List, Input Transaction, Sales
     ├── logistic_content.php       Logistic: List, Movements, Create New Logistic
-    ├── document_tools_content.php Document Tools: Signature Library (baru; lihat §8)
+    ├── document_tools_content.php Document Tools: Signature Library, Letterhead Library, Document Editor (lihat §6)
     ├── settings_content.php       Company Documents & Company Bank Accounts
     ├── report_content.php         Report: Finance Report
     ├── investor_content.php       Investor: Investors, Investment, Report, Profit Payment & Rolled Capital
@@ -75,7 +75,7 @@ optic_pos/
      bagian lain report tetap tampil.
 - **Menu**: sidebar = Dashboard, Transactions, Logistic, Document Tools, Report, Investor — semua pakai ikon Tabler
   (Logistic sempat tanpa ikon, diperbaiki 16 Okt 2026 jadi `ti-truck-delivery`; Document Tools baru, `ti-signature`,
-  lihat §8), berlaku di sidebar desktop & bottom-nav mobile.
+  lihat §6), berlaku di sidebar desktop & bottom-nav mobile.
   Settings & Exit di dropdown avatar. Ganti section lewat `[data-target]` (footer.php → `setActive()`), yang juga
   `dispatchEvent('aos:section-shown', {detail:{target}})`. Section yang fetch-nya cuma sekali bisa listen event ini
   untuk refresh live (pola generik, tidak perlu ubah footer.php).
@@ -231,6 +231,16 @@ Viewer + OCR dipakai bersama dengan upload bukti pembayaran (satu instance, dipi
   bank — jalan saat field Bank terisi **dan** Account Number masih kosong (begitu nomor terisi, pencocokan nomor di
   atas yang menang); 0 cocok → `acctRegisterOverlay` lewat `openAcctRegisterByBank()` (bank sudah terisi). Fungsi inti
   `openAcctRegisterCore()` dipakai bersama alur nomor & bank-saja.
+- **Adjustable OCR crop box** (viewer dipakai bersama Invoice Payment): setelah drag awal (`endDrag`), box TIDAK
+  langsung di-OCR — masuk `enterAdjustMode()`: box jadi persisten dengan 8 handle resize (sudut+tengah sisi,
+  `ADJUST_HANDLE_DIRS`), bisa digeser mouse & touch (`resizeAdjustBox`/`renderAdjustUI`, posisi dihitung ulang dari
+  `adjustBox` dalam **canvas pixel space**, bukan client space, supaya tahan zoom/scroll — resync di `applyCapZoom()`
+  & scroll `capStage`). Dua tombol di hint bar: **Read** (`btnCapReadSelection`, lanjut `runOcrOnRegion`) dan
+  **Redraw** (`btnCapRedrawSelection`, buang box & kembali ke mode drag). Mousedown/touchstart di canvas dicek
+  `|| adjustBox` supaya tidak mulai drag baru selagi masih adjust. `closeCapViewer()` dan tombol Prev/Next Page
+  panggil `exitAdjustMode()` untuk bersih-bersih handle yang menggantung. Shortcut: double-tap di mana saja dalam
+  `capStage` = Read, triple-tap = Redraw (`adjustTapCount`/`adjustTapTimer`, listener di `capStage` bukan `document`;
+  tap di handle sendiri diabaikan via `e.target.dataset.dir`).
 
 **Settings**: Company Documents (upload/edit/delete→recycle/share WA/download) dan Company Bank Accounts (autocomplete
 bank/nama, duplikat per bank, share WA). Edit/Delete/Share pola (b).
@@ -371,6 +381,83 @@ belum dibangun).
      (bukan `display:none/block`, gotcha umum #2), di-re-sync lewat `window.invSyncCollapsibleHeights()` di akhir
      `render()` dan `renderAllocTable()` karena keduanya menulis ulang tbody di dalam card yang mungkin terbuka.
 
+**Document Tools** (`document_tools_content.php`; semua sudah dites user & OK per 26 Okt 2026):
+
+- *Signature Library*: satu-satunya cara tambah signature = lewat editor canvas (Upload Photo → edit → Save to
+  Library, `ajax/upload_signature.php`); tidak ada form upload manual terpisah lagi, tab "Draw" sudah dihapus.
+  Storage `storage/signature/{company_name_slug}/{origin_slug}/{file}`. Field **Company Name** + **Origin**
+  (tidak bisa diedit lewat form Edit, hanya saat create; tidak terhubung ke `document_activities.json` — itu
+  murni milik Document Editor). Kolom `is_main` (boleh lebih dari satu sekaligus, diatur manual user, tanpa
+  constraint unik/auto-unset); `list_signatures.php` `ORDER BY is_main DESC, signature_date DESC, id DESC`,
+  badge "MAIN" di list. List dikelompokkan per Company Name (header grup collapsible, grup pertama auto-terbuka).
+  Date default ke hari ini (local time) saat form pertama dibuka & tiap reset form.
+  - Signature Editor (canvas, Upload Photo saja): workspace putih + grid garis halus (bukan checkerboard).
+    **Crop**: drag kotak awal → 8 handle resize + drag-dari-tengah untuk geser, tombol **Undo Crop** (1 langkah
+    terakhir). **Erase Part**: brush radius diatur slider "Eraser Size", hasil tersimpan di `erasedMask` terpisah
+    dari threshold (geser slider Remove White Background tidak menghapus hasil erase); **Undo Erase** adalah
+    history stack (bukan 1 langkah) maks 30 entri, snapshot diambil tiap awal stroke (`pointerdown`). Remove
+    White Background (`sigBgThreshold`) punya tombol -5/+5 di samping slider. **Ink Contrast** (slider 0-100,
+    default 0): satu kontrol untuk gelapkan warna + tebalkan opacity piksel tinta sekaligus (`inkFactor`), selalu
+    dihitung ulang dari `originalPhotoImageData`, tidak direset saat upload foto baru/Clear (konsisten dengan
+    `sigBgThreshold`). **Zoom** (grup toolbar terpisah, `sigZoomSlider` 50-300% + tombol −/Reset/+): murni ukuran
+    tampilan (CSS `width%` pada `.sig-canvas-zoom-wrap`), tidak mengubah resolusi pixel asli canvas, koordinat
+    pointer tetap akurat di level zoom berapa pun. Toolbar terbagi jadi kartu grup: Photo / Zoom / Crop / Erase
+    Part / Remove White Background / Ink Contrast. Konstanta Zoom proyek ini (`ZOOM_MIN/MAX/STEP`) khusus
+    Signature Editor — Document Editor pakai prefix `DOC_ZOOM_*` sendiri (lihat gotcha §3 soal nama variabel
+    top-level yang collide dalam satu IIFE file).
+  - Delete Signature: pindah ke `recycle/` + membersihkan folder asli `storage/signature/.../` yang jadi kosong
+    (jalan ke atas berhenti di folder yang masih ada isinya, tidak pernah menghapus `storage/signature` sendiri).
+
+- *Letterhead Library* (tabel `letterhead_library`, 1 entri = header wajib + footer opsional, storage
+  `storage/letterhead/{company_slug}/{origin_slug}/`, pola CRUD sama seperti Signature Library): 3 input
+  (`lhNameInput`/`lhCompanyInput`/`lhOriginInput`) pakai `.input-uppercase` + `strtoupper()` server. Delete
+  membersihkan folder asli sama seperti Signature, dan tombol Delete punya teks di sebelah ikon.
+
+- *Document Editor*: upload dokumen gambar atau **PDF multi-halaman** (PDF→gambar per halaman via PDF.js, murni
+  browser, tidak butuh Imagick/Ghostscript/pdftoppm di server), strip tombol pilih halaman, kanvas **Fabric.js
+  5.3.0** (cdnjs, dibungkus try/catch — gotcha §3 #8). Tiap halaman punya state Fabric sendiri
+  (`toJSON()`/`loadFromJSON()` saat `switchToPage()`).
+  - **Block**: "Block: Top Text"/"Block: Name" — drag kotak di canvas langsung jadi `fabric.Image` draggable +
+    lubang bekas area dipatch warna sampling piksel tetangga. Drag gagal (<4px) tidak mematikan draw-mode lagi
+    (sebelumnya harus klik ulang tombol); cursor `crosshair` selama armed.
+  - **Guide Box**: rect oranye resizable, dropdown preset ukuran dalam **inci** (`json_file/guide_box_presets.json`,
+    self-seed via `ajax/list_guide_box_presets.php`, default 1.46"×2.18" dan 1.46"×3.05", admin bisa
+    edit/tambah baris JSON langsung di server). Checkbox "Auto-shift Name" menggeser blok Name sebesar delta
+    posisi guide box saat guide box digeser/di-resize. Konversi inci→px pakai `DOC_DPI = 150` (JS), **harus tetap
+    sinkron** dengan `$ASSUMED_DPI = 150` di `save_edited_document.php`.
+  - **Insert Signature**: modal `#docSigPickerOverlay` (reuse `ajax/list_signatures.php` + `download_signature.php`
+    sebagai image source), posisi mengikuti guide box pakai `getScaledWidth()`/`getScaledHeight()` (bukan
+    `.width`/`.height` mentah, supaya ikut resize guide box yang sudah di-scale via drag handle Fabric).
+  - **Insert Letterhead**: ditempel full-width pinned ke atas/bawah halaman (`centeredScaling:true` khusus layer
+    kop, beda dari signature yang biasanya di-resize dari sudut). Checkbox "Apply to all pages" (default checked):
+    halaman yang tidak sedang dibuka ditempel lewat `fabric.StaticCanvas` offscreen
+    (`addLetterheadToPageData()`), rumus placement satu sumber via `letterheadPlacementProps()`. Edit
+    (geser/resize) kop ikut sync ke semua halaman via tag custom Fabric `letterheadSyncId` + `letterheadPart`
+    (ditambahkan ke semua pemanggilan `toJSON([...])` termasuk undo snapshot) dan listener `object:modified` →
+    `syncLetterheadTransform(obj)`. Undo letterhead: snapshot diambil di `mouse:down` begitu user mulai pegang
+    layer letterhead (bukan hanya sebelum aksi eksplisit seperti layer lain) — jadi Undo pertama = balik posisi
+    sebelum geser terakhir (letterhead tetap ada, tersync ke semua halaman), Undo kedua baru menghapus total.
+    Arrow-key nudge ikut sync tapi tidak push undo snapshot sendiri.
+  - **Zoom & Fullscreen**: `applyZoom()`/`fitZoomToContainer()` pakai Fabric native `setZoom()`+`setDimensions()`
+    (bukan CSS squish) supaya `getPointer()` akurat di level zoom berapa pun; `fitZoomToContainer()` auto-fit
+    tiap `switchToPage()`. Export/save PDF selalu render dari `fabric.StaticCanvas` terpisah di resolusi asli
+    (`renderPageToDataURL()`), tidak terpengaruh zoom layar. **Fullscreen**: `#docEditorWorkspace` di-reparent
+    jadi anak langsung `<body>` (bukan cuma toggle class) agar lolos dari ancestor `overflow:hidden`/clip di
+    WebView lama, z-index `2147483647 !important`. Fit-to-width saat fullscreen (bukan fit-to-page), tinggi
+    discroll kalau perlu. Field "Upload Document" & hint teks disembunyikan khusus saat fullscreen (toolbar+tab
+    halaman otomatis paling atas). Form Save (Document Name/Date/Judul Kegiatan/Save) **disembunyikan total**
+    saat fullscreen (bukan dirapatkan) — isi nama/save harus exit fullscreen dulu. Toolbar dikunci
+    `flex-wrap:nowrap` + `overflow-x:auto` saat fullscreen (geser horizontal, tidak pernah pecah baris).
+  - **Save**: semua halaman di-flatten jadi PNG (guide box dibuang dari export), dikirim sekaligus (`pages[]`)
+    + `signature_ids[]` + `letterhead_ids[]` ke `ajax/save_edited_document.php`, digabung jadi **1 file PDF**
+    via **FPDF** (reuse `optic_pos/fpdf/fpdf.php`). Tabel `edited_documents`: `signature_ids`/`letterhead_ids`
+    (VARCHAR CSV, tanpa FK), `page_count`, `file_ext` default `'pdf'`. DOCX ditunda (belum yakin Composer
+    tersedia di server).
+  - **Bug diketahui, belum ditemukan akar masalahnya, diabaikan sementara atas permintaan user**: tombol-tombol
+    toolbar (termasuk grup Zoom) terlihat mengecil saat persentase zoom dokumen dinaikkan (bukan zoom browser,
+    sudah ditelusuri habis di semua file terkait tanpa hasil). Kalau mau dilanjutkan: minta user screenshot
+    panel Computed DevTools dari tombol toolbar di dua level zoom berbeda.
+
 ## 7. Peta endpoint (`ajax/`)
 - **Auth/util**: `verify_password.php`, `_require_reverify.php`, `_order_patterns.php`, `_invoice_pdf.php`.
 - **Activity/Customer/Settings**: `create|update|delete|list|preview_activity_code`, `manage_departments`,
@@ -413,502 +500,7 @@ belum dibangun).
 ## 8. Pekerjaan terbuka
 
 ### Log terbaru (belum dites, jangan lebur ke §6 sebelum dikonfirmasi)
-- **21 Okt 2026, Signature Editor: container canvas tidak lagi ikut membesar saat Zoom
-  (belum dites)**: laporan user - secara fungsi Zoom sudah benar, tapi viewport-nya
-  (`#sigEditorCanvasOuter`, `.sig-canvas-outer`) ikut "membesar/mengecil" mengikuti persentase
-  zoom, padahal maunya cuma ITEM (canvas) di dalamnya yang zoom, container-nya diam dengan ukuran
-  sendiri. Akar masalah: `.sig-canvas-zoom-wrap` sebelumnya di-resize via `width` dalam PERSEN,
-  dan `.sig-canvas-outer` (parent-nya) punya `width:100%` tanpa tinggi tetap - jadi walau
-  `overflow:auto` ada di outer, lebar efektif wrap yang berubah-ubah bikin outer ikut terasa
-  "mengikuti" zoom. **Fix**: `.sig-canvas-outer` sekarang punya `height:360px` tetap +
-  `resize:both` (CSS native, bukan JS - muncul handle drag di pojok kanan-bawah, browser modern
-  semua dukung ini) supaya user bisa memperbesar/perkecil container-nya sendiri secara manual;
-  `.sig-canvas-zoom-wrap` width-nya diganti dari persentase (`zoomPercent + '%'`) jadi PIXEL
-  ABSOLUT = `editorCanvas.width (lebar asli canvas) × zoomPercent / 100` (`setZoomPercent()` di
-  JS) - jadi cuma canvas yang membesar/mengecil, container tetap diam di ukuran yang di-set user,
-  cukup di-scroll (`overflow:auto`, sudah ada) kalau canvas lebih besar dari container.
-  `setZoomPercent()` juga dipanggil ulang setelah Apply Crop (ukuran native canvas berubah),
-  supaya wrap tetap sinkron ke persentase zoom yang sedang aktif pakai ukuran baru. Tidak ada
-  perubahan pada logic crop/erase/threshold/ink contrast - semuanya masih pakai
-  `canvasPointFromEvent()` dengan rasio `canvas.width/rect.width` yang sama seperti sebelumnya,
-  jadi posisi klik tetap akurat di ukuran container/zoom berapa pun.
-  **Perlu dites user**: (1) drag resize handle di pojok kanan-bawah container berfungsi di
-  desktop (dan cek juga apakah perlu fallback untuk HP/touch - `resize:both` CSS umumnya tidak
-  muncul di browser mobile); (2) Zoom In/Out/slider/Reset masih membesarkan HANYA canvas, bukan
-  container; (3) posisi klik Crop/Erase tetap akurat di berbagai kombinasi ukuran container ×
-  level zoom; (4) crop lalu zoom (urutan: upload → crop → ubah zoom) tidak membuat canvas
-  "terpotong" tampilannya di wrap.
-
-- **21 Okt 2026, BUG FATAL & FIX: Zoom slider Signature Editor mengecil terus, tidak bisa
-  dibesarkan lagi** (laporan user via 2 screenshot - gambar 1 sebelum zoom diapa-apakan, gambar
-  2 setelah digeser langsung mentok sangat kecil & tidak bisa dibesarkan). Akar masalah: seluruh
-  script `document_tools_content.php` ada di SATU IIFE yang sama, dan Document Editor (bagian
-  Zoom Fabric.js, ditambahkan 18 Okt 2026) mendeklarasikan `var ZOOM_MIN = 0.1; var ZOOM_MAX = 3;
-  var ZOOM_STEP = 0.15;` - NAMA YANG SAMA PERSIS dengan konstanta Signature Editor
-  (`var ZOOM_MIN = 50, ZOOM_MAX = 300, ZOOM_STEP = 25;`, ditambahkan 21 Okt 2026 revisi slider).
-  Karena keduanya `var` di scope fungsi yang sama (bukan per-blok), deklarasi Document Editor
-  (lebih bawah di file, jalan belakangan) MENIMPA nilai milik Signature Editor saat script
-  dieksekusi - jadi slider Signature Editor (`sigZoomSlider`, range 50-300) ikut ke-clamp oleh
-  `Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, pct))` versi Document Editor (0.1-3), persis gejala di
-  screenshot. **Fix**: konstanta Document Editor di-rename pakai prefix unik
-  (`DOC_ZOOM_MIN`/`DOC_ZOOM_MAX`/`DOC_ZOOM_STEP`, 3 titik pakai: deklarasi + `applyZoom()` +
-  tombol Zoom In/Out Document Editor), konstanta Signature Editor (`ZOOM_MIN`/`ZOOM_MAX`/
-  `ZOOM_STEP`) TIDAK diubah. Dicek ulang: tidak ada pasangan nama variabel lain yang collide di
-  file ini (sudah di-grep khusus `ZOOM_MIN/MAX/STEP`; belum di-audit variabel lain secara
-  menyeluruh - kalau bug serupa muncul lagi di konstanta lain, curigai pola yang sama: dua bagian
-  beda fitur di file yang sama, satu IIFE, nama variabel sama). **Gotcha baru untuk §3**: file
-  `*_content.php` di proyek ini memang satu IIFE per file (bukan per kartu/fitur di dalamnya) -
-  kalau menambah kartu/fitur baru dengan konstanta/variabel top-level (`var` di luar function),
-  JANGAN pakai nama generik (`ZOOM_MIN`, dsb) yang kemungkinan dipakai bagian lain di file yang
-  sama; kasih prefix spesifik fitur (seperti `DOC_`/`sig` yang sudah dipakai untuk id elemen).
-  **Belum dites ulang oleh user** - perlu dicoba: slider Signature Editor sekarang bisa digeser
-  bebas 50%-300% seperti semula, dan Document Editor's Zoom In/Out/Fit to Page (konstanta yang
-  baru di-rename) masih bekerja normal seperti sebelumnya (tidak ada regresi di sana).
-
-- **21 Okt 2026, Zoom slider ditambahkan (revisi kecil atas poin Zoom di log sebelumnya)**: user
-  bilang Zoom harus bisa diatur bebas, bukan cuma tombol −/+/Reset step 25%. Ditambah
-  `<input type="range" id="sigZoomSlider" min="50" max="300" step="5">` di antara tombol
-  −/+ (grup toolbar "Zoom"). `setZoomPercent(pct, syncSlider)` sekarang terima parameter ke-2
-  opsional: dipanggil `true`/default (tombol -/+/Reset, `clearEditorCanvas()`) → ikut
-  memindahkan slider; dipanggil `false` (dari slider's own `input` listener) → tidak muter
-  balik set value slider yang sedang digeser user. Tombol −/+/Reset TETAP ada (sengaja, buat
-  nudge halus tanpa drag). Belum dites - perlu dicoba slider digeser langsung ke berbagai
-  persentase (bukan cuma lewat tombol), dan posisi klik Crop/Erase tetap akurat di level zoom
-  manapun (sama seperti item belum-dites Zoom sebelumnya).
-
-- **21 Okt 2026, 3 revisi tambahan Signature Editor canvas (lanjutan revisi 6-poin di bawah, sama
-  file `document_tools_content.php`, belum dites user)**:
-  1. **Undo Erase jadi HISTORY STACK** (sebelumnya cuma 1 langkah) - `eraseUndoSnapshot` tunggal
-     diganti `eraseUndoStack` (array). Tiap mulai 1 stroke brush (`pointerdown` saat `eraseMode`),
-     snapshot `erasedMask` SEBELUM stroke itu di-`push()`; tombol **Undo Erase** sekarang `pop()`
-     1 snapshot per klik dan bisa diklik berkali-kali berturut-turut sampai stack kosong (baru
-     tombolnya hilang lagi). Dibatasi max 30 langkah (`shift()` kalau kepenuhan, cukup buat
-     koreksi normal, hindari numpuk memori tanpa batas). Undo Crop TETAP 1 langkah saja (sengaja,
-     beda dari Erase - Crop jarang dipakai berturut-turut seperti brush erase).
-  2. **Zoom In/Out untuk canvas editor** (grup toolbar baru "Zoom": tombol -/Reset/+ + label
-     persen). Murni ukuran TAMPILAN (`#sigEditorCanvasOuter` jadi viewport `overflow:auto`,
-     `.sig-canvas-zoom-wrap` di dalamnya di-resize via CSS `width%` 50%-300%, step 25%) - TIDAK
-     mengubah resolusi pixel asli canvas (`editorCanvas.width/height` tetap), jadi tidak
-     memengaruhi hasil Crop/Erase/Remove Background maupun data yang disimpan. Koordinat
-     pointer (`canvasPointFromEvent()`) otomatis tetap akurat karena masih pakai rasio
-     `canvas.width/rect.width` yang sudah ada sebelumnya - TIDAK ada perubahan logic crop/erase.
-  3. **Toolbar dirapikan jadi kartu-kartu grup terpisah** (`.sig-editor-toolbar` > beberapa
-     `.sig-editor-group`, masing-masing punya label kecil di atas: Photo / Zoom / Crop / Erase
-     Part / Remove White Background) - sebelumnya semua tombol (Crop, Erase, Clear, threshold,
-     dll) nyampur jadi 1-2 baris panjang tanpa pemisah visual. Class wrapper canvas JUGA diganti
-     dari reuse `.sig-editor-canvas-wrap` (dipakai bareng Document Editor's
-     `docEditorCanvasWrap`) jadi dedicated `.sig-canvas-outer`/`.sig-canvas-zoom-wrap`, supaya
-     background putih + Zoom BARU di sini tidak bocor ke canvas Document Editor (ikut gotcha
-     soal reuse nama class di §3 - `.sig-editor-canvas-wrap` lama TETAP ada & tidak diubah,
-     hanya dipakai `docEditorCanvasWrap` sekarang).
-  - **Belum dites** - perlu dicoba: Undo Erase berkali-kali mengembalikan tiap stroke satu per
-    satu dengan urutan benar; Zoom In/Out/Reset mengubah ukuran canvas TAPI posisi klik
-    Crop/Erase tetap akurat di level zoom berapa pun (termasuk saat discroll di dalam viewport
-    zoom >100%); Document Editor's canvas (kartu terpisah, bukan Signature Editor) TIDAK ikut
-    berubah tampilannya (pastikan CSS rename tidak ada efek samping).
-
-- **21 Okt 2026, 6 revisi UI Signature Library (hasil `document_tools_content.php` ini, belum dites user)**:
-  1. **Workspace canvas putih + grid garis halus** (ganti checkerboard gelap) - kebanyakan ttd
-     warnanya hitam, susah dibedakan dari latar checkerboard semi-transparan sebelumnya. CSS
-     `.sig-editor-canvas-wrap` jadi `background-color:#fff` + 2 `linear-gradient` garis 1px
-     (`rgba(0,0,0,0.06)`) tiap 20px, bukan indikator transparansi lagi, murni garis bantu visual.
-  2. **Crop sekarang editable sebelum Apply**: setelah drag kotak pertama kali, muncul 8 resize
-     handle (4 sudut + 4 tengah-tepi, `hitTestCropHandle()`) yang bisa di-drag untuk resize, atau
-     drag dari TENGAH kotak untuk geser posisi (`cropHandleHit==='move'`, pakai `cropDragOffset`).
-     Cursor berubah sesuai handle yang di-hover (`cursorForHandle()`). Tombol **Undo Crop**
-     (`sigCropUndoBtn`, baru muncul setelah 1x Apply Crop) mengembalikan
-     `originalPhotoImageData`+`erasedMask`+ukuran canvas ke snapshot SEBELUM crop terakhir
-     (`cropUndoSnapshot`, cuma nyimpan 1 langkah terakhir, bukan history berlapis).
-  3. **Erase Part sekarang punya tombol Undo Erase** (`sigEraseUndoBtn`): snapshot `erasedMask`
-     diambil SEKALI di `pointerdown` (awal 1 stroke brush), bukan tiap dab, supaya 1 klik Undo
-     mengembalikan seluruh stroke terakhir (`eraseUndoSnapshot`, juga cuma 1 langkah terakhir).
-     Kedua tombol Undo (Crop & Erase) dan snapshot-nya direset ke null oleh `clearEditorCanvas()`
-     (dipanggil saat upload foto baru / Clear All / reset form / buka form Edit).
-  4. **Date default ke tanggal hari ini** (local time via `Date()`, bukan UTC) - diisi sekali saat
-     kartu pertama dimuat (IIFE `setInitialDateDefault()`) dan tiap `resetSignatureForm()` jalan
-     (setelah Save sukses / Clear All / Cancel Edit). `openEditSignatureForm()` tetap override
-     dengan `sig.signature_date` asli saat Edit, tidak kena default ini.
-  5. **Placeholder Origin diperjelas** jadi "e.g. Jakarta, Indonesia" (kota/negara asal perusahaan,
-     bukan nama departemen/kantor) - cuma ganti placeholder teks, field & validasi tidak berubah.
-  6. **List signature dikelompokkan per Company Name** (header grup collapsible,
-     `renderSignatureList()` dirombak: fungsi item lama dipisah jadi `buildSigAccordionItem(sig)`
-     dipakai ulang di dalam tiap grup `.doc-group`). Urutan grup & urutan dalam grup MENGIKUTI
-     urutan `signaturesCache` apa adanya (hasil `ORDER BY is_main DESC, signature_date DESC, id
-     DESC` dari `list_signatures.php`, TIDAK diubah) - grouping di sini murni kosmetik tampilan.
-     Grup pertama otomatis terbuka saat render, sisanya tertutup. Grup & accordion item di
-     dalamnya independen (buka 1 item TIDAK menutup grup lain), tapi `openSigItem()`/
-     `closeSigItem()` sekarang panggil `resyncParentGroupHeight()` supaya `max-height` grup induk
-     ikut di-resync saat isi di dalamnya berubah tinggi (sama pola dengan gotcha #2 di §3).
-  - **Backend TIDAK diubah** (`list_signatures.php`/`update_signature.php`/`upload_signature.php`
-    semuanya identik dengan sebelumnya) - keenam revisi ini murni HTML/CSS/JS di
-    `document_tools_content.php`.
-  - **Belum dites sama sekali** - perlu dicoba: workspace putih kelihatan jelas buat ttd hitam;
-    crop handle resize di 8 titik + geser dari tengah kotak jalan benar (termasuk di layar
-    sentuh/HP, bukan cuma mouse); Undo Crop & Undo Erase masing-masing balik 1 langkah dengan
-    benar dan tombolnya hilang lagi setelah dipakai; Date terisi otomatis tanggal hari ini saat
-    kartu dibuka pertama kali DAN setelah Save/Cancel Edit; grup per Company Name kebuka/ketutup
-    independen dan tinggi collapsible tidak kepotong saat item di dalam grup dibuka.
-
-- **21 Okt 2026, Signature Library + Signature Editor digabung jadi satu kartu** (belum dites):
-  - Kartu "Signature Editor" terpisah DIHAPUS. Form upload manual lama di kartu "Signature Library"
-    JUGA dihapus - sekarang satu-satunya cara menambah signature adalah lewat editor canvas
-    (Upload Photo → edit → Save to Library), yang tetap pakai `ajax/upload_signature.php` yang sama.
-    List signature (accordion, select-all, share WA) sekarang nempel langsung di bawah form editor
-    di kartu yang sama (`#cardSignatures`), bukan di kartu terpisah lagi. Tombol Edit tiap item
-    mengisi ulang form editor (bukan canvas) untuk ganti signature_name/signature_date/is_main.
-  - **Tab "Draw" dihapus total** (sesuai permintaan user) - editor sekarang cuma Upload Photo.
-  - **Fitur baru di canvas**: tombol **Crop** (drag kotak seleksi lalu Apply Crop - benar-benar
-    memotong `originalPhotoImageData`+`erasedMask` dan resize `<canvas>`, bukan cuma CSS crop) dan
-    **Erase Part** (brush, radius diatur slider "Eraser Size", menandai piksel transparan permanen
-    lewat `erasedMask` terpisah dari threshold - supaya geser slider Remove White Background tidak
-    menghapus hasil erase). Remove White Background sekarang punya tombol **-5/+5** di samping
-    slider-nya (`sigThresholdMinusBtn`/`sigThresholdPlusBtn`), bukan cuma drag.
-  - **Storage pindah dari `company_activity/{year}/{month}/{slug}` ke `storage/signature/{company_name_slug}/{origin_slug}/{file}`.**
-    Judul Kegiatan/`activity_title` DIHAPUS TOTAL dari Signature (kolom DB-nya didrop), diganti
-    2 field manual baru: **Company Name** + **Origin**, keduanya menentukan folder (sama seperti
-    activity_title dulu: TIDAK BISA diedit lewat form Edit, hanya diisi saat create). Field ini
-    TIDAK terhubung ke `json_file/document_activities.json`/`ajax/list_activities.php` sama sekali
-    (itu murni milik Document Editor sekarang, activity_title Document Editor sendiri TIDAK berubah).
-  - **Kolom baru `is_main`** (tinyint, default 0) - checkbox "Set as Main signature" di form editor.
-    **Boleh lebih dari satu is_main=1 sekaligus** (user atur manual, tidak ada constraint unik/auto-unset).
-    `list_signatures.php` sekarang `ORDER BY is_main DESC, signature_date DESC, id DESC` supaya Main
-    selalu di atas; list menampilkan badge "MAIN" di nama signature yang is_main=1.
-  - Migrasi baru: `sql/migration_signature_library_company_origin.sql` (tambah `company_name`,
-    `origin`, `is_main`; DROP `activity_title`) - jalankan SETELAH
-    `migration_signature_library_activity.sql`. File lama di `storage/company_activity/.../` TIDAK
-    dipindah otomatis oleh migrasi ini (manual kalau mau konsisten).
-  - `ajax/delete_signature.php` & `ajax/download_signature.php` TIDAK diubah (keduanya cuma pakai
-    `file_path`/`id`/`signature_name`/`file_ext`, generik terhadap struktur folder).
-  - **Belum dites user sama sekali** - perlu dicoba: upload baru (folder
-    `storage/signature/...` ke-create?), Crop (hasil benar-benar terpotong, bukan cuma visual?),
-    Erase Part + geser threshold setelahnya (erase tidak hilang?), Edit (company_name/origin
-    read-only tampil benar, is_main toggle jalan?), urutan list (Main di atas), SQL migration
-    jalan tanpa error di phpMyAdmin.
-
-- **17 Okt 2026, Pola storage "company_activity" + Signature Editor** (lanjutan Document Tools, belum dites):
-  - **Pola storage baru (§13), berlaku ke SELURUH Document Tools ke depan**, bukan cuma Signature Library:
-    `storage/company_activity/{year}/{month}/{judul_kegiatan_slug}/{file}` - year/month dari tanggal file
-    (bukan tanggal upload), judul kegiatan diinput manual lalu disimpan ke `json_file/document_activities.json`
-    supaya bisa dipilih ulang (datalist HTML, bukan dropdown custom). Folder lama
-    `storage/document_tools/signatures/` SUDAH TIDAK DIPAKAI untuk upload baru (file lama di situ, kalau
-    ada, perlu dipindah manual kalau mau konsisten - belum ada script migrasi otomatis).
-  - DB: tabel `signature_library` tambah kolom `activity_title` (migrasi baru:
-    `sql/migration_signature_library_activity.sql`, jalankan SETELAH migration_signature_library.sql).
-    Judul kegiatan TIDAK BISA diedit lewat form Edit (karena akan butuh pindah file antar folder - belum
-    dibangun), hanya bisa diisi saat upload/save baru.
-  - Endpoint baru: `ajax/list_activities.php` (baca `json_file/document_activities.json`); ditulis oleh
-    `upload_signature.php` (fungsi `remember_activity_title()`, dedup case-insensitive).
-  - `ajax/delete_signature.php`: recycle dir sekarang dibangun dinamis dari `dirname(file_path)` (sebelumnya
-    hardcode ke path lama) supaya tetap benar untuk struktur folder nested yang baru.
-  - **Signature Editor** (kartu baru di `document_tools_content.php`, Opsi 1 dari rencana rangkuman): canvas
-    HTML5 dengan 2 mode - Draw (gambar langsung di canvas transparan, tidak perlu hapus background) dan
-    Upload Photo (tempel foto ke canvas, lalu slider threshold mengubah piksel nyaris-putih jadi transparan,
-    re-derive dari `originalPhotoImageData` tiap slider digeser biar tidak degradasi berulang). "Save to
-    Library" export canvas jadi PNG Blob dan POST ke `ajax/upload_signature.php` yang SAMA dengan form
-    upload manual (tidak ada endpoint terpisah).
-  - Belum ada: threshold algoritma masih sederhana (near-white flat threshold, bukan edge-aware/anti-alias),
-    belum ada undo/redo di canvas, belum ada rotate/crop sebelum simpan.
-
-- **7 Okt 2026, Document Tools > Signature Library** (langkah awal rencana "tool ttd" dari
-  `rangkuman_tool_ttd_dokumen.md`; baru pustaka ttd, BELUM ada editor canvas/OCR/kop/template):
-  - Menu baru di sidebar `document_tools` (ikon `ti-signature`), file `document_tools_content.php`, kloning
-    persis pola Settings > Company Documents (satu kartu collapsible, accordion list, modal konfirmasi
-    password sendiri `docToolsConfirm*` supaya id tidak bentrok dengan `settingsConfirm*`).
-  - DB: tabel baru `signature_library` (kolom sama seperti `company_documents`, hanya beda nama
-    `signature_name`/`signature_date`). Migrasi: `sql/migration_signature_library.sql`.
-  - Storage: `storage/document_tools/signatures/`; delete pakai pola sama (pindah ke
-    `storage/recycle/document_tools/signatures/`, bukan hapus permanen).
-  - Endpoint baru (pola b, `_require_reverify.php`): `upload|list|update|delete|download|share_signature(s).php`.
-  - Belum ada: aturan retensi/akses khusus untuk gambar ttd (data sensitif) - saat ini sama persis dengan
-    Company Documents, PERLU DIKONFIRMASI apakah cukup.
-  - Belum dibangun: editor ttd canvas, tempel ttd & kop ke dokumen, edit teks OCR, template form.
-  - **16 Okt 2026**: `index.php`/`sidebar.php` sempat diupdate paralel (logo, toggle sidebar, branding LISANI
-    AOS, ikon Logistic) tanpa menyertakan perubahan Document Tools di atas — sudah digabung ulang di versi
-    terbaru kedua file itu.
-  - **Bug ditemukan+fix (16 Okt 2026)**: kartu "Signature Library" tidak bisa dibuka (klik tidak ada efek).
-    Sebab: `settings_content.php` (Company Documents) query `document.querySelectorAll('.settings-collapsible')`
-    TANPA scope, jadi ikut menangkap card saya (reuse nama class yang sama) → card kena 2 listener yang
-    saling tabrakan (punya saya membuka, punya Settings langsung menutup lagi di frame yang sama). Fix:
-    rename seluruh class wrapper di `document_tools_content.php` dari `settings-collapsible*` jadi
-    `doctools-collapsible*` (HTML+CSS+JS). **Gotcha baru untuk §3**: kalau meniru pola file `*_content.php`
-    lain dengan copy class CSS-nya, JANGAN reuse nama class yang dipakai `document.querySelectorAll()`
-    TANPA scope di file asal — cek dulu apakah file sumber query class itu secara global atau sudah di-scope
-    ke id/parent-nya sendiri. Belum dites ulang oleh user pasca-fix.
-
-- **Adjustable OCR crop box** (`transaction_content.php`, Input Transaction/Disbursement & Invoice Payment, shared
-  viewer): setelah drag awal (`endDrag`), box TIDAK langsung di-OCR — masuk `enterAdjustMode()`: box jadi persisten
-  dengan 8 handle resize (sudut+tengah sisi, `ADJUST_HANDLE_DIRS`), bisa digeser mouse & touch
-  (`resizeAdjustBox`/`renderAdjustUI`, posisi dihitung ulang dari `adjustBox` yang disimpan dalam **canvas pixel
-  space**, bukan client space, supaya tahan zoom/scroll — resync di `applyCapZoom()` & scroll `capStage`). Dua tombol
-  baru muncul di hint bar: **Read** (`btnCapReadSelection`, lanjut `runOcrOnRegion` seperti biasa) dan **Redraw**
-  (`btnCapRedrawSelection`, buang box & kembali ke mode drag). Mousedown/touchstart di canvas sekarang juga dicek
-  `|| adjustBox` supaya tidak mulai drag baru selagi masih adjust. `closeCapViewer()` dan tombol Prev/Next Page
-  panggil `exitAdjustMode()` untuk bersih-bersih handle yang menggantung.
-  - **Shortcut tap**: selain tombol, double-tap di mana saja dalam `capStage` = Read, triple-tap = Redraw
-    (`adjustTapCount`/`adjustTapTimer`, pola sama dengan tap-counter arming field, listener di `capStage` bukan
-    `document` supaya tombol viewer bar lain tidak ikut kehitung; tap di handle sendiri diabaikan via
-    `e.target.dataset.dir`).
-  - **Bug yang sudah diperbaiki**: `renderAdjustUI()` sempat dipanggil SEBELUM `capAdjustControls` (tombol
-    Read/Redraw) ditampilkan, padahal tombol itu menambah tinggi hint bar dan mendorong `capStage`/canvas turun —
-    akibatnya box tertinggal di posisi lama. Fix: tampilkan `capAdjustControls` dulu, baru `renderAdjustUI()`
-    (baca `getBoundingClientRect()` setelah reflow).
-  - Belum dites ulang oleh user pasca-fix. Setelah dites: kalau OK, lebur poin ini ke §6 (Input Transaction /
-    Disbursement) & hapus dari log ini.
-
-- **18 Okt 2026, Document Tools > Document Editor (Tahap 8 rencana, dari `rangkuman_tool_ttd_dokumen.md`)**:
-  mulai rencana kartu baru "Document Editor" (tempel ttd ke dokumen + blok/pindah teks), lanjutan dari Signature
-  Editor yang sudah ada. Scope awal: upload dokumen (gambar dulu; PDF menyusul via PDF.js), seleksi blok persegi
-  di atas canvas, pindah blok jadi layer terpisah (isi bekas area dengan warna latar), ambil ttd dari Signature
-  Library (reuse endpoint list yang sudah ada), tempel sebagai layer PNG di atas dokumen, ekspor hasil (PNG
-  dulu). Guide box, kop, multi-halaman, dan OCR ditunda ke iterasi berikutnya (Tahap 9-10 di rangkuman).
-  **Keputusan (18 Okt 2026)**: (1) riwayat disimpan ke DB, tabel baru (nama diusulkan: `edited_documents`,
-  struktur diusulkan saat coding karena tabel baru, bukan nebak tabel lama); (2) library layer pakai **Fabric.js**
-  via CDN (stabil, dokumentasi lengkap, built-in drag/resize/select object, tanpa build step - cocok untuk pola
-  vanilla IIFE proyek ini); risiko sama seperti Chart.js (§3 gotcha #8, cdnjs bisa diblokir jaringan user) -
-  siapkan try/catch + pesan error jelas, dan simpan opsi host lokal kalau sering bermasalah; (3) MVP Tahap 8
-  SEKALIAN dengan guide box (kotak bantuan jarak ttd), tidak dipotong minimal.
-  **Implementasi awal selesai ditulis (18 Okt 2026), BELUM DITES oleh user:**
-  - DB: tabel baru `edited_documents` (`sql/migration_edited_documents.sql`) - kolom: document_name,
-    document_date, activity_title, source_filename, signature_id (FK nullable ke `signature_library.id`,
-    `ON DELETE SET NULL`), stored_filename, file_path, file_ext, file_size, uploaded_by, created_at.
-  - Storage: `storage/company_activity/{year}/{month}/{activity_slug}/edited_documents/{file}.png` (year/month
-    dari `document_date`, sama persis pola `upload_signature.php`).
-  - Endpoint baru: `ajax/save_edited_document.php` (pola sama dgn `upload_signature.php`: sanitize nama,
-    slugify activity, simpan file + insert record, update `document_activities.json` yang SAMA dgn Signature
-    Library). Tidak pakai password reverify (bukan aksi destruktif, hanya create).
-  - UI: kartu baru "Document Editor" di `document_tools_content.php`, di bawah Signature Editor, pakai
-    **Fabric.js 5.3.0** dari cdnjs (dimuat via `document.write` guard, sama gotcha cdnjs-bisa-diblokir seperti
-    Chart.js - §3 gotcha #8 - dibungkus try/catch + pesan error eksplisit kalau `fabric` undefined).
-  - Alur: upload gambar dokumen (di-downscale ke working-canvas offscreen max lebar 1400px, PDF BELUM
-    didukung) → tombol "Block: Teks Atas"/"Block: Nama" (gambar rect, mouse-up langsung cut jadi fabric.Image
-    draggable + hole dipatch pakai 1 rect warna sampling piksel tetangga, background image sendiri TIDAK
-    diedit) → "Add Guide Box" (rect oranye resizable, event `moving`/`scaling` menggeser blok "Nama" sebesar
-    delta posisi guide box kalau checkbox "Auto-shift Nama" aktif) → "Insert Signature" (modal baru
-    `#docSigPickerOverlay`, reuse `ajax/list_signatures.php` utk listing + `ajax/download_signature.php`
-    sebagai `<img>`/fabric source) → Save (flatten canvas jadi PNG via `toDataURL`, guide box dilepas dulu
-    sebelum export lalu dipasang lagi, POST ke `save_edited_document.php`).
-  - Belum ada/ditunda sesuai scope: **DOCX** (ditunda - user belum yakin Composer bisa dipakai di server;
-    rencana kalau lanjut: PhpWord + salah satu dari dompdf/mpdf/tcpdf buat DOCX→PDF, baru lewat jalur PDF yang
-    sama), kop/header-footer (Tahap 9), edit teks OCR (Tahap 10), undo/redo, rotate/straighten foto miring
-    (Tahap 3).
-  - **Perlu dites user**: (1) apakah `ajax/download_signature.php` (yang mengirim `Content-Disposition:
-    attachment`) tetap bisa dipakai sebagai `<img src>`/fabric image source di semua browser target; (2)
-    apakah `require dirname(__DIR__, 2) . '/fpdf/fpdf.php'` di `save_edited_document.php` menunjuk ke path
-    yang benar (asumsi dari peta folder §2: `optic_pos/fpdf/fpdf.php`, satu level di atas `lisani_aos/`) -
-    BELUM diverifikasi langsung, cuma dari peta folder; (3) kualitas hasil render PDF.js & akurasi warna
-    sampling utk patch lubang di foto (bukan scan putih bersih); (4) ukuran halaman PDF akhir diasumsikan
-    150 DPI tetap (`$ASSUMED_DPI` di `save_edited_document.php`) - PDF.js sendiri render halaman dgn scale
-    dibatasi `MAX_DOC_WIDTH` 1400px, jadi DPI efektif bisa beda dari asumsi kalau ukuran kertas sumber aneh;
-    cek hasil cetak/ukuran fisiknya masuk akal atau tidak.
-
-  **REVISI 18 Okt 2026 (multi-halaman + multi-ttd, atas permintaan user)**:
-  - Scope ditambah: dokumen boleh **PDF multi-halaman** (bukan cuma 1 gambar), dengan **pilih halaman** via
-    strip tombol "Hal 1/2/3.." di atas canvas, dan **lebih dari satu ttd** bisa ditempel di halaman manapun.
-    DOCX sengaja DITUNDA (user belum yakin Composer tersedia di server; lihat baris di atas).
-  - PDF→gambar per halaman pakai **PDF.js** (cdnjs, murni di browser, TIDAK butuh Imagick/Ghostscript/
-    pdftoppm di server - aman untuk Termux/XAMPP yang belum tentu ada binary itu).
-  - Tiap halaman punya state Fabric sendiri (blok, guide box, ttd) disimpan via `canvas.toJSON()`/
-    `loadFromJSON()` saat pindah halaman (`switchToPage()`); blok "Nama"/guide box per halaman dicari ulang
-    lewat custom prop (`blockType`, `isGuideBox`) setelah di-load karena referensi objek lama hilang.
-  - ID ttd yang dipakai (di halaman manapun, berkali-kali) dikumpulkan di `insertedSignatureIds` (map id→true,
-    TIDAK berkurang kalau ttd dihapus lagi dari canvas - limitasi kecil, cukup akurat untuk keperluan
-    riwayat/jejak).
-  - Saat Save: SEMUA halaman di-flatten jadi PNG (guide box dibuang dari hasil export), dikirim sekaligus
-    (`pages[]`) + `signature_ids[]` ke `ajax/save_edited_document.php`, yang menggabungkannya jadi **1 file
-    PDF** pakai **FPDF** (reuse `optic_pos/fpdf/fpdf.php`, sudah dipakai utk invoice) - ukuran tiap halaman PDF
-    mengikuti rasio gambar aslinya (asumsi 150 DPI), bukan dipaksa A4.
-  - DB: `sql/migration_edited_documents.sql` DIREVISI - `signature_id` (FK tunggal) → `signature_ids` (VARCHAR
-    CSV, tanpa FK, karena bisa banyak nilai), tambah `page_count`, `file_ext` default jadi `'pdf'` (bukan
-    `'png'`). Kalau migrasi versi lama SUDAH sempat dijalankan, ada `ALTER TABLE` di komentar file SQL-nya.
-
-  **REVISI 18 Okt 2026 (toolbar + zoom, atas permintaan user), sudah ditulis, BELUM DITES oleh user:**
-  - Toolbar `document_tools_content.php` dikelompokkan jadi 3 grup (border tipis): Blocks (Block: Top Text /
-    Block: Name / Add Guide Box / checkbox Auto-shift), Actions (Insert Signature / Delete Selected / Clear
-    All), Zoom (di kanan via `margin-left:auto`). Label "Block: Teks Atas"/"Block: Nama"/"Auto-shift Nama"
-    diinggriskan jadi "Block: Top Text"/"Block: Name"/"Auto-shift Name" (tombol lain sudah Inggris). Label tab
-    halaman "Hal 1/2/3" & field "Judul Kegiatan" SENGAJA belum diinggriskan - di luar scope yang diminta.
-  - Auto-fit + Zoom In/Out/Fit to Page (3 tombol baru): ganti pendekatan CSS `max-width:100%;height:auto` di
-    `#docEditorCanvas` (yang cuma squish tampilan, bukan zoom beneran) dengan **Fabric native**
-    `canvas.setZoom()` + `canvas.setDimensions()`, supaya `getPointer()` saat gambar blok/drag tetap akurat di
-    level zoom berapa pun. Fungsi baru `applyZoom()`/`fitZoomToContainer()` (`document_tools_content.php`);
-    `fitZoomToContainer()` dipanggil tiap `switchToPage()` (tiap buka/ganti halaman auto-fit ke lebar wrap,
-    dibatasi tinggi 65% viewport). `.doc-editor-canvas-wrap` jadi `overflow:auto` (scrollable pas zoom-in)
-    dengan `max-height:75vh`. Export/save PDF TIDAK terpengaruh - tetap render dari `fabric.StaticCanvas`
-    terpisah di resolusi asli (`renderPageToDataURL()`), bukan dari canvas layar yang sedang di-zoom.
-  - **Perlu dites user**: (1) akurasi klik/drag gambar blok & guide box di berbagai level zoom, terutama di
-    HP/touch; (2) tampilan saat dokumen sangat lebar/sempit (rasio ekstrem) - cek `fitZoomToContainer()` tidak
-    menghasilkan ukuran terlalu kecil; (3) scroll di `.doc-editor-canvas-wrap` saat zoom-in masih nyaman dipakai
-    di mobile.
-
-  **REVISI 18 Okt 2026 (fullscreen + zoom SVG + draw-mode sticky + guide box preset), atas permintaan user,
-  sudah ditulis, BELUM DITES oleh user:**
-  - **Fullscreen** (`document_tools_content.php`): seluruh workspace editor (upload, page tabs, toolbar, canvas,
-    DAN form Save/Document Name/Date/Activity) dibungkus satu div `#docEditorWorkspace`. Tombol baru
-    "Fullscreen"/"Exit Fullscreen" (`setFullscreen()`) membuatnya `position:fixed;inset:0` menutupi viewport
-    (`z-index:500` - **BELUM dicek** apakah masih kalah/menang lawan topbar/sidebar app, cek kalau salah satu
-    masih nongol di atasnya). Auto-aktif begitu upload selesai (`startEditingPages()`); Escape atau tombol yang
-    sama untuk keluar. Body scroll di-`hidden`-kan selama fullscreen, dikembalikan saat keluar.
-  - Ikon tombol Zoom In/Out, Fit to Page, dan Fullscreen diganti dari `<i class="ti ...">` (Tabler) ke **SVG
-    inline**, sesuai gotcha §3 #1 (ikon Tabler sering tofu/kotak kosong) - supaya tombol baru ini kelihatan
-    jelas sebagai tombol, bukan kotak kosong. Ikon tombol lama (crop/trash/eraser/dsb, sudah ada sebelum sesi
-    ini) SENGAJA belum diubah - di luar scope yang diminta.
-  - `fitZoomToContainer()` sekarang baca `clientHeight` wrap yang sebenarnya (bukan cuma persentase
-    `window.innerHeight`), supaya auto-fit tetap akurat baik di mode normal (dibatasi CSS `max-height:75vh`)
-    maupun fullscreen (wrap jadi flex item yang stretch ke sisa tinggi viewport).
-  - **Block: Top Text / Block: Name tidak lagi "perlu diklik dua kali"**: akar masalahnya di handler
-    `mouse:up` - drag yang terlalu kecil (<4px, mis. klik tunggal tanpa seret) sebelumnya SELALU mematikan
-    `docDrawMode` walau tidak ada blok yang terbentuk, jadi tombol harus ditekan ulang. Sekarang `docDrawMode`
-    cuma dimatikan kalau blok BERHASIL dibuat; drag gagal membiarkan tool tetap aktif. Ditambah cursor
-    `crosshair` di canvas selama armed, sebagai indikator visual "siap gambar".
-  - **Guide Box: dropdown preset ukuran** (`docGuideBoxPresetSelect`, disimpan di INCI, bukan lagi persentase
-    halaman 45%/12%). Preset baru: `json_file/guide_box_presets.json` (dibuat/self-seed via endpoint baru
-    `ajax/list_guide_box_presets.php`, pola sama persis dgn `document_activities.json`), default 2 baris sesuai
-    permintaan user: **1.46" x 2.18"** dan **1.46" x 3.05"**. Admin boleh edit/tambah baris json ini langsung di
-    server tanpa ubah kode. Konversi inci→px pakai konstanta `DOC_DPI = 150` di JS, **HARUS tetap sinkron**
-    dengan `$ASSUMED_DPI = 150` di `save_edited_document.php` (dua konstanta terpisah, kalau salah satu diubah
-    yang satu lagi juga harus). Guide box tetap bisa di-resize/drag manual seperti sebelumnya setelah dibuat.
-  - **Perlu dites user**: (1) z-index fullscreen (500) vs elemen app lain (topbar/sidebar/modal) - lihat poin di
-    atas; (2) apakah 1.46"/2.18"/3.05" di layar memang pas dicetak di PDF hasil Save (validasi asumsi
-    `DOC_DPI`/`$ASSUMED_DPI` 150 sama-sama benar); (3) folder `json_file/` di server harus writable supaya
-    self-seed `guide_box_presets.json` jalan, sama seperti `document_activities.json`; (4) perilaku Escape-key
-    keluar fullscreen tidak bentrok dgn shortcut lain di app.
-
-  **BUG FATAL & PERBAIKAN (18 Okt 2026, sama hari, ditemukan user langsung setelah revisi di atas)**:
-  Semua tombol di menu Document Tools (bukan cuma Document Editor - Signature Library & Signature Editor ikut
-  mati) tidak bisa diklik sama sekali. Sebab: `loadGuideBoxPresets()` dipanggil langsung (top-level) di dekat
-  `loadActivities()`, DEKAT AWAL `<script>`, padahal `var docGuideBoxPresetSelect = document.getElementById(...)`
-  baru di-assign jauh di bawah (bagian Document Editor). Karena dipanggil sebelum variabelnya ter-assign,
-  `docGuideBoxPresetSelect` masih `undefined` saat itu (var di-hoist, assignment-nya belum jalan) →
-  `docGuideBoxPresetSelect.innerHTML = ''` lempar TypeError tak tertangkap → sisa `<script>` (semua
-  `addEventListener` tombol lain, collapsible, dsb, yang letaknya di bawah pemanggilan itu) tidak pernah
-  dijalankan sama sekali. **Perbaikan**: pindahkan definisi+pemanggilan `loadGuideBoxPresets()`/
-  `renderGuideBoxPresetOptions()` ke bagian Document Editor, PERSIS setelah `docGuideBoxPresetSelect` (dan
-  `inchesToPx`/`docGuideBoxPresets`) sudah ter-assign. File `ajax/list_guide_box_presets.php` dan
-  `json_file/guide_box_presets.json` TIDAK berubah, tidak perlu diupload ulang - cukup
-  `document_tools_content.php` yang baru.
-  **Pelajaran untuk sesi berikutnya**: kalau nambah kode baru yang langsung dipanggil di top-level script (bukan
-  di dalam event handler), WAJIB taruh setelah semua `var ... = document.getElementById(...)` yang dipakainya
-  sudah ter-assign secara tekstual (bukan cuma dideklarasikan) - jangan taruh dekat kode lama yang kebetulan
-  posisinya di awal file (`loadActivities()` dkk) hanya karena polanya mirip.
-
-  **BUG #2 & PERBAIKAN (18 Okt 2026, laporan user: "setelah upload, fullscreen tidak keluar sama sekali")**:
-  `#docEditorWorkspace` normalnya ada di dalam `.doctools-collapsible-body` (`overflow:hidden`, tinggi diatur
-  JS lewat `max-height` inline). Secara spek CSS, `position:fixed` semestinya "lolos" dari ancestor
-  `overflow:hidden` biasa (tidak kena clip), TAPI beberapa WebView Android/browser lama dikenal salah
-  implementasi soal ini dan tetap memotong/mengecilkannya - persis kelihatan seperti "tombol Fullscreen
-  dipencet, tidak terjadi apa-apa". **Perbaikan**: `setFullscreen()` sekarang betulan **memindahkan**
-  `#docEditorWorkspace` jadi anak langsung `<body>` saat masuk fullscreen (`document.body.appendChild(...)`),
-  dan mengembalikannya persis ke posisi asal (parent + next-sibling yang disimpan) saat keluar - bukan cuma
-  toggle class di tempat. Ini keluar total dari ancestor manapun yang bisa jadi containing block/clip, jadi
-  kerja di browser mana pun selama kuncinya cuma soal containing-block itu.
-  **Perlu dites user lagi**: apakah fullscreen SEKARANG benar muncul setelah upload; kalau masih belum
-  kelihatan sama sekali (bukan cuma kepotong), kemungkinan sebabnya lain - z-index 500 kalah vs elemen app lain
-  (lihat poin z-index di atas) atau CSS global (theme.css) override yang tidak kelihatan dari file ini saja.
-
-  **BUG #3 & PERBAIKAN (18 Okt 2026, laporan user: "saat fullscreen preview dokumennya tidak keluar, baru
-  muncul pas exit fullscreen")**: elemen fullscreen-nya sendiri sudah benar muncul (bug #2 sudah kebetulan
-  fix), tapi ISI dokumennya (canvas) blank selama masih fullscreen. Akar masalah: urutan lama di
-  `startEditingPages()` adalah `setFullscreen(true)` **SEBELUM** `switchToPage(0)` - artinya workspace
-  dipindah (reparent) ke fullscreen SAAT canvas-nya belum dibuat/belum ada gambar dokumen sama sekali (Fabric
-  baru bikin `new fabric.Canvas(...)` dan load gambar di dalam `switchToPage`, yang jalan SETELAH reparent).
-  **Perbaikan**: urutannya dibalik pakai flag `docAutoFullscreenPending` - `startEditingPages()` cuma pasang
-  flag, lalu `switchToPage(0)` jalan seperti biasa (di layout NORMAL yang sudah terbukti kerja), dan baru
-  setelah `afterLoad()` (gambar sudah ke-load + di-render) selesai, BARU `setFullscreen(true)` dipanggil -
-  jadi reparent ke `<body>` terjadi saat canvas SUDAH punya isi, bukan saat masih kosong. Ditambah juga
-  pengaman kecil di `fitZoomToContainer()`/`applyZoom()`: diam-diam `return` kalau `page.width`/`page.height`
-  belum valid atau hasil `zoom` bukan angka wajar (NaN/≤0), supaya tidak pernah set `canvas.setDimensions()`
-  dengan nilai rusak walau ada race lain di kemudian hari.
-
-  **BUG #4 & PERBAIKAN (18 Okt 2026, laporan user: "posisi Insert Signature tidak ikut Guide Box seperti yang
-  saya mau")**: `insertSignatureOntoCanvas()` SEBENARNYA sudah mencoba mengikuti posisi guide box
-  (`guideBox ? ... : ...`), tapi pakai `guideBox.width`/`guideBox.height` mentah. Masalahnya: kalau user
-  RESIZE guide box dengan drag handle di pojoknya (perilaku default Fabric.js), Fabric menyimpan perubahan
-  ukuran itu di `scaleX`/`scaleY`, BUKAN mengubah `.width`/`.height` object-nya langsung - jadi begitu guide
-  box di-resize, `insertSignatureOntoCanvas()` masih mengira ukurannya seperti waktu pertama dibuat, dan
-  tanda tangan jadi salah posisi/ukuran. **Perbaikan**: ganti ke `guideBox.getScaledWidth()` /
-  `guideBox.getScaledHeight()` (method Fabric yang sudah memperhitungkan scaleX/scaleY) untuk hitung `targetW`
-  dan posisi tengah. `.left`/`.top` tidak diubah karena itu tidak kena pengaruh scale (originX/originY
-  default `left`/`top`).
-  **Alur yang dikonfirmasi user ("ini dulu, baru selanjutnya" - jadi BARU bagian ini yang dikerjakan)**: Add
-  Guide Box → user posisikan/resize guide box → Insert Signature → pilih dari pustaka → otomatis ditempatkan
-  mengikuti posisi+ukuran guide box saat itu. User bilang ada langkah/alur TAMBAHAN yang belum disampaikan -
-  **TUNGGU instruksi lanjutan dari user sebelum menambah apa pun lagi di alur ini**, jangan menebak.
-
-  **STATUS 18 Okt 2026 (setelah 3x revisi fullscreen)**: bug preview blank (#3) dan posisi ttd vs guide box
-  (#4) di atas **DIKONFIRMASI FIX** oleh user (dites via screenshot, lihat gambar yang dikirim). z-index
-  diperkuat ke `2147483647 !important` (bukan 500 lagi) + `position/top/left/right/bottom/width/height` pakai
-  `!important` juga, karena fullscreen sempat tidak muncul SAMA SEKALI (ternyata overridden sesuatu yang tidak
-  kelihatan dari file ini - root cause PASTINYA belum ketemu, cuma dilawan pakai `!important` + z-index
-  maksimum sampai user konfirmasi jalan).
-
-  **BUG #5 & REDESIGN (18 Okt 2026, laporan user: "pas layar dilebarkan fullscreen muncul, pas dikecilkan
-  hilang lagi" + "fullscreen maunya bukan begini - dokumennya harus full 1 halaman, tombol-tombol di paling
-  atas biar gampang nge-posisiin")**:
-  - **Akar bug resize**: `.doc-editor-toolbar` (3 grup: Blocks/Actions/Zoom) pakai `flex-wrap:wrap` - di
-    window sempit, grup-grup itu pecah jadi 2-3 baris, makan tinggi vertikal, dan `.doc-editor-canvas-wrap`
-    (flex child dengan `flex:1 1 auto`) jadi KEPEPET sampai nyaris 0 tinggi (atau malah dapat computed height
-    negatif/0 karena flex item default `min-height:auto` menolak mengecil di bawah ukuran kontennya - root
-    cause ganda). **Perbaikan**: khusus saat fullscreen, `.doc-editor-toolbar` dikunci `flex-wrap:nowrap` +
-    `overflow-x:auto` (geser horizontal kalau kepanjangan, TIDAK PERNAH pecah baris lagi), dan
-    `.doc-editor-canvas-wrap` ditambah `min-height:0` biar bener-bener taat sama `flex:1`.
-  - **Redesign tampilan fullscreen** (supaya dokumen dominan + toolbar di atas, sesuai permintaan): field
-    "Upload Document" (`#docUploadFormGroup`, id baru) dan teks hint (`#docEditorHint`) di-`display:none` KHUSUS
-    saat fullscreen (toolbar+tab halaman otomatis jadi elemen paling atas begitu dua ini hilang - TIDAK perlu
-    reorder DOM/flex `order`, urutannya sudah pas begitu dua elemen itu disembunyikan). Form Save (Document
-    Name/Date/Judul Kegiatan/tombol Save) dirapatkan jadi strip tipis di bawah canvas (grid kolom lebih sempit,
-    margin dikecilkan) - TETAP ada/terlihat (tidak disembunyikan), supaya user tidak perlu exit fullscreen
-    cuma buat isi nama dokumen & simpan.
-  - **Perlu dites user**: (1) apakah toolbar yang sekarang 1-baris-scroll-horizontal di layar sempit/HP masih
-    nyaman dipakai (geser ke kanan buat lihat tombol Zoom/Fullscreen kalau muat banyak tombol); (2) apakah
-    canvas sekarang benar-benar dominan (hampir 1 halaman penuh) seperti yang diminta, atau strip form Save di
-    bawah masih kerasa makan tempat - kalau masih kurang lega, opsi lanjutannya adalah sembunyikan form Save
-    juga di balik tombol terpisah (baru muncul kalau diklik), TAPI BELUM dikerjakan, nunggu konfirmasi user
-    dulu apakah versi sekarang sudah cukup.
-
-  **REVISI 21 Okt 2026 (4 request user, hasil dites via screenshot `localhost/optic_pos/lisani_aos/index.php`
-  - jadi dikonfirmasi `document_tools_content.php` ini memang yang di-`include` di sana, bukan file lain)**:
-  1. **Form Save disembunyikan total saat fullscreen** (bukan dirapatin strip tipis lagi seperti BUG #5 di
-     atas - user balik keputusan). `#docEditorSaveForm { display:none !important; }` saat
-     `.doc-editor-fullscreen`. Alur sekarang: isi nama dokumen/save = exit fullscreen dulu.
-  2. **FIX: "Insert Signature" di fullscreen tidak muncul fly window-nya.** Akar masalah: `#docSigPickerOverlay`
-     posisinya di DOM SEBELUM `#docEditorWorkspace`; begitu masuk fullscreen, workspace di-reparent jadi anak
-     TERAKHIR `<body>` (z-index `2147483647`) sedangkan overlay tetap di posisi lama dengan z-index
-     `.modal-overlay` biasa (lebih rendah) → ketimpa. Perbaikan: `setFullscreen(true)` sekarang reparent
-     `docSigPickerOverlay` juga ke `<body>`, PERSIS setelah workspace (supaya urutan DOM menang stacking), +
-     CSS `#docSigPickerOverlay.modal-overlay { z-index: 2147483647 !important; }` biar z-index-nya juga pasti
-     menang lawan theme.css. Dikembalikan ke posisi asal saat exit fullscreen.
-  3. **Fullscreen sekarang fit-to-WIDTH, bukan fit-to-page lagi.** `fitZoomToContainer()` dicabang: di luar
-     fullscreen tetap `min(fit-width, fit-height)` seperti sebelumnya; KHUSUS saat fullscreen jadi
-     `fit = available-width / page.width` saja (tinggi tidak dibatasi) - kalau halaman jadi lebih tinggi dari
-     layar, tinggal scroll vertikal (canvas-wrap sudah `overflow:auto`).
-  4. **BUG BELUM KETEMU & DIABAIKAN SEMENTARA (atas permintaan user)**: tombol-tombol toolbar (termasuk grup
-     Zoom) terlihat MENGECIL saat persentase zoom dokumen dinaikkan (cth. dari 20% ke 65%), dikonfirmasi lewat
-     screenshot. BUKAN zoom browser (user sudah cek: Chrome zoom tetap 100% baik sebelum maupun sesudah klik
-     tombol zoom dokumen). Sudah ditelusuri habis di SEMUA file terkait (`document_tools_content.php`,
-     `theme.css`, `responsive.css`, `header.php`, `footer.php`) - tidak ada `zoom:`, `transform: scale()`,
-     container-query unit (`cqw`/`cqi`), atau `--space-*`/`--text-*` berbasis `vw`/`clamp()` di manapun;
-     `.doc-zoom-btn` fixed `34x34px`; `.doc-editor-toolbar-group` sudah `flex:0 0 auto` (tidak boleh shrink);
-     JS `applyZoom()` cuma nyentuh elemen `<canvas>`, tidak ada `setProperty`/`style.fontSize`/`style.transform`
-     ke toolbar. **Root cause TIDAK DITEMUKAN** - user bilang abaikan dulu, lanjut ke hal lain. Kalau mau
-     dilanjutkan nanti: minta user screenshot panel **Computed** (bukan Styles) DevTools dari salah satu tombol
-     toolbar pas zoom 20% vs 65% (font-size/padding), biar ketauan browser override dari CSS mana.
-
-  **FITUR BARU: Ink Contrast (21 Okt 2026, belum dites user)**: grup baru "Ink Contrast" ditambahkan di
-  Signature Editor, PERSIS setelah grup "Remove White Background" (slider `sigInkContrast` 0-100 default 0 +
-  tombol -/+ `sigInkContrastMinusBtn`/`sigInkContrastPlusBtn` + label `sigInkContrastValue`, pola HTML/JS
-  disalin dari `sigBgThreshold` yang sudah ada). User konfirmasi: BUKAN soal transparansi background (itu
-  tetap 100% punya `threshold`/`sigBgThreshold`, tidak disentuh) - ini soal pixel TINTA (yang lolos/tidak-
-  transparan) yang sering pudar/abu-abu dari hasil foto, dan user mau **keduanya sekaligus** (gelapkan warna
-  + tebalkan opacity) dalam SATU slider. Diterapkan di `renderEditor()`: `inkFactor = sigInkContrast/100`;
-  kalau pixel tidak transparan dan `inkFactor>0`, RGB dikali `(1-inkFactor)` (dorong ke hitam sebanding jarak
-  dari putih) DAN alpha didorong ke 255 lewat `a + (255-a)*inkFactor`. factor=0 = tidak berubah sama sekali
-  (backward-compatible, default slider 0). Selalu dihitung ulang dari `originalPhotoImageData` tiap render
-  (non-destructive, pola sama persis seperti threshold - tidak ada degradasi kalau slider digeser bolak-
-  balik). TIDAK direset ke 0 saat upload foto baru/Clear - sengaja konsisten dengan `sigBgThreshold` yang
-  juga tidak direset (lihat kode lama, satu-satunya reset eksplisit cuma lewat tombol -/+/slider itu sendiri).
-  **Perlu dites user**: (1) apakah efek gelap+opacity sekaligus ini pas/cukup jadi 1 kontrol, atau user
-  akhirnya mau 2 slider terpisah (gelap vs opacity sendiri-sendiri); (2) interaksi visualnya dengan slider
-  threshold yang sudah ada saat sama-sama digeser.
+(kosong — semua entri terakhir sudah dites & dilebur ke §6 pada 26 Okt 2026)
 
 Belum dibangun (disengaja, bukan bug):
 - Fitur pembayaran bersama (disebut user saat desain Create New Logistic). Baru placeholder di form.

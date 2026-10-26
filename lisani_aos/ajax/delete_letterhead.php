@@ -59,4 +59,25 @@ foreach (['header_file_path', 'footer_file_path'] as $col) {
     @rename($fullPath, $recycleDir . '/' . $recycleName);
 }
 
+// 25 Oct 2026 fix: the move above leaves the ORIGINAL
+// storage/letterhead/{company_slug}/{origin_slug}/ folder behind, now
+// empty. Clean it up by walking upward and removing each folder that has
+// become empty, stopping at the first non-empty one (so a folder still
+// shared by another letterhead's files - same company_slug/origin_slug -
+// is never touched) and never going above storage/letterhead/ itself. The
+// RECYCLE copy is intentionally left alone - this only tidies the live tree.
+$letterheadBase = AOS_STORAGE_BASE . '/letterhead';
+$primaryRelPath = $row['header_file_path'] ?: $row['footer_file_path'];
+if ($primaryRelPath) {
+    $dir = AOS_STORAGE_BASE . '/' . dirname($primaryRelPath);
+    while (strpos($dir, $letterheadBase) === 0 && $dir !== $letterheadBase && is_dir($dir)) {
+        $entries = @scandir($dir);
+        if ($entries === false || count(array_diff($entries, ['.', '..'])) > 0) {
+            break; // not empty (or unreadable) - stop, leave this and its parent alone
+        }
+        @rmdir($dir);
+        $dir = dirname($dir);
+    }
+}
+
 echo json_encode(['success' => true]);

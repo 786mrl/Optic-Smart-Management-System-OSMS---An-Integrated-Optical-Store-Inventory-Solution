@@ -57,6 +57,29 @@ if (is_file($fullPath)) {
     }
     $recycleName = $id . '_' . time() . '_' . basename($fullPath);
     @rename($fullPath, $recycleDir . '/' . $recycleName);
+
+    // 26 Okt 2026: bersihkan folder ASLI storage/signature/{company}/{origin}/
+    // yang jadi kosong setelah file dipindah ke recycle/ di atas - pola sama
+    // persis seperti Delete Letterhead (lihat PROJECT_NOTES.md §8, bug #4,
+    // 25 Okt 2026). File TIDAK dihapus permanen (sudah dipindah ke recycle/
+    // di atas), ini cuma membersihkan folder kosong di lokasi asli. Jalan ke
+    // atas (origin lalu company) berhenti begitu ketemu folder yang masih
+    // ada isinya, dan TIDAK PERNAH menghapus storage/signature itu sendiri
+    // (folder dasar dipakai bersama semua signature, bukan punya satu
+    // signature ini saja) - dicek lewat strpos supaya tetap aman walau
+    // suatu saat file_path formatnya berubah dan dirname()-nya jadi aneh.
+    $signatureBase = rtrim(AOS_STORAGE_BASE . '/signature', '/');
+    $dir = rtrim(dirname($fullPath), '/');
+    while ($dir !== $signatureBase && strpos($dir . '/', $signatureBase . '/') === 0) {
+        $items = @scandir($dir);
+        if ($items === false || count(array_diff($items, ['.', '..'])) > 0) {
+            break;
+        }
+        if (!@rmdir($dir)) {
+            break;
+        }
+        $dir = dirname($dir);
+    }
 }
 
 echo json_encode(['success' => true]);

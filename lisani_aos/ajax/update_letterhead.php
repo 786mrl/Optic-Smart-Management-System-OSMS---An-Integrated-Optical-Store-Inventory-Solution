@@ -28,7 +28,9 @@ function sanitize_letterhead_name_for_update(string $name): string
 }
 
 $id = isset($_POST['id']) ? (int) $_POST['id'] : 0;
-$letterheadName = sanitize_letterhead_name_for_update($_POST['letterhead_name'] ?? '');
+// strtoupper() as a server-side backstop for the client's .input-uppercase
+// class (project convention, PROJECT_NOTES.md §3).
+$letterheadName = strtoupper(sanitize_letterhead_name_for_update($_POST['letterhead_name'] ?? ''));
 $isMain = (isset($_POST['is_main']) && $_POST['is_main'] === '1') ? 1 : 0;
 
 if ($id <= 0 || $letterheadName === '') {

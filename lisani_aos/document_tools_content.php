@@ -187,15 +187,15 @@
           <div class="settings-form-grid">
             <div class="form-group">
               <label class="label">Letterhead Name</label>
-              <input type="text" class="input" id="lhNameInput" style="text-transform:uppercase;" placeholder="E.G. OFFICIAL LETTERHEAD 2026" required>
+              <input type="text" class="input input-uppercase" id="lhNameInput" placeholder="E.G. OFFICIAL LETTERHEAD 2026" required>
             </div>
             <div class="form-group">
               <label class="label">Company Name</label>
-              <input type="text" class="input" id="lhCompanyInput" style="text-transform:uppercase;" placeholder="E.G. PT LISANI OPTIK" required>
+              <input type="text" class="input input-uppercase" id="lhCompanyInput" placeholder="E.G. PT LISANI OPTIK" required>
             </div>
             <div class="form-group">
               <label class="label">Origin</label>
-              <input type="text" class="input" id="lhOriginInput" style="text-transform:uppercase;" placeholder="E.G. JAKARTA" required>
+              <input type="text" class="input input-uppercase" id="lhOriginInput" placeholder="E.G. JAKARTA" required>
             </div>
           </div>
           <div class="header-sub" id="lhCompanyHint">Determines the storage folder at storage/letterhead/.../, cannot be changed after saving.</div>
@@ -396,6 +396,15 @@
     <div class="panel-header">
       <div class="panel-title">Insert Letterhead</div>
     </div>
+    <!-- 26 Okt 2026: opsi "Apply to all pages" - belum dites user. Default
+         CHECKED karena ini yang diminta user jadi perilaku utama; user bisa
+         uncheck kalau cuma mau menempel di halaman yang sedang dibuka
+         (perilaku lama). Dibaca sekali saat klik item letterhead di bawah,
+         lihat insertLetterheadOntoCanvas(). -->
+    <label class="settings-checkbox-label" style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+      <input type="checkbox" id="docLhApplyAllPages" checked>
+      <span>Apply to all pages</span>
+    </label>
     <div class="doc-sig-pick-grid" id="docLhPickerList">
       <div class="empty-sub">Loading...</div>
     </div>
@@ -782,6 +791,16 @@
      puts it on top, but the explicit z-index here is what actually wins
      the stacking fight against theme.css's normal .modal-overlay z-index. */
   #docSigPickerOverlay.modal-overlay {
+    z-index: 2147483647 !important;
+  }
+  /* Same fix, same reason, for the Letterhead picker (Stage 9). Missing
+     this rule is exactly why "Insert Letterhead" appeared to do nothing
+     while in Fullscreen (25 Oct 2026 bug report) - the overlay WAS being
+     reparented to <body> in setFullscreen() (see docLhPickerOriginalParent
+     below), but without this explicit z-index it still lost the stacking
+     fight against theme.css's normal .modal-overlay z-index, same as the
+     signature picker did before this rule existed for it. */
+  #docLhPickerOverlay.modal-overlay {
     z-index: 2147483647 !important;
   }
   .doc-editor-checkbox {
@@ -2127,6 +2146,7 @@
   var docLhPickerOverlay = document.getElementById('docLhPickerOverlay');
   var docLhPickerList = document.getElementById('docLhPickerList');
   var docLhPickerCancel = document.getElementById('docLhPickerCancel');
+  var docLhApplyAllPages = document.getElementById('docLhApplyAllPages');
 
   var MAX_DOC_WIDTH = 1400; // working-resolution cap per page, see PROJECT_NOTES.md note on 150-200 DPI being enough
 
@@ -2155,6 +2175,11 @@
   var guideBox = null;
   var insertedSignatureIds = {}; // set-like map, id -> true, collected across all pages
   var insertedLetterheadIds = {}; // same idea, for letterheads
+  // 26 Okt 2026: counter dipakai untuk bikin letterheadSyncId unik tiap kali
+  // Insert Letterhead dipanggil - lihat insertLetterheadOntoCanvas() dan
+  // syncLetterheadTransform() di bawah (fitur "edit letterhead ikut sync ke
+  // semua halaman").
+  var docLetterheadSyncCounter = 0;
 
   // 24 Okt 2026: Undo untuk Document Editor - history stack PER HALAMAN
   // (disimpan di docPages[i].undoStack, bukan satu stack global, supaya
@@ -2280,7 +2305,7 @@
     var page = currentPage();
     if (!page || !docFabricCanvas) return;
     if (!page.undoStack) page.undoStack = [];
-    page.undoStack.push(docFabricCanvas.toJSON(['blockType', 'isGuideBox', 'isGuideLine', 'guideOrientation']));
+    page.undoStack.push(docFabricCanvas.toJSON(['blockType', 'isGuideBox', 'isGuideLine', 'guideOrientation', 'letterheadSyncId', 'letterheadPart']));
     if (page.undoStack.length > DOC_UNDO_LIMIT) page.undoStack.shift();
     updateDocUndoBtn();
   }
@@ -2307,6 +2332,16 @@
         if (o.isGuideLine) {
           attachGuideLineClamp(o);
         }
+        // 26 Okt 2026 (susulan): Undo mengembalikan posisi letterhead di
+        // halaman INI ke snapshot sebelumnya - supaya halaman lain yang
+        // sebelumnya sudah ke-sync ke posisi yang di-Undo ini ikut
+        // dikembalikan juga, bukan cuma halaman ini, jalankan sinkronisasi
+        // yang sama seperti sehabis drag/resize untuk tiap layer letterhead
+        // yang baru saja dimuat ulang. No-op untuk objek lain (guide
+        // box/line, block text patch, signature) karena
+        // syncLetterheadTransform() keluar langsung kalau tidak ada
+        // letterheadSyncId.
+        syncLetterheadTransform(o);
       });
       docFabricCanvas.requestRenderAll();
       updateDocUndoBtn();
@@ -2449,7 +2484,7 @@
      has never been opened/edited yet). ---- */
   function syncCurrentPageState() {
     if (docFabricCanvas && currentPageIndex >= 0 && docPages[currentPageIndex]) {
-      docPages[currentPageIndex].json = docFabricCanvas.toJSON(['blockType', 'isGuideBox', 'isGuideLine', 'guideOrientation']);
+      docPages[currentPageIndex].json = docFabricCanvas.toJSON(['blockType', 'isGuideBox', 'isGuideLine', 'guideOrientation', 'letterheadSyncId', 'letterheadPart']);
     }
   }
 
@@ -2648,6 +2683,38 @@
 
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape' && docEditorIsFullscreen) setFullscreen(false);
+
+    // Arrow-key nudge for the currently selected canvas object (25 Oct 2026,
+    // user request - "both letterhead and signature"). Implemented against
+    // whatever is active rather than those two specifically, so it also
+    // works for guide lines/guide box/text block patches for free, with no
+    // per-layer-type duplication. 1px per press, 10px with Shift held.
+    // Ignored while typing in a text field (Document Name, Letterhead Name,
+    // etc.) so it doesn't fight with normal cursor movement there.
+    if (!docFabricCanvas) return;
+    var targetTag = (e.target && e.target.tagName) || '';
+    if (targetTag === 'INPUT' || targetTag === 'TEXTAREA' || (e.target && e.target.isContentEditable)) return;
+    var activeObj = docFabricCanvas.getActiveObject();
+    if (!activeObj) return;
+    var nudge = e.shiftKey ? 10 : 1;
+    var didNudge = true;
+    switch (e.key) {
+      case 'ArrowLeft': activeObj.left -= nudge; break;
+      case 'ArrowRight': activeObj.left += nudge; break;
+      case 'ArrowUp': activeObj.top -= nudge; break;
+      case 'ArrowDown': activeObj.top += nudge; break;
+      default: didNudge = false;
+    }
+    if (didNudge) {
+      e.preventDefault(); // stop the page behind the canvas from scrolling
+      activeObj.setCoords();
+      docFabricCanvas.requestRenderAll();
+      // 26 Okt 2026: nudge sets left/top directly and never fires Fabric's
+      // 'object:modified' event (unlike a mouse drag), so the letterhead
+      // sync wired in wireDocCanvasSelection() would otherwise miss
+      // keyboard nudges entirely - call it explicitly here too.
+      syncLetterheadTransform(activeObj);
+    }
   });
 
   // Resizing/rotating the browser window while in fullscreen changes the
@@ -2703,6 +2770,38 @@
     }
     docFabricCanvas.on('object:moving', clampPendingRect);
     docFabricCanvas.on('object:scaling', clampPendingRect);
+
+    // 26 Okt 2026: "edit letterhead ikut sync ke semua halaman" - fires
+    // after a drag/resize/rotate is released (not during). See
+    // syncLetterheadTransform(); no-op for any object that isn't a
+    // letterhead layer (function returns early).
+    docFabricCanvas.on('object:modified', function (e) { syncLetterheadTransform(e.target); });
+
+    // 26 Okt 2026 (susulan ketiga, laporan user: "undo malah menghilangkan
+    // letterhead, bukan balik ke posisi sebelum digeser"). Akar masalah:
+    // pushDocUndoSnapshot() SEBELUMNYA cuma dipanggil sebelum aksi eksplisit
+    // (insert/delete/potong blok/dst, lihat komentar di
+    // pushDocUndoSnapshot()) - drag/resize TIDAK pernah push snapshotnya
+    // sendiri. Jadi kalau urutannya Insert Letterhead -> geser -> Undo,
+    // satu-satunya snapshot di stack adalah keadaan SEBELUM insert (tanpa
+    // letterhead sama sekali) - makanya letterhead-nya hilang total, bukan
+    // cuma balik posisi. Perbaikan KHUSUS layer letterhead (bukan semua
+    // tipe objek, supaya tetap surgical dan tidak mengubah perilaku
+    // undo untuk signature/guide box/block text yang belum pernah
+    // dilaporkan bermasalah): begitu user mulai menyentuh (mousedown) salah
+    // satu layer letterhead untuk digeser/di-resize, simpan dulu
+    // snapshot-nya (posisi SEBELUM gestur ini) - jadi Undo pertama cukup
+    // mengembalikan posisi sebelum geser terakhir, bukan langsung
+    // menghapus letterhead-nya. Snapshot ini juga otomatis mengandung
+    // letterheadSyncId/letterheadPart (ikut di-toJSON di
+    // pushDocUndoSnapshot(), lihat perubahan susulan sebelumnya), jadi
+    // ter-sync ke halaman lain juga lewat forEach+syncLetterheadTransform()
+    // di handler docUndoBtn saat snapshot ini nanti di-Undo.
+    docFabricCanvas.on('mouse:down', function (opt) {
+      if (opt.target && opt.target.letterheadSyncId) {
+        pushDocUndoSnapshot();
+      }
+    });
   }
 
   function wireDocCanvasDrawing() {
@@ -3093,7 +3192,28 @@
   // (align='bottom') of the current page, preserving aspect ratio. This
   // only sets its STARTING position/size - it stays a normal
   // selectable/resizable fabric object afterward, same as a signature.
-  function placeLetterheadPart(url, align) {
+  //
+  // centeredScaling:true (25 Oct 2026 fix) - without this, fabric's default
+  // corner-resize anchors the OPPOSITE corner/side, so dragging a side
+  // handle on a full-width image (left edge at 0, right edge at page.width)
+  // keeps one edge pinned while the other moves - which reads as the image
+  // "jumping"/drifting instead of resizing in place. With centeredScaling,
+  // the image's own center point stays fixed while resizing, which is the
+  // predictable behavior wanted for a header/footer bar. Signatures don't
+  // get this (they keep fabric's default), since a signature is usually
+  // resized by a corner, not a full-bleed edge.
+  // Shared placement math (26 Okt 2026, factored out of placeLetterheadPart
+  // so applyLetterheadToOtherPages() below computes the EXACT same
+  // left/top/scale for pages that are not the live canvas - jangan ubah
+  // formula ini di satu tempat tanpa yang lain, keduanya harus tetap sama).
+  function letterheadPlacementProps(page, img, align) {
+    var scale = page.width / img.width;
+    var scaledH = img.height * scale;
+    var top = align === 'bottom' ? (page.height - scaledH) : 0;
+    return { left: 0, top: top, scaleX: scale, scaleY: scale, centeredScaling: true };
+  }
+
+  function placeLetterheadPart(url, align, syncId, part) {
     var page = currentPage();
     fabric.Image.fromURL(url, function (img) {
       if (!img || !img.width) {
@@ -3101,23 +3221,141 @@
         docEditorMessage.className = 'settings-message settings-message-error';
         return;
       }
-      var scale = page.width / img.width;
-      var scaledH = img.height * scale;
-      var top = align === 'bottom' ? (page.height - scaledH) : 0;
-      img.set({ left: 0, top: top, scaleX: scale, scaleY: scale });
+      img.set(letterheadPlacementProps(page, img, align));
+      // 26 Okt 2026: tag dengan syncId+part supaya bisa dicari/disamakan di
+      // halaman lain saat diedit - lihat syncLetterheadTransform().
+      img.set({ letterheadSyncId: syncId, letterheadPart: part });
       docFabricCanvas.add(img);
+      // 25 Oct 2026 fix: "letterhead suddenly ends up behind the paper" bug
+      // report. add() alone is SUPPOSED to put a new object on top (last =
+      // topmost in fabric's stacking), but since the two async image loads
+      // here (header + footer) can resolve in either order relative to
+      // whatever else is happening on the canvas, force it explicitly to
+      // the front instead of relying on add()'s default position.
+      docFabricCanvas.bringToFront(img);
       docFabricCanvas.requestRenderAll();
     }, { crossOrigin: 'anonymous' });
   }
 
+  // 26 Okt 2026 - "Apply to all pages" (belum dites user): halaman lain
+  // bukan canvas Fabric yang hidup (cuma docPages[i].json kalau sudah
+  // pernah dibuka, atau cuma bitmap asli di .workingCanvas kalau belum
+  // pernah dibuka sama sekali - lihat switchToPage()), jadi tidak bisa
+  // dipakaikan placeLetterheadPart() langsung. Untuk tiap halaman lain:
+  // bikin fabric.StaticCanvas offscreen berisi state halaman itu (dari
+  // .json kalau ada, atau dari .workingCanvas kalau belum), tempel
+  // header/footer dengan rumus PERSIS sama (letterheadPlacementProps), lalu
+  // serialize balik ke .json - sama persis dengan apa yang
+  // syncCurrentPageState() lakukan untuk halaman yang sedang dibuka, cuma
+  // di sini dilakukan manual karena canvasnya tidak live.
+  function addLetterheadToPageData(page, lh, syncId) {
+    return new Promise(function (resolve) {
+      var tmp = new fabric.StaticCanvas(null, { width: page.width, height: page.height });
+
+      function placeParts() {
+        var urls = [{ url: 'ajax/download_letterhead.php?id=' + lh.id + '&part=header', align: 'top', part: 'header' }];
+        if (lh.has_footer) {
+          urls.push({ url: 'ajax/download_letterhead.php?id=' + lh.id + '&part=footer', align: 'bottom', part: 'footer' });
+        }
+        Promise.all(urls.map(function (partDef) {
+          return new Promise(function (res) {
+            fabric.Image.fromURL(partDef.url, function (img) {
+              if (img && img.width) {
+                img.set(letterheadPlacementProps(page, img, partDef.align));
+                // 26 Okt 2026: tag sama seperti placeLetterheadPart() di atas,
+                // syncId yang SAMA dipakai di semua halaman untuk satu kali
+                // Insert Letterhead supaya edit di satu halaman bisa dicari
+                // kembarannya di halaman lain - lihat syncLetterheadTransform().
+                img.set({ letterheadSyncId: syncId, letterheadPart: partDef.part });
+                tmp.add(img);
+                tmp.bringToFront(img);
+              }
+              res();
+            }, { crossOrigin: 'anonymous' });
+          });
+        })).then(function () {
+          tmp.renderAll();
+          page.json = tmp.toJSON(['blockType', 'isGuideBox', 'isGuideLine', 'guideOrientation', 'letterheadSyncId', 'letterheadPart']);
+          tmp.dispose();
+          resolve();
+        });
+      }
+
+      if (page.json) {
+        tmp.loadFromJSON(page.json, placeParts);
+      } else {
+        fabric.Image.fromURL(page.workingCanvas.toDataURL('image/png'), function (bgImg) {
+          bgImg.set({ left: 0, top: 0, selectable: false, evented: false, hasControls: false });
+          tmp.add(bgImg);
+          tmp.sendToBack(bgImg);
+          placeParts();
+        });
+      }
+    });
+  }
+
+  function applyLetterheadToOtherPages(lh, syncId) {
+    var others = [];
+    docPages.forEach(function (page, idx) {
+      if (idx !== currentPageIndex) others.push(page);
+    });
+    if (!others.length) return;
+    Promise.all(others.map(function (page) { return addLetterheadToPageData(page, lh, syncId); }))
+      .then(function () {
+        highlightActiveThumbnail(); // refresh "has-edits" dot on thumbnails
+        docEditorMessage.textContent = 'Letterhead applied to all ' + docPages.length + ' page(s).';
+        docEditorMessage.className = 'settings-message settings-message-success';
+      });
+  }
+
+  // 26 Okt 2026: begitu letterhead diinsert dengan "Apply to all pages", tiap
+  // salinan (header/footer) di tiap halaman ditag dengan letterheadSyncId
+  // yang SAMA (dibuat sekali per klik di sini) + letterheadPart ('header'
+  // atau 'footer'). Dipakai supaya geser/resize salah satu salinan bisa
+  // dicari kembarannya di halaman lain dan disamakan - lihat
+  // syncLetterheadTransform(). Kalau "Apply to all pages" TIDAK dicentang,
+  // tetap ditag (tidak merugikan), cuma tidak ada salinan lain untuk disync.
   function insertLetterheadOntoCanvas(lh) {
     hideModal(docLhPickerOverlay);
     pushDocUndoSnapshot();
-    placeLetterheadPart('ajax/download_letterhead.php?id=' + lh.id + '&part=header', 'top');
+    var applyAll = !!(docLhApplyAllPages && docLhApplyAllPages.checked);
+    var syncId = 'lh' + lh.id + '_' + Date.now() + '_' + (docLetterheadSyncCounter++);
+    placeLetterheadPart('ajax/download_letterhead.php?id=' + lh.id + '&part=header', 'top', syncId, 'header');
     if (lh.has_footer) {
-      placeLetterheadPart('ajax/download_letterhead.php?id=' + lh.id + '&part=footer', 'bottom');
+      placeLetterheadPart('ajax/download_letterhead.php?id=' + lh.id + '&part=footer', 'bottom', syncId, 'footer');
     }
     insertedLetterheadIds[lh.id] = true;
+    if (applyAll) {
+      applyLetterheadToOtherPages(lh, syncId);
+    }
+  }
+
+  // 26 Okt 2026: dipanggil setiap satu letterhead layer selesai
+  // digeser/di-resize (event 'object:modified' dari canvas live, atau
+  // manual setelah arrow-key nudge - keduanya wire di bawah). Menyamakan
+  // left/top/scaleX/scaleY/angle/flip ke salinan letterhead yang sama
+  // (syncId+part sama) di SEMUA halaman LAIN yang punya .json (halaman yang
+  // sedang live/current sudah otomatis benar, tidak disentuh di sini).
+  // Halaman yang belum pernah dibuka (json null) dilewati - seharusnya
+  // tidak terjadi untuk letterhead hasil "Apply to all pages" karena
+  // addLetterheadToPageData() sudah mengisi .json semua halaman saat
+  // insert, tapi dicek untuk jaga-jaga.
+  function syncLetterheadTransform(obj) {
+    if (!obj || !obj.letterheadSyncId) return;
+    var syncId = obj.letterheadSyncId;
+    var part = obj.letterheadPart;
+    var left = obj.left, top = obj.top, scaleX = obj.scaleX, scaleY = obj.scaleY,
+        angle = obj.angle, flipX = obj.flipX, flipY = obj.flipY;
+    docPages.forEach(function (page, idx) {
+      if (idx === currentPageIndex) return;
+      if (!page.json || !page.json.objects) return;
+      page.json.objects.forEach(function (o) {
+        if (o.letterheadSyncId === syncId && o.letterheadPart === part) {
+          o.left = left; o.top = top; o.scaleX = scaleX; o.scaleY = scaleY;
+          o.angle = angle; o.flipX = flipX; o.flipY = flipY;
+        }
+      });
+    });
   }
 
   /* ---- Save: sync + flatten EVERY page (minus guide boxes/guide lines,
@@ -3273,7 +3511,7 @@
               '<div>' + lh.letterhead_name + (lh.is_main ? ' <span class="badge badge-success">Main</span>' : '') + '</div>' +
               '<div class="header-sub">' + lh.company_name + ' &middot; ' + lh.origin + (lh.has_footer ? ' &middot; has footer' : '') + '</div>' +
               '</div>' +
-              '<button type="button" class="btn btn-danger lh-delete-btn" data-id="' + lh.id + '" data-name="' + lh.letterhead_name + '"><i class="ti ti-trash"></i></button>' +
+              '<button type="button" class="btn btn-danger lh-delete-btn" data-id="' + lh.id + '" data-name="' + lh.letterhead_name + '"><i class="ti ti-trash"></i> Delete</button>' +
               '</div>';
             lhAccordionList.appendChild(row);
           });

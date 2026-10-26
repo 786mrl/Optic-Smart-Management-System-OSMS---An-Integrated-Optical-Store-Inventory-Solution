@@ -85,9 +85,13 @@ function save_letterhead_part(string $field, string $prefix, string $baseName, s
     ];
 }
 
-$letterheadName = sanitize_letterhead_name($_POST['letterhead_name'] ?? '');
-$companyName = sanitize_folder_label($_POST['company_name'] ?? '');
-$origin = sanitize_folder_label($_POST['origin'] ?? '');
+// strtoupper() as a server-side backstop for the client's .input-uppercase
+// class (project convention, PROJECT_NOTES.md §3) - keeps data uppercase
+// even if the request didn't come through the normal form (API client,
+// JS disabled, etc).
+$letterheadName = strtoupper(sanitize_letterhead_name($_POST['letterhead_name'] ?? ''));
+$companyName = strtoupper(sanitize_folder_label($_POST['company_name'] ?? ''));
+$origin = strtoupper(sanitize_folder_label($_POST['origin'] ?? ''));
 $isMain = (isset($_POST['is_main']) && $_POST['is_main'] === '1') ? 1 : 0;
 
 if ($letterheadName === '') {
