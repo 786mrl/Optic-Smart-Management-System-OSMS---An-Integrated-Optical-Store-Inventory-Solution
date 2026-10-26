@@ -79,31 +79,74 @@
         return implode(' ', $result_words);
     }
 
-    // Migrate old data structure + uppercase category/lens/feature keys & values.
-    // If collisions happen (e.g., "Single Vision" and "SINGLE VISION"), entries are merged.
-    foreach ($data as $gk => $cats) {
-        $new_cats = [];
-        foreach ($cats as $ck => $lenses) {
-            $ck_upper = uc_trim($ck);
-            if ($ck_upper === '') $ck_upper = 'GENERAL';
-            if (!isset($new_cats[$ck_upper])) $new_cats[$ck_upper] = [];
-            foreach ($lenses as $ln => $val) {
-                $ln_upper = uc_trim($ln);
-                if ($ln_upper === '') continue;
-                if (!is_array($val)) {
-                    $entry = ['cost'=>(float)$val,'selling'=>0.0,'features'=>[],'limits'=>$DEFAULT_LIMITS];
-                } else {
-                    if (!isset($val['features']) || !is_array($val['features'])) $val['features'] = [];
-                    if (!isset($val['limits'])   || !is_array($val['limits']))   $val['limits']   = $DEFAULT_LIMITS;
-                    // Uppercase every feature string
-                    $val['features'] = array_values(array_filter(array_map('uc_trim', $val['features']), function($x){ return $x !== ''; }));
-                    $entry = $val;
+    // Normalize the raw decoded lens-data tree: migrate old structure +
+    // uppercase category/lens/feature keys & values. If collisions happen
+    // (e.g., "Single Vision" and "SINGLE VISION"), entries are merged.
+    // Pulled out into a function so it can be re-applied to a freshly
+    // re-read copy of the file (see reload_lens_data below), not just the
+    // one-time snapshot read at page load.
+    function normalize_lens_data($raw_data, $default_limits) {
+        $normalized = $raw_data;
+        foreach ($normalized as $gk => $cats) {
+            $new_cats = [];
+            foreach ($cats as $ck => $lenses) {
+                $ck_upper = uc_trim($ck);
+                if ($ck_upper === '') $ck_upper = 'GENERAL';
+                if (!isset($new_cats[$ck_upper])) $new_cats[$ck_upper] = [];
+                foreach ($lenses as $ln => $val) {
+                    $ln_upper = uc_trim($ln);
+                    if ($ln_upper === '') continue;
+                    if (!is_array($val)) {
+                        $entry = ['cost'=>(float)$val,'selling'=>0.0,'features'=>[],'limits'=>$default_limits];
+                    } else {
+                        if (!isset($val['features']) || !is_array($val['features'])) $val['features'] = [];
+                        if (!isset($val['limits'])   || !is_array($val['limits']))   $val['limits']   = $default_limits;
+                        // Uppercase every feature string
+                        $val['features'] = array_values(array_filter(array_map('uc_trim', $val['features']), function($x){ return $x !== ''; }));
+                        $entry = $val;
+                    }
+                    $new_cats[$ck_upper][$ln_upper] = $entry;
                 }
-                $new_cats[$ck_upper][$ln_upper] = $entry;
             }
+            $normalized[$gk] = $new_cats;
         }
-        $data[$gk] = $new_cats;
+        return $normalized;
     }
+
+    // Re-read lense_prices.json fresh from disk (with a shared lock) and
+    // re-apply the same normalization as the initial page-load read.
+    //
+    // WHY THIS EXISTS: every POST handler used to rely on the single $data
+    // snapshot read once at the top of the script (page load). If a lens was
+    // saved by another tab/user (e.g. via the "Save this lens" AJAX button)
+    // AFTER this page was loaded but BEFORE this POST was submitted, writing
+    // back the old $data snapshot would silently overwrite / revert that
+    // other save. Calling this function at the start of each write handler
+    // (add/delete/save) ensures we always mutate the latest data on disk.
+    function reload_lens_data($json_file, $default_limits) {
+        $fh = @fopen($json_file, 'r');
+        if ($fh) {
+            flock($fh, LOCK_SH);
+            $raw = stream_get_contents($fh);
+            flock($fh, LOCK_UN);
+            fclose($fh);
+        } else {
+            $raw = file_get_contents($json_file);
+        }
+        $decoded = json_decode($raw, true);
+        if (!is_array($decoded)) $decoded = ["stock" => ["Single Vision" => []], "lab" => []];
+        return normalize_lens_data($decoded, $default_limits);
+    }
+
+    // Write lens data back to disk with an exclusive lock, so two concurrent
+    // writers can never interleave and corrupt/clobber the file.
+    function write_lens_data($json_file, $data_to_write) {
+        return file_put_contents($json_file, json_encode($data_to_write, JSON_PRETTY_PRINT), LOCK_EX);
+    }
+
+    // Initial snapshot, used for rendering the page (GET) and as a fallback
+    // starting point before each POST handler below re-loads fresh data.
+    $data = normalize_lens_data($data, $DEFAULT_LIMITS);
 
     // Format Rx value for HTML input rendering.
     // Output plain integers (no "+" prefix) so browser type=number inputs accept the
@@ -207,6 +250,10 @@
             header('Content-Type: application/json; charset=utf-8');
             $resp = ['ok' => false, 'message' => '', 'saved_name' => '', 'limits' => [], 'renamed' => false];
 
+            // Re-read the file fresh so we never overwrite a save made by another tab/user
+            // between this page's load and this request (see reload_lens_data for details).
+            $data = reload_lens_data($json_file, $DEFAULT_LIMITS);
+
             $group    = $_POST['group']        ?? '';
             $old_cat  = uc_trim($_POST['old_category'] ?? '');
             $old_name = uc_trim($_POST['old_name']     ?? '');
@@ -270,7 +317,7 @@
                 'features' => $features, 'limits' => $limits,
             ];
 
-            $ok = @file_put_contents($json_file, json_encode($data, JSON_PRETTY_PRINT));
+            $ok = @write_lens_data($json_file, $data);
             if ($ok === false) {
                 $resp['message'] = 'Failed to write JSON file (check permissions).';
                 echo json_encode($resp); exit;
@@ -421,6 +468,10 @@
             }
 
         } elseif (isset($_POST['add_new_lense'])) {
+            // Re-read the file fresh so we never overwrite a save made by another tab/user
+            // between this page's load and this request (see reload_lens_data for details).
+            $data = reload_lens_data($json_file, $DEFAULT_LIMITS);
+
             $new_group    = $_POST['new_group'];
             $new_cat      = uc_trim($_POST['new_category'] ?? '');
             if ($new_cat === '') $new_cat = 'GENERAL';
@@ -495,6 +546,10 @@
             }
 
         } elseif (isset($_POST['delete_lense'])) {
+            // Re-read the file fresh so we never overwrite a save made by another tab/user
+            // between this page's load and this request (see reload_lens_data for details).
+            $data = reload_lens_data($json_file, $DEFAULT_LIMITS);
+
             $dg = $_POST['del_group']    ?? '';
             $dc = uc_trim($_POST['del_category'] ?? '');
             $dn = uc_trim($_POST['del_lense']    ?? '');
@@ -510,7 +565,13 @@
             }
         }
 
-        file_put_contents($json_file, json_encode($data, JSON_PRETTY_PRINT));
+        // Only persist when add_new_lense or delete_lense actually ran (both reloaded
+        // fresh data above before mutating it). A POST matching none of the branches
+        // above must NOT write $data back — it would still hold the stale page-load
+        // snapshot and could overwrite changes saved by another tab/user in the meantime.
+        if (isset($_POST['add_new_lense']) || isset($_POST['delete_lense'])) {
+            write_lens_data($json_file, $data);
+        }
     }
 
     // After add_new_lense: point filter to the newly added group+category
@@ -692,6 +753,7 @@
             .lens-preview-summary .sum-price      { color:#2dd4bf; font-weight:700; }
             .lens-preview-summary .sum-feat-count { color:#6b7280; font-style:italic; }
             .lens-preview-summary .sum-dot        { color:#3a3d44; font-weight:700; }
+            .lens-preview-summary .sum-source     { color:#00adb5; font-weight:600; }
 
             .lens-name-row { display:flex; align-items:center; gap:8px; margin-bottom:14px; }
             .lens-name-icon { color:#4b5563; font-size:12px; flex-shrink:0; }
@@ -715,6 +777,9 @@
 
             /* ── Feature tags ────────────────────────────────────────── */
             .lens-section-label { font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.5px; color:#6b7280; margin-bottom:8px; }
+            .lens-source-row { display:flex; align-items:center; gap:6px; margin-top:8px; font-size:12px; }
+            .lens-source-row .lens-source-label { color:#6b7280; font-weight:600; text-transform:uppercase; font-size:10px; letter-spacing:.5px; }
+            .lens-source-row .lens-source-value { color:#00adb5; font-weight:600; }
             .features-tag-wrapper { display:flex; flex-wrap:wrap; gap:6px; min-height:24px; }
             .feature-tag { display:inline-flex; align-items:center; gap:5px; background:#162829; color:#2dd4bf; border:1px solid #1e4a4d; border-radius:20px; padding:3px 8px 3px 10px; font-size:11px; font-weight:600; }
             .feature-tag-dot { width:4px; height:4px; border-radius:50%; background:#2dd4bf; flex-shrink:0; }
@@ -1410,6 +1475,7 @@
                                     $cost     = is_array($prices) ? ($prices['cost']     ?? 0)  : (float)$prices;
                                     $selling  = is_array($prices) ? ($prices['selling']  ?? 0)  : 0.0;
                                     $features = is_array($prices) ? ($prices['features'] ?? []) : [];
+                                    $source   = is_array($prices) ? trim($prices['source'] ?? '') : '';
                                     $lim      = is_array($prices) ? ($prices['limits']   ?? $DEFAULT_LIMITS) : $DEFAULT_LIMITS;
                                     $lim      = array_merge($DEFAULT_LIMITS, $lim); // fill any missing keys
                                     // Show CYL/ADD row if category qualifies OR saved data is non-zero
@@ -1446,6 +1512,10 @@
                                             <span class="sum-dot">&bull;</span>
                                             <span class="sum-feat-count"><?php echo count($features); ?> feature<?php echo count($features)!==1?'s':''; ?></span>
                                             <?php endif; ?>
+                                            <?php if ($source !== ''): ?>
+                                            <span class="sum-dot">&bull;</span>
+                                            <span class="sum-source"><?php echo htmlspecialchars($source); ?></span>
+                                            <?php endif; ?>
                                         </span>
                                     </div>
 
@@ -1468,6 +1538,13 @@
                                             <input type="hidden" name="price_selling[<?php echo $group_key;?>][<?php echo $cat_name;?>][<?php echo $name;?>]" value="<?php echo $selling?:0;?>">
                                         </div>
                                     </div>
+
+                                    <?php if ($source !== ''): ?>
+                                    <div class="lens-source-row">
+                                        <span class="lens-source-label">Source:</span>
+                                        <span class="lens-source-value"><?php echo htmlspecialchars($source); ?></span>
+                                    </div>
+                                    <?php endif; ?>
 
                                     <hr class="card-divider">
 
@@ -1664,6 +1741,7 @@
                                     $av_cost     = is_array($av_prices) ? ($av_prices['cost']     ?? 0) : (float)$av_prices;
                                     $av_selling  = is_array($av_prices) ? ($av_prices['selling']  ?? 0) : 0.0;
                                     $av_features = is_array($av_prices) ? ($av_prices['features'] ?? []) : [];
+                                    $av_source   = is_array($av_prices) ? trim($av_prices['source'] ?? '') : '';
                                     $av_lim      = is_array($av_prices) ? ($av_prices['limits']   ?? $DEFAULT_LIMITS) : $DEFAULT_LIMITS;
                                     $av_lim      = array_merge($DEFAULT_LIMITS, $av_lim);
                                     $av_show_cyl = $av_has_cyl || ($av_lim['cyl_from'] != 0 || $av_lim['cyl_to'] != 0);
@@ -1680,6 +1758,10 @@
                                             <span class="sum-dot">&bull;</span>
                                             <span class="sum-feat-count"><?php echo count($av_features);?> feature<?php echo count($av_features)!==1?'s':'';?></span>
                                             <?php endif;?>
+                                            <?php if($av_source !== ''):?>
+                                            <span class="sum-dot">&bull;</span>
+                                            <span class="sum-source"><?php echo htmlspecialchars($av_source);?></span>
+                                            <?php endif;?>
                                         </span>
                                     </div>
                                     <div class="lens-card-body" style="margin-top:12px;">
@@ -1693,6 +1775,12 @@
                                                 <input type="text" class="input-field" readonly value="IDR <?php echo number_format($av_selling,0,',','.');?>">
                                             </div>
                                         </div>
+                                        <?php if($av_source !== ''):?>
+                                        <div class="lens-source-row">
+                                            <span class="lens-source-label">Source:</span>
+                                            <span class="lens-source-value"><?php echo htmlspecialchars($av_source);?></span>
+                                        </div>
+                                        <?php endif;?>
                                         <?php if(count($av_features)):?>
                                         <hr class="card-divider">
                                         <div class="lens-section-label">Features</div>

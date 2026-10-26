@@ -1,9 +1,8 @@
 {
     "features": [
-        "UV Protection",
-        "High-Index UV400 Protection",
+        "UV400",
+        "UV420+Cut",
         "Scratch-Resistant Coating",
-        "Anti-Reflective (AR) Coating",
         "Smudge-Resistant",
         "Hydrophobic",
         "Super Hydrophobic",
@@ -12,10 +11,13 @@
         "Impact-Resistant",
         "Photochromic",
         "Night Drive Coating",
-        "TEST"
+        "Purple \/ Green AR Coating",
+        "Satin Green AR Coating",
+        "Satin Blue AR Coating"
     ],
     "sources": [
         "Domas",
-        "Essilor"
+        "Essilor",
+        "Off-Brand"
     ]
 }

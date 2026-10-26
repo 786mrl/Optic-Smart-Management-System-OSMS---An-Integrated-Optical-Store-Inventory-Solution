@@ -1,0 +1,107 @@
+{
+    "stock": {
+        "SINGLE VISION": {
+            "SV HMC": {
+                "cost": 18000,
+                "selling": 90000,
+                "features": [
+                    "UV400",
+                    "SCRATCH-RESISTANT COATING",
+                    "PURPLE \/ GREEN AR COATING"
+                ],
+                "limits": {
+                    "sph_from": 0,
+                    "sph_to": -800,
+                    "cyl_from": -25,
+                    "cyl_to": -200,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 0,
+                    "note": ""
+                },
+                "source": "Off-Brand"
+            },
+            "SV HMC (2)": {
+                "cost": 20000,
+                "selling": 100000,
+                "features": [
+                    "UV400",
+                    "SCRATCH-RESISTANT COATING",
+                    "PURPLE \/ GREEN AR COATING"
+                ],
+                "limits": {
+                    "sph_from": 0,
+                    "sph_to": 400,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 0,
+                    "note": ""
+                },
+                "source": "Off-Brand"
+            },
+            "SV HMC (3)": {
+                "cost": 57000,
+                "selling": 130000,
+                "features": [
+                    "UV400",
+                    "SCRATCH-RESISTANT COATING",
+                    "PURPLE \/ GREEN AR COATING"
+                ],
+                "limits": {
+                    "sph_from": 0,
+                    "sph_to": -800,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 0,
+                    "note": ""
+                },
+                "source": "Domas"
+            },
+            "SV HMC (4)": {
+                "cost": 57000,
+                "selling": 130000,
+                "features": [
+                    "UV400",
+                    "SCRATCH-RESISTANT COATING",
+                    "PURPLE \/ GREEN AR COATING"
+                ],
+                "limits": {
+                    "sph_from": 25,
+                    "sph_to": 400,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 0,
+                    "note": ""
+                },
+                "source": "Domas"
+            },
+            "SV HMC (5)": {
+                "cost": 57000,
+                "selling": 138000,
+                "features": [
+                    "UV400",
+                    "SCRATCH-RESISTANT COATING",
+                    "PURPLE \/ GREEN AR COATING"
+                ],
+                "limits": {
+                    "sph_from": 0,
+                    "sph_to": -800,
+                    "cyl_from": -25,
+                    "cyl_to": -200,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 0,
+                    "note": ""
+                },
+                "source": "Domas"
+            }
+        }
+    },
+    "lab": []
+}
