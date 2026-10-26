@@ -438,16 +438,32 @@ belum dibangun).
     layer letterhead (bukan hanya sebelum aksi eksplisit seperti layer lain) — jadi Undo pertama = balik posisi
     sebelum geser terakhir (letterhead tetap ada, tersync ke semua halaman), Undo kedua baru menghapus total.
     Arrow-key nudge ikut sync tapi tidak push undo snapshot sendiri.
-  - **Zoom & Fullscreen**: `applyZoom()`/`fitZoomToContainer()` pakai Fabric native `setZoom()`+`setDimensions()`
-    (bukan CSS squish) supaya `getPointer()` akurat di level zoom berapa pun; `fitZoomToContainer()` auto-fit
-    tiap `switchToPage()`. Export/save PDF selalu render dari `fabric.StaticCanvas` terpisah di resolusi asli
-    (`renderPageToDataURL()`), tidak terpengaruh zoom layar. **Fullscreen**: `#docEditorWorkspace` di-reparent
-    jadi anak langsung `<body>` (bukan cuma toggle class) agar lolos dari ancestor `overflow:hidden`/clip di
-    WebView lama, z-index `2147483647 !important`. Fit-to-width saat fullscreen (bukan fit-to-page), tinggi
-    discroll kalau perlu. Field "Upload Document" & hint teks disembunyikan khusus saat fullscreen (toolbar+tab
-    halaman otomatis paling atas). Form Save (Document Name/Date/Judul Kegiatan/Save) **disembunyikan total**
-    saat fullscreen (bukan dirapatkan) — isi nama/save harus exit fullscreen dulu. Toolbar dikunci
-    `flex-wrap:nowrap` + `overflow-x:auto` saat fullscreen (geser horizontal, tidak pernah pecah baris).
+  - **Zoom**: `applyZoom()`/`fitZoomToContainer()` pakai Fabric native `setZoom()`+`setDimensions()` (bukan CSS
+    squish) supaya `getPointer()` akurat di level zoom berapa pun; `fitZoomToContainer()` auto-fit tiap
+    `switchToPage()` dan tiap `window.resize`. Export/save PDF selalu render dari `fabric.StaticCanvas` terpisah
+    di resolusi asli (`renderPageToDataURL()`), tidak terpengaruh zoom layar.
+    **Default tampilan = Fit to Width** (26 Okt 2026, ganti dari fit-to-page/`min(width,height)`): `fit =
+    containerWidth / page.width`, tinggi tinggal discroll di `.doc-editor-canvas-wrap` (`overflow:auto`,
+    `max-height:80vh`, `align-items:flex-start` bukan `center` supaya halaman tinggi scroll dari atas). Tombol
+    toolbar "Fit to Width" (id tetap `docZoomFitBtn`, cuma teksnya diganti dari "Fit to Page").
+    **Fitur Fullscreen DIHAPUS** (26 Okt 2026, atas permintaan user — dianggap tidak perlu): tombol
+    `#docFullscreenBtn`, fungsi `setFullscreen()`, auto-fullscreen setelah upload, reparenting workspace +
+    signature/letterhead picker ke `<body>`, CSS `.doc-editor-fullscreen`, semuanya sudah dibuang total.
+    Workspace sekarang permanen di tempat asalnya di dalam `.doctools-collapsible-body`.
+  - **Toolbar** (dirombak total 26 Okt 2026 jadi ribbon ala Microsoft Word, sudah dites & OK): 4 grup lama
+    (Blocks, Guide Lines, Actions, Zoom & View) masing-masing sekarang SATU `.doc-ribbon-trigger` terlihat
+    (ikon + nama grup + chevron) yang membuka `.doc-ribbon-panel` dropdown berisi tombol-tombol aslinya — id
+    tombol tidak berubah sama sekali dari sebelum redesign, jadi semua handler JS lama utuh. Show/hide +
+    outside-click + Escape + auto-tutup saat tombol di dalam panel diklik: `wireDocRibbonMenus()` (query semua
+    `.doc-ribbon-group`, toggle class `.open`, cuma 1 panel boleh terbuka sekaligus), dipanggil sekali saat load.
+    **Grup kontekstual** (`#docBlockAdjustGroup` - Apply/Cancel Block, muncul-hilang lewat
+    `docBlockAdjustGroup.style.display` di `enterPendingAdjustMode()`/`applyPendingBlock()`/`cancelPendingBlock()`,
+    TIDAK diubah titik togglenya) bentuknya SAMA PERSIS seperti 4 grup lain (trigger + dropdown, bukan
+    dibentangkan terbuka — revisi dari percobaan pertama yang salah dibentangkan) dan otomatis ikut ter-wire
+    karena juga punya class `.doc-ribbon-group`; pembedanya cuma warna trigger (kuning/amber via class tambahan
+    `.doc-ribbon-group-contextual`, baik saat tertutup maupun saat `.open`). Pola ini (grup sama bentuk, beda
+    warna trigger lewat 1 class tambahan) jadi referensi kalau nanti ada tombol/grup kontekstual lain yang perlu
+    ditambahkan ke toolbar ini.
   - **Save**: semua halaman di-flatten jadi PNG (guide box dibuang dari export), dikirim sekaligus (`pages[]`)
     + `signature_ids[]` + `letterhead_ids[]` ke `ajax/save_edited_document.php`, digabung jadi **1 file PDF**
     via **FPDF** (reuse `optic_pos/fpdf/fpdf.php`). Tabel `edited_documents`: `signature_ids`/`letterhead_ids`

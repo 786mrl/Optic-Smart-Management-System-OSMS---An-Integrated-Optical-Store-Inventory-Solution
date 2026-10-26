@@ -243,11 +243,6 @@
     <div class="doctools-collapsible-body" id="cardDocEditorBody">
       <div class="doctools-collapsible-body-inner">
 
-        <!-- Everything below (upload, toolbar, canvas, save form) lives inside
-             one workspace div so "Fullscreen" can expand ALL of it together -
-             the user still has every control (incl. the save form) without
-             leaving fullscreen. See #docEditorWorkspace.doc-editor-fullscreen
-             CSS + setFullscreen() JS. -->
         <div class="doc-editor-workspace" id="docEditorWorkspace">
 
         <div class="form-group" id="docUploadFormGroup" style="max-width:320px;">
@@ -258,15 +253,37 @@
 
         <div class="doc-page-thumbs-wrap" id="docPageThumbsWrap" style="display:none;"></div>
 
-        <div class="doc-editor-toolbar">
-          <div class="doc-editor-toolbar-group" title="Blocks">
-            <button type="button" class="btn btn-secondary" id="docBlockTextBtn" disabled>
-              <i class="ti ti-crop"></i> Block: Cut Area
+        <!-- 26 Okt 2026 (revisi): toolbar dirombak jadi gaya ribbon
+             Microsoft Word - tiap doc-editor-toolbar-group lama sekarang
+             punya SATU tombol menu yang terlihat (ikon grup + nama +
+             chevron), isinya (tombol-tombol asli, id SAMA PERSIS, JS tidak
+             diubah sama sekali) pindah ke dalam panel dropdown yang baru
+             muncul saat tombol menu diklik. Lihat wireDocRibbonMenus() di
+             JS untuk show/hide/outside-click/Escape. Grup kontekstual (yang
+             cuma muncul kalau sebuah tombol tertentu sudah ditekan, contoh:
+             Adjust Block setelah mulai gambar block - lihat
+             #docBlockAdjustGroup di bawah) BENTUKNYA SAMA PERSIS seperti
+             grup menu biasa (trigger + dropdown, bukan dibentangkan
+             terbuka) - cuma warnanya beda (kuning/amber), lewat class
+             tambahan .doc-ribbon-group-contextual, supaya user tetap sadar
+             ini "grup yang muncul karena sesuatu" tanpa mengubah bentuknya
+             jadi lain sendiri dari 4 grup lain. -->
+        <div class="doc-editor-toolbar" id="docEditorToolbar">
+          <div class="doc-ribbon-group" data-ribbon-group="blocks">
+            <button type="button" class="doc-ribbon-trigger" data-ribbon-trigger="blocks">
+              <i class="ti ti-crop"></i>
+              <span>Blocks</span>
+              <svg class="doc-ribbon-chevron" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
             </button>
-            <button type="button" class="btn btn-secondary" id="docGuideBoxBtn" disabled>
-              <i class="ti ti-box-margin"></i> Add Guide Box
-            </button>
-            <select class="select doc-guide-box-select" id="docGuideBoxPresetSelect" disabled aria-label="Guide Box size"></select>
+            <div class="doc-ribbon-panel" data-ribbon-panel="blocks">
+              <button type="button" class="btn btn-secondary" id="docBlockTextBtn" disabled>
+                <i class="ti ti-crop"></i> Block: Cut Area
+              </button>
+              <button type="button" class="btn btn-secondary" id="docGuideBoxBtn" disabled>
+                <i class="ti ti-box-margin"></i> Add Guide Box
+              </button>
+              <select class="select doc-guide-box-select" id="docGuideBoxPresetSelect" disabled aria-label="Guide Box size"></select>
+            </div>
           </div>
 
           <!-- 24 Okt 2026: garis bantu horizontal/vertikal untuk membantu
@@ -276,62 +293,100 @@
                lihat addGuideLine()/attachGuideLineClamp() di JS. Sama
                seperti Guide Box: hanya alat bantu visual, dikecualikan saat
                flatten/Save (lihat renderPageToDataURL()). -->
-          <div class="doc-editor-toolbar-group" title="Guide Lines">
-            <button type="button" class="btn btn-secondary" id="docAddHGuideBtn" disabled>
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="12" x2="21" y2="12"/></svg>
-              Add Horizontal Guide
+          <div class="doc-ribbon-group" data-ribbon-group="guides">
+            <button type="button" class="doc-ribbon-trigger" data-ribbon-trigger="guides">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="12" x2="21" y2="12"/><line x1="12" y1="3" x2="12" y2="9"/></svg>
+              <span>Guide Lines</span>
+              <svg class="doc-ribbon-chevron" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
             </button>
-            <button type="button" class="btn btn-secondary" id="docAddVGuideBtn" disabled>
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="3" x2="12" y2="21"/></svg>
-              Add Vertical Guide
-            </button>
+            <div class="doc-ribbon-panel" data-ribbon-panel="guides">
+              <button type="button" class="btn btn-secondary" id="docAddHGuideBtn" disabled>
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="12" x2="21" y2="12"/></svg>
+                Add Horizontal Guide
+              </button>
+              <button type="button" class="btn btn-secondary" id="docAddVGuideBtn" disabled>
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="3" x2="12" y2="21"/></svg>
+                Add Vertical Guide
+              </button>
+            </div>
           </div>
 
-          <!-- 24 Okt 2026: muncul HANYA selagi ada pending block rect (sudah
-               digambar, belum di-Apply) - lihat enterPendingAdjustMode() di
-               JS. Rect-nya sendiri adalah fabric.Rect biasa yang selectable,
-               jadi geser/resize per-sisi pakai kontrol bawaan Fabric, tidak
-               perlu hit-testing manual seperti Crop di Signature Editor. -->
-          <div class="doc-editor-toolbar-group" id="docBlockAdjustGroup" title="Adjust Block" style="display:none;">
-            <span class="header-sub">Drag the box or its handles to adjust, then Apply.</span>
-            <button type="button" class="btn btn-primary" id="docBlockApplyBtn">Apply Block</button>
-            <button type="button" class="btn btn-secondary" id="docBlockCancelBtn">Cancel Block</button>
+          <div class="doc-ribbon-group" data-ribbon-group="actions">
+            <button type="button" class="doc-ribbon-trigger" data-ribbon-trigger="actions">
+              <i class="ti ti-tools"></i>
+              <span>Actions</span>
+              <svg class="doc-ribbon-chevron" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+            <div class="doc-ribbon-panel" data-ribbon-panel="actions">
+              <button type="button" class="btn btn-secondary" id="docInsertSigBtn" disabled>
+                <i class="ti ti-signature"></i> Insert Signature
+              </button>
+              <button type="button" class="btn btn-secondary" id="docInsertLetterheadBtn" disabled>
+                <i class="ti ti-file-text"></i> Insert Letterhead
+              </button>
+              <button type="button" class="btn btn-secondary" id="docUndoBtn" disabled>
+                <i class="ti ti-arrow-back-up"></i> Undo
+              </button>
+              <button type="button" class="btn btn-danger" id="docDeleteSelectedBtn" disabled>
+                <i class="ti ti-trash"></i> Delete Selected
+              </button>
+              <button type="button" class="btn btn-secondary" id="docClearAllBtn" disabled>
+                <i class="ti ti-eraser"></i> Clear All
+              </button>
+            </div>
           </div>
 
-          <div class="doc-editor-toolbar-group" title="Actions">
-            <button type="button" class="btn btn-secondary" id="docInsertSigBtn" disabled>
-              <i class="ti ti-signature"></i> Insert Signature
+          <div class="doc-ribbon-group doc-ribbon-group-zoom" data-ribbon-group="zoom">
+            <button type="button" class="doc-ribbon-trigger" data-ribbon-trigger="zoom">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <span>Zoom &amp; View</span>
+              <span class="doc-zoom-level-badge" id="docZoomLevel">100%</span>
+              <svg class="doc-ribbon-chevron" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
             </button>
-            <button type="button" class="btn btn-secondary" id="docInsertLetterheadBtn" disabled>
-              <i class="ti ti-file-text"></i> Insert Letterhead
-            </button>
-            <button type="button" class="btn btn-secondary" id="docUndoBtn" disabled>
-              <i class="ti ti-arrow-back-up"></i> Undo
-            </button>
-            <button type="button" class="btn btn-danger" id="docDeleteSelectedBtn" disabled>
-              <i class="ti ti-trash"></i> Delete Selected
-            </button>
-            <button type="button" class="btn btn-secondary" id="docClearAllBtn" disabled>
-              <i class="ti ti-eraser"></i> Clear All
-            </button>
+            <div class="doc-ribbon-panel" data-ribbon-panel="zoom">
+              <button type="button" class="btn btn-secondary doc-zoom-btn" id="docZoomOutBtn" disabled aria-label="Zoom Out">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Zoom Out
+              </button>
+              <button type="button" class="btn btn-secondary doc-zoom-btn" id="docZoomInBtn" disabled aria-label="Zoom In">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Zoom In
+              </button>
+              <button type="button" class="btn btn-secondary" id="docZoomFitBtn" disabled>
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+                Fit to Width
+              </button>
+            </div>
           </div>
 
-          <div class="doc-editor-toolbar-group doc-editor-zoom-group" title="Zoom &amp; View">
-            <button type="button" class="btn btn-secondary doc-zoom-btn" id="docZoomOutBtn" disabled aria-label="Zoom Out">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          <!-- 26 Okt 2026 (revisi): muncul HANYA selagi ada pending block
+               rect (sudah digambar, belum di-Apply) - lihat
+               enterPendingAdjustMode() di JS. Rect-nya sendiri adalah
+               fabric.Rect biasa yang selectable, jadi geser/resize per-sisi
+               pakai kontrol bawaan Fabric, tidak perlu hit-testing manual
+               seperti Crop di Signature Editor.
+               BENTUKNYA SAMA seperti grup ribbon lain (Blocks/Guide
+               Lines/Actions/Zoom - trigger ringkas + chevron, isi di dalam
+               dropdown panel) - BUKAN dibentangkan terbuka terus seperti
+               revisi sebelumnya. Satu-satunya pembeda dari grup biasa:
+               class tambahan .doc-ribbon-group-contextual (warna aksen
+               kuning/amber di trigger-nya, lihat CSS) supaya user langsung
+               sadar ini "grup yang muncul karena tombol lain ditekan",
+               bukan grup yang selalu ada. Seluruh <div id="docBlockAdjustGroup">
+               (bukan cuma panel-nya) disembunyikan/ditampilkan oleh JS lewat
+               style.display - lihat enterPendingAdjustMode()/
+               applyPendingBlock()/cancelPendingBlock(). -->
+          <div class="doc-ribbon-group doc-ribbon-group-contextual" id="docBlockAdjustGroup" style="display:none;">
+            <button type="button" class="doc-ribbon-trigger" data-ribbon-trigger="block-adjust">
+              <i class="ti ti-bolt"></i>
+              <span>Adjust Block</span>
+              <svg class="doc-ribbon-chevron" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
             </button>
-            <span class="doc-zoom-level" id="docZoomLevel">100%</span>
-            <button type="button" class="btn btn-secondary doc-zoom-btn" id="docZoomInBtn" disabled aria-label="Zoom In">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            </button>
-            <button type="button" class="btn btn-secondary" id="docZoomFitBtn" disabled>
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
-              Fit to Page
-            </button>
-            <button type="button" class="btn btn-secondary" id="docFullscreenBtn" disabled>
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" id="docFullscreenIcon"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3m8 0h3a2 2 0 0 0 2-2v-3"/></svg>
-              <span id="docFullscreenLabel">Fullscreen</span>
-            </button>
+            <div class="doc-ribbon-panel" data-ribbon-panel="block-adjust">
+              <span class="header-sub">Drag the box or its handles to adjust, then Apply.</span>
+              <button type="button" class="btn btn-primary" id="docBlockApplyBtn">Apply Block</button>
+              <button type="button" class="btn btn-secondary" id="docBlockCancelBtn">Cancel Block</button>
+            </div>
           </div>
         </div>
         <div class="header-sub" id="docEditorHint">Upload a document first to enable the tools above.</div>
@@ -694,115 +749,98 @@
   .doc-editor-toolbar {
     display: flex;
     flex-wrap: wrap;
-    align-items: center;
-    gap: 10px 16px;
+    align-items: flex-start;
+    gap: 10px;
     margin: 14px 0 6px 0;
+    position: relative; /* dropdown panels (position:absolute) anchor to this */
   }
   .doc-editor-toolbar .btn { display: inline-flex; align-items: center; gap: 6px; width: auto; }
-  .doc-editor-toolbar-group {
-    display: flex;
-    flex-wrap: wrap;
+
+  /* ---- Ribbon group (Word-style): one always-visible trigger button
+     (icon + group name + chevron) that opens a dropdown panel holding the
+     group's real buttons. 26 Okt 2026 redesign - see wireDocRibbonMenus()
+     in JS. ---- */
+  .doc-ribbon-group { position: relative; }
+  .doc-ribbon-trigger {
+    display: inline-flex;
     align-items: center;
-    gap: 10px;
-    padding: 6px 10px;
+    gap: 6px;
+    padding: 8px 12px;
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: var(--radius-md, 10px);
     background: rgba(255, 255, 255, 0.02);
-  }
-  .doc-editor-zoom-group { margin-left: auto; }
-  .doc-zoom-btn { padding: 0 !important; width: 34px; height: 34px; justify-content: center; }
-  .doc-zoom-level {
-    min-width: 46px;
-    text-align: center;
+    color: inherit;
+    font: inherit;
     font-size: 13px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .doc-ribbon-trigger:hover { background: rgba(255, 255, 255, 0.06); }
+  .doc-ribbon-trigger:disabled { opacity: 0.45; cursor: not-allowed; }
+  .doc-ribbon-group.open .doc-ribbon-trigger {
+    background: var(--primary, #6c5ce7);
+    border-color: transparent;
+    color: #fff;
+  }
+  .doc-ribbon-chevron { transition: transform 0.15s ease; flex-shrink: 0; }
+  .doc-ribbon-group.open .doc-ribbon-chevron { transform: rotate(180deg); }
+  .doc-ribbon-panel {
+    display: none;
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    z-index: 40;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    min-width: 220px;
+    padding: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: var(--radius-md, 10px);
+    background: var(--surface, #1c1c24);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+  }
+  .doc-ribbon-group.open .doc-ribbon-panel { display: flex; }
+  .doc-ribbon-panel .btn { justify-content: flex-start; }
+
+  .doc-ribbon-group-zoom { margin-left: auto; }
+  .doc-zoom-level-badge {
+    font-size: 11px;
     color: var(--text-muted, #9a9a9a);
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 999px;
+    padding: 2px 8px;
+    min-width: 42px;
+    text-align: center;
     user-select: none;
   }
+  .doc-ribbon-group.open .doc-zoom-level-badge { background: rgba(255, 255, 255, 0.18); color: #fff; }
+  .doc-zoom-btn { padding: 0 8px !important; }
   .doc-guide-box-select { width: auto; min-width: 150px; }
 
-  /* Fullscreen workspace: everything (upload, toolbar, canvas, save form)
-     expands to cover the viewport so the whole editing flow - including
-     typing the Document Name/Activity and hitting Save - fits on one
-     screen without scrolling the page behind it. Toggled by
-     #docFullscreenBtn (setFullscreen() in JS); auto-entered right after a
-     document finishes uploading. z-index kept moderate (500) so it still
-     sits under the app's real modals (.modal-overlay, confirm dialogs) -
-     NOT verified against the actual topbar/sidebar z-index, check this if
-     either still shows on top. */
+  /* ---- Contextual group: SAME shape as a normal ribbon group (trigger +
+     dropdown panel) - only the color differs, via this one extra class on
+     top of .doc-ribbon-group. Whether the group shows at all is still
+     controlled by JS setting style.display on #docBlockAdjustGroup itself
+     (enterPendingAdjustMode()/applyPendingBlock()/cancelPendingBlock()) -
+     this class only re-colors the trigger amber/yellow so it reads as
+     "this appeared because you pressed something", not a permanently-open
+     panel. ---- */
+  .doc-ribbon-group-contextual .doc-ribbon-trigger {
+    border-color: rgba(255, 193, 7, 0.5);
+    background: rgba(255, 193, 7, 0.12);
+    color: #ffc107;
+  }
+  .doc-ribbon-group-contextual .doc-ribbon-trigger:hover {
+    background: rgba(255, 193, 7, 0.22);
+  }
+  .doc-ribbon-group-contextual.open .doc-ribbon-trigger {
+    background: #ffc107;
+    border-color: transparent;
+    color: #1c1c24;
+  }
+
   .doc-editor-workspace { position: relative; }
-  .doc-editor-workspace.doc-editor-fullscreen {
-    position: fixed !important;
-    top: 0 !important;
-    left: 0 !important;
-    right: 0 !important;
-    bottom: 0 !important;
-    width: 100vw !important;
-    height: 100vh !important;
-    margin: 0 !important;
-    max-width: none !important;
-    max-height: none !important;
-    z-index: 2147483647 !important; /* max safe int32 - must beat anything else on the page */
-    background: var(--bg, #121218);
-    padding: 16px;
-    overflow-y: auto;
-    display: flex !important;
-    flex-direction: column;
-    box-sizing: border-box;
-  }
-  .doc-editor-workspace.doc-editor-fullscreen .doc-editor-canvas-wrap {
-    flex: 1 1 auto;
-    max-height: none;
-    min-height: 0; /* flex children default to min-height:auto, which can refuse to
-                       shrink below their content size and starve the rest of the
-                       column - this is what made the canvas "disappear" on a
-                       narrower/shorter window instead of just getting smaller */
-  }
-  /* Everything not needed once you're actively editing - upload field, both
-     variants of the hint text - gets out of the way in fullscreen, so the
-     toolbar sits right at the very top and the canvas gets the rest. */
-  .doc-editor-fullscreen #docUploadFormGroup,
-  .doc-editor-fullscreen #docEditorHint {
-    display: none !important;
-  }
-  /* The #1 cause of "fullscreen disappears on a narrower window": the
-     toolbar wrapping onto 2-3 lines ate the vertical space the canvas
-     needed. In fullscreen it now stays ONE line and scrolls sideways
-     instead - canvas height stays predictable no matter the window size. */
-  .doc-editor-fullscreen .doc-editor-toolbar {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    overflow-y: hidden;
-    padding-bottom: 4px; /* room so a scrollbar doesn't sit flush under the buttons */
-  }
-  .doc-editor-fullscreen .doc-editor-toolbar-group {
-    flex: 0 0 auto;
-    flex-wrap: nowrap;
-  }
-  .doc-editor-fullscreen .doc-editor-zoom-group { margin-left: 0; }
-  /* Save form: compact single-ish row instead of the normal spaced-out
-     grid, so it stays a thin strip under the canvas rather than competing
-     with it for height. */
-  .doc-editor-fullscreen #docEditorSaveForm {
-    display: none !important;
-  }
-  /* Signature picker ("Insert Signature") must out-stack the fullscreen
-     workspace itself (z-index 2147483647 above) - it's reparented to
-     <body> right after the workspace in setFullscreen() so DOM order also
-     puts it on top, but the explicit z-index here is what actually wins
-     the stacking fight against theme.css's normal .modal-overlay z-index. */
-  #docSigPickerOverlay.modal-overlay {
-    z-index: 2147483647 !important;
-  }
-  /* Same fix, same reason, for the Letterhead picker (Stage 9). Missing
-     this rule is exactly why "Insert Letterhead" appeared to do nothing
-     while in Fullscreen (25 Oct 2026 bug report) - the overlay WAS being
-     reparented to <body> in setFullscreen() (see docLhPickerOriginalParent
-     below), but without this explicit z-index it still lost the stacking
-     fight against theme.css's normal .modal-overlay z-index, same as the
-     signature picker did before this rule existed for it. */
-  #docLhPickerOverlay.modal-overlay {
-    z-index: 2147483647 !important;
-  }
   .doc-editor-checkbox {
     display: inline-flex;
     align-items: center;
@@ -834,12 +872,16 @@
 
   .doc-editor-canvas-wrap {
     max-width: 100%;
-    max-height: 75vh;
+    max-height: 80vh; /* fit-to-width can make the page taller than the
+                          screen (e.g. a portrait page zoomed to fill a wide
+                          container) - this just caps the wrap's own height
+                          so the page/save form below stay reachable; the
+                          canvas itself still scrolls inside (overflow:auto). */
     margin-top: 10px;
     overflow: auto;
     display: flex;
     justify-content: center;
-    align-items: center;
+    align-items: flex-start;
   }
   /* Sizing is driven entirely by Fabric's zoom (setZoom + setDimensions) so
      pointer coordinates stay accurate - no CSS max-width/height here, that
@@ -2127,9 +2169,6 @@
   var docZoomInBtn = document.getElementById('docZoomInBtn');
   var docZoomFitBtn = document.getElementById('docZoomFitBtn');
   var docZoomLevel = document.getElementById('docZoomLevel');
-  var docFullscreenBtn = document.getElementById('docFullscreenBtn');
-  var docFullscreenIcon = document.getElementById('docFullscreenIcon');
-  var docFullscreenLabel = document.getElementById('docFullscreenLabel');
   var docEditorWorkspace = document.getElementById('docEditorWorkspace');
   var docGuideBoxPresetSelect = document.getElementById('docGuideBoxPresetSelect');
   var docEditorHint = document.getElementById('docEditorHint');
@@ -2211,11 +2250,6 @@
   var DOC_ZOOM_MAX = 3;
   var DOC_ZOOM_STEP = 0.15;
 
-  var docEditorIsFullscreen = false;
-  var docBodyOverflowBeforeFullscreen = '';
-  var docAutoFullscreenPending = false; // see startEditingPages() + switchToPage()'s afterLoad()
-  var ICON_MAXIMIZE_D = 'M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3m8 0h3a2 2 0 0 0 2-2v-3';
-  var ICON_MINIMIZE_D = 'M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3';
 
   // Guide box presets (inches), loaded from ajax/list_guide_box_presets.php
   // (json_file/guide_box_presets.json - admin can edit/add sizes there
@@ -2268,7 +2302,7 @@
 
   function setDocToolbarEnabled(enabled) {
     [docBlockTextBtn, docAddHGuideBtn, docAddVGuideBtn, docGuideBoxBtn, docGuideBoxPresetSelect, docInsertSigBtn, docInsertLetterheadBtn, docClearAllBtn,
-     docZoomOutBtn, docZoomInBtn, docZoomFitBtn, docFullscreenBtn].forEach(function (btn) {
+     docZoomOutBtn, docZoomInBtn, docZoomFitBtn].forEach(function (btn) {
       btn.disabled = !enabled;
     });
     docEditorSaveBtn.disabled = !enabled;
@@ -2277,6 +2311,45 @@
       ? 'Draw a block, adjust its edges, then Apply before inserting a signature from the library. Switch pages with the tabs above if the document has more than one.'
       : 'Upload a document first to enable the tools above.';
   }
+
+  /* ---- Word-style ribbon menus (26 Okt 2026): each .doc-ribbon-group has
+     a visible .doc-ribbon-trigger button and a hidden .doc-ribbon-panel;
+     clicking the trigger toggles the panel open, clicking anywhere else
+     (or Escape) closes whichever panel is open. Only one panel open at a
+     time. This is pure show/hide chrome around the EXISTING buttons (same
+     ids, same click handlers below) - it does not change what any button
+     does, only how it's grouped/revealed. ---- */
+  function wireDocRibbonMenus() {
+    var groups = Array.prototype.slice.call(document.querySelectorAll('.doc-ribbon-group'));
+    function closeAll(except) {
+      groups.forEach(function (g) {
+        if (g !== except) g.classList.remove('open');
+      });
+    }
+    groups.forEach(function (group) {
+      var trigger = group.querySelector('.doc-ribbon-trigger');
+      trigger.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var willOpen = !group.classList.contains('open');
+        closeAll(null);
+        if (willOpen) group.classList.add('open');
+      });
+      // Clicking a real action button inside the panel closes the menu too,
+      // so it behaves like Word (pick an option, menu goes away) instead of
+      // staying open until the user clicks elsewhere.
+      var panel = group.querySelector('.doc-ribbon-panel');
+      if (panel) {
+        panel.addEventListener('click', function (e) {
+          if (e.target.closest('button')) group.classList.remove('open');
+        });
+      }
+    });
+    document.addEventListener('click', function () { closeAll(null); });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') closeAll(null);
+    });
+  }
+  wireDocRibbonMenus();
 
   function resetDocEditorState() {
     docPages = [];
@@ -2442,17 +2515,6 @@
     docEditorCanvasWrap.style.display = 'block';
     buildPageThumbnails();
     setDocToolbarEnabled(true);
-    // #1: used to call setFullscreen(true) right here, BEFORE switchToPage(0)
-    // - i.e. before the canvas/page image even existed yet. Reparenting the
-    // (still-empty) workspace into fullscreen first, then having Fabric
-    // build the canvas and load the image into it after the move, could
-    // leave the preview blank until something else (like exiting
-    // fullscreen) forced a reflow. Now we wait for the page to actually
-    // finish loading/rendering in its normal spot first (see the
-    // docAutoFullscreenPending flag inside switchToPage's afterLoad), and
-    // only THEN move into fullscreen - so there's always real pixel
-    // content before the reparent happens.
-    docAutoFullscreenPending = true;
     switchToPage(0);
     refreshOpenHeight(document.getElementById('cardDocEditor'));
   }
@@ -2526,10 +2588,6 @@
       fitZoomToContainer();
       updateDocUndoBtn();
       docFabricCanvas.requestRenderAll();
-      if (docAutoFullscreenPending) {
-        docAutoFullscreenPending = false;
-        setFullscreen(true); // #1: page already has real content now - safe to reparent into fullscreen
-      }
     }
 
     if (page.json) {
@@ -2569,121 +2627,23 @@
     if (!page || !page.width || !page.height) return; // not loaded yet - nothing to size
     var available = docEditorCanvasWrap.clientWidth - 4; // minus wrap border
     if (available <= 0) available = page.width;
-    var fit;
-    if (docEditorIsFullscreen) {
-      // Fullscreen: fill the available WIDTH only, no matter how tall the
-      // page ends up - that's what "really full" (vs. the old behavior,
-      // which was identical to the normal "Fit to Page" min(width,height)
-      // fit) means here. Any vertical overflow just scrolls inside
-      // .doc-editor-canvas-wrap (already overflow:auto).
-      fit = available / page.width;
-    } else {
-      // Outside fullscreen the wrap is capped by CSS max-height (75vh), so
-      // keep fitting both width AND height like before.
-      var availableHeight = docEditorCanvasWrap.clientHeight - 4;
-      if (availableHeight <= 0) availableHeight = Math.max(1000, Math.round(window.innerHeight * 0.65));
-      fit = Math.min(available / page.width, availableHeight / page.height);
-    }
+    // Fit to WIDTH only, no matter how tall the page ends up - the document
+    // content fills the available width and any vertical overflow just
+    // scrolls inside .doc-editor-canvas-wrap (overflow:auto, no more CSS
+    // max-height cap - see .doc-editor-canvas-wrap below).
+    var fit = available / page.width;
     applyZoom(fit);
-    // 24 Okt 2026 FIX (fullscreen bug): Fabric caches the canvas's on-screen
-    // bounding-rect offset (used by getPointer() to translate mouse clientX/
-    // clientY into canvas coordinates) and only recalculates it on its own
-    // 'resize' handling - NOT when the canvas's DOM container is simply
-    // reparented elsewhere, which is exactly what setFullscreen() does
-    // (moves #docEditorWorkspace, canvas included, to <body> with
-    // position:fixed). Outside fullscreen this never came up because the
-    // canvas never moved. Inside fullscreen the cached offset stayed stuck
-    // at the canvas's old inline position, so every click/drag landed at
-    // the wrong coordinates - Block: Top Text/Name looked like "nothing
-    // happens" because the rect WAS being drawn, just off in empty space
-    // outside the visible canvas. calcOffset() forces a fresh
-    // getBoundingClientRect() read; called here because fitZoomToContainer
-    // already runs after every layout-affecting change (page switch, zoom,
-    // and - via its own rAF - entering/exiting fullscreen).
+    // Fabric caches the canvas's on-screen bounding-rect offset (used by
+    // getPointer() to translate mouse clientX/clientY into canvas
+    // coordinates) and only recalculates it on its own 'resize' handling -
+    // not automatically on every layout change. calcOffset() forces a
+    // fresh getBoundingClientRect() read; called here because
+    // fitZoomToContainer already runs after every layout-affecting change
+    // (page switch, zoom, window resize).
     if (docFabricCanvas) docFabricCanvas.calcOffset();
   }
 
-  /* ---- Fullscreen: expands #docEditorWorkspace (upload field, toolbar,
-     canvas AND the save form) to cover the viewport, so the whole flow -
-     drawing blocks, inserting a signature, filling in Document Name/Date/
-     Activity, Save - fits on one screen. Auto-entered right after a
-     document finishes uploading (see startEditingPages); Escape or the
-     same button exits it.
-
-     IMPORTANT: #docEditorWorkspace normally lives inside
-     .doctools-collapsible-body (overflow:hidden, JS-controlled max-height).
-     Per spec a plain overflow:hidden ancestor should NOT clip a
-     position:fixed descendant, but several mobile WebViews get this wrong
-     and clip/shrink it anyway, which looks exactly like "nothing happens
-     on Fullscreen". To sidestep that entirely (whatever the real cause
-     turns out to be), on fullscreen we physically move the workspace to be
-     a direct child of <body> - completely outside any ancestor's
-     overflow/stacking context - and move it back to its original spot on
-     exit. ---- */
-  var docWorkspaceOriginalParent = null;
-  var docWorkspaceOriginalNextSibling = null;
-  // #2: docSigPickerOverlay lives in the DOM BEFORE the workspace gets
-  // reparented to <body> on fullscreen - once the workspace becomes body's
-  // LAST child (z-index 2147483647), the overlay (still sitting earlier in
-  // the document, at whatever z-index theme.css gives .modal-overlay) ends
-  // up stacked UNDER it, so "Insert Signature" looked like it did nothing
-  // in fullscreen. Reparenting the overlay to <body> right after the
-  // workspace (same trick as the workspace itself) fixes the stacking.
-  var docSigPickerOriginalParent = null;
-  var docSigPickerOriginalNextSibling = null;
-  // Same reparenting trick, same reason, for the Letterhead picker added in
-  // Stage 9 - without this, "Insert Letterhead" would silently do nothing
-  // while in Fullscreen, exactly like Insert Signature used to.
-  var docLhPickerOriginalParent = null;
-  var docLhPickerOriginalNextSibling = null;
-
-  function setFullscreen(on) {
-    docEditorIsFullscreen = on;
-    if (on) {
-      docWorkspaceOriginalParent = docEditorWorkspace.parentNode;
-      docWorkspaceOriginalNextSibling = docEditorWorkspace.nextSibling;
-      document.body.appendChild(docEditorWorkspace);
-      docSigPickerOriginalParent = docSigPickerOverlay.parentNode;
-      docSigPickerOriginalNextSibling = docSigPickerOverlay.nextSibling;
-      document.body.appendChild(docSigPickerOverlay); // after the workspace - must stack above it
-      docLhPickerOriginalParent = docLhPickerOverlay.parentNode;
-      docLhPickerOriginalNextSibling = docLhPickerOverlay.nextSibling;
-      document.body.appendChild(docLhPickerOverlay);
-    } else {
-      if (docWorkspaceOriginalParent) {
-        // insertBefore(el, null) is just appendChild, so this still works
-        // even if the workspace used to be the last child.
-        docWorkspaceOriginalParent.insertBefore(docEditorWorkspace, docWorkspaceOriginalNextSibling);
-      }
-      if (docSigPickerOriginalParent) {
-        docSigPickerOriginalParent.insertBefore(docSigPickerOverlay, docSigPickerOriginalNextSibling);
-      }
-      if (docLhPickerOriginalParent) {
-        docLhPickerOriginalParent.insertBefore(docLhPickerOverlay, docLhPickerOriginalNextSibling);
-      }
-    }
-    docEditorWorkspace.classList.toggle('doc-editor-fullscreen', on);
-    docFullscreenIcon.setAttribute('d', on ? ICON_MINIMIZE_D : ICON_MAXIMIZE_D);
-    docFullscreenLabel.textContent = on ? 'Exit Fullscreen' : 'Fullscreen';
-    if (on) {
-      docBodyOverflowBeforeFullscreen = document.body.style.overflow;
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = docBodyOverflowBeforeFullscreen;
-    }
-    // Wait a frame so the new CSS layout (fixed/flex) has settled before
-    // measuring the wrap for fitZoomToContainer().
-    requestAnimationFrame(function () { fitZoomToContainer(); });
-  }
-
-  docFullscreenBtn.addEventListener('click', function () {
-    if (!docEditorReady() && docPages.length === 0) return;
-    setFullscreen(!docEditorIsFullscreen);
-  });
-
   document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape' && docEditorIsFullscreen) setFullscreen(false);
-
     // Arrow-key nudge for the currently selected canvas object (25 Oct 2026,
     // user request - "both letterhead and signature"). Implemented against
     // whatever is active rather than those two specifically, so it also
@@ -2717,12 +2677,12 @@
     }
   });
 
-  // Resizing/rotating the browser window while in fullscreen changes the
-  // canvas's on-screen position without any reparenting - re-run the same
-  // fit+calcOffset pass so pointer coordinates stay correct (see the
-  // calcOffset() comment inside fitZoomToContainer()).
+  // Resizing the browser window changes the available width the canvas
+  // fits to - re-run the same fit+calcOffset pass so both the zoom level
+  // and pointer coordinates stay correct (see the calcOffset() comment
+  // inside fitZoomToContainer()).
   window.addEventListener('resize', function () {
-    if (docEditorIsFullscreen && docEditorReady()) fitZoomToContainer();
+    if (docEditorReady()) fitZoomToContainer();
   });
 
   docZoomInBtn.addEventListener('click', function () {
@@ -3074,7 +3034,6 @@
         docEditorFileInput.value = '';
         resetDocEditorState();
         setDocToolbarEnabled(false);
-        setFullscreen(false);
       }
     );
   });
