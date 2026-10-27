@@ -73,26 +73,21 @@ optic_pos/
      harus tetap tabel perlu override `display` eksplisit.
   8. Chart.js dari cdnjs bisa diblokir jaringan user. Error di `renderCharts()` harus ditangkap (try/catch) agar
      bagian lain report tetap tampil.
-- **Menu**: sidebar = Dashboard, Transactions, Logistic, Document Tools, Report, Investor — semua pakai ikon Tabler
-  (Logistic sempat tanpa ikon, diperbaiki 16 Okt 2026 jadi `ti-truck-delivery`; Document Tools baru, `ti-signature`,
-  lihat §6), berlaku di sidebar desktop & bottom-nav mobile.
-  Settings & Exit di dropdown avatar. Ganti section lewat `[data-target]` (footer.php → `setActive()`), yang juga
-  `dispatchEvent('aos:section-shown', {detail:{target}})`. Section yang fetch-nya cuma sekali bisa listen event ini
-  untuk refresh live (pola generik, tidak perlu ubah footer.php).
-- **Branding** (16 Okt 2026): nama resmi **"LISANI AOS"** (huruf besar semua), AOS = *Lisani Administration Operating
-  System*. Topbar (`index.php` → `.header-title`/`.header-sub`) pakai nama + subtitle lengkap + logo
-  `assets/img/lisani_logo.png` (`.header-logo`). Sidebar (`partials/sidebar.php` → `.brand`) pakai logo yang sama
-  (ganti ikon kacamata lama di `.brand-mark`) + "LISANI AOS" saja, **tanpa** subtitle (disengaja, beda dari topbar).
-  CSS untuk `.header-brand`/`.header-logo`/`.brand-logo` ditulis inline di `index.php`/`sidebar.php` sendiri (bukan di
-  `theme.css`) karena saat ditulis belum sempat ditambahkan ke situ — kalau nanti dirapikan ke `theme.css`, hapus
-  duplikatnya dari kedua file itu.
-- **Sidebar show/hide toggle** (16 Okt 2026): tombol `#sidebarToggleBtn` di topbar (`.header-brand`, sebelah logo),
-  **desktop-only (≥1024px)** — `.app` punya 3 mode lebar sidebar dari `responsive.css` (desktop 240px / tablet rail
-  64px / mobile `display:none` + `.bottom-nav`), jadi toggle ini cuma override mode desktop lewat class
-  `.app.sidebar-collapsed` (grid-template-columns 0 + `.sidebar{width:0}`, transisi `.18s`), disembunyikan total di
-  <1024px lewat media query supaya tidak tabrakan sama mode tablet/mobile. Status diingat di `localStorage`
-  (`aos_sidebar_collapsed`), ikon tombol ganti `ti-layout-sidebar-left-collapse` ⇄ `-expand`. CSS & JS-nya di
-  `index.php` (bukan `theme.css`/`footer.php`), sama alasannya dengan poin Branding di atas.
+- **Menu**: sidebar = Dashboard, Transactions, Logistic, Document Tools, Report, Investor — semua pakai ikon Tabler,
+  berlaku di sidebar desktop & bottom-nav mobile. Settings & Exit di dropdown avatar. Ganti section lewat
+  `[data-target]` (footer.php → `setActive()`), yang juga `dispatchEvent('aos:section-shown', {detail:{target}})`.
+  Section yang fetch-nya cuma sekali bisa listen event ini untuk refresh live (pola generik, tidak perlu ubah footer.php).
+- **Branding**: nama resmi **"LISANI AOS"** (huruf besar semua), AOS = *Lisani Administration Operating System*.
+  Topbar (`index.php` → `.header-title`/`.header-sub`) pakai nama + subtitle lengkap + logo `assets/img/lisani_logo.png`
+  (`.header-logo`). Sidebar (`partials/sidebar.php` → `.brand`) pakai logo yang sama + "LISANI AOS" saja, **tanpa**
+  subtitle (disengaja, beda dari topbar). CSS untuk `.header-brand`/`.header-logo`/`.brand-logo` ditulis inline di
+  `index.php`/`sidebar.php` sendiri (bukan di `theme.css`) — kalau nanti dirapikan, hapus duplikatnya dari kedua file itu.
+- **Sidebar show/hide toggle**: tombol `#sidebarToggleBtn` di topbar (`.header-brand`, sebelah logo), **desktop-only
+  (≥1024px)** — `.app` punya 3 mode lebar sidebar dari `responsive.css` (desktop 240px / tablet rail 64px / mobile
+  `display:none` + `.bottom-nav`), toggle ini cuma override mode desktop lewat class `.app.sidebar-collapsed`
+  (grid-template-columns 0 + `.sidebar{width:0}`, transisi `.18s`), disembunyikan total di <1024px lewat media query.
+  Status diingat di `localStorage` (`aos_sidebar_collapsed`), ikon tombol ganti `ti-layout-sidebar-left-collapse` ⇄
+  `-expand`. CSS & JS-nya di `index.php` (bukan `theme.css`/`footer.php`), sama alasannya dengan poin Branding di atas.
 
 ## 4. Model data (cocokkan dengan `DESCRIBE` sebelum menulis query baru)
 - **activities**: id, activity_name, cashflow (inflow/outflow/in-out), relative_path (UNIQUE, `input/{year}/{deptKey}/{code}/`),
@@ -118,8 +113,8 @@ optic_pos/
   destination_bank, destination_account_number, destination_account_name. `proof_path`/`proof_original_name` nullable.
   Method "CREDIT BALANCE" = baris tanpa file (Apply Credit).
 - **invoice_refunds**: refund dari kredit; kolom source_bank, source_account_number, source_account_name (nullable,
-  opsional). **Tidak punya `invoice_id` maupun `activity_id`** (dikonfirmasi `DESCRIBE`, 12 Okt 2026) — tidak bisa
-  ditelusuri ke invoice/activity code tertentu, lihat §6 Report untuk konsekuensinya ke filter.
+  opsional). **Tidak punya `invoice_id` maupun `activity_id`** — tidak bisa ditelusuri ke invoice/activity code
+  tertentu, lihat §6 Report untuk konsekuensinya ke filter.
 - **defective_stock_events**: logistic_id, event_type (saat ini hanya `repaired_to_normal`), qty, created_by.
 - Lain: `logistic_documents` (key activity_id, dibagi semua produk dalam activity code), `transactions` + tabel bantu
   (Disbursement), company documents & bank accounts (Settings).
@@ -134,7 +129,7 @@ optic_pos/
   amount (IDR), notes — mengurangi ICU. **investor_activity_allocations**: investor_id, activity_id, percent (dari
   ICU investor itu; total per investor ≤100% dicek di PHP lintas activity). **investor_activity_settings**: pdp
   (profit distribution percent) **per activity_id**. **investor_profit_payments**: investor_id, date, amount, notes
-  (bisa berkali-kali). Tanpa tabel `transaction_activities` (sempat dibuat, di-drop — lihat §8 kalau perlu alasan).
+  (bisa berkali-kali). Tanpa tabel `transaction_activities` (sempat dibuat, di-drop).
 
 ## 5. Aturan bisnis (invarian, jangan dilanggar)
 1. **Stok dua bucket independen**: `remaining_primary_qty` = normal, `defective_qty` = defective. Satu-satunya jalan
@@ -218,19 +213,18 @@ Viewer + OCR dipakai bersama dengan upload bukti pembayaran (satu instance, dipi
   `list_bank_accounts.php`, diambil segar tiap pencarian). Disbursement = **source** account number → isi Source Bank,
   Source Account Name, Currency (+ exchange rate muncul bila non-IDR). Jalan setelah scan OCR **dan** saat ketik manual
   (event `change` = blur/Enter, bukan tiap ketukan). Aturan cocok (`parseScannedAccount()`, `acctFindMatches()`): nomor
-  penuh → sama persis (spasi/strip diabaikan); nomor tertutup → cocok 4 digit terakhir (OCR tidak pernah membaca `*`
-  dengan benar, jadi **karakter non-digit apa pun** selain spasi/titik/strip dianggap tertutup; juga tertutup bila ≤4
-  karakter; tanpa 4 digit di ujung → diabaikan). Hasil: 1 cocok → langsung isi; >1 cocok (beda bank) → fly window
-  `acctPickOverlay` pilih manual; 0 cocok → fly window `acctRegisterOverlay` (daftar rekening baru; bank/nama/currency
-  diisi dari form bila ada; nomor penuh wajib diketik bila hanya 4 digit). Kedua overlay di `flexOverlays`, z-index
-  2200 (di atas viewer & field picker). Saat cocok/terdaftar, kolom nomor **diganti dengan nomor penuh milik JSON**
-  (supaya Finance Report yang join lewat bank_name+account_number tetap cocok; bisa dibatalkan kalau user maunya nomor
-  apa adanya dari slip). Daftar rekening baru = **password pola (b)** (`verify_password.php` lalu
-  `save_bank_account.php` dengan `require_reverify=1`; Settings tetap bisa tanpa password). **Pencocokan dari nama bank
-  saja** (`lookupAccountByBank()`, `acctBankMatches()`) dipakai kalau nomor/nama akun tidak terbaca di slip, hanya nama
-  bank — jalan saat field Bank terisi **dan** Account Number masih kosong (begitu nomor terisi, pencocokan nomor di
-  atas yang menang); 0 cocok → `acctRegisterOverlay` lewat `openAcctRegisterByBank()` (bank sudah terisi). Fungsi inti
-  `openAcctRegisterCore()` dipakai bersama alur nomor & bank-saja.
+  penuh → sama persis (spasi/strip diabaikan); nomor tertutup → cocok 4 digit terakhir (karakter non-digit apa pun
+  selain spasi/titik/strip dianggap tertutup; juga tertutup bila ≤4 karakter; tanpa 4 digit di ujung → diabaikan). Hasil:
+  1 cocok → langsung isi; >1 cocok (beda bank) → fly window `acctPickOverlay` pilih manual; 0 cocok → fly window
+  `acctRegisterOverlay` (daftar rekening baru; bank/nama/currency diisi dari form bila ada; nomor penuh wajib diketik
+  bila hanya 4 digit). Kedua overlay di `flexOverlays`, z-index 2200 (di atas viewer & field picker). Saat cocok/terdaftar,
+  kolom nomor **diganti dengan nomor penuh milik JSON** (supaya Finance Report yang join lewat bank_name+account_number
+  tetap cocok; bisa dibatalkan kalau user maunya nomor apa adanya dari slip). Daftar rekening baru = **password pola (b)**
+  (`verify_password.php` lalu `save_bank_account.php` dengan `require_reverify=1`; Settings tetap bisa tanpa password).
+  **Pencocokan dari nama bank saja** (`lookupAccountByBank()`, `acctBankMatches()`) dipakai kalau nomor/nama akun tidak
+  terbaca di slip, hanya nama bank — jalan saat field Bank terisi **dan** Account Number masih kosong (begitu nomor
+  terisi, pencocokan nomor di atas yang menang); 0 cocok → `acctRegisterOverlay` lewat `openAcctRegisterByBank()` (bank
+  sudah terisi). Fungsi inti `openAcctRegisterCore()` dipakai bersama alur nomor & bank-saja.
 - **Adjustable OCR crop box** (viewer dipakai bersama Invoice Payment): setelah drag awal (`endDrag`), box TIDAK
   langsung di-OCR — masuk `enterAdjustMode()`: box jadi persisten dengan 8 handle resize (sudut+tengah sisi,
   `ADJUST_HANDLE_DIRS`), bisa digeser mouse & touch (`resizeAdjustBox`/`renderAdjustUI`, posisi dihitung ulang dari
@@ -306,37 +300,31 @@ invoice tab Customers):
   Lalu tab WA dibuka synchronous (anti popup-blocker), PDF di-fetch dan diunduh sebagai `Invoice-<no>.pdf`, tab
   diarahkan ke `wa.me/<telp>?text=…` (telp digit saja, awalan 0 → 62). Teks: "Yth. {sapaan} {nama}, …".
 
-**Report**: `report_content.php` — **tidak ada tab lagi** (dihapus 12 Okt 2026; Investor Report yang dulu cuma
-placeholder kosong ikut dihapus total, bukan disembunyikan). Sekarang isinya langsung satu-satunya: Finance Report —
-ringkasan saldo per rekening, Chart.js (inflow/outflow per bulan, saldo kumulatif, saldo per rekening), ledger
-gabungan + Export CSV, snapshot piutang/credit. Data dari `ajax/get_finance_report.php`: outflow (`transactions`
-category=disbursement), inflow (`invoice_payments`), outflow refund (`invoice_refunds`), dicocokkan ke
-`bank_accounts.json` via bank_name+account_number (bukan FK). Saldo mulai 0 (keputusan user). Refresh lewat event
-`aos:section-shown` (karena tidak ada lagi tab-click untuk trigger load pertama). Lebar: Ledger `min-width:640px` →
-760px (setelah kolom Category ditambahkan), tabel piutang 420px, `.table-wrapper` `overflow-x:auto` di semua lebar.
-Ledger punya kolom **Category** (disbursement = nama kategori dari `disbursement_categories`, **invoice payment
-tetap `SALES PAYMENT`**, refund = null) + Export CSV. Nominal ledger: inflow hijau, outflow merah, negatif pakai kurung
-`(Rp …)` bukan minus (helper `fmtIDRParen`, hanya di ledger; kartu ringkasan tetap `fmtIDR`; CSV tetap angka mentah +
-kolom Type). Belum ada: edit kategori transaksi yang sudah tersimpan (list/edit/delete transaksi tersimpan memang
-belum dibangun).
-- **Urutan ledger** (12 Okt 2026): tanggal terlama → terbaru (ASC), baik dari tiap query SQL (`ORDER BY ... ASC`) maupun
-  `usort` final di `get_finance_report.php` — jadi running balance di JS tinggal akumulasi apa adanya tanpa re-sort.
-  Tabel ledger punya `<tfoot>` baris **Total** (kolom Amount = net total bertanda, kolom Running Balance = saldo akhir;
-  dua-duanya sama angkanya karena saldo selalu mulai dari 0).
-- **Filter Activity Code** (12 Okt 2026): dropdown `#rptActivityFilter`, diisi dari `ajax/list_activity_codes.php`
-  (endpoint yang sama dipakai tab Transactions > Activity Code > Preview — reuse, bukan endpoint baru), value = `id`,
-  label `{activity_code} — {activity_name}`. Dikirim sebagai `activity_id` ke `get_finance_report.php`. Per sumber:
-  - **Disbursement (outflow)**: difilter langsung via `transaction_disbursements.activity_id` (kolom ini memang ada,
-    NOT NULL, dikonfirmas lewat `DESCRIBE`).
+**Report**: `report_content.php` — hanya satu-satunya: Finance Report — ringkasan saldo per rekening, Chart.js
+(inflow/outflow per bulan, saldo kumulatif, saldo per rekening), ledger gabungan + Export CSV, snapshot piutang/credit.
+Data dari `ajax/get_finance_report.php`: outflow (`transactions` category=disbursement), inflow (`invoice_payments`),
+outflow refund (`invoice_refunds`), dicocokkan ke `bank_accounts.json` via bank_name+account_number (bukan FK). Saldo
+mulai 0 (keputusan user). Refresh lewat event `aos:section-shown`. Lebar: Ledger `min-width:760px`, tabel piutang 420px,
+`.table-wrapper` `overflow-x:auto` di semua lebar. Ledger punya kolom **Category** (disbursement = nama kategori dari
+`disbursement_categories`, invoice payment tetap `SALES PAYMENT`, refund = null) + Export CSV. Nominal ledger: inflow
+hijau, outflow merah, negatif pakai kurung `(Rp …)` bukan minus (helper `fmtIDRParen`, hanya di ledger; kartu ringkasan
+tetap `fmtIDR`; CSV tetap angka mentah + kolom Type). Belum ada: edit kategori transaksi yang sudah tersimpan
+(list/edit/delete transaksi tersimpan memang belum dibangun).
+- **Urutan ledger**: tanggal terlama → terbaru (ASC), baik dari tiap query SQL maupun `usort` final di
+  `get_finance_report.php` — running balance di JS tinggal akumulasi apa adanya tanpa re-sort. Tabel ledger punya
+  `<tfoot>` baris **Total** (kolom Amount = net total bertanda, kolom Running Balance = saldo akhir; sama angkanya
+  karena saldo selalu mulai dari 0).
+- **Filter Activity Code**: dropdown `#rptActivityFilter`, diisi dari `ajax/list_activity_codes.php` (reuse endpoint
+  tab Transactions > Activity Code > Preview), value = `id`, label `{activity_code} — {activity_name}`. Dikirim sebagai
+  `activity_id` ke `get_finance_report.php`. Per sumber:
+  - **Disbursement (outflow)**: difilter langsung via `transaction_disbursements.activity_id`.
   - **Invoice payment (inflow)**: difilter via `EXISTS` ke `logistic_movements` (`invoice_id`) JOIN `logistics`
-    (`activity_id`). **Tidak dipecah proporsional** — satu invoice bisa berisi produk dari beberapa activity code
-    sekaligus; kalau SALAH SATU produknya dari activity code yang difilter, payment itu ikut tampil **utuh** (bukan
-    nilai yang dipecah). Keputusan user, 12 Okt 2026.
-  - **Refund**: **TIDAK difilter sama sekali, selalu tampil apa adanya**, berapa pun activity code yang dipilih.
-    `invoice_refunds` tidak punya kolom `invoice_id` maupun `activity_id` (dikonfirmasi `DESCRIBE`) — refund mengurangi
-    `customers.credit_balance` yang akumulasinya lintas invoice/activity code, jadi secara skema memang tidak bisa
-    ditelusuri ke satu activity code. Ini keputusan sadar user (12 Okt 2026), **bukan bug** — jangan "perbaiki" tanpa
-    nambah kolom baru + migration data lama kalau suatu saat mau diubah.
+    (`activity_id`). **Tidak dipecah proporsional** — kalau SALAH SATU produk invoice dari activity code yang
+    difilter, payment itu ikut tampil **utuh**. Keputusan user.
+  - **Refund**: **TIDAK difilter sama sekali, selalu tampil apa adanya**. `invoice_refunds` tidak punya kolom
+    `invoice_id`/`activity_id` — refund mengurangi `customers.credit_balance` yang akumulasinya lintas
+    invoice/activity code, secara skema memang tidak bisa ditelusuri ke satu activity code. Keputusan sadar user,
+    **bukan bug** — jangan "perbaiki" tanpa nambah kolom baru + migration data lama kalau suatu saat mau diubah.
 
 **Investor** (`investor_content.php` + `ajax/investor_api.php`, satu endpoint untuk semua aksi; rumus & invarian di
 §4–5 di atas; triple-click login untuk masuk extended mode, lihat §1):
@@ -381,30 +369,26 @@ belum dibangun).
      (bukan `display:none/block`, gotcha umum #2), di-re-sync lewat `window.invSyncCollapsibleHeights()` di akhir
      `render()` dan `renderAllocTable()` karena keduanya menulis ulang tbody di dalam card yang mungkin terbuka.
 
-**Document Tools** (`document_tools_content.php`; semua sudah dites user & OK per 26 Okt 2026):
+**Document Tools** (`document_tools_content.php`):
 
 - *Signature Library*: satu-satunya cara tambah signature = lewat editor canvas (Upload Photo → edit → Save to
-  Library, `ajax/upload_signature.php`); tidak ada form upload manual terpisah lagi, tab "Draw" sudah dihapus.
-  Storage `storage/signature/{company_name_slug}/{origin_slug}/{file}`. Field **Company Name** + **Origin**
-  (tidak bisa diedit lewat form Edit, hanya saat create; tidak terhubung ke `document_activities.json` — itu
-  murni milik Document Editor). Kolom `is_main` (boleh lebih dari satu sekaligus, diatur manual user, tanpa
-  constraint unik/auto-unset); `list_signatures.php` `ORDER BY is_main DESC, signature_date DESC, id DESC`,
-  badge "MAIN" di list. List dikelompokkan per Company Name (header grup collapsible, grup pertama auto-terbuka).
-  Date default ke hari ini (local time) saat form pertama dibuka & tiap reset form.
-  - Signature Editor (canvas, Upload Photo saja): workspace putih + grid garis halus (bukan checkerboard).
-    **Crop**: drag kotak awal → 8 handle resize + drag-dari-tengah untuk geser, tombol **Undo Crop** (1 langkah
-    terakhir). **Erase Part**: brush radius diatur slider "Eraser Size", hasil tersimpan di `erasedMask` terpisah
-    dari threshold (geser slider Remove White Background tidak menghapus hasil erase); **Undo Erase** adalah
-    history stack (bukan 1 langkah) maks 30 entri, snapshot diambil tiap awal stroke (`pointerdown`). Remove
-    White Background (`sigBgThreshold`) punya tombol -5/+5 di samping slider. **Ink Contrast** (slider 0-100,
-    default 0): satu kontrol untuk gelapkan warna + tebalkan opacity piksel tinta sekaligus (`inkFactor`), selalu
-    dihitung ulang dari `originalPhotoImageData`, tidak direset saat upload foto baru/Clear (konsisten dengan
-    `sigBgThreshold`). **Zoom** (grup toolbar terpisah, `sigZoomSlider` 50-300% + tombol −/Reset/+): murni ukuran
-    tampilan (CSS `width%` pada `.sig-canvas-zoom-wrap`), tidak mengubah resolusi pixel asli canvas, koordinat
-    pointer tetap akurat di level zoom berapa pun. Toolbar terbagi jadi kartu grup: Photo / Zoom / Crop / Erase
-    Part / Remove White Background / Ink Contrast. Konstanta Zoom proyek ini (`ZOOM_MIN/MAX/STEP`) khusus
-    Signature Editor — Document Editor pakai prefix `DOC_ZOOM_*` sendiri (lihat gotcha §3 soal nama variabel
-    top-level yang collide dalam satu IIFE file).
+  Library, `ajax/upload_signature.php`); tidak ada form upload manual terpisah. Storage
+  `storage/signature/{company_name_slug}/{origin_slug}/{file}`. Field **Company Name** + **Origin** (tidak bisa
+  diedit lewat form Edit, hanya saat create; tidak terhubung ke `document_activities.json` — itu murni milik
+  Document Editor). Kolom `is_main` (boleh lebih dari satu sekaligus, diatur manual user, tanpa constraint
+  unik/auto-unset); `list_signatures.php` `ORDER BY is_main DESC, signature_date DESC, id DESC`, badge "MAIN" di
+  list. List dikelompokkan per Company Name (header grup collapsible, grup pertama auto-terbuka). Date default ke
+  hari ini (local time) saat form pertama dibuka & tiap reset form.
+  - Signature Editor (canvas, Upload Photo saja): workspace putih + grid garis halus. **Crop**: drag kotak awal →
+    8 handle resize + drag-dari-tengah untuk geser, tombol **Undo Crop** (1 langkah terakhir). **Erase Part**:
+    brush radius diatur slider "Eraser Size", hasil tersimpan di `erasedMask` terpisah dari threshold; **Undo
+    Erase** adalah history stack maks 30 entri, snapshot diambil tiap awal stroke. Remove White Background
+    (`sigBgThreshold`) punya tombol -5/+5 di samping slider. **Ink Contrast** (slider 0-100, default 0): satu
+    kontrol gelapkan warna + tebalkan opacity piksel tinta (`inkFactor`), selalu dihitung ulang dari
+    `originalPhotoImageData`, tidak direset saat upload foto baru/Clear. **Zoom** (`sigZoomSlider` 50-300% +
+    tombol −/Reset/+): murni ukuran tampilan (CSS), tidak mengubah resolusi pixel asli canvas. Toolbar terbagi
+    jadi kartu grup: Photo / Zoom / Crop / Erase Part / Remove White Background / Ink Contrast. Konstanta Zoom
+    (`ZOOM_MIN/MAX/STEP`) khusus Signature Editor — Document Editor pakai prefix `DOC_ZOOM_*` sendiri.
   - Delete Signature: pindah ke `recycle/` + membersihkan folder asli `storage/signature/.../` yang jadi kosong
     (jalan ke atas berhenti di folder yang masih ada isinya, tidak pernah menghapus `storage/signature` sendiri).
 
@@ -414,75 +398,71 @@ belum dibangun).
   membersihkan folder asli sama seperti Signature, dan tombol Delete punya teks di sebelah ikon.
 
 - *Document Editor*: upload dokumen gambar atau **PDF multi-halaman** (PDF→gambar per halaman via PDF.js, murni
-  browser, tidak butuh Imagick/Ghostscript/pdftoppm di server), strip tombol pilih halaman, kanvas **Fabric.js
-  5.3.0** (cdnjs, dibungkus try/catch — gotcha §3 #8). Tiap halaman punya state Fabric sendiri
-  (`toJSON()`/`loadFromJSON()` saat `switchToPage()`).
+  browser), kanvas **Fabric.js 5.3.0** (cdnjs, dibungkus try/catch — gotcha §3 #8). Tiap halaman punya state
+  Fabric sendiri (`toJSON()`/`loadFromJSON()` saat `switchToPage()`).
   - **Block**: "Block: Top Text"/"Block: Name" — drag kotak di canvas langsung jadi `fabric.Image` draggable +
-    lubang bekas area dipatch warna sampling piksel tetangga. Drag gagal (<4px) tidak mematikan draw-mode lagi
-    (sebelumnya harus klik ulang tombol); cursor `crosshair` selama armed.
+    lubang bekas area dipatch warna sampling piksel tetangga. Drag gagal (<4px) tidak mematikan draw-mode;
+    cursor `crosshair` selama armed.
   - **Guide Box**: rect oranye resizable, dropdown preset ukuran dalam **inci** (`json_file/guide_box_presets.json`,
-    self-seed via `ajax/list_guide_box_presets.php`, default 1.46"×2.18" dan 1.46"×3.05", admin bisa
-    edit/tambah baris JSON langsung di server). Checkbox "Auto-shift Name" menggeser blok Name sebesar delta
-    posisi guide box saat guide box digeser/di-resize. Konversi inci→px pakai `DOC_DPI = 150` (JS), **harus tetap
-    sinkron** dengan `$ASSUMED_DPI = 150` di `save_edited_document.php`.
-  - **Insert Signature**: modal `#docSigPickerOverlay` (reuse `ajax/list_signatures.php` + `download_signature.php`
-    sebagai image source), posisi mengikuti guide box pakai `getScaledWidth()`/`getScaledHeight()` (bukan
-    `.width`/`.height` mentah, supaya ikut resize guide box yang sudah di-scale via drag handle Fabric).
-  - **Insert Letterhead**: ditempel full-width pinned ke atas/bawah halaman (`centeredScaling:true` khusus layer
-    kop, beda dari signature yang biasanya di-resize dari sudut). Checkbox "Apply to all pages" (default checked):
-    halaman yang tidak sedang dibuka ditempel lewat `fabric.StaticCanvas` offscreen
-    (`addLetterheadToPageData()`), rumus placement satu sumber via `letterheadPlacementProps()`. Edit
-    (geser/resize) kop ikut sync ke semua halaman via tag custom Fabric `letterheadSyncId` + `letterheadPart`
-    (ditambahkan ke semua pemanggilan `toJSON([...])` termasuk undo snapshot) dan listener `object:modified` →
-    `syncLetterheadTransform(obj)`. Undo letterhead: snapshot diambil di `mouse:down` begitu user mulai pegang
-    layer letterhead (bukan hanya sebelum aksi eksplisit seperti layer lain) — jadi Undo pertama = balik posisi
-    sebelum geser terakhir (letterhead tetap ada, tersync ke semua halaman), Undo kedua baru menghapus total.
-    Arrow-key nudge ikut sync tapi tidak push undo snapshot sendiri.
-  - **Zoom**: `applyZoom()`/`fitZoomToContainer()` pakai Fabric native `setZoom()`+`setDimensions()` (bukan CSS
-    squish) supaya `getPointer()` akurat di level zoom berapa pun; `fitZoomToContainer()` auto-fit tiap
-    `switchToPage()` dan tiap `window.resize`. Export/save PDF selalu render dari `fabric.StaticCanvas` terpisah
-    di resolusi asli (`renderPageToDataURL()`), tidak terpengaruh zoom layar.
-    **Default tampilan = Fit to Width** (26 Okt 2026, ganti dari fit-to-page/`min(width,height)`): `fit =
-    containerWidth / page.width`, tinggi tinggal discroll di `.doc-editor-canvas-wrap` (`overflow:auto`,
-    `max-height:80vh`, `align-items:flex-start` bukan `center` supaya halaman tinggi scroll dari atas). Tombol
-    toolbar "Fit to Width" (id tetap `docZoomFitBtn`, cuma teksnya diganti dari "Fit to Page").
-    **Fitur Fullscreen DIHAPUS** (26 Okt 2026, atas permintaan user — dianggap tidak perlu): tombol
-    `#docFullscreenBtn`, fungsi `setFullscreen()`, auto-fullscreen setelah upload, reparenting workspace +
-    signature/letterhead picker ke `<body>`, CSS `.doc-editor-fullscreen`, semuanya sudah dibuang total.
-    Workspace sekarang permanen di tempat asalnya di dalam `.doctools-collapsible-body`.
-  - **Toolbar** (dirombak total 26 Okt 2026 jadi ribbon ala Microsoft Word, sudah dites & OK): 4 grup lama
-    (Blocks, Guide Lines, Actions, Zoom & View) masing-masing sekarang SATU `.doc-ribbon-trigger` terlihat
-    (ikon + nama grup + chevron) yang membuka `.doc-ribbon-panel` dropdown berisi tombol-tombol aslinya — id
-    tombol tidak berubah sama sekali dari sebelum redesign, jadi semua handler JS lama utuh. Show/hide +
-    outside-click + Escape + auto-tutup saat tombol di dalam panel diklik: `wireDocRibbonMenus()` (query semua
-    `.doc-ribbon-group`, toggle class `.open`, cuma 1 panel boleh terbuka sekaligus), dipanggil sekali saat load.
-    **Grup kontekstual** (`#docBlockAdjustGroup` - Apply/Cancel Block, muncul-hilang lewat
-    `docBlockAdjustGroup.style.display` di `enterPendingAdjustMode()`/`applyPendingBlock()`/`cancelPendingBlock()`,
-    TIDAK diubah titik togglenya) bentuknya SAMA PERSIS seperti 4 grup lain (trigger + dropdown, bukan
-    dibentangkan terbuka — revisi dari percobaan pertama yang salah dibentangkan) dan otomatis ikut ter-wire
-    karena juga punya class `.doc-ribbon-group`; pembedanya cuma warna trigger (kuning/amber via class tambahan
-    `.doc-ribbon-group-contextual`, baik saat tertutup maupun saat `.open`). Pola ini (grup sama bentuk, beda
-    warna trigger lewat 1 class tambahan) jadi referensi kalau nanti ada tombol/grup kontekstual lain yang perlu
-    ditambahkan ke toolbar ini.
-  - **Ribbon interaction fixes** (27 Okt 2026, sudah dites): `docGuideBoxPresetSelect` sempat tidak bisa diklik
-    sama sekali — listener global `document.addEventListener('click', closeAll)` di `wireDocRibbonMenus()` ikut
-    menutup panel sebelum dropdown native sempat terbuka; fix dengan `panel.addEventListener('click', …)` ber-
-    `e.stopPropagation()`. Grup `data-ribbon-group="zoom"` dikecualikan dari auto-close-on-button-click, supaya
-    Zoom In/Out/Fit bisa diklik berkali-kali tanpa panel tertutup (tetap tertutup lewat trigger sendiri atau klik
-    luar). Setelah Save Edited Document sukses, dokumen upload otomatis dibersihkan (canvas dispose, file input &
-    toolbar reset) — pola sama seperti `docClearAllBtn` tapi tanpa modal password. Date default ke tanggal akses
-    hari ini (reuse `todayDateInputValue()` dari Signature Editor), berlaku saat card pertama dibuka maupun
-    setelah reset pasca-Save. Sisa teks UI Document Editor yang masih Indonesia diterjemahkan ke Inggris (hint
-    DOCX belum didukung, "Judul Kegiatan"→"Activity Title" + placeholder, "Hal N"→"Page N").
-  - **Save**: semua halaman di-flatten jadi PNG (guide box dibuang dari export), dikirim sekaligus (`pages[]`)
-    + `signature_ids[]` + `letterhead_ids[]` ke `ajax/save_edited_document.php`, digabung jadi **1 file PDF**
-    via **FPDF** (reuse `optic_pos/fpdf/fpdf.php`). Tabel `edited_documents`: `signature_ids`/`letterhead_ids`
-    (VARCHAR CSV, tanpa FK), `page_count`, `file_ext` default `'pdf'`. DOCX ditunda (belum yakin Composer
-    tersedia di server).
-  - **Bug diketahui, belum ditemukan akar masalahnya, diabaikan sementara atas permintaan user**: tombol-tombol
-    toolbar (termasuk grup Zoom) terlihat mengecil saat persentase zoom dokumen dinaikkan (bukan zoom browser,
-    sudah ditelusuri habis di semua file terkait tanpa hasil). Kalau mau dilanjutkan: minta user screenshot
-    panel Computed DevTools dari tombol toolbar di dua level zoom berbeda.
+    self-seed via `ajax/list_guide_box_presets.php`, default 1.46"×2.18" dan 1.46"×3.05"). Checkbox "Auto-shift
+    Name" menggeser blok Name sebesar delta posisi guide box saat guide box digeser/di-resize. Konversi inci→px
+    pakai `DOC_DPI = 150` (JS), **harus tetap sinkron** dengan `$ASSUMED_DPI = 150` di `save_edited_document.php`.
+  - **Insert Signature**: modal `#docSigPickerOverlay` (reuse `ajax/list_signatures.php` + `download_signature.php`),
+    posisi mengikuti guide box pakai `getScaledWidth()`/`getScaledHeight()`.
+  - **Insert Letterhead**: ditempel full-width pinned ke atas/bawah halaman (`centeredScaling:true`). Checkbox
+    "Apply to all pages" (default checked): halaman lain ditempel lewat `fabric.StaticCanvas` offscreen
+    (`addLetterheadToPageData()`), rumus placement satu sumber via `letterheadPlacementProps()`. Edit kop ikut
+    sync ke semua halaman via tag custom Fabric `letterheadSyncId` + `letterheadPart` dan listener
+    `object:modified` → `syncLetterheadTransform(obj)`. Undo letterhead: snapshot diambil di `mouse:down` begitu
+    user mulai pegang layer letterhead.
+  - **Zoom**: `applyZoom()`/`fitZoomToContainer()` pakai Fabric native `setZoom()`+`setDimensions()`. Export/save
+    PDF selalu render dari `fabric.StaticCanvas` terpisah di resolusi asli (`renderPageToDataURL()`), tidak
+    terpengaruh zoom layar. **Default tampilan = Fit to Width** (`fit = containerWidth / page.width`, scroll di
+    `.doc-editor-canvas-wrap`). Tidak ada fitur Fullscreen (dihapus atas permintaan user).
+  - **Toolbar**: ribbon ala Microsoft Word — tiap grup (Blocks, Guide Lines, Actions, Zoom & View, **Convert to
+    Text**) satu `.doc-ribbon-trigger` (ikon + nama + chevron) membuka `.doc-ribbon-panel` dropdown berisi
+    tombol-tombol aslinya. `wireDocRibbonMenus()` handle show/hide + outside-click + Escape, 1 panel terbuka
+    sekaligus; grup `data-ribbon-group="zoom"` dikecualikan dari auto-close-on-button-click. Grup kontekstual
+    (`#docBlockAdjustGroup` - Apply/Cancel Block, warna amber via class `.doc-ribbon-group-contextual`) bentuknya
+    sama seperti grup biasa.
+  - **Exclude Zone** (grup ribbon **"Convert to Text"**): tombol **Add Exclude Zone** — klik lalu drag di canvas
+    (pola sama seperti Block Text, `docDrawMode='excludeZone'`, preview merah dashed) untuk menggambar area
+    sendiri dari awal (bukan kotak default), lepas klik langsung jadi object final (selectable/resizable) + sync
+    ke semua halaman kalau "Apply to all pages" (checkbox, default checked, pola sama Letterhead —
+    `excludeSyncId`, `syncExcludeZoneTransform()`). Area exclude zone diputihkan sebelum di-print/OCR, dikecualikan
+    dari flatten/Save PDF biasa (gambar tidak ikut tercetak). Tombol **"Done"** (`docZoneDoneGroup`, hijau, 1 klik
+    langsung — bukan dropdown) muncul setelah Add Exclude Zone/Insert Letterhead untuk `discardActiveObject()`
+    (workaround bug "klik kosong = hasil kerja pindah ke belakang" yang akar masalahnya belum ditemukan — jangan
+    hapus tombol Done tanpa tanya user dulu).
+  - **Export as DOCX (OCR)** (`docOcrBtn`, satu panel dengan Exclude Zone): OCR Tesseract.js (`'eng+ind'`, lazy-load
+    sama seperti Input Transaction/Disbursement) tiap halaman → generate `.docx` murni di browser (OOXML manual +
+    JSZip, tanpa PHPWord/Composer di server) → didownload langsung, tidak lewat server. Area Exclude Zone
+    diputihkan sebelum OCR (teks di dalamnya tidak ikut terbaca) TAPI tetap di-crop & di-embed sebagai **floating
+    image** di posisi aslinya (`pxToEmu()` pakai `DOC_DPI=150`, bukan 96 — sempat jadi bug ukuran gambar
+    membesar, sudah fix & ditest OK). Teks hasil OCR direkonstruksi **per baris** (`Paragraph.lines[]`, bukan
+    per-paragraf — paragraf Tesseract sering menggabung banyak baris jadi satu bbox raksasa di dokumen rapat) jadi
+    **paragraf alur teks biasa** (`<w:p>`, BUKAN floating textbox — sempat dicoba floating per-baris supaya presisi
+    x/y, tapi user minta mudah diedit langsung klik-ketik, jadi dibalik ke alur biasa), dengan `w:jc` (alignment,
+    heuristik dua-syarat: menjorok jauh dari margin umum halaman DAN margin kiri≈kanan baris itu sendiri),
+    `w:b`/`w:bCs` (bold, mayoritas word di baris), `w:sz`/`w:szCs` (font size dari tinggi baris, clamp 6–72pt).
+    Fallback tanpa bbox (`data.text` dipecah baris kosong) tetap ada. Progress ditampilkan di modal
+    `docConvertProgressOverlay` (progress bar + teks status per tahap, auto-tertutup 700ms setelah selesai).
+    Setelah download sukses, halaman di-reset bersih (pola sama seperti setelah Save PDF) — siap upload dokumen
+    baru; `docEditorMessage` (teks sukses) tetap kebaca.
+    - **Belum pernah dites di LibreOffice/Google Docs** — namespace `wps` (dipakai internal OOXML, walau textbox
+      sudah dibalik ke paragraf biasa, exclude-zone image masih pakai anchor `wp`) murni ekstensi Microsoft 2010,
+      ada risiko render beda di software lain.
+    - Semua halaman diproses berurutan (bukan paralel). Dokumen padat teks bisa menghasilkan banyak paragraf;
+      belum ada pengujian batas performa untuk dokumen sangat panjang.
+  - **Save** (PDF, bukan DOCX): semua halaman di-flatten jadi PNG (guide box & exclude zone dibuang dari export),
+    dikirim sekaligus (`pages[]`) + `signature_ids[]` + `letterhead_ids[]` ke `ajax/save_edited_document.php`,
+    digabung jadi **1 file PDF** via **FPDF** (reuse `optic_pos/fpdf/fpdf.php`). Tabel `edited_documents`:
+    `signature_ids`/`letterhead_ids` (VARCHAR CSV, tanpa FK), `page_count`, `file_ext` default `'pdf'`. DOCX
+    scan-to-editable sudah ada lewat alur OCR di atas; export langsung dari editor tetap PDF only.
+  - **Bug diketahui, diabaikan sementara atas permintaan user**: tombol-tombol toolbar (termasuk grup Zoom)
+    terlihat mengecil saat persentase zoom dokumen dinaikkan (bukan zoom browser). Akar masalah belum ditemukan.
+    Kalau mau dilanjutkan: minta user screenshot panel Computed DevTools dari tombol toolbar di dua level zoom
+    berbeda.
 
 ## 7. Peta endpoint (`ajax/`)
 - **Auth/util**: `verify_password.php`, `_require_reverify.php`, `_order_patterns.php`, `_invoice_pdf.php`.
@@ -521,7 +501,7 @@ belum dibangun).
   `save_fund_shares` (batch alloc per activity, lihat §5.13 & §6), `save_pdp`, `save_profit_payment`,
   `save_investor`/`rename_investor`/`delete_investor`. `inv_compute()` membangun `$activityOut` (dipakai tabel
   Project Expenses & allocation) — query `$expensesByActivity` HARUS dideklarasikan sebelum loop yang memakainya
-  (pernah jadi bug diam-diam, lihat §8 kalau perlu detail).
+  (pernah jadi bug diam-diam).
 
 ## 8. Pekerjaan terbuka
 
@@ -533,6 +513,56 @@ Belum dibangun (disengaja, bukan bug):
 - Opsi: `DROP COLUMN logistics.defective_reference_price` (ireversibel, belum dijalankan).
 - Opsi: host Chart.js lokal di server, kalau jaringan user terus memblokir cdnjs.
 
+Sedang dikerjakan (27 Okt 2026) — Document Editor, Tahap 14 (lihat rangkuman_tool_ttd_dokumen.md §14).
+**REVISI 27 Okt 2026 (sore)**: Crop Page dihapus, Clean Background diganti total. Kode sudah ditulis ulang di
+`document_tools_content.php`, **BELUM DITES user** (cek JS lolos `new Function()` per `<script>` + kurung PHP
+seimbang + semua `getElementById` ada id-nya di markup, tapi itu bukan pengganti tes nyata di browser):
+- Grup ribbon **"Photo Correction"** (`data-ribbon-group="photocorrect"`, paling kiri toolbar, sejajar
+  Blocks/Guide Lines/Convert to Text/Actions/Zoom & View) sekarang cuma 2 kontrol: `docDeskewBtn` dan sepasang
+  slider Remove White Background/Ink Contrast. **`docCropPageBtn` dan tombol "Crop Page" DIHAPUS** (konfirmasi
+  user: redundan — men-deskew dengan menyeret 4 titik ke pinggir kertas sudah menghasilkan efek crop yang sama,
+  karena hasil warp dipetakan penuh ke `page.width x page.height`). `applyCropPage()`, `cleanBackgroundCanvas()`,
+  dan `docCleanBgToggle` (checkbox) semuanya dihapus dari file.
+  - **Deskew** (`startDeskew()`/`applyDeskew()`/`cancelDeskew()`): TIDAK BERUBAH. 4 handle `fabric.Circle`
+    (+ `fabric.Polygon` penghubung) diseret user ke tiap pojok kertas, grup kontekstual `#docDeskewAdjustGroup`
+    (Apply/Cancel, pola sama seperti `#docBlockAdjustGroup`). Apply menjalankan homography DLT buatan sendiri
+    (`computeHomography()`/`solveLinearSystem()`/`applyHomographyPoint()`, solve 8x8 Gaussian elimination +
+    partial pivot) lalu inverse-warp per piksel nearest-neighbor (`warpQuadToRect()`) ke `page.workingCanvas`.
+    Ukuran halaman TIDAK berubah, jadi object lain di halaman (block/ttd/kop/dst) tidak perlu digeser — cuma
+    background-nya yang diganti lewat `refreshPageBackgroundImage()`.
+  - **Remove White Background + Ink Contrast** (ganti Clean Background lama): 2 slider (`#docBgThreshold`,
+    `#docInkContrast`, masing-masing dengan tombol -/+ dan label nilai) — algoritma PERSIS SAMA seperti
+    "Remove White Background"/"Ink Contrast" di Signature Library (`renderEditor()`): threshold near-white →
+    background, ink-contrast mendorong piksel non-background ke arah hitam pekat. Bedanya dari Signature
+    Library: di sana background jadi TRANSPARAN (alpha=0, karena ditempel di atas dokumen lain); di sini
+    (`applyBackgroundCorrection()`) background dijadikan **putih solid**, bukan transparan, karena
+    `page.workingCanvas` adalah seluruh halaman (tidak ada apa pun di belakangnya). Non-destructive:
+    `page.bgSourceCanvas` menyimpan bitmap SEBELUM koreksi disentuh sama sekali di halaman itu (diisi sekali
+    saat slider pertama digeser), tiap slider digeser dihitung ULANG dari situ (bukan dari hasil filter
+    sebelumnya). `page.bgThreshold`/`page.bgInkContrast` menyimpan nilai slider per halaman untuk sinkronisasi
+    tampilan slider tiap pindah halaman di `switchToPage()`. Default 0/0 = no-op (halaman yang belum disentuh
+    sliders-nya tidak berubah, sama seperti Clean Background lama yang OFF by default).
+    ⚠ Nama fungsi `stepDocInkContrast()` (bukan `stepInkContrast()`) — sengaja dibedakan dari `stepInkContrast()`
+    milik Signature Library karena keduanya hidup di satu top-level IIFE yang sama (lihat §3 WAJIB soal IIFE per
+    file — Signature Library & Document Editor berbagi SATU IIFE dalam file ini, beda dari file `*_content.php`
+    lain yang masing-masing IIFE sendiri); tanpa pembedaan nama, deklarasi kedua akan menimpa yang pertama.
+  - Object background tetap ditandai `isPageBackground:true` (flag di semua array custom-prop `toJSON()` —
+    `pushDocUndoSnapshot`, `syncCurrentPageState`, `addExcludeZoneToPageData`, `addLetterheadToPageData`) supaya
+    Deskew/background-correction bisa membedakannya dari layer lain tanpa menebak index array.
+  - Saling eksklusif dengan Block/Exclude Zone/pending block lainnya (tiap `start*()` saling cancel satu sama
+    lain); Undo (`docUndoBtn`) dan pindah halaman (`switchToPage()`) ikut membatalkan Deskew/pending block yang
+    masih menggantung sebelum snapshot/reload, supaya tidak ada handle liar tertinggal.
+- **Scope: per halaman saja** — tidak ada "Apply to all pages" (beda dari Letterhead/Exclude Zone), karena
+  posisi kertas di tiap foto biasanya beda-beda.
+- Output akhir tetap satu file PDF lewat jalur Save (FPDF) yang sudah ada — tidak diubah sama sekali (Deskew/
+  Remove White Background-Ink Contrast cuma mengubah `page.workingCanvas` sebelum flatten, format ekspor sama).
+- Belum dites: SEMUA hal di atas end-to-end di browser (ini baru saja direvisi). Khususnya: slider threshold/ink
+  contrast beneran menghilangkan latar krem/bayangan seperti yang diharapkan user, interaksi dengan Undo (ada
+  `pushDocUndoSnapshot()` tiap slider 'change' — lepas drag, bukan tiap 'input' — belum dicoba apakah ini bikin
+  Undo kebanjiran snapshot kalau user sering geser-geser), serta performa `warpQuadToRect()` Deskew (loop piksel
+  manual per halaman, belum diukur).
+- Deteksi tepi otomatis (OpenCV.js) untuk Deskew masih menyusul nanti — saat ini murni 4-titik manual.
+
 Perlu konfirmasi keputusan:
 - Invoice numbering `sequence_number` lanjut per customer lintas bulan (bukan reset bulanan). Kalau ternyata tidak,
   kembalikan filter `period_month/period_year` di query MAX di `create_order.php`.
@@ -540,246 +570,17 @@ Perlu konfirmasi keputusan:
   bawah satu header activity code. Pertimbangkan pengelompokan kalau terasa berantakan.
 - Audit scroll horizontal menu lain setelah perbaikan `.app`/`.main` (global): Transactions, Logistic, Settings, Dashboard
   dicek di 3 ukuran (HP ≤767px, tablet 768–1023px, jendela setengah layar ~900–1000px).
-- Modul Investor: alokasi dana (Fund Used/Share) & total tfoot tab Report sudah dites & jalan benar di server (12 Okt
-  2026). Masih perlu dicek: tanda `total_price` pada `price_adjustment` (dipakai rumus gross di §5.14; asumsi positif,
+- Modul Investor: tanda `total_price` pada `price_adjustment` (dipakai rumus gross di §5.14; asumsi positif,
   dikurangkan) — ini sebenarnya milik modul Sales, bukan Investor, tapi memengaruhi rumus laporan Investor; kelas
   `.input-uppercase` jalan tanpa `flexOverlays` untuk 2 modal `invPickerOverlay`/`invPwOverlay` (kalau masih dipakai —
   cek apakah sudah terpakai di kode saat ini). Fitur lain di §6 Investor (Investment Input, Non-Project Expenses,
   Profit Payment & Rolled Capital, delete investor) belum dikonfirmasi ditest terpisah.
-
-**Document Editor → OCR to DOCX, Tahap 1 selesai dikoding (27 Okt 2026, SUDAH ditulis, BELUM semua ditest user)**
-- Rencana besar (disepakati user): OCR pakai Tesseract.js (reuse pola Input Transaction/Disbursement), ambil data
-  word-level + bounding box (bukan teks polos) supaya urutan baca & layout lebih akurat saat direkonstruksi jadi
-  paragraf/baris — user minta "paling akurat". Generate `.docx` murni di browser (OOXML sederhana, tanpa
-  PHPWord/Composer di server — DOCX sebelumnya ditunda krn Composer belum pasti ada, pendekatan client-side ini
-  menghindari masalah itu). Letterhead header/footer **otomatis** masuk exclude (lewat checkbox Apply to all
-  pages di Exclude Zone, bukan logika terpisah). Output: 1 file `.docx` gabungan semua halaman. Tombol OCR
-  nanti masuk grup ribbon baru sendiri.
-- **Tahap 1 (exclude zone + UX fix, sudah dikoding, test checklist di bawah):**
-  - Grup ribbon baru **"Exclude Zone"**: tombol **Add Exclude Zone** (bisa diklik berkali-kali, tiap klik = rect
-    baru, beda dari Guide Box yang cuma 1 instance) + checkbox **Apply to all pages** (default checked, pola sync
-    sama seperti Letterhead — `excludeSyncId`, `syncExcludeZoneTransform()`, `addExcludeZoneToPageData()`). Tahap
-    ini masih alat bantu visual murni (dikecualikan dari flatten/Save PDF, sama seperti Guide Box/Line) — belum
-    disambung ke OCR.
-  - Custom Fabric props baru: `isExcludeZone`, `excludeSyncId` — ditambahkan ke SEMUA 3 tempat daftar
-    `toJSON([...])` (pushDocUndoSnapshot, syncCurrentPageState, addLetterheadToPageData) — kalau nanti nambah
-    prop custom baru lagi di area ini, cari ketiga tempat itu sekaligus, gampang kelewatan salah satu.
-  - **Bug dilaporkan user**: setelah Add Exclude Zone / Insert Letterhead, klik di area kosong membuat hasil kerja
-    hilang ("pindah ke belakang halaman") — akar masalah belum ditelusuri/ditemukan, diatasi dengan workaround
-    atas permintaan user (bukan fix akar masalah): tombol **"Done"** (id `docZoneDoneGroup`, hijau `#1fb15a` —
-    beda warna dari `docBlockAdjustGroup` yang amber, style inline di HTML karena belum pegang `theme.css` untuk
-    nambah class resmi ke sana). **Revisi (27 Okt, atas permintaan user)**: awalnya dibuat sebagai grup ribbon
-    dropdown (trigger+panel) kayak grup lain, tapi user minta 1 klik langsung — sekarang `docZoneDoneGroup`
-    ADALAH tombolnya sendiri, bukan wrapper lagi, TIDAK pakai class `.doc-ribbon-group` (supaya tidak diproses
-    `wireDocRibbonMenus()`). Muncul setelah Add Exclude Zone / Insert Letterhead (`showZoneDoneGroup()`), klik
-    langsung `discardActiveObject()` + sembunyikan tombol. Disembunyikan juga saat pindah halaman/reset state.
-    **Kalau nanti bug akar masalahnya ditemukan**, tombol "Done" ini mungkin jadi tidak perlu lagi — jangan
-    dihapus dulu tanpa tanya user.
-  - **Sudah ditest user & OK**: Save (flatten PDF) dgn Exclude Zone ada di halaman — tidak ikut tercetak.
-  - Belum ditest ulang user setelah revisi tombol Done jadi 1-klik (versi dropdown sebelumnya belum sempat
-    dites user sampai selesai).
-- **Tahap 2 — OCR to DOCX, SUDAH DIKODING (27 Okt 2026), BELUM DITEST USER SAMA SEKALI:**
-  - Ribbon "Exclude Zone" digabung+diganti nama jadi **"Convert to Text"** (atas permintaan user, supaya jelas
-    Exclude Zone ini fungsinya untuk apa) — isinya: Add Exclude Zone + checkbox Apply to all pages (Tahap 1,
-    tidak berubah) + tombol baru **Export as DOCX (OCR)** (`docOcrBtn`) dalam satu panel yang sama.
-  - **Tesseract.js**: lazy-load `tesseract.js@5.0.4` dari cdnjs — **URL/versi disamakan persis** dengan yang
-    sudah dipakai `transaction_content.php` (Input Transaction/Disbursement OCR, `ensureCaptureLibs()`) supaya
-    tidak ada 2 versi beda yang bentrok kalau kebetulan sama-sama ke-load di 1 halaman. Bahasa dipakai
-    **`'eng+ind'`** (bukan cuma `'eng'` seperti di transaction_content.php) — ini keputusan sepihak saya karena
-    dokumennya Indonesia & user minta "paling akurat", **belum dikonfirmasi user**, gampang diubah balik ke
-    `'eng'` saja di `convertDocumentToDocx()` kalau hasilnya malah lebih jelek.
-  - **JSZip** (`jszip@3.10.1`, cdnjs) dipakai bikin kontainer `.docx` (zip minimal: `[Content_Types].xml`,
-    `_rels/.rels`, `word/document.xml`) — library baru di proyek ini, belum dipakai modul lain.
-  - `renderPageForOcr(page)`: sama seperti `renderPageToDataURL()` tapi area tiap Exclude Zone **diputihkan**
-    (bukan dihapus) di canvas offscreen sebelum di-OCR — dokumen asli (`page.json`) tidak berubah. Urutan WAJIB
-    render dulu baru gambar putih (kalau dibalik, `renderAll()` menimpa ulang) — pakai
-    `tmp.lowerCanvasEl.toDataURL()` langsung (bukan `tmp.toDataURL()` Fabric) supaya tidak ada render ulang
-    tersembunyi yang menghapus kotak putih manual itu.
-  - **Rekonstruksi paragraf**: PAKAI LANGSUNG hasil `data.blocks → paragraphs` dari Tesseract (layout analysis
-    bawaan Tesseract sendiri), BUKAN dihitung manual dari bounding box tiap word — keputusan ambil pendekatan
-    ini (bukan rencana awal word-level+bbox manual di log sebelumnya) karena lebih sederhana & percobaan
-    pertama sebaiknya reuse layout analysis Tesseract dulu. Fallback ke `data.text` dipecah baris kosong kalau
-    `data.blocks` kosong. **Ini yang paling perlu divalidasi user** — kalau hasil paragraf/urutan bacanya kacau
-    terutama di dokumen bertabel/multi-kolom, perlu direvisi ke pendekatan bbox manual yang lebih rumit.
-  - Semua halaman diproses berurutan (bukan paralel, supaya tidak membanjiri browser) → 1 file `.docx` gabungan,
-    page break antar halaman, langsung didownload dari browser (tidak lewat server/ajax sama sekali).
-  - **Checklist test user**: coba di dokumen 1 halaman dulu, cek urutan baca & pemisahan paragraf hasil DOCX;
-    cek Exclude Zone benar-benar tidak ikut terbaca; cek dokumen multi-halaman (page break benar); cek file
-    `.docx` hasil bisa dibuka normal di Word/LibreOffice/Google Docs (belum pernah dites — kemungkinan ada
-    bagian OOXML minimal ini yang perlu ditambah kalau ada software yang rewel).
-
-**Document Editor → Exclude Zone hilang total di DOCX export, DIPERBAIKI (27 Okt 2026, SUDAH ditulis, BELUM ditest user)**
-- **Bukan regresi** — klarifikasi ke user: fitur "area Exclude Zone muncul sebagai GAMBAR di DOCX" memang belum
-  pernah dibangun di Tahap 2 awal. `renderPageForOcr()` sudah benar memutihkan zone sebelum OCR (teks di
-  dalamnya tidak ikut terbaca), tapi `buildDocxBlob()` sebelumnya cuma menulis `<w:p>` teks — tidak ada logika
-  crop/embed gambar sama sekali, jadi area itu hilang total di hasil akhir, bukan tetap sebagai gambar.
-- **Perbaikan**: `renderPageForOcr()` sekarang JUGA meng-crop tiap Exclude Zone (pakai pola `cropCanvas` yang
-  sama seperti `cutBlockToLayer()`) dari `page.workingCanvas` (bitmap asli, SEBELUM diputihkan) — resolve value
-  berubah dari `dataUrl` string jadi `{ dataUrl, zones: [{x,y,w,h,imageDataUrl}, ...] }`. `convertDocumentToDocx()`
-  dan `buildDocxBlob()` diupdate menyesuaikan (param baru `allPageZones`).
-- `buildDocxBlob()`: OOXML tidak lagi minimal 3 bagian, sekarang juga tulis `word/_rels/document.xml.rels`
-  (relationship rIdN → `word/media/imageN.png`) + `word/media/*.png` (base64 dari crop) + `Default Extension="png"`
-  di `[Content_Types].xml`. Tiap zone jadi floating image (`wp:anchor`, `relativeFrom="page"`, posisi dari
-  `pxToEmu()` konversi koordinat pixel zone → EMU, 96 DPI) disisipkan di paragraf PERTAMA halaman terkait, supaya
-  posisinya kira-kira sama seperti di halaman asli (bukan ikut alur teks berurutan).
-- **Bug ditemukan user (percobaan pertama, 27 Okt 2026)**: Word gagal buka file (`try_6 (2).docx`) — "Word
-  experienced an error trying to open the file". **Root cause ditemukan & diperbaiki**: XML `word/document.xml`
-  punya *unbound prefix* — prefix `wp:` (dipakai di `<wp:anchor>` dll) tidak pernah dideklarasikan sama sekali
-  (lupa), dan `xmlns:a`/`xmlns:pic`/`xmlns:r` dideklarasikan lokal di elemen anak alih-alih di root
-  `<w:document>`. Dikonfirmasi lewat `xml.dom.minidom` (Python) — bukan dugaan, divalidasi aktual dengan
-  menjalankan ulang fungsi `buildDocxBlob()` di Node (eval fungsi asli + `jszip`) lalu parse tiap XML part di
-  dalam zip. **Fix**: semua 4 namespace (`wp`, `a`, `pic`, `r`) sekarang dideklarasikan sekali di root
-  `<w:document>`, dihapus dari deklarasi lokal per elemen.
-- **Sudah divalidasi (otomatis, bukan di Word asli)**: 3 skenario digenerate & dicek — (1) 2 halaman, 2 exclude
-  zone di halaman 1 → semua 4 XML part valid, `image1.png`+`image2.png` ter-embed, dibuka `python-docx` tanpa
-  error, teks & page break terbaca benar; (2) dokumen TANPA exclude zone sama sekali → tetap valid, no-op aman;
-  (3) `inline_shapes` python-docx = 0 itu NORMAL (gambar kita floating/anchor, bukan inline — python-docx cuma
-  hitung inline, bukan indikasi gambar hilang).
-- **Sudah ditest user di Word asli (percobaan ke-2, 27 Okt 2026)**: file berhasil dibuka (bug unbound prefix di
-  atas terkonfirmasi fix), TAPI ukuran & posisi gambar exclude zone (logo letterhead) salah — jauh lebih besar
-  & bergeser dari posisi aslinya di editor (dikonfirmasi user via screenshot perbandingan editor vs Word).
-- **Root cause ke-2 ditemukan & diperbaiki**: `pxToEmu()` salah asumsi 96 DPI (CSS px standar), padahal SELURUH
-  proyek ini (`DOC_DPI`, lihat dekat `inchesToPx()`/guide box presets, juga dipakai `save_edited_document.php`
-  sbg `$ASSUMED_DPI`) menetapkan working canvas = **150 DPI**, bukan 96. Rasio salahnya ~150/96 ≈ 1.56x, cocok
-  dengan gambar yang tampak membesar di screenshot. Fix: `pxToEmu()` sekarang pakai `DOC_DPI` (150) alih-alih
-  angka 96 hardcoded. Divalidasi: `pxToEmu(150)` sekarang tepat 914400 EMU (= 1 inch persis), sebelumnya salah.
-- **Sudah ditest user, posisi gambar Exclude Zone OK** ("sudah ok", 27 Okt 2026) — bug px→EMU 96 vs 150 DPI di
-  atas dikonfirmasi FIX, tidak perlu lanjut ke dugaan margin halaman.
-
-**Document Editor → OCR to DOCX, layout teks dirombak jadi floating per-paragraf (27 Okt 2026, SUDAH ditulis,
-BELUM ditest user)**
-- **Keluhan user setelah Exclude Zone gambar OK**: "layout tulisan yang di export itu sama persis dengan yang
-  di asli, sekarang ini kacau" — diklarifikasi by ask_user_input_v0: user minta (1) presisi tinggi, tiap
-  paragraf floating di koordinat x/y sama seperti halaman asli (bukan cuma urutan baca benar) + (2) font size,
-  bold, alignment ikut style asli juga (bukan cuma posisi). Dokumen masalahnya kolom tunggal (surat/kontrak),
-  BUKAN tabel/multi-kolom — jadi bukan soal urutan baca Tesseract, soal presisi render.
-- **Rombak total `extractParagraphs()` → `extractLayoutBlocks(data, pageWidthPx)`**: sebelumnya cuma ambil teks
-  tiap `paragraph.text` (rata kiri semua, satu ukuran font). Sekarang untuk tiap paragraf juga ambil
-  `paragraph.bbox` (x0/y0/x1/y1, field dikonfirmasi dari tesseract.js index.d.ts resmi via web search, BUKAN
-  tebakan), tinggi baris pertama (buat estimasi font size, bukan tinggi seluruh paragraf yg bisa multi-baris),
-  `is_bold` mayoritas word di paragraf (>50%), dan heuristik alignment (center kalau margin kiri≈kanan &
-  margin kiri > 8% lebar halaman, selain itu left — SENGAJA tidak coba deteksi "right align" krn jarang dipakai
-  di surat Indonesia & riskan salah). Fallback tanpa bbox (`data.text` dipecah baris kosong) tetap ada,
-  ditandai `x:null` → dirender sbg alur teks biasa, bukan floating.
-- **Rombak `buildDocxBlob()`**: tiap paragraf berposisi sekarang jadi **floating textbox** OOXML
-  (`wp:anchor > a:graphic > a:graphicData(uri=wordprocessingShape) > wps:wsp`), BUKAN `<w:p>` alur teks biasa
-  lagi. Struktur `wps:wsp` (cNvSpPr, spPr dgn xfrm+prstGeom+noFill+ln, txbx>txbxContent, bodyPr) **dikutip
-  persis dari test fixture resmi parser DOCX `dxpdf`** (docs.rs/crate/dxpdf/tests/shape_text_anchor.rs) supaya
-  tidak menebak struktur lagi seperti kegagalan unbound-prefix sebelumnya. **PENTING**: namespace `wps` di sini
-  pakai URI `http://schemas.microsoft.com/office/word/2010/wordprocessingShape` (BEDA dari openxmlformats.org
-  yang dipakai pic/a/wp/r — jangan disamakan kalau ubah2 lagi). Posisi textbox: `relativeFrom="page"` + offset
-  dari `pxToEmu(block.x/y)` (sama seperti Exclude Zone). Tinggi textbox dilonggarkan `*1.3` dari bbox asli
-  (reflow font Word vs gambar bisa beda lebar dikit) TAPI lebar TIDAK dilonggarkan (user minta presisi x
-  tinggi). Background/border textbox transparan (`a:noFill`) biar tidak menimpa teks lain.
-- **Font size**: fungsi baru `pxHeightToHalfPoint(px)` — px (150 DOC_DPI) → pt → half-point (satuan `w:sz`),
-  di-clamp 12–144 half-pt (6–72pt) biar noise OCR (bbox 1px dianggap "paragraf") tidak menghasilkan font
-  rusak. **Bold**: `<w:b/><w:bCs/>` kalau `block.bold`. **Alignment**: `<w:jc w:val="center">` — WAJIB dibungkus
-  `<w:pPr>` (bukan child langsung `<w:p>`), sempat salah taruh lepas di percobaan pertama rombakan ini,
-  dikonfirmasi & diperbaiki via referensi skema OOXML resmi (ECMA-376 §17.3.1.13) sebelum ditulis ke file utama.
-- **Divalidasi otomatis** (sebelum diserahkan ke user, belajar dari 2 kegagalan sebelumnya): generate ulang
-  `buildDocxBlob()` yang sama persis di Node+jszip dengan data bbox dummy (judul center-bold, paragraf kiri
-  biasa, 1 fallback tanpa posisi) → semua 4 XML part valid (`xml.dom.minidom`), `python-docx` bisa buka file
-  tanpa error, urutan elemen `wps:spPr` (xfrm→prstGeom→noFill→ln) dicocokkan ke skema resmi, posisi `w:jc` di
-  dalam `w:pPr` dicocokkan ke skema resmi, estimasi font size hasil `pxHeightToHalfPoint()` masuk akal (10.5pt
-  - 13.5pt utk input 22-28px, bukan ukuran ekstrem).
-- **Belum ditest user di Word asli** — perlu dicek (percobaan ke-4): posisi tiap paragraf vs posisi asli di
-  editor; ukuran font kelihatan wajar (bukan kekecilan/kebesaran); bold & center-alignment judul/heading
-  kebaca benar; textbox transparan tidak menimpa/menutupi teks lain yg overlap; performa/waktu export dgn
-  banyak paragraf per halaman (tiap paragraf = 1 floating shape, dokumen padat teks bisa jadi ratusan shape -
-  belum ada pengujian batas jumlah); device/versi Word lain (LibreOffice, Google Docs) belum dicoba sama
-  sekali untuk namespace `wps` khusus Microsoft ini - ada risiko LibreOffice/Google Docs render beda atau
-  kurang sempurna karena wps bukan namespace ECMA-376 standar, murni ekstensi Microsoft 2010.
-
-**Document Editor → OCR to DOCX, layout teks masih kacau meski posisi gambar sudah OK (27 Okt 2026, percobaan ke-4, SUDAH ditulis, BELUM ditest user)**
-- **Root cause ditemukan** (extract `.docx` hasil user + inspeksi `word/document.xml` manual via `xml.dom.minidom`,
-  bukan dugaan): granularitas v3 sebelumnya salah pakai `Paragraph.bbox` Tesseract. Untuk dokumen satu-kolom
-  rapat (field "Nama:/Jabatan:/Alamat:" nyaris tanpa jarak vertikal), segmentasi paragraf Tesseract SENDIRI
-  menggabungkan banyak baris beda jadi SATU paragraph dgn bbox raksasa (hampir se-body halaman) — bukan bug di
-  kode kita, field2 terpisah itu jadi 1 textbox dipaksa reflow lebar penuh → numpuk & kelihatan center semua.
-  Heuristik `isCentered` lama juga longgar: bandingkan margin kiri/kanan BARIS/PARAGRAF itu sendiri saja, jadi
-  paragraf body yang kebetulan hampir selebar halaman ikut terdeteksi "center" (margin kiri≈kanan padahal cuma
-  rata-kiri panjang).
-- **Fix**: `extractLayoutBlocks()` dirombak dari granularitas per-PARAGRAF ke per-BARIS (`Paragraph.lines[]`,
-  bbox lebih presisi & stabil). Heuristik alignment baru: hitung dulu margin-kiri-umum 1 halaman (x0 paling
-  sering muncul, dibulatkan kelipatan 10px) lewat 2-pass; baris dianggap center HANYA kalau menjorok jauh dari
-  margin umum itu (>5% lebar halaman) DAN margin kiri≈kanan baris itu sendiri (<15%) — dua syarat sekaligus.
-  `buildDocxBlob()`: kelonggaran tinggi textbox diturunkan `*1.3`→`*1.15` (1 blok = 1 baris sekarang, bukan
-  paragraf multi-baris, jadi risiko kepotong vertikal lebih kecil).
-- **Divalidasi otomatis** (extract fungsi ke Node, eval + data dummy meniru kasus gagal asli — paragraf Tesseract
-  gabungan banyak baris): hasil JADI 4 blok terpisah sesuai ekspektasi (bukan 1 blok raksasa), judul terdeteksi
-  center, baris field pendek & baris body panjang yang sama-sama rata kiri TIDAK ikut ke-false-positive center.
-  XML hasil `buildDocxBlob()` divalidasi `xml.dom.minidom` — well-formed.
-- **Sudah ditest user di Word asli, posisi/ukuran OK** ("sudah ok", 27 Okt 2026) — TAPI user minta 1 perubahan:
-  tiap baris hasil export berupa floating textbox (`wps:wsp`) yang harus diklik dulu kotaknya sebelum bisa edit
-  teksnya — user mau "seperti biasa saja, jadi mudah saya editnya".
-- **v4 — floating textbox per baris DIBUANG, ganti paragraf alur teks biasa**: `paragraphTextboxXml()` dihapus,
-  diganti `normalParagraphXml(block)` → `<w:p>` biasa (bukan `wp:anchor`/`wps:wsp`) dgn `w:jc` (align),
-  `w:b`/`w:bCs` (bold), `w:sz`/`w:szCs` (font size) tetap dipertahankan dari hasil OCR - HANYA wadah floating-nya
-  yg dibuang. Trade-off DISADARI & diterima user: presisi x/y per baris dilepas, teks sekarang alur top-to-bottom
-  sesuai urutan baca asli (bukan lagi di koordinat persis) - tapi jadi mudah diedit langsung (klik & ketik).
-  Exclude Zone (gambar logo/letterhead, `zonesDrawingXml()`) TETAP floating seperti sebelumnya (itu gambar, bukan
-  teks yg mau diedit). Loop `positioned`/`unpositioned` disederhanakan jadi satu loop (semua block diperlakukan
-  sama, field `x`/`y` block skrg tidak dipakai lagi utk teks).
-- **Divalidasi otomatis** (eval fungsi di Node + data dummy termasuk kasus fallback tanpa bbox): XML valid
-  (`xml.dom.minidom`), dikonfirmasi TIDAK ADA `wps:wsp` lagi di output, paragraf berurutan sesuai urutan baca,
-  alignment/bold/font size per baris tetap terbawa.
-- **Sudah ditest user, paragraf biasa OK** ("sudah ok", 27 Okt 2026) — lanjut minta 1 fitur baru (bukan bug):
-  proses convert (OCR→DOCX) ditampilkan dalam **progress modal/"fly window"** biar user tahu kapan selesainya
-  (sebelumnya status cuma teks kecil `docEditorMessage` di bawah tombol, gampang kelewat).
-- **Ditambahkan `docConvertProgressOverlay`**: modal baru (pola sama `.modal-overlay>.modal` + `showModal()`/
-  `hideModal()` yang sudah ada di file ini, bukan komponen baru) dgn progress bar (`doctools-progress-bar-fill`,
-  width % via `updateConvertProgress(text, fraction)`) + teks status. Ditampilkan di awal
-  `convertDocumentToDocx()`, diupdate tiap tahap (loading engine → per halaman "Reading page N of M" → "Building
-  DOCX file..." → "Done!"), auto-tertutup sendiri 700ms setelah "Done!" (biar user sempat lihat), atau langsung
-  tertutup kalau gagal (`.catch`). `docEditorMessage` (teks sukses/gagal di bawah tombol) TETAP dipertahankan
-  jalan seperti sebelumnya, tidak diganti — overlay cuma lapisan tambahan selama proses berjalan, bukan
-  pengganti. Tidak ada tombol Cancel (Tesseract.js tidak ada mekanisme abort aman di tengah proses).
-  CSS pakai token yang sudah ada di file ini (`var(--primary)`, `var(--text-muted)`, `var(--bg-surface-alt)`),
-  bukan warna baru. **CATATAN**: `theme.css` tidak diupload sesi ini jadi CSS token diasumsikan sama persis
-  dgn yang sudah dipakai di tempat lain file ini (mis. `.sig-editor-group-controls .btn.active`) — kalau nanti
-  ternyata token itu sudah berubah di `theme.css`, sesuaikan.
-- **Divalidasi**: 2 `<script>` block di file diekstrak & dicek `new Function()` di Node — sintaks valid.
-- **Belum ditest user** — perlu dicek: modal muncul & progress bar bergerak sesuai tahap; auto-tertutup setelah
-  selesai; warna/style modal konsisten dgn tema gelap existing (krn `theme.css` tidak dicek langsung sesi ini).
-
-**Add Exclude Zone → klik-gambar sendiri (bukan kotak default siap pakai) (27 Okt 2026)**
-- **Permintaan user**: sebelumnya klik "Add Exclude Zone" langsung menaruh kotak default di area atas halaman
-  (lokasi umum letterhead) yang tinggal digeser/resize. User mau dia sendiri yang blok/gambar area dari awal
-  (klik-tahan-geser di canvas), kotak tetap bisa digeser/resize SESUDAHNYA seperti biasa - cuma titik awalnya
-  yang beda, bukan nambah langkah baru (bukan minta tahap Apply/Cancel terpisah).
-- **Implementasi**: dicontek dari pola Block Text yang sudah ada (`docDrawMode`/`wireDocCanvasDrawing()`
-  mouse:down/move/up, crosshair cursor) - `'excludeZone'` jadi value `docDrawMode` baru di samping `'block'`.
-  `addExcludeZone()` lama (langsung bikin rect default) dipecah jadi `startExcludeZoneDraw()` (arm mode gambar,
-  toggle tombol+cursor, saling eksklusif dgn Block Text) + `finalizeExcludeZoneDraw(drawnRect)` (dipanggil dari
-  `mouse:up` begitu user lepas klik - menaikkan status rect hasil gambar jadi object final isExcludeZone:
-  selectable/hasControls dinyalakan, `pushDocUndoSnapshot()`, sync "Apply to all pages" via
-  `applyExcludeZoneToOtherPages()` - isinya sama persis seperti versi lama, cuma sumber posisi/ukurannya dari
-  gambar user bukan hitungan default). Preview rect saat digambar dibedakan warna (merah dashed, bukan ungu
-  Block Text) sekadar feedback visual. `resetDocEditorState()` & `startBlockDraw()` diupdate biar kedua mode
-  saling eksklusif (ganti mode lain otomatis matikan highlight tombol satunya).
-- **Divalidasi**: 2 `<script>` block diekstrak & `new Function()` di Node - sintaks valid. Logika alur (bukan di-
-  run beneran, perlu Fabric.js+canvas asli) dicek manual thread-through.
-- **Belum ditest user** — perlu dicek: klik tombol lalu drag di canvas benar2 memunculkan preview merah mengikuti
-  drag; lepas klik langsung jadi object final yg bisa digeser/resize (bukan masih preview/pending); "Apply to all
-  pages" masih tersync ke halaman lain seperti sebelumnya; drag kecil (<4px, klik nyasar) tidak bikin zone kosong
-  nyangkut & tool tetap armed.
-
-**Convert to DOCX → bersihkan halaman setelah download berhasil (27 Okt 2026)**
-- **Permintaan user**: setelah convert+download DOCX sukses, halaman dibersihkan supaya siap upload dokumen baru
-  - SAMA PERSIS seperti yang sudah terjadi sehabis Save berhasil (`docEditorSaveForm` submit handler).
-- **Implementasi**: di `convertDocumentToDocx()` bagian `.then(blob)` (setelah trigger download `<a>` & progress
-  modal "Done!"), ditambahkan blok reset yang DICONTEK PERSIS dari submit handler Save (dispose
-  `docFabricCanvas`, sembunyikan `docEditorCanvasWrap`, kosongkan `docEditorFileInput`, `resetDocEditorState()`,
-  `setDocToolbarEnabled(false)`, `docEditorSaveForm.reset()`, reset tanggal ke hari ini) - bukan reset versi
-  beda sendiri. `docEditorMessage` (teks sukses "DOCX exported...") TETAP kelihatan sesudahnya, tidak ikut
-  kehapus (sama seperti pola di Save, `docEditorMessage` ada di luar `<form>` jadi tidak kena `.reset()`).
-- **Divalidasi**: 2 `<script>` block diekstrak & `new Function()` di Node - sintaks valid.
-- **Belum ditest user** — perlu dicek: sehabis download DOCX selesai, halaman Document Editor benar2 bersih
-  (kembali ke kondisi awal siap upload), pesan sukses masih kebaca sebelum halaman bersih.
+- Document Editor → Export as DOCX (OCR): belum pernah dites di LibreOffice/Google Docs (namespace `wps` murni
+  ekstensi Microsoft 2010); belum ada pengujian batas performa untuk dokumen sangat panjang/padat teks per halaman.
 
 ## 9. Cara lanjut di sesi baru
 1. Upload PROJECT_NOTES.md ini + hanya file kode yang relevan (Sales: `transaction_content.php` + `ajax/` terkait;
    Logistic: `logistic_content.php` + `list_logistic_movements.php`/`list_logistics.php`; Investor:
-   `investor_content.php` + `ajax/investor_api.php`).
+   `investor_content.php` + `ajax/investor_api.php`; Document Tools: `document_tools_content.php`).
 2. Jangan upload `NOTES_ARCHIVE.md` kecuali perlu menelusuri alasan keputusan lama (sebut bagian yang dicari).
 3. Setelah selesai: tambahkan ≤10 baris ke §8 (atau "Log terbaru"), lalu lebur ke §4–6 kalau sudah dites.

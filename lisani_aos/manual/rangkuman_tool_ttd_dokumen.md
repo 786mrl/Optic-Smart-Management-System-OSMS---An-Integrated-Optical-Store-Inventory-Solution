@@ -1,208 +1,258 @@
-# Rangkuman Konsep: Tool Dokumen (Editor TTD, Tempel TTD, Kop, Edit Teks OCR, dan Template Form)
+# Rangkuman Konsep: Tool Dokumen (Editor TTD, Tempel TTD, Kop, Convert to Text OCR, dan Template Form)
 
-> **PENGINGAT:** Penyimpanan semua data dalam proyek ini memiliki aturan tersendiri. Pastikan aturan tersebut dipenuhi **sebelum implementasi** (lihat bagian 13).
+> **Versi 27 Okt 2026.** Dokumen ini direvisi untuk mencocokkan apa yang sudah benar-benar dibangun di
+> `document_tools_content.php` (lihat PROJECT_NOTES.md §6 Document Tools untuk detail implementasi terkini).
+> Bagian yang sudah SELESAI ditandai ✅, yang masih RENCANA ditandai 🔜, dan pendekatan yang pernah dicoba lalu
+> diganti ditandai ❌ (dengan alasan penggantiannya) supaya tidak diulang lagi di sesi berikutnya.
 
 ## 1. Ide Utama
-Admin sering mengedit dokumen hanya untuk menambah tanda tangan, dan kadang menambah kop perusahaan. Tool ini mengotomatiskan prosesnya:
+Admin sering mengedit dokumen hanya untuk menambah tanda tangan, dan kadang menambah kop perusahaan. Tool ini
+mengotomatiskan prosesnya:
 
-1. Upload dokumen (gambar, foto, atau PDF). PDF dikonversi menjadi gambar.
-2. Jika dokumen berupa foto: diluruskan dan latarnya dibersihkan (lihat bagian 4).
-3. Pola dokumen umum: teks "yang bertanda tangan di bawah ini" (atau teks lain di atas), ruang kosong untuk ttd di tengah, lalu nama penandatangan di bawah.
-4. Pengguna **memblok** bagian teks atas dan bagian nama, lalu **memindahkan** posisinya masing-masing sehingga tercipta ruang untuk ttd.
-5. **Kotak bantuan (guide box)** menunjukkan area ttd dan menjadi panduan seberapa jauh nama harus digeser.
-6. Gambar ttd (disiapkan lebih dulu di editor ttd digital, bagian 8) ditempatkan tepat di antara kedua bagian tersebut.
-7. Jika diperlukan, kop (header/footer) ditempel sebagai layer.
-8. Jika perlu mengubah isi dokumen hasil foto: teks dikenali dengan OCR lalu diedit di posisi aslinya (bagian 6).
-9. Untuk dokumen ekspor-impor yang berulang: gunakan template HTML/CSS dan isi lewat form (bagian 7).
-10. Hasil diekspor.
+1. ✅ Upload dokumen (gambar/foto atau PDF multi-halaman). PDF dikonversi menjadi gambar per halaman (PDF.js, di browser).
+2. 🔜 Jika dokumen berupa foto: diluruskan (deskew) dan latarnya dibersihkan — **belum dibangun, lihat bagian 14**.
+3. Pola dokumen umum: teks "yang bertanda tangan di bawah ini" (atau teks lain di atas), ruang kosong untuk ttd di
+   tengah, lalu nama penandatangan di bawah.
+4. ✅ Pengguna **memblok** (gambar kotak) bagian dokumen yang perlu dipindah, lalu **menggeser/resize** kotak itu
+   (tahap "Adjust Block" sebelum Apply) sampai pas, baru dipotong jadi layer baru (`cutBlockToLayer()`).
+5. ✅ **Guide Box** (kotak oranye resizable, preset ukuran dalam inci) menunjukkan area ttd. **Guide Lines**
+   (garis bantu horizontal/vertikal, bisa lebih dari satu) membantu pensejajaran manual.
+6. ✅ Gambar ttd (disiapkan di Editor TTD Digital, bagian 8) ditempatkan mengikuti ukuran/posisi Guide Box.
+7. ✅ Kop (header/footer) ditempel sebagai layer penuh-lebar, dengan opsi "Apply to all pages" yang menyinkronkan
+   posisi di semua halaman (geser satu, semua ikut lewat `letterheadSyncId`).
+8. ✅ Untuk mengubah isi dokumen hasil foto/scan jadi bisa diedit: **Convert to Text (OCR) → export sebagai file
+   .docx** — lihat bagian 6 untuk penjelasan lengkap kenapa pendekatannya berubah dari rencana awal.
+9. 🔜 Untuk dokumen ekspor-impor yang berulang: template HTML/CSS + form — **belum dibangun sama sekali, masih
+   rencana murni**, lihat bagian 7.
+10. ✅ Hasil "Save" (bukan OCR) diekspor sebagai **satu file PDF** (semua halaman digabung via FPDF).
 
 ## 2. Apakah Memungkinkan?
-**Ya, sangat memungkinkan.** Semua fitur yang dibutuhkan sudah umum dan matang:
+**Ya.** Status tiap kebutuhan (diperbarui dari rencana awal):
 
-| Kebutuhan | Teknik |
-|---|---|
-| PDF ke gambar | PDF.js (browser) atau Poppler/Imagick (server) |
-| Luruskan foto | OpenCV.js (perspective transform) atau 4 titik sudut manual |
-| Bersihkan latar foto | Adaptive threshold / koreksi kontras dan pencahayaan |
-| OCR (baca teks + koordinat) | Tesseract.js (gratis, mendukung Bahasa Indonesia) |
-| Edit ttd (kontras, transparan, hapus bagian) | Canvas + JavaScript (threshold, alpha channel, kuas penghapus) |
-| Blok area | Seleksi persegi (rectangle select) di atas canvas |
-| Pindah bagian terblok | Potong piksel area terpilih, jadikan layer terpisah, drag |
-| Kotak bantuan | Elemen overlay yang bisa digeser dan diubah ukuran |
-| Tempel ttd dan kop | Layer gambar PNG transparan |
-| Ekspor | Canvas ke PNG/JPG, atau gabung ke PDF |
+| Kebutuhan | Teknik | Status |
+|---|---|---|
+| PDF ke gambar | PDF.js (browser) | ✅ selesai |
+| Luruskan foto (deskew) | OpenCV.js atau 4 titik sudut manual | 🔜 belum dibangun |
+| Bersihkan latar foto | Adaptive threshold / koreksi kontras | 🔜 belum dibangun |
+| Crop dokumen (adjustable, bisa digeser) | Canvas/Fabric.js, handle resize | 🔜 belum dibangun di Document Editor (sudah ada versi lain khusus di Signature Editor, lihat bagian 8) |
+| OCR (baca teks + koordinat) | Tesseract.js (`eng+ind`) | ✅ selesai, dipakai jalur export DOCX |
+| Edit ttd (kontras, transparan, hapus bagian) | Canvas + JS (threshold, alpha, kuas) | ✅ selesai (Signature Editor) |
+| Blok area & pindah | Rectangle select → layer Fabric.js draggable | ✅ selesai |
+| Kotak bantuan (Guide Box) + Guide Lines | Fabric.js overlay resizable/draggable | ✅ selesai |
+| Tempel ttd dan kop | Layer gambar via Fabric.js, sync semua halaman | ✅ selesai |
+| Ekspor PDF | FPDF (server, `optic_pos/fpdf/fpdf.php`) | ✅ selesai |
+| Ekspor DOCX dari hasil OCR | OOXML manual + JSZip, murni di browser | ✅ selesai |
+| Template HTML/CSS + form berulang | PHP + MariaDB, Dompdf/mPDF | 🔜 belum dibangun |
 
-## 3. Cara Kerja Teknis (Intinya)
-- Dokumen berupa gambar tidak punya "teks" yang bisa dipindah. Maka yang dilakukan adalah **cut and move piksel**:
-  1. Pengguna memblok area (x, y, lebar, tinggi).
-  2. Area itu dipotong menjadi layer baru.
-  3. Bekas area diisi warna latar agar tidak terlihat duplikat.
-  4. Layer baru dapat di-drag ke posisi baru.
-- Jarak/ukuran ttd = tinggi kotak bantuan. Saat kotak diubah ukurannya, bagian nama bisa otomatis ikut bergeser sebesar selisihnya (opsional, sangat membantu).
-- Pada dasarnya tool ini adalah **editor layer sederhana**: dokumen sebagai dasar, lalu ttd dan kop sebagai layer yang bisa diatur.
+## 3. Cara Kerja Teknis (Intinya) — ✅ sesuai rencana awal, sudah berjalan
+- Dokumen berupa gambar tidak punya "teks" yang bisa dipindah. Yang dilakukan: **cut and move piksel**:
+  1. Pengguna menggambar kotak area (drag di canvas).
+  2. Kotak jadi object Fabric adjustable ("pending block") — bisa digeser/resize dulu sebelum di-"Apply".
+  3. Setelah Apply, area dipotong jadi layer `fabric.Image` baru yang draggable.
+  4. Bekas area ditutup dengan warna hasil sampling piksel tetangga (`cutBlockToLayer()`).
+- Guide Box menentukan ukuran & posisi target tanda tangan; "Insert Signature" otomatis menyesuaikan skala ttd
+  ke ukuran Guide Box saat itu.
+- Document Editor pada dasarnya **editor layer** (Fabric.js): dokumen sebagai background image, lalu
+  block/guide box/guide line/ttd/kop sebagai object-object di atasnya, per halaman punya state Fabric sendiri.
 
-## 4. Dokumen Hasil Foto (Miring, Latar Tidak Putih)
-Perlu tahap tambahan di awal, sebelum seleksi blok:
+## 4. Dokumen Hasil Foto (Miring, Latar Tidak Putih) — 🔜 BELUM DIBANGUN
+Ini bagian yang **sekarang jadi prioritas berikutnya** (lihat bagian 14 untuk rencana detail terbaru). Status
+tiap sub-kebutuhan:
+- **Luruskan (deskew)**: belum ada. Tidak ada tombol/alat apa pun di Document Editor untuk ini saat ini.
+- **Bersihkan latar**: belum ada filter "mode dokumen" apa pun.
+- **Crop yang bisa diatur dan digeser**: belum ada di Document Editor (beda dari Crop di Signature Editor, yang
+  sudah ada tapi khusus untuk gambar tanda tangan di kanvas 600×220 — bukan untuk dokumen multi-halaman).
 
-- **Luruskan.** Dua cara: otomatis (deteksi tepi kertas lalu perspective transform dengan OpenCV.js, seperti aplikasi scanner) atau manual (pengguna menyeret 4 titik sudut kertas). Untuk awal, manual lebih mudah dan akurat. Tambahkan juga tombol putar halus untuk kemiringan kecil.
-- **Bersihkan latar.** Setelah lurus, terapkan filter "mode dokumen" (adaptive threshold atau koreksi kontras/pencahayaan) agar kertas menjadi putih merata dan bayangan berkurang. Jadikan opsi yang bisa dinyalakan/dimatikan, karena filter dapat mengubah tampilan dokumen.
-- **Area bekas pindahan.** Pada foto, warna latar tidak seragam, sehingga mengisi dengan satu warna akan terlihat. Dengan filter di atas, latar menjadi nyaris putih sehingga masalah ini sebagian besar hilang. Cadangannya: ambil sampel warna di sekitar blok.
+Rencana teknis asli (perspective transform OpenCV.js atau 4 titik manual, adaptive threshold) **masih berlaku**
+sebagai opsi teknik, belum ada yang dicoba/gagal di bagian ini — beda dari OCR (bagian 6) yang sudah sempat
+dicoba dan gagal.
 
-## 5. Kop Perusahaan (Header dan Footer)
-Kop diperlakukan sebagai layer gambar seperti ttd:
+## 5. Kop Perusahaan (Header dan Footer) — ✅ SELESAI
+Sesuai rencana awal, dengan penyempurnaan:
+- Disimpan sebagai PNG (header + footer terpisah) di **Letterhead Library** (tabel `letterhead_library`).
+- Ditempel full-width, pinned ke atas/bawah halaman.
+- **"Apply to all pages"** (default checked): tersinkron ke semua halaman via `letterheadSyncId` — geser/resize
+  satu salinan, semua salinan di halaman lain ikut berubah posisinya (termasuk lewat arrow-key nudge).
+- Kop bersifat opsional per dokumen, bisa dipakai berkali-kali di satu dokumen.
 
-- Simpan desain kop sebagai PNG (header dan footer terpisah) di pustaka kop.
-- Tempel di atas atau bawah halaman, lalu atur posisi dan ukuran.
-- Jika isi dokumen bertabrakan dengan kop, pengguna dapat memindahkan blok isi ke bawah dengan fitur seleksi dan pindah yang sama.
-- Untuk dokumen multi-halaman, sediakan opsi "terapkan ke semua halaman".
-- Kop bersifat opsional per dokumen (tidak selalu dipakai).
+## 6. Edit Teks Dokumen Hasil Foto — ❌ PENDEKATAN LAMA GAGAL TOTAL, DIGANTI OCR→DOCX
+**Pendekatan awal yang direncanakan (§6.b versi lama): "gambar sebagai dasar, teks diedit di atasnya posisi
+asli, tetap jadi gambar/PDF di akhir"** — ini **sudah dicoba dan gagal total**, sehingga **ditinggalkan
+sepenuhnya**. Pendekatan yang dipakai sekarang (dan sudah berjalan) **beda arah tujuannya**: bukan edit-in-place
+di atas gambar, melainkan **konversi ke file .docx yang bisa diedit bebas di Word**.
 
-## 6. Edit Teks Dokumen Hasil Foto dengan OCR
-Dokumen hasil foto tidak bisa diedit di Word. Ada dua pendekatan:
+**Fitur yang berjalan sekarang — "Convert to Text (OCR)" (grup ribbon "Convert to Text", tombol `docOcrBtn`):**
 
-**a. Rekonstruksi penuh ke Word (tidak disarankan)**
-OCR membaca teks lalu layout disusun ulang menjadi .docx. Hasil biasanya hanya mirip, bukan sama persis: font, spasi, tabel, dan posisi sering bergeser, terutama jika foto miring atau buram.
+1. **Exclude Zone**: pengguna menggambar sendiri area yang mau dikecualikan dari OCR (misalnya area
+   letterhead/logo/stempel) — bisa lebih dari satu per halaman, opsi "Apply to all pages" (pola sync sama
+   seperti Letterhead).
+2. Saat convert dijalankan: tiap halaman dirender khusus untuk OCR (`renderPageForOcr()`) — area Exclude Zone
+   diputihkan dulu (teks di dalamnya tidak ikut terbaca Tesseract) **tapi** area itu tetap di-crop dari bitmap
+   asli dan disisipkan balik sebagai **floating image** di posisi aslinya di file .docx akhir.
+3. OCR jalan dengan Tesseract.js (`eng+ind`), murni di browser.
+4. Hasil OCR direkonstruksi **per baris** (bukan per-paragraf — paragraf hasil Tesseract sering menggabung
+   banyak baris berbeda jadi satu bbox raksasa pada dokumen rapat seperti surat/kontrak, ini salah satu
+   penyebab kegagalan percobaan sebelumnya).
+5. Tiap baris jadi **paragraf alur teks biasa** (`<w:p>`, BUKAN floating textbox — sempat dicoba floating
+   per-baris supaya presisi posisi x/y, tapi dibalik ke alur biasa karena pengguna ingin mudah diedit
+   langsung klik-ketik, bukan harus klik kotak dulu).
+6. Properti yang dipertahankan dari OCR: perataan (`w:jc`, heuristik dua-syarat: menjorok jauh dari margin
+   umum halaman DAN margin kiri≈kanan baris itu sendiri → dianggap center), bold (mayoritas kata di baris itu
+   bold), ukuran font (dari tinggi baris, dikonversi px→half-point via `DOC_DPI=150`, clamp 6–72pt).
+7. File .docx dibuat **murni di browser** (OOXML manual + JSZip, tanpa PHPWord/Composer di server) dan langsung
+   didownload — tidak dikirim ke server sama sekali (beda dari "Save" biasa yang ke
+   `ajax/save_edited_document.php`).
 
-**b. Gambar sebagai dasar, teks diedit di atasnya (disarankan)**
-- OCR (Tesseract.js, gratis, jalan di browser, mendukung Bahasa Indonesia) mendeteksi setiap kata/baris beserta koordinatnya.
-- Pengguna klik teks yang ingin diubah. Teks lama ditutup dengan warna latar, lalu muncul kotak teks di posisi yang sama dengan ukuran font yang disesuaikan dari tinggi kotak OCR.
-- Bagian yang tidak diedit tetap berupa gambar asli, sehingga layout, logo, stempel, dan tabel tetap sama persis.
-- Hasil diekspor sebagai PDF atau gambar.
-- Selaras dengan fitur seleksi dan pindah blok yang sudah direncanakan.
+**Kenapa pendekatan lama gagal (dicatat supaya tidak diulang):**
+- Edit-in-place di atas gambar (tutup teks lama dengan warna latar, tampilkan kotak teks baru persis di posisi
+  OCR) tidak cocok dengan granularitas kotak OCR yang dipakai — hasil akhirnya kacau, terutama pada dokumen satu
+  kolom yang baris-barisnya rapat.
+- Tujuan akhir pengguna sebenarnya bukan "gambar yang terlihat sudah diedit", tapi **dokumen yang benar-benar
+  bisa diedit bebas** — makanya diganti total ke jalur export .docx di atas, yang hasilnya memang file teks asli
+  (bukan gambar berlapis teks).
 
-**Catatan akurasi**
-- Foto harus diluruskan dan dibersihkan dulu (Tahap 3); OCR jauh lebih akurat pada gambar lurus dan terang.
-- Font asli tidak bisa dikenali sempurna; tool memilih font mirip dan pengguna bisa menggantinya.
-- Tulisan tangan, stempel, dan tabel rumit tidak terbaca baik; biasanya dibiarkan sebagai gambar.
-- Kekurangan pendekatan b: hasil bukan file Word yang bisa diedit bebas.
+**Keterbatasan yang masih berlaku:**
+- Belum pernah dites di LibreOffice/Google Docs (namespace `wps` murni ekstensi Microsoft 2010).
+- Tulisan tangan, stempel, dan tabel rumit tetap tidak terbaca baik oleh OCR — dikecualikan manual lewat
+  Exclude Zone kalau mengganggu, atau dibiarkan ikut terbaca jadi teks "sampah" yang diedit manual belakangan.
+- Semua halaman diproses berurutan (bukan paralel); belum ada pengujian batas performa untuk dokumen sangat
+  panjang/padat teks.
+- Export .docx ini **terpisah** dari "Save" biasa (yang tetap menghasilkan PDF) — satu dokumen bisa di-Save
+  sebagai PDF (dengan ttd/kop) DAN di-convert terpisah jadi .docx (teks hasil OCR), tapi keduanya bukan hasil
+  gabungan dalam satu file.
 
-## 7. Dokumen Berulang (Ekspor-Impor): Template HTML/CSS + Form
-Dokumen yang sama dipakai terus dengan data yang berbeda, sehingga tidak perlu diedit di Word. Karena template berasal dari perusahaan sendiri, dipilih pendekatan **HTML/CSS**.
+## 7. Dokumen Berulang (Ekspor-Impor): Template HTML/CSS + Form — 🔜 BELUM DIBANGUN
+Tidak berubah dari rencana awal — **ini satu-satunya bagian besar rencana awal yang sampai sekarang belum
+disentuh sama sekali**:
 
 **Alur**
-1. Buat template sekali per jenis dokumen (HTML/CSS), dengan bagian yang berubah ditandai sebagai kolom isian (nama buyer, tanggal, nomor, daftar barang, jumlah, harga, dan sebagainya).
+1. Buat template sekali per jenis dokumen (HTML/CSS), dengan bagian yang berubah ditandai sebagai kolom isian
+   (nama buyer, tanggal, nomor, daftar barang, jumlah, harga, dan sebagainya).
 2. Program menampilkan form sesuai template; pengguna hanya mengisi data.
-3. Data masuk ke posisi yang sudah ditentukan; ttd dan kop ditempel dari pustaka.
-4. Ekspor ke PDF.
+3. Data masuk ke posisi yang sudah ditentukan; ttd dan kop ditempel dari pustaka (bisa reuse
+   `ajax/list_signatures.php`/`list_letterheads.php` yang sudah ada).
+4. Ekspor ke PDF (Dompdf/mPDF, atau reuse pola FPDF yang sudah dipakai `save_edited_document.php`/invoice).
 
-**Keuntungan**
-- Layout selalu konsisten, tidak bergeser seperti di Word.
-- Hasil PDF tajam dan teksnya tetap bisa diseleksi/dicari (bukan gambar).
-- Total, tanggal, dan nomor dokumen bisa dihitung/dibuat otomatis (penomoran berurutan).
-- Data buyer dan barang tersimpan dan tinggal dipilih; riwayat dokumen bisa diduplikasi.
+**Keuntungan**: layout konsisten, PDF teksnya tetap bisa diseleksi/dicari (bukan gambar), total/tanggal/nomor
+dokumen bisa otomatis, data buyer & barang tersimpan dan tinggal dipilih, riwayat dokumen bisa diduplikasi.
 
-**Teknologi**
-- PHP + MariaDB (database yang sama dengan sistem yang sudah ada) untuk template, data buyer/barang, dan riwayat.
-- PDF: Dompdf atau mPDF (gratis), atau cetak ke PDF dari browser.
+## 8. Editor TTD Digital — ✅ SELESAI (Signature Library + Editor, digabung 21 Okt 2026)
+Mengubah ttd dari foto apa pun menjadi gambar ttd digital siap pakai. Fitur paling sering dipakai, dan paling
+awal selesai dibangun.
 
-## 8. Editor TTD Digital (Prioritas: Paling Sering Dipakai)
-Mengubah ttd dari sumber apa pun (foto, potongan dokumen) menjadi gambar ttd digital yang siap dipakai. Ini fitur yang paling sering dibutuhkan dan paling mudah dibangun.
+- **Memperjelas ttd**: slider **Ink Contrast** (menggelapkan warna + menebalkan opacity piksel tinta).
+- **Latar transparan**: slider **Remove White Background** (threshold, dengan tombol -5/+5), disimpan PNG.
+- **Menghapus bagian yang mengganggu**: **Erase Part** (kuas, radius diatur, history undo stack maks 30 langkah)
+  dan **Crop** (drag kotak awal, lalu 8 handle resize + drag-dari-tengah untuk geser, Undo Crop 1 langkah).
+- **Pelengkap**: Zoom (50–1000%, murni tampilan, tidak mengubah resolusi pixel asli), simpan ke pustaka
+  (`signature_library`, dikelompokkan per Company Name, field `is_main` untuk tandai ttd utama).
+- **Teknologi**: HTML Canvas + JavaScript murni di browser, tanpa server untuk pemrosesan gambarnya.
 
-**a. Memperjelas ttd**
-- Slider kontras, ketajaman, dan kecerahan.
-- Mode "ttd tinta": piksel yang lebih terang dari ambang batas menjadi putih, goresan dipertegas sehingga bersih (hitam/biru).
-- Foto miring dapat diluruskan dengan fitur koreksi foto (bagian 4).
+> Catatan untuk fitur Crop yang direncanakan di Document Editor (bagian 14 di bawah): Crop di Signature Editor
+> ini **tidak dipakai ulang langsung** — kanvasnya kecil (600×220, khusus gambar ttd), sedangkan Document Editor
+> perlu crop di atas halaman dokumen penuh resolusi tinggi dengan sistem Fabric.js yang berbeda. Pola interaksinya
+> (8 handle resize + drag) tetap jadi referensi yang bagus untuk ditiru.
 
-**b. Latar menjadi transparan**
-- Setelah goresan dipertegas, piksel latar dijadikan transparan dan disimpan sebagai PNG.
-- Slider ambang batas agar goresan tipis tidak ikut hilang.
-- Warna tinta dapat diseragamkan; pratinjau di atas latar putih, abu, dan dokumen contoh.
+## 9. Pilihan Teknologi — ✅ Opsi A (sepenuhnya di browser) yang dipakai
+- HTML Canvas + **Fabric.js 5.3.0** (layer, drag, resize) untuk Document Editor.
+- **PDF.js 3.4.120** untuk render PDF multi-halaman ke gambar, murni di browser.
+- **Tesseract.js 5.0.4** untuk OCR (`eng+ind`).
+- **JSZip 3.10.1** untuk membangun file .docx di browser.
+- **FPDF** (PHP, server-side, reuse dari `optic_pos/fpdf/fpdf.php`) untuk menggabungkan halaman jadi satu PDF
+  saat "Save".
+- Semua library cdnjs dimuat dengan `document.write` berpenjaga (cek `typeof x === 'undefined'`) + dibungkus
+  try/catch saat dipakai, karena cdnjs bisa diblokir jaringan pengguna (lihat PROJECT_NOTES.md §3 gotcha #8).
 
-**c. Menghapus bagian yang mengganggu**
-- **Kuas penghapus** (ukuran bisa diatur, ada undo) untuk garis atau teks yang menimpa ttd.
-- **Hapus area** (blok persegi) untuk garis atau teks yang jauh dari goresan.
-- Batasan: jika garis/teks menimpa persis di atas goresan, bagian yang tertimpa tidak bisa dipulihkan otomatis. Biasanya dihapus dengan kuas lalu goresan dirapikan manual.
+## 10. Tahapan Pengerjaan (status terkini)
+- **Tahap 1–2 (Upload gambar/PDF)**: ✅ selesai.
+- **Tahap 3 (Koreksi foto)**: 🔜 belum dibangun — lihat bagian 14.
+- **Tahap 4–5 (Seleksi blok, pindah)**: ✅ selesai (dengan tambahan tahap "Adjust Block" sebelum Apply).
+- **Tahap 6 (Guide Box)**: ✅ selesai, plus Guide Lines (fitur tambahan di luar rencana awal).
+- **Tahap 7 (Editor ttd digital)**: ✅ selesai.
+- **Tahap 8 (Tempel tanda tangan)**: ✅ selesai, bisa dipakai berkali-kali per dokumen/halaman.
+- **Tahap 9 (Kop perusahaan)**: ✅ selesai, termasuk sync ke semua halaman.
+- **Tahap 10 (Edit teks OCR in-place)**: ❌ diganti total — lihat bagian 6.
+  - **Tahap 10b (Convert to Text → export DOCX)**: ✅ selesai, menggantikan Tahap 10.
+- **Tahap 11 (Template dokumen + form)**: 🔜 belum dibangun.
+- **Tahap 12 (Ekspor)**: ✅ selesai untuk PDF (via "Save"); DOCX via jalur terpisah (Tahap 10b).
+- **Tahap 13 (Penyempurnaan)**: Undo sudah ada (per halaman, snapshot-based, limit 20). Riwayat dokumen sudah
+  ada (`edited_documents`). Deteksi otomatis tepi kertas: belum.
+- **Tahap 14 (BARU, 27 Okt 2026)**: 🔜 Koreksi foto miring + bersihkan latar + Crop adjustable — lihat bagian 14.
 
-**d. Pelengkap**
-- Auto-crop agar ukuran PNG pas dengan goresan.
-- Ubah ukuran dan putar.
-- Simpan ke pustaka ttd, siap ditempel ke dokumen (Tahap 8).
+## 11. Risiko dan Catatan (masih berlaku)
+- **Foto berkualitas rendah**: bayangan kuat/lipatan/cahaya tidak merata masih akan menyulitkan Tahap 14
+  (bersihkan latar) begitu dibangun.
+- **Resolusi**: konversi PDF/working canvas dibatasi `MAX_DOC_WIDTH = 1400px`; cukup untuk layar tapi perlu
+  dicek lagi kecukupannya untuk cetak begitu Tahap 14 (crop + koreksi) ditambahkan.
+- **PDF akhir berupa gambar**: hasil "Save" tetap gambar yang di-flatten (teks tidak bisa diseleksi) — ini
+  disengaja (beda tujuan dari jalur OCR→DOCX). Simpan juga dokumen asli kalau perlu.
+- **Keamanan**: gambar ttd adalah data sensitif — lihat bagian 13 untuk aturan penyimpanan yang sudah ditetapkan.
+- **Kerapian**: pastikan nama dan teks atas tetap sejajar setelah dipindah (sudah dibantu Guide Lines).
 
-**Teknologi:** HTML Canvas + JavaScript di browser, gratis, tanpa server.
+## 12. Rekomendasi Langkah Berikutnya (diperbarui)
+Rekomendasi asli (mulai dari Editor ttd digital, lalu template+form) **sebagian sudah dijalankan** — Editor ttd
+digital sudah selesai duluan sesuai rencana. Prioritas berikutnya yang dipilih pengguna (27 Okt 2026) **bukan**
+template+form (Tahap 11), melainkan **Tahap 14: koreksi foto miring, bersihkan latar, dan crop adjustable** —
+lihat bagian 14 untuk rencana detailnya. Template+form (Tahap 11) tetap jadi kandidat kuat setelah itu, karena
+nilai bisnisnya besar dan sampai sekarang belum tersentuh sama sekali.
 
-## 9. Pilihan Teknologi
-**Opsi A: sepenuhnya di browser (disarankan untuk awal)**
-- HTML Canvas + JavaScript (atau Fabric.js / Konva.js untuk layer, drag, resize).
-- PDF.js untuk render PDF; OpenCV.js untuk meluruskan foto.
-- Kelebihan: cepat, tanpa beban server, dokumen tidak diunggah ke server (lebih aman untuk dokumen perusahaan).
-- Cocok jika dibuat sebagai halaman PHP/HTML biasa.
+## 13. Aturan Penyimpanan — ✅ SUDAH DITETAPKAN (sinkron dengan PROJECT_NOTES.md §2–§6)
+Semua data yang dibahas di dokumen ini mengikuti pola penyimpanan proyek `lisani_aos` yang sudah berjalan:
 
-**Opsi B: dengan backend**
-- Backend (PHP/Python) untuk menyimpan hasil, riwayat dokumen, pustaka ttd dan kop.
-- Konversi PDF di server dengan Imagick atau pdftoppm.
+- **Dokumen asli yang diunggah** (gambar/foto/PDF ke Document Editor): **tidak disimpan ke disk**. Diproses
+  sepenuhnya di sisi klien (browser, working canvas per halaman); hanya hasil akhir (PNG hasil flatten tiap
+  halaman) yang dikirim ke server saat "Save".
+- **Hasil dokumen (PDF) dan riwayat dokumen**: tabel `edited_documents` (kolom `signature_ids`/`letterhead_ids`
+  sebagai VARCHAR CSV tanpa FK, `page_count`, `file_ext` default `'pdf'`). File PDF fisik tersimpan di `storage/`
+  mengikuti pola folder proyek (lihat `AOS_STORAGE_BASE` di PROJECT_NOTES.md §2); FPDF menggabungkan semua
+  halaman jadi satu file per penyimpanan.
+- **Gambar tanda tangan (data sensitif)**: `storage/signature/{company_name_slug}/{origin_slug}/{file}`, tabel
+  `signature_library`. Hapus = pindah ke `storage/recycle/…` (bukan dihapus permanen), lalu folder asli yang
+  jadi kosong ikut dibersihkan (berhenti di folder yang masih ada isinya, tidak pernah menghapus
+  `storage/signature` sendiri). Akses: sama seperti seluruh extended mode — di balik triple-click login +
+  sesi `lisani_aos` sendiri (`$_SESSION['app'] === 'lisani_aos'`), aksi Edit lewat password pola bebas, Delete
+  lewat password pola (b) (`verify_password.php` + `_require_reverify.php`, jendela 120 detik).
+- **Pustaka kop (header/footer)**: `storage/letterhead/{company_slug}/{origin_slug}/`, tabel
+  `letterhead_library`. Pola hapus/akses sama seperti Signature Library di atas.
+- **Template dokumen dan data buyer/barang** (Tahap 11, belum dibangun): direncanakan ikut database
+  `lisani_aos_db` yang sama (`$lisani_conn`, mysqli), bukan tabel/DB terpisah — menyusul pola semua modul lain
+  di proyek ini (lihat PROJECT_NOTES.md §4).
+- **Data di database (riwayat, penomoran)**: tidak ada penomoran otomatis khusus Document Tools saat ini (beda
+  dari modul Sales yang punya `sequence_number` per customer) — tiap `edited_documents` berdiri sendiri per
+  nama+tanggal+activity title yang diinput manual.
 
-## 10. Tahapan Pengerjaan
+**Ringkasan prinsip**: dokumen MENTAH tidak pernah menyentuh server (privasi/keamanan, sesuai pertimbangan Opsi
+A di bagian 9); yang tersimpan hanya HASIL AKHIR (PDF) + pustaka ttd/kop yang memang untuk dipakai ulang. Semua
+hapus = soft-delete via `recycle/`, bukan hard-delete, konsisten dengan aturan modul lain di `lisani_aos`
+(PROJECT_NOTES.md §5.10).
 
-**Tahap 1: Upload dan tampil**
-- Upload gambar (JPG/PNG) dan tampilkan di canvas; zoom dan geser tampilan.
+## 14. RENCANA BARU (27 Okt 2026): Koreksi Foto Miring + Bersihkan Latar + Crop Adjustable → Tetap Output PDF
+Fitur ini ditambahkan ke Document Editor, dijalankan **sebelum** tahap Block/Guide Box/dst (idealnya langsung
+setelah upload, per halaman), supaya dokumen hasil foto jadi rapi dulu sebelum diedit lebih lanjut. Output akhir
+tetap digabung jadi **satu file PDF** lewat jalur "Save" yang sudah ada (FPDF) — fitur ini tidak mengubah format
+ekspor, hanya menambah tahap persiapan sebelum flatten.
 
-**Tahap 2: Dukungan PDF**
-- Render PDF ke gambar dengan PDF.js; pilih halaman jika multi-halaman.
+**Lingkup (3 sub-fitur, saling terpisah tapi dipakai berurutan):**
 
-**Tahap 3: Koreksi foto**
-- Luruskan (4 titik sudut manual + putar halus), lalu filter pembersih latar (opsional).
+1. **Luruskan foto (deskew)** — opsi teknik: 4 titik sudut manual (diseret pengguna ke tiap pojok kertas) lalu
+   perspective transform, ATAU tombol putar halus untuk kemiringan kecil. Manual-4-titik lebih mudah
+   diimplementasi lebih dulu (deteksi tepi otomatis via OpenCV.js bisa menyusul sebagai Tahap 2).
+2. **Bersihkan latar** — filter "mode dokumen" (adaptive threshold / koreksi kontras-pencahayaan) supaya kertas
+   jadi putih merata dan bayangan berkurang. Harus bisa dinyalakan/dimatikan (opsional), karena filter bisa
+   mengubah tampilan dokumen yang sebenarnya sudah bagus.
+3. **Crop (bisa diatur ukurannya dan digeser)** — beda dari Crop di Signature Editor (lihat catatan di bagian
+   8): ini bekerja di atas halaman dokumen Document Editor yang sudah pakai Fabric.js, jadi polanya mengikuti
+   pola "pending block" yang sudah ada (`enterPendingAdjustMode()`/Apply/Cancel) — rect Fabric dengan handle
+   resize bawaan, DIKONFIRMASI (Apply) baru benar-benar memotong `workingCanvas` halaman itu.
 
-**Tahap 4: Seleksi blok**
-- Alat seleksi persegi di atas canvas; dua jenis blok: teks atas dan nama.
+**Urutan pemakaian yang disarankan**: Luruskan → Crop → Bersihkan Latar → (lanjut ke alur lama: Block/Guide
+Box/Insert Signature/Insert Letterhead/Save PDF). Crop ditaruh setelah Luruskan supaya area pilihan crop tidak
+perlu dihitung ulang kalau perspektifnya berubah duluan.
 
-**Tahap 5: Pindah blok**
-- Potong area menjadi layer, isi bekas dengan warna latar; drag dan tombol panah untuk penyesuaian halus.
-
-**Tahap 6: Kotak bantuan**
-- Overlay yang bisa digeser dan diubah ukurannya; opsi nama ikut bergeser otomatis.
-
-**Tahap 7: Editor ttd digital**
-- Muat gambar ttd (foto atau potongan dokumen); atur kontras, ketajaman, dan kecerahan.
-- Mode "ttd tinta" dan latar transparan dengan slider ambang batas; seragamkan warna tinta.
-- Kuas penghapus dan hapus area (dengan undo); pratinjau di atas latar putih/abu/dokumen.
-- Auto-crop, ubah ukuran, putar, lalu simpan PNG transparan ke pustaka ttd.
-
-**Tahap 8: Tempel tanda tangan**
-- Unggah PNG ttd transparan atau simpan beberapa ttd siap pakai; hapus latar ttd otomatis (opsional); atur posisi dan ukuran.
-
-**Tahap 9: Kop perusahaan**
-- Pustaka kop (header/footer PNG), tempel, atur posisi, opsi terapkan ke semua halaman.
-
-**Tahap 10: Edit teks dengan OCR**
-- Jalankan OCR (Tesseract.js, Bahasa Indonesia) pada gambar yang sudah diluruskan.
-- Tampilkan kotak per kata/baris; klik untuk mengedit.
-- Tutup teks lama dengan warna latar, lalu tampilkan kotak teks baru di posisi yang sama dengan ukuran font mengikuti tinggi kotak OCR.
-- Pilihan font mirip dan penyesuaian manual (ukuran, tebal, posisi).
-
-**Tahap 11: Template dokumen dan form (HTML/CSS)**
-- Buat template tiap jenis dokumen (invoice, packing list, surat jalan, dan sebagainya) dalam HTML/CSS dengan kolom isian bertanda.
-- Form isian dibuat otomatis dari kolom template; hitung total dan penomoran otomatis.
-- Simpan data buyer/barang yang sering dipakai, riwayat dokumen, dan fitur duplikasi.
-- Tempel ttd dan kop dari pustaka, lalu cetak ke PDF (Dompdf/mPDF atau cetak dari browser).
-
-**Tahap 12: Ekspor**
-- Simpan sebagai PNG/JPG, atau PDF (gambar dimasukkan ke halaman PDF).
-
-**Tahap 13: Penyempurnaan**
-- Undo/redo, riwayat dokumen, perbaikan untuk latar yang sulit, otomatisasi deteksi tepi kertas.
-
-## 11. Risiko dan Catatan
-- **Foto berkualitas rendah**: bayangan kuat, lipatan, atau cahaya tidak merata dapat menyulitkan pembersihan latar. Foto yang diambil tegak lurus dan terang memberi hasil jauh lebih baik.
-- **Resolusi**: konversi PDF minimal 150-200 DPI agar tetap tajam saat dicetak.
-- **PDF akhir berupa gambar**: teks tidak lagi bisa diseleksi atau dicari. Simpan juga dokumen asli.
-- **Keamanan**: gambar ttd adalah data sensitif. Batasi akses dan jangan menyimpannya sembarangan.
-- **Kerapian**: pastikan nama dan teks atas tetap sejajar setelah dipindah.
-
-## 12. Rekomendasi Langkah Berikutnya
-1. Mulai dengan **prototipe satu halaman** (Opsi A): upload gambar, seleksi blok, pindah, tempel ttd, ekspor PNG.
-2. Uji dengan 3-5 contoh dokumen asli perusahaan, termasuk satu atau dua hasil foto, untuk melihat variasi pola dan latar.
-3. Setelah alur inti nyaman, tambahkan PDF, koreksi foto, kop, edit teks OCR, dan template form.
-4. Karena permintaan **edit ttd** paling sering, pertimbangkan memulai dari **Editor ttd digital** (Tahap 7) terlebih dulu, lalu **template + form** (Tahap 11) untuk dokumen ekspor-impor, karena nilainya paling cepat terasa.
-
-## 13. Pengingat: Aturan Penyimpanan
-Penyimpanan semua hal yang dibahas di dokumen ini memiliki aturan. Sebelum mulai membangun, pastikan aturannya dipenuhi untuk data berikut:
-
-- Dokumen asli yang diunggah (gambar/foto/PDF)
-- Hasil dokumen (PDF/gambar) dan riwayat dokumen
-- Gambar tanda tangan (data sensitif)
-- Pustaka kop (header/footer)
-- Template dokumen dan data buyer/barang
-- Data di database (riwayat, penomoran)
-
-**Aturan penyimpanan:** _(isi sesuai ketentuan yang berlaku: lokasi, format, lama simpan, akses, dan sebagainya)_
-- ...
+**Belum diputuskan (perlu dibahas saat implementasi):**
+- Apakah 3 sub-fitur ini jadi grup ribbon baru sendiri ("Photo Correction" atau serupa), atau masuk ke alur
+  upload langsung (modal/step tersendiri sebelum kanvas utama muncul)?
+- Apakah Crop di sini berlaku untuk SEMUA halaman sekaligus (seperti "Apply to all pages" di Letterhead/Exclude
+  Zone), atau murni per halaman (karena posisi kertas di tiap foto biasanya beda-beda, "Apply to all" mungkin
+  tidak relevan untuk Crop/Luruskan — hanya relevan untuk Bersihkan Latar sebagai default on/off)?
+- Deskew otomatis (deteksi tepi kertas via OpenCV.js) — mulai dari manual dulu (4 titik), otomatis menyusul.

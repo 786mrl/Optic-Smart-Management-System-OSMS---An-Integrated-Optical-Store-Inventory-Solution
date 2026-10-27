@@ -269,6 +269,43 @@
              ini "grup yang muncul karena sesuatu" tanpa mengubah bentuknya
              jadi lain sendiri dari 4 grup lain. -->
         <div class="doc-editor-toolbar" id="docEditorToolbar">
+          <!-- 27 Okt 2026 (Tahap 14, rangkuman_tool_ttd_dokumen.md §14): grup ribbon baru
+               "Photo Correction" - Deskew (4 titik sudut manual + perspective warp),
+               Crop Page (pola sama seperti pending block: gambar kotak -> handle resize
+               Fabric -> Apply baru benar-benar crop workingCanvas - DIHAPUS 27 Okt 2026,
+               lihat komentar di atas applyDeskew()), Remove White Background + Ink Contrast
+               (dua slider, bukan lagi toggle - algoritma sama seperti Signature Library:
+               threshold near-white -> putih solid, lihat applyBackgroundCorrection()).
+               SEMUA per-halaman saja (tanpa "Apply to all pages") - posisi kertas tiap foto
+               biasanya beda-beda. Ditaruh paling kiri karena dimaksudkan dipakai paling
+               awal, sebelum Block/Guide Box/dst. -->
+          <div class="doc-ribbon-group" data-ribbon-group="photocorrect">
+            <button type="button" class="doc-ribbon-trigger" data-ribbon-trigger="photocorrect">
+              <i class="ti ti-adjustments"></i>
+              <span>Photo Correction</span>
+              <svg class="doc-ribbon-chevron" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+            <div class="doc-ribbon-panel" data-ribbon-panel="photocorrect">
+              <button type="button" class="btn btn-secondary" id="docDeskewBtn" disabled>
+                <i class="ti ti-perspective"></i> Deskew (4 Points)
+              </button>
+              <div class="header-sub" style="display:flex;align-items:center;gap:6px;">
+                <span>Remove White Background</span>
+                <button type="button" class="btn btn-secondary doc-zoom-btn" id="docBgThresholdMinusBtn" aria-label="Lower threshold" disabled>-</button>
+                <input type="range" id="docBgThreshold" min="0" max="255" value="0" style="width:120px;" disabled>
+                <button type="button" class="btn btn-secondary doc-zoom-btn" id="docBgThresholdPlusBtn" aria-label="Raise threshold" disabled>+</button>
+                <span id="docBgThresholdValue">0</span>
+              </div>
+              <div class="header-sub" style="display:flex;align-items:center;gap:6px;">
+                <span>Ink Contrast</span>
+                <button type="button" class="btn btn-secondary doc-zoom-btn" id="docInkContrastMinusBtn" aria-label="Lower ink contrast" disabled>-</button>
+                <input type="range" id="docInkContrast" min="0" max="100" value="0" style="width:120px;" disabled>
+                <button type="button" class="btn btn-secondary doc-zoom-btn" id="docInkContrastPlusBtn" aria-label="Raise ink contrast" disabled>+</button>
+                <span id="docInkContrastValue">0</span>
+              </div>
+            </div>
+          </div>
+
           <div class="doc-ribbon-group" data-ribbon-group="blocks">
             <button type="button" class="doc-ribbon-trigger" data-ribbon-trigger="blocks">
               <i class="ti ti-crop"></i>
@@ -423,6 +460,22 @@
               <span class="header-sub">Drag the box or its handles to adjust, then Apply.</span>
               <button type="button" class="btn btn-primary" id="docBlockApplyBtn">Apply Block</button>
               <button type="button" class="btn btn-secondary" id="docBlockCancelBtn">Cancel Block</button>
+            </div>
+          </div>
+
+          <!-- 27 Okt 2026: kontekstual sama persis bentuknya seperti docBlockAdjustGroup
+               (lihat komentar di atasnya) - muncul HANYA selagi 4 handle sudut Deskew
+               sedang ditampilkan (lihat startDeskew()/cancelDeskew() di JS). -->
+          <div class="doc-ribbon-group doc-ribbon-group-contextual" id="docDeskewAdjustGroup" style="display:none;">
+            <button type="button" class="doc-ribbon-trigger" data-ribbon-trigger="deskew-adjust">
+              <i class="ti ti-bolt"></i>
+              <span>Adjust Corners</span>
+              <svg class="doc-ribbon-chevron" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+            <div class="doc-ribbon-panel" data-ribbon-panel="deskew-adjust">
+              <span class="header-sub">Drag each dot to a corner of the paper, then Apply.</span>
+              <button type="button" class="btn btn-primary" id="docDeskewApplyBtn">Apply Deskew</button>
+              <button type="button" class="btn btn-secondary" id="docDeskewCancelBtn">Cancel Deskew</button>
             </div>
           </div>
 
@@ -2263,6 +2316,20 @@
   var docBlockAdjustGroup = document.getElementById('docBlockAdjustGroup');
   var docBlockApplyBtn = document.getElementById('docBlockApplyBtn');
   var docBlockCancelBtn = document.getElementById('docBlockCancelBtn');
+  // 27 Okt 2026 (Tahap 14): Photo Correction - lihat blok JS "PHOTO CORRECTION" di
+  // bawah (dekat Guide Box) untuk fungsi-fungsinya.
+  var docDeskewBtn = document.getElementById('docDeskewBtn');
+  var docBgThresholdInput = document.getElementById('docBgThreshold');
+  var docBgThresholdValue = document.getElementById('docBgThresholdValue');
+  var docBgThresholdMinusBtn = document.getElementById('docBgThresholdMinusBtn');
+  var docBgThresholdPlusBtn = document.getElementById('docBgThresholdPlusBtn');
+  var docInkContrastInput = document.getElementById('docInkContrast');
+  var docInkContrastValue = document.getElementById('docInkContrastValue');
+  var docInkContrastMinusBtn = document.getElementById('docInkContrastMinusBtn');
+  var docInkContrastPlusBtn = document.getElementById('docInkContrastPlusBtn');
+  var docDeskewAdjustGroup = document.getElementById('docDeskewAdjustGroup');
+  var docDeskewApplyBtn = document.getElementById('docDeskewApplyBtn');
+  var docDeskewCancelBtn = document.getElementById('docDeskewCancelBtn');
   var docZoomOutBtn = document.getElementById('docZoomOutBtn');
   var docZoomInBtn = document.getElementById('docZoomInBtn');
   var docZoomFitBtn = document.getElementById('docZoomFitBtn');
@@ -2413,7 +2480,9 @@
 
   function setDocToolbarEnabled(enabled) {
     [docBlockTextBtn, docAddHGuideBtn, docAddVGuideBtn, docGuideBoxBtn, docGuideBoxPresetSelect, docAddExcludeZoneBtn, docOcrBtn, docInsertSigBtn, docInsertLetterheadBtn, docClearAllBtn,
-     docZoomOutBtn, docZoomInBtn, docZoomFitBtn].forEach(function (btn) {
+     docZoomOutBtn, docZoomInBtn, docZoomFitBtn, docDeskewBtn,
+     docBgThresholdInput, docBgThresholdMinusBtn, docBgThresholdPlusBtn,
+     docInkContrastInput, docInkContrastMinusBtn, docInkContrastPlusBtn].forEach(function (btn) {
       btn.disabled = !enabled;
     });
     docEditorSaveBtn.disabled = !enabled;
@@ -2482,6 +2551,17 @@
     pendingBlockType = null;
     docBlockAdjustGroup.style.display = 'none';
     hideZoneDoneGroup();
+    // 27 Okt 2026: handle Deskew (kalau ada) hidup di canvas yang baru saja di-dispose
+    // oleh pemanggil (startEditingPages()) - cukup reset state JS-nya, tidak perlu
+    // remove() object lagi.
+    deskewHandles = null;
+    deskewActive = false;
+    docDeskewAdjustGroup.style.display = 'none';
+    docDeskewBtn.classList.remove('active');
+    docBgThresholdInput.value = 0;
+    docBgThresholdValue.textContent = '0';
+    docInkContrastInput.value = 0;
+    docInkContrastValue.textContent = '0';
     guideBox = null;
     insertedSignatureIds = {};
     insertedLetterheadIds = {};
@@ -2503,7 +2583,7 @@
     var page = currentPage();
     if (!page || !docFabricCanvas) return;
     if (!page.undoStack) page.undoStack = [];
-    page.undoStack.push(docFabricCanvas.toJSON(['blockType', 'isGuideBox', 'isGuideLine', 'guideOrientation', 'letterheadSyncId', 'letterheadPart', 'isExcludeZone', 'excludeSyncId']));
+    page.undoStack.push(docFabricCanvas.toJSON(['blockType', 'isGuideBox', 'isGuideLine', 'guideOrientation', 'letterheadSyncId', 'letterheadPart', 'isExcludeZone', 'excludeSyncId', 'isPageBackground']));
     if (page.undoStack.length > DOC_UNDO_LIMIT) page.undoStack.shift();
     updateDocUndoBtn();
   }
@@ -2520,6 +2600,7 @@
     // rect pending itu bukan bagian dari snapshot manapun (belum pernah
     // "committed"), jadi tidak masuk akal ikut di-undo/redo.
     if (pendingBlockRect) cancelPendingBlock();
+    if (deskewActive) cancelDeskew(); // 27 Okt 2026: sama alasan - handle belum ter-snapshot
     var snapshot = page.undoStack.pop();
     docFabricCanvas.loadFromJSON(snapshot, function () {
       guideBox = null;
@@ -2671,7 +2752,7 @@
      has never been opened/edited yet). ---- */
   function syncCurrentPageState() {
     if (docFabricCanvas && currentPageIndex >= 0 && docPages[currentPageIndex]) {
-      docPages[currentPageIndex].json = docFabricCanvas.toJSON(['blockType', 'isGuideBox', 'isGuideLine', 'guideOrientation', 'letterheadSyncId', 'letterheadPart', 'isExcludeZone', 'excludeSyncId']);
+      docPages[currentPageIndex].json = docFabricCanvas.toJSON(['blockType', 'isGuideBox', 'isGuideLine', 'guideOrientation', 'letterheadSyncId', 'letterheadPart', 'isExcludeZone', 'excludeSyncId', 'isPageBackground']);
     }
   }
 
@@ -2682,6 +2763,7 @@
     // (not committed yet), so switching pages would silently drop it from
     // view while leaving docBlockAdjustGroup shown. Cancel it explicitly.
     if (pendingBlockRect) cancelPendingBlock();
+    if (deskewActive) cancelDeskew(); // 27 Okt 2026: handle Deskew punya umur selama 1 halaman saja
     hideZoneDoneGroup();
     syncCurrentPageState();
     if (docFabricCanvas) {
@@ -2713,6 +2795,13 @@
       highlightActiveThumbnail();
       fitZoomToContainer();
       updateDocUndoBtn();
+      // 27 Okt 2026: sinkronkan slider Remove White Background/Ink Contrast ke halaman
+      // yang baru dibuka - page.bgThreshold/page.bgInkContrast (lihat blok "PHOTO
+      // CORRECTION") menyimpan nilai terakhir per halaman (default 0/0 = belum disentuh).
+      docBgThresholdInput.value = page.bgThreshold || 0;
+      docBgThresholdValue.textContent = String(page.bgThreshold || 0);
+      docInkContrastInput.value = page.bgInkContrast || 0;
+      docInkContrastValue.textContent = String(page.bgInkContrast || 0);
       docFabricCanvas.requestRenderAll();
     }
 
@@ -2720,7 +2809,10 @@
       docFabricCanvas.loadFromJSON(page.json, afterLoad);
     } else {
       fabric.Image.fromURL(page.workingCanvas.toDataURL('image/png'), function (bgImg) {
-        bgImg.set({ left: 0, top: 0, selectable: false, evented: false, hasControls: false });
+        // 27 Okt 2026: isPageBackground:true supaya applyDeskew()/applyBackgroundCorrection()
+        // bisa membedakan object ini dari layer lain (block cut, guide box, ttd, kop, dll) -
+        // lihat blok JS "PHOTO CORRECTION" di bawah.
+        bgImg.set({ left: 0, top: 0, selectable: false, evented: false, hasControls: false, isPageBackground: true });
         docFabricCanvas.add(bgImg);
         docFabricCanvas.sendToBack(bgImg);
         afterLoad();
@@ -2987,6 +3079,8 @@
     pendingBlockType = blockType;
     docFabricCanvas.setActiveObject(rect);
     docBlockAdjustGroup.style.display = 'flex';
+    docBlockApplyBtn.textContent = 'Apply Block';
+    docBlockCancelBtn.textContent = 'Cancel Block';
   }
 
   function cancelPendingBlock() {
@@ -3029,10 +3123,10 @@
     // second box without resolving the first would leave an orphaned rect
     // on the canvas.
     if (pendingBlockRect) cancelPendingBlock();
+    if (deskewActive) cancelDeskew(); // 27 Okt 2026: saling eksklusif dgn Deskew
     var turningOn = docDrawMode !== mode;
     docDrawMode = null;
-    docBlockTextBtn.classList.remove('active');
-    docAddExcludeZoneBtn.classList.remove('active'); // 27 Okt 2026: saling eksklusif dgn mode Exclude Zone
+    [docBlockTextBtn, docAddExcludeZoneBtn].forEach(function (b) { b.classList.remove('active'); });
     if (turningOn) {
       docDrawMode = mode;
       btn.classList.add('active');
@@ -3164,6 +3258,288 @@
     docFabricCanvas.requestRenderAll();
   });
 
+  /* =====================================================================
+     PHOTO CORRECTION (Tahap 14, 27 Okt 2026 - rangkuman_tool_ttd_dokumen.md
+     §14; REVISI 27 Okt 2026: Crop Page dihapus - Deskew sudah menghasilkan
+     efek crop yang sama saat 4 titik diseret ke pinggir kertas, lihat
+     komentar di atas applyDeskew(); Clean Background diganti total dari
+     contrast-stretch sederhana menjadi Remove White Background + Ink
+     Contrast, algoritma sama seperti Signature Library - lihat komentar di
+     atas applyBackgroundCorrection()). Deskew (4 titik sudut manual +
+     perspective warp) dan Remove White Background/Ink Contrast SEMUA
+     bekerja di level page.workingCanvas (bitmap pristine per halaman) dan
+     SEMUA per-halaman saja (tanpa "Apply to all pages", keputusan user
+     karena posisi kertas tiap foto biasanya beda-beda). Dimaksudkan dipakai
+     sebelum Block/Guide Box/Insert Signature/Letterhead - lihat urutan
+     yang disarankan di rangkuman_tool_ttd_dokumen.md §14.
+     ===================================================================== */
+
+  // Refresh background fabric.Image dari page.workingCanvas yang terkini (dipanggil
+  // setelah workingCanvas diganti oleh Crop/Deskew/Clean Background) - object lama
+  // (ditandai isPageBackground, lihat switchToPage()) dibuang, yang baru disisipkan ke
+  // belakang. Dipakai alih-alih memanggil switchToPage() lagi supaya object lain di
+  // halaman ini (ttd, kop, guide box, dll - sudah digeser/ditata user) tidak ikut
+  // dibongkar-pasang ulang lewat serialize/deserialize.
+  function refreshPageBackgroundImage(afterCb) {
+    var page = currentPage();
+    if (!page || !docFabricCanvas) return;
+    var old = docFabricCanvas.getObjects().filter(function (o) { return o.isPageBackground; });
+    fabric.Image.fromURL(page.workingCanvas.toDataURL('image/png'), function (bgImg) {
+      bgImg.set({ left: 0, top: 0, selectable: false, evented: false, hasControls: false, isPageBackground: true });
+      old.forEach(function (o) { docFabricCanvas.remove(o); });
+      docFabricCanvas.add(bgImg);
+      docFabricCanvas.sendToBack(bgImg);
+      docFabricCanvas.requestRenderAll();
+      if (typeof afterCb === 'function') afterCb();
+    });
+  }
+
+  /* ---- Remove White Background + Ink Contrast (27 Okt 2026, ganti total dari "Clean
+     Background" yang lama): Crop Page DIHAPUS (redundan - men-deskew dengan menyeret 4
+     titik ke pinggir kertas sudah menghasilkan efek crop yang sama, karena hasil warp
+     dipetakan penuh ke page.width x page.height). Clean Background yang lama (contrast-
+     stretch sederhana lewat sampling piksel paling terang) diganti ALGORITMA YANG SAMA
+     PERSIS seperti "Remove White Background"+"Ink Contrast" di Signature Library
+     (renderEditor() di atas): threshold near-white -> background, lalu ink-contrast
+     mendorong piksel non-background ke arah hitam pekat. Beda dari Signature Library:
+     di sana piksel background jadi TRANSPARAN (alpha=0) karena hasilnya ditempel di atas
+     dokumen lain; di sini page.workingCanvas ADALAH seluruh halaman (tidak ada apa pun di
+     belakangnya), jadi background dijadikan PUTIH SOLID (bukan transparan) - itu yang
+     dimaksud "remove white background": latar krem/kekuningan/bayangan ringan hasil foto
+     diratakan jadi putih bersih, bukan dilubangi.
+     Non-destructive: page.bgSourceCanvas menyimpan workingCanvas SEBELUM koreksi disentuh
+     sama sekali di halaman ini (diisi sekali saat slider pertama kali digeser), dan setiap
+     slider digeser, hasil dihitung ULANG dari situ (bukan dari hasil filter sebelumnya)
+     supaya repeated adjustment tidak menurunkan kualitas gambar - pola sama seperti
+     originalPhotoImageData di Signature Library. page.bgThreshold/page.bgInkContrast
+     menyimpan nilai slider per halaman (dipakai switchToPage() untuk sinkronisasi
+     tampilan slider, lihat afterLoad() di atas). Nilai default 0/0 = no-op (sama seperti
+     Clean Background yang lama OFF by default), jadi halaman yang belum disentuh sliders-
+     nya tidak berubah sama sekali. ---- */
+  function applyBackgroundCorrection(srcCanvas, threshold, inkFactor) {
+    var w = srcCanvas.width, h = srcCanvas.height;
+    var out = document.createElement('canvas');
+    out.width = w;
+    out.height = h;
+    var ctx = out.getContext('2d');
+    ctx.drawImage(srcCanvas, 0, 0);
+    var imgData = ctx.getImageData(0, 0, w, h);
+    var d = imgData.data;
+    for (var i = 0; i < d.length; i += 4) {
+      var r = d[i], g = d[i + 1], b = d[i + 2];
+      var isBg = threshold > 0 && r >= threshold && g >= threshold && b >= threshold;
+      if (isBg) {
+        d[i] = 255; d[i + 1] = 255; d[i + 2] = 255; // solid white, bukan transparan (lihat komentar di atas)
+      } else if (inkFactor > 0) {
+        d[i] = r * (1 - inkFactor);
+        d[i + 1] = g * (1 - inkFactor);
+        d[i + 2] = b * (1 - inkFactor);
+      }
+    }
+    ctx.putImageData(imgData, 0, 0);
+    return out;
+  }
+
+  function renderBackgroundCorrection() {
+    var page = currentPage();
+    if (!page) return;
+    var threshold = parseInt(docBgThresholdInput.value, 10) || 0;
+    var inkFactor = (parseInt(docInkContrastInput.value, 10) || 0) / 100;
+    page.bgThreshold = threshold;
+    page.bgInkContrast = parseInt(docInkContrastInput.value, 10) || 0;
+    if (!page.bgSourceCanvas) page.bgSourceCanvas = page.workingCanvas; // snapshot pertama kali disentuh
+    pushDocUndoSnapshot();
+    page.workingCanvas = (threshold > 0 || inkFactor > 0)
+      ? applyBackgroundCorrection(page.bgSourceCanvas, threshold, inkFactor)
+      : page.bgSourceCanvas;
+    refreshPageBackgroundImage(function () { syncCurrentPageState(); });
+  }
+
+  docBgThresholdInput.addEventListener('change', function () {
+    docBgThresholdValue.textContent = docBgThresholdInput.value;
+    renderBackgroundCorrection();
+  });
+  docBgThresholdInput.addEventListener('input', function () {
+    docBgThresholdValue.textContent = docBgThresholdInput.value; // live label saja; render di 'change' (lepas drag)
+  });
+  function stepBgThreshold(delta) {
+    var next = (parseInt(docBgThresholdInput.value, 10) || 0) + delta;
+    next = Math.max(0, Math.min(255, next));
+    docBgThresholdInput.value = next;
+    docBgThresholdValue.textContent = next;
+    renderBackgroundCorrection();
+  }
+  docBgThresholdMinusBtn.addEventListener('click', function () { stepBgThreshold(-5); });
+  docBgThresholdPlusBtn.addEventListener('click', function () { stepBgThreshold(5); });
+
+  docInkContrastInput.addEventListener('change', function () {
+    docInkContrastValue.textContent = docInkContrastInput.value;
+    renderBackgroundCorrection();
+  });
+  docInkContrastInput.addEventListener('input', function () {
+    docInkContrastValue.textContent = docInkContrastInput.value;
+  });
+  function stepDocInkContrast(delta) {
+    var next = (parseInt(docInkContrastInput.value, 10) || 0) + delta;
+    next = Math.max(0, Math.min(100, next));
+    docInkContrastInput.value = next;
+    docInkContrastValue.textContent = next;
+    renderBackgroundCorrection();
+  }
+  docInkContrastMinusBtn.addEventListener('click', function () { stepDocInkContrast(-5); });
+  docInkContrastPlusBtn.addEventListener('click', function () { stepDocInkContrast(5); });
+
+  /* ---- Deskew: 4 titik sudut digeser manual oleh user di atas foto, lalu perspective
+     warp (homography) meluruskannya ke rectangle penuh page.width x page.height. Ukuran
+     halaman TIDAK berubah (beda dari Crop Page) - jadi object lain di halaman ini TIDAK
+     perlu digeser, cukup background-nya yang diganti lewat refreshPageBackgroundImage(). ----
+     Solve sistem linear 8x8 (Gaussian elimination + partial pivot) untuk homography 4-titik -
+     dipakai Deskew untuk memetakan 4 sudut rectangle output ke 4 titik yang diseret user di
+     foto asli (inverse-warp per piksel output, supaya tidak ada "lubang" di hasil). */
+  function solveLinearSystem(A, b) {
+    var n = b.length;
+    for (var i = 0; i < n; i++) {
+      var maxRow = i;
+      for (var k = i + 1; k < n; k++) {
+        if (Math.abs(A[k][i]) > Math.abs(A[maxRow][i])) maxRow = k;
+      }
+      var tmpRow = A[i]; A[i] = A[maxRow]; A[maxRow] = tmpRow;
+      var tmpB = b[i]; b[i] = b[maxRow]; b[maxRow] = tmpB;
+      if (Math.abs(A[i][i]) < 1e-12) continue;
+      for (var k2 = i + 1; k2 < n; k2++) {
+        var f = A[k2][i] / A[i][i];
+        for (var j = i; j < n; j++) A[k2][j] -= f * A[i][j];
+        b[k2] -= f * b[i];
+      }
+    }
+    var x = new Array(n).fill(0);
+    for (var i2 = n - 1; i2 >= 0; i2--) {
+      var sum = b[i2];
+      for (var j2 = i2 + 1; j2 < n; j2++) sum -= A[i2][j2] * x[j2];
+      x[i2] = Math.abs(A[i2][i2]) < 1e-12 ? 0 : sum / A[i2][i2];
+    }
+    return x;
+  }
+
+  function computeHomography(src, dst) {
+    var A = [], b = [];
+    for (var i = 0; i < 4; i++) {
+      var x = src[i].x, y = src[i].y, X = dst[i].x, Y = dst[i].y;
+      A.push([x, y, 1, 0, 0, 0, -x * X, -y * X]); b.push(X);
+      A.push([0, 0, 0, x, y, 1, -x * Y, -y * Y]); b.push(Y);
+    }
+    var h = solveLinearSystem(A, b);
+    return [h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7], 1];
+  }
+
+  function applyHomographyPoint(H, x, y) {
+    var denom = H[6] * x + H[7] * y + H[8];
+    if (Math.abs(denom) < 1e-12) denom = 1e-12;
+    return { x: (H[0] * x + H[1] * y + H[2]) / denom, y: (H[3] * x + H[4] * y + H[5]) / denom };
+  }
+
+  // Inverse-warp: untuk tiap piksel OUTPUT (rectangle outW x outH), hitung posisinya di
+  // SUMBER (quadPoints, urutan TL/TR/BR/BL) lewat homography rect->quad, lalu sample
+  // nearest-neighbor. Piksel di luar sumber dibuat transparan.
+  function warpQuadToRect(srcCanvas, quadPoints, outW, outH) {
+    var rectCorners = [{ x: 0, y: 0 }, { x: outW, y: 0 }, { x: outW, y: outH }, { x: 0, y: outH }];
+    var H = computeHomography(rectCorners, quadPoints);
+    var out = document.createElement('canvas');
+    out.width = outW;
+    out.height = outH;
+    var outCtx = out.getContext('2d');
+    var outImgData = outCtx.createImageData(outW, outH);
+    var sw = srcCanvas.width, sh = srcCanvas.height;
+    var srcImgData = srcCanvas.getContext('2d').getImageData(0, 0, sw, sh).data;
+    for (var Y = 0; Y < outH; Y++) {
+      for (var X = 0; X < outW; X++) {
+        var p = applyHomographyPoint(H, X, Y);
+        var sx = Math.round(p.x), sy = Math.round(p.y);
+        var di = (Y * outW + X) * 4;
+        if (sx >= 0 && sx < sw && sy >= 0 && sy < sh) {
+          var si = (sy * sw + sx) * 4;
+          outImgData.data[di] = srcImgData[si];
+          outImgData.data[di + 1] = srcImgData[si + 1];
+          outImgData.data[di + 2] = srcImgData[si + 2];
+          outImgData.data[di + 3] = srcImgData[si + 3];
+        } else {
+          outImgData.data[di + 3] = 0;
+        }
+      }
+    }
+    outCtx.putImageData(outImgData, 0, 0);
+    return out;
+  }
+
+  var deskewHandles = null; // { circles:[4 x fabric.Circle], polygon: fabric.Polygon } selama adjust aktif
+  var deskewActive = false;
+
+  function startDeskew() {
+    if (!docEditorReady()) return;
+    if (deskewActive) { cancelDeskew(); return; }
+    if (pendingBlockRect) cancelPendingBlock(); // saling eksklusif dgn Block/Crop Page
+    var page = currentPage();
+    var margin = Math.round(Math.min(page.width, page.height) * 0.08);
+    var pts = [
+      { x: margin, y: margin },
+      { x: page.width - margin, y: margin },
+      { x: page.width - margin, y: page.height - margin },
+      { x: margin, y: page.height - margin },
+    ];
+    var polygon = new fabric.Polygon(pts, {
+      fill: 'rgba(0,210,255,0.08)', stroke: '#00d2ff', strokeWidth: 2,
+      selectable: false, evented: false, objectCaching: false,
+    });
+    docFabricCanvas.add(polygon);
+    var circles = pts.map(function (pt) {
+      var c = new fabric.Circle({
+        left: pt.x, top: pt.y, radius: 9, originX: 'center', originY: 'center',
+        fill: '#00d2ff', stroke: '#ffffff', strokeWidth: 2,
+        hasControls: false, hasBorders: false, isDeskewHandle: true,
+      });
+      docFabricCanvas.add(c);
+      c.on('moving', function () {
+        var idx = circles.indexOf(c);
+        polygon.points[idx] = { x: c.left, y: c.top };
+        polygon.dirty = true;
+        docFabricCanvas.requestRenderAll();
+      });
+      return c;
+    });
+    deskewHandles = { circles: circles, polygon: polygon };
+    deskewActive = true;
+    docDeskewBtn.classList.add('active');
+    docDeskewAdjustGroup.style.display = 'flex';
+    docFabricCanvas.requestRenderAll();
+  }
+
+  function cancelDeskew() {
+    if (deskewHandles && docFabricCanvas) {
+      deskewHandles.circles.forEach(function (c) { docFabricCanvas.remove(c); });
+      docFabricCanvas.remove(deskewHandles.polygon);
+      docFabricCanvas.requestRenderAll();
+    }
+    deskewHandles = null;
+    deskewActive = false;
+    docDeskewBtn.classList.remove('active');
+    docDeskewAdjustGroup.style.display = 'none';
+  }
+
+  function applyDeskew() {
+    if (!deskewHandles) return;
+    var page = currentPage();
+    var pts = deskewHandles.circles.map(function (c) { return { x: c.left, y: c.top }; });
+    cancelDeskew();
+    pushDocUndoSnapshot();
+    var warped = warpQuadToRect(page.workingCanvas, pts, page.width, page.height);
+    page.workingCanvas = warped;
+    refreshPageBackgroundImage(function () { syncCurrentPageState(); });
+  }
+
+  docDeskewBtn.addEventListener('click', startDeskew);
+  docDeskewApplyBtn.addEventListener('click', applyDeskew);
+  docDeskewCancelBtn.addEventListener('click', cancelDeskew);
+
   // 27 Okt 2026: lihat komentar HTML #docZoneDoneGroup di atas untuk latar
   // belakang fitur ini. showZoneDoneGroup() TIDAK menutup grup ribbon lain
   // (beda dari wireDocRibbonMenus() punya closeAll()) - cuma menampilkan
@@ -3209,6 +3585,7 @@
     // sama seperti startBlockDraw() membuang pending block kalau mulai
     // gambar block baru, supaya tidak ada rect nyasar tertinggal di canvas.
     if (pendingBlockRect) cancelPendingBlock();
+    if (deskewActive) cancelDeskew(); // 27 Okt 2026: saling eksklusif dgn Deskew
     var turningOn = docDrawMode !== 'excludeZone';
     docDrawMode = null;
     docBlockTextBtn.classList.remove('active');
@@ -3276,7 +3653,7 @@
         fabric.util.enlivenObjects([rectJson], function (enlivened) {
           enlivened.forEach(function (o) { tmp.add(o); });
           tmp.renderAll();
-          page.json = tmp.toJSON(['blockType', 'isGuideBox', 'isGuideLine', 'guideOrientation', 'letterheadSyncId', 'letterheadPart', 'isExcludeZone', 'excludeSyncId']);
+          page.json = tmp.toJSON(['blockType', 'isGuideBox', 'isGuideLine', 'guideOrientation', 'letterheadSyncId', 'letterheadPart', 'isExcludeZone', 'excludeSyncId', 'isPageBackground']);
           tmp.dispose();
           resolve();
         });
@@ -3544,7 +3921,7 @@
           });
         })).then(function () {
           tmp.renderAll();
-          page.json = tmp.toJSON(['blockType', 'isGuideBox', 'isGuideLine', 'guideOrientation', 'letterheadSyncId', 'letterheadPart', 'isExcludeZone', 'excludeSyncId']);
+          page.json = tmp.toJSON(['blockType', 'isGuideBox', 'isGuideLine', 'guideOrientation', 'letterheadSyncId', 'letterheadPart', 'isExcludeZone', 'excludeSyncId', 'isPageBackground']);
           tmp.dispose();
           resolve();
         });
