@@ -1,0 +1,7 @@
+[2026-10-27 12:38:03] save_single_lens by user=LenZa786 — stock / SINGLE VISION / SV HMC  [sph 0..-800  cyl -25..-200  add 0..0  comb 0]
+[2026-10-27 12:38:31] save_single_lens by user=LenZa786 — stock / SINGLE VISION / SV HMC  [sph 0..-800  cyl -25..-200  add 0..0  comb 0]
+[2026-10-27 12:38:36] save_single_lens by user=LenZa786 — stock / SINGLE VISION / SV HMC (2)  [sph 0..400  cyl 0..0  add 0..0  comb 0]
+[2026-10-27 12:38:43] save_single_lens by user=LenZa786 — stock / SINGLE VISION / SV HMC (3)  [sph 0..-800  cyl 0..0  add 0..0  comb 0]
+[2026-10-27 12:38:49] save_single_lens by user=LenZa786 — stock / SINGLE VISION / SV HMC (4)  [sph 25..400  cyl 0..0  add 0..0  comb 0]
+[2026-10-27 12:38:54] save_single_lens by user=LenZa786 — stock / SINGLE VISION / SV HMC (5)  [sph 0..-800  cyl -25..-200  add 0..0  comb 0]
+[2026-10-27 13:06:29] save_single_lens by user=LenZa786 — lab / SINGLE VISION / SV SHMC  [sph 850..-1100  cyl -25..-400  add 0..0  comb -1100]

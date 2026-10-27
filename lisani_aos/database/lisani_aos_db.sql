@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Oct 25, 2026 at 11:09 AM
+-- Generation Time: Oct 27, 2026 at 11:53 AM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -34,6 +34,40 @@ CREATE TABLE `activities` (
   `relative_path` varchar(255) NOT NULL,
   `created_by` int(10) UNSIGNED NOT NULL,
   `created_at` datetime DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `bookings`
+--
+
+CREATE TABLE `bookings` (
+  `id` int(10) UNSIGNED NOT NULL,
+  `customer_id` int(10) UNSIGNED NOT NULL,
+  `invoice_id` int(10) UNSIGNED NOT NULL,
+  `booking_date` date NOT NULL,
+  `status` enum('active','completed','cancelled') NOT NULL DEFAULT 'active',
+  `created_by` int(10) UNSIGNED DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `booking_items`
+--
+
+CREATE TABLE `booking_items` (
+  `id` int(10) UNSIGNED NOT NULL,
+  `booking_id` int(10) UNSIGNED NOT NULL,
+  `logistic_id` int(10) UNSIGNED NOT NULL,
+  `stock_source` enum('normal','defective') NOT NULL DEFAULT 'normal',
+  `qty_booked` decimal(12,2) NOT NULL,
+  `qty_released` decimal(12,2) NOT NULL DEFAULT 0.00,
+  `price` decimal(15,2) NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
@@ -161,7 +195,11 @@ CREATE TABLE `edited_documents` (
 --
 
 INSERT INTO `edited_documents` (`id`, `document_name`, `document_date`, `activity_title`, `source_filename`, `signature_ids`, `letterhead_ids`, `page_count`, `stored_filename`, `file_path`, `file_ext`, `file_size`, `uploaded_by`, `created_at`) VALUES
-(1, 'spks - try', '2026-10-21', 'try', 'Surat Perjanjian Kerja Sama.pdf', '1', NULL, 2, 'spks_-_try.pdf', 'company_activity/2026/10/try/edited_documents/spks_-_try.pdf', 'pdf', 162332, 1, '2026-10-21 10:24:34');
+(1, 'spks - try', '2026-10-21', 'try', 'Surat Perjanjian Kerja Sama.pdf', '1', NULL, 2, 'spks_-_try.pdf', 'company_activity/2026/10/try/edited_documents/spks_-_try.pdf', 'pdf', 162332, 1, '2026-10-21 10:24:34'),
+(2, 'try 3', '2026-10-27', 'try', 'Surat Perjanjian Kerja Sama.pdf', NULL, NULL, 2, 'try_3.pdf', 'company_activity/2026/10/try/edited_documents/try_3.pdf', 'pdf', 116907, 1, '2026-10-27 02:17:14'),
+(3, 'try 4', '2026-10-27', 'try', 'Surat Perjanjian Kerja Sama.pdf', NULL, '2', 2, 'try_4.pdf', 'company_activity/2026/10/try/edited_documents/try_4.pdf', 'pdf', 274309, 1, '2026-10-27 03:44:24'),
+(4, 'try 5', '2026-10-27', 'try', 'Surat Perjanjian Kerja Sama.pdf', NULL, '2', 2, 'try_5.pdf', 'company_activity/2026/10/try/edited_documents/try_5.pdf', 'pdf', 333000, 1, '2026-10-27 04:07:01'),
+(5, 'try 6', '2026-10-27', 'try', 'Surat Perjanjian Kerja Sama.pdf', NULL, '2', 2, 'try_6.pdf', 'company_activity/2026/10/try/edited_documents/try_6.pdf', 'pdf', 277018, 1, '2026-10-27 04:08:54');
 
 -- --------------------------------------------------------
 
@@ -356,6 +394,13 @@ CREATE TABLE `letterhead_library` (
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+--
+-- Dumping data for table `letterhead_library`
+--
+
+INSERT INTO `letterhead_library` (`id`, `letterhead_name`, `company_name`, `origin`, `is_main`, `header_original_filename`, `header_stored_filename`, `header_file_path`, `header_file_ext`, `header_file_size`, `has_footer`, `footer_original_filename`, `footer_stored_filename`, `footer_file_path`, `footer_file_ext`, `footer_file_size`, `uploaded_by`, `created_at`, `updated_at`) VALUES
+(2, 'LISANI LETTERHEAD', 'PT. LISANI ALAF JAYA', 'MEDAN', 1, 'Picture1.png', 'header_lisani_letterhead.png', 'letterhead/pt_lisani_alaf_jaya/medan/header_lisani_letterhead.png', 'png', 48733, 1, 'Picture2.png', 'footer_lisani_letterhead.png', 'letterhead/pt_lisani_alaf_jaya/medan/footer_lisani_letterhead.png', 'png', 29503, 1, '2026-10-25 17:28:55', '2026-10-25 17:28:55');
+
 -- --------------------------------------------------------
 
 --
@@ -524,7 +569,7 @@ CREATE TABLE `users` (
 --
 
 INSERT INTO `users` (`user_id`, `username`, `password_hash`, `role`, `is_approved`, `created_at`, `last_login`, `session_token`, `session_expires`) VALUES
-(1, 'Rais786', '$2y$10$QciWVGPK9aGHjy05rBoXgOWfCAesfocowc0vt4QCMHVeVzsVuGDS6', 'admin', 1, '2026-09-10 21:34:57', '2026-10-24 13:57:43', NULL, NULL);
+(1, 'Rais786', '$2y$10$QciWVGPK9aGHjy05rBoXgOWfCAesfocowc0vt4QCMHVeVzsVuGDS6', 'admin', 1, '2026-09-10 21:34:57', '2026-10-27 11:26:34', '543f1c3288a9fc08c8836de4715bb517b4d03ee23f5885a7ad7dff3efc0d63d3', '2026-10-27 19:26:34');
 
 --
 -- Indexes for dumped tables
@@ -537,6 +582,23 @@ ALTER TABLE `activities`
   ADD PRIMARY KEY (`id`),
   ADD UNIQUE KEY `uq_relative_path` (`relative_path`),
   ADD KEY `idx_created_by` (`created_by`);
+
+--
+-- Indexes for table `bookings`
+--
+ALTER TABLE `bookings`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_bookings_customer` (`customer_id`),
+  ADD KEY `idx_bookings_invoice` (`invoice_id`),
+  ADD KEY `idx_bookings_status` (`status`);
+
+--
+-- Indexes for table `booking_items`
+--
+ALTER TABLE `booking_items`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_booking_items_booking` (`booking_id`),
+  ADD KEY `idx_booking_items_logistic` (`logistic_id`);
 
 --
 -- Indexes for table `company_documents`
@@ -728,6 +790,18 @@ ALTER TABLE `activities`
   MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
+-- AUTO_INCREMENT for table `bookings`
+--
+ALTER TABLE `bookings`
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `booking_items`
+--
+ALTER TABLE `booking_items`
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
 -- AUTO_INCREMENT for table `company_documents`
 --
 ALTER TABLE `company_documents`
@@ -761,7 +835,7 @@ ALTER TABLE `disbursement_categories`
 -- AUTO_INCREMENT for table `edited_documents`
 --
 ALTER TABLE `edited_documents`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
 
 --
 -- AUTO_INCREMENT for table `investors`
@@ -815,7 +889,7 @@ ALTER TABLE `invoice_refunds`
 -- AUTO_INCREMENT for table `letterhead_library`
 --
 ALTER TABLE `letterhead_library`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
 -- AUTO_INCREMENT for table `logistics`

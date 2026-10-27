@@ -7,7 +7,8 @@
                 "features": [
                     "UV400",
                     "SCRATCH-RESISTANT COATING",
-                    "PURPLE \/ GREEN AR COATING"
+                    "PURPLE \/ GREEN AR COATING",
+                    "INDEX 1.56"
                 ],
                 "limits": {
                     "sph_from": 0,
@@ -18,8 +19,7 @@
                     "add_to": 0,
                     "comb_max": 0,
                     "note": ""
-                },
-                "source": "Off-Brand"
+                }
             },
             "SV HMC (2)": {
                 "cost": 20000,
@@ -27,7 +27,8 @@
                 "features": [
                     "UV400",
                     "SCRATCH-RESISTANT COATING",
-                    "PURPLE \/ GREEN AR COATING"
+                    "PURPLE \/ GREEN AR COATING",
+                    "INDEX 1.56"
                 ],
                 "limits": {
                     "sph_from": 0,
@@ -38,8 +39,7 @@
                     "add_to": 0,
                     "comb_max": 0,
                     "note": ""
-                },
-                "source": "Off-Brand"
+                }
             },
             "SV HMC (3)": {
                 "cost": 57000,
@@ -47,7 +47,8 @@
                 "features": [
                     "UV400",
                     "SCRATCH-RESISTANT COATING",
-                    "PURPLE \/ GREEN AR COATING"
+                    "PURPLE \/ GREEN AR COATING",
+                    "INDEX 1.56"
                 ],
                 "limits": {
                     "sph_from": 0,
@@ -58,8 +59,7 @@
                     "add_to": 0,
                     "comb_max": 0,
                     "note": ""
-                },
-                "source": "Domas"
+                }
             },
             "SV HMC (4)": {
                 "cost": 57000,
@@ -67,7 +67,8 @@
                 "features": [
                     "UV400",
                     "SCRATCH-RESISTANT COATING",
-                    "PURPLE \/ GREEN AR COATING"
+                    "PURPLE \/ GREEN AR COATING",
+                    "INDEX 1.56"
                 ],
                 "limits": {
                     "sph_from": 25,
@@ -78,8 +79,7 @@
                     "add_to": 0,
                     "comb_max": 0,
                     "note": ""
-                },
-                "source": "Domas"
+                }
             },
             "SV HMC (5)": {
                 "cost": 57000,
@@ -87,7 +87,8 @@
                 "features": [
                     "UV400",
                     "SCRATCH-RESISTANT COATING",
-                    "PURPLE \/ GREEN AR COATING"
+                    "PURPLE \/ GREEN AR COATING",
+                    "INDEX 1.56"
                 ],
                 "limits": {
                     "sph_from": 0,
@@ -98,10 +99,153 @@
                     "add_to": 0,
                     "comb_max": 0,
                     "note": ""
+                }
+            }
+        }
+    },
+    "lab": {
+        "SINGLE VISION": {
+            "SV HMC": {
+                "cost": 127000,
+                "selling": 486000,
+                "features": [
+                    "UV400",
+                    "SCRATCH-RESISTANT COATING",
+                    "PURPLE \/ GREEN AR COATING",
+                    "INDEX 1.56"
+                ],
+                "limits": {
+                    "sph_from": 850,
+                    "sph_to": -1100,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": -1100,
+                    "note": ""
+                },
+                "source": "Domas"
+            },
+            "SV SHMC": {
+                "cost": 145000,
+                "selling": 543000,
+                "features": [
+                    "UV400",
+                    "SCRATCH-RESISTANT COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "SATIN GREEN AR COATING",
+                    "INDEX 1.56"
+                ],
+                "limits": {
+                    "sph_from": 850,
+                    "sph_to": -1100,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": -1100,
+                    "note": ""
+                },
+                "source": "Domas"
+            },
+            "SV SHMC (2)": {
+                "cost": 160000,
+                "selling": 629000,
+                "features": [
+                    "UV400",
+                    "SCRATCH-RESISTANT COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "SATIN BLUE AR COATING",
+                    "INDEX 1.56"
+                ],
+                "limits": {
+                    "sph_from": 850,
+                    "sph_to": -1100,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": -1100,
+                    "note": ""
+                },
+                "source": "Domas"
+            },
+            "SV LENTICULAR": {
+                "cost": 284000,
+                "selling": 772000,
+                "features": [
+                    "UV400",
+                    "PURPLE \/ GREEN AR COATING",
+                    "INDEX 1.56",
+                    "HIGH-POWER LENSE",
+                    "SCRATCH-RESISTANT COATING"
+                ],
+                "limits": {
+                    "sph_from": 700,
+                    "sph_to": 1700,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 1700,
+                    "note": ""
+                },
+                "source": "Domas"
+            },
+            "SV LENTICULAR (2)": {
+                "cost": 294000,
+                "selling": 829000,
+                "features": [
+                    "UV400",
+                    "SCRATCH-RESISTANT COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "SATIN GREEN AR COATING",
+                    "HIGH-POWER LENSE",
+                    "INDEX 1.56"
+                ],
+                "limits": {
+                    "sph_from": 700,
+                    "sph_to": 1700,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 1700,
+                    "note": ""
+                },
+                "source": "Domas"
+            },
+            "SV LENTICULAR (3)": {
+                "cost": 304000,
+                "selling": 915000,
+                "features": [
+                    "UV400",
+                    "SCRATCH-RESISTANT COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "SATIN BLUE AR COATING",
+                    "INDEX 1.56",
+                    "HIGH-POWER LENSE"
+                ],
+                "limits": {
+                    "sph_from": 700,
+                    "sph_to": 1700,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 1700,
+                    "note": ""
                 },
                 "source": "Domas"
             }
         }
-    },
-    "lab": []
+    }
 }

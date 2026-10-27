@@ -305,6 +305,13 @@
                 $resp['message']  = "\"$new_name\" sudah ada di \"$new_cat\" — disimpan sebagai \"$save_name\".";
             }
 
+            // Preserve fields that this per-lens save form doesn't carry (e.g. "source",
+            // which only the Add New Lens form sets). Without this, every per-card save
+            // would silently wipe out "source" because this handler always rebuilt the
+            // entry from scratch instead of merging into the existing one. Captured
+            // BEFORE the old entry is unset below (rename/move case).
+            $preserved_source = $data[$group][$old_cat][$old_name]['source'] ?? '';
+
             // Remove old entry (rename / move)
             if ($is_rename_or_move || $save_name !== $old_name) {
                 unset($data[$group][$old_cat][$old_name]);
@@ -315,6 +322,7 @@
             $data[$group][$new_cat][$save_name] = [
                 'cost' => $cost, 'selling' => $selling,
                 'features' => $features, 'limits' => $limits,
+                'source' => $preserved_source,
             ];
 
             $ok = @write_lens_data($json_file, $data);
@@ -940,6 +948,80 @@
             .add-form-grid { display:flex; flex-direction:column; gap:14px; }
             .form-field label { display:block; font-size:11px; font-weight:600; color:#6b7280; text-transform:uppercase; letter-spacing:.5px; margin-bottom:6px; }
 
+            /* ── Required-field error highlight (Add New Lens form) ──── */
+            .field-invalid { border-color:#f87171 !important; box-shadow:0 0 0 3px rgba(248,113,113,.15) !important; }
+            .field-error-msg {
+                font-size:11px; color:#f87171; margin-top:6px;
+                display:none; font-weight:600;
+            }
+            .field-error-msg.show { display:block; }
+
+            /* ── Fly Window: review-before-confirm panel for Add New Lens ── */
+            .fly-window-overlay {
+                position:fixed; inset:0; background:rgba(0,0,0,.6);
+                display:none; align-items:center; justify-content:center;
+                z-index:10000; padding:20px; box-sizing:border-box;
+                animation:flyFadeIn .2s ease-out;
+            }
+            .fly-window-overlay.active { display:flex; }
+            @keyframes flyFadeIn { from{opacity:0} to{opacity:1} }
+            @keyframes flySlideUp { from{opacity:0; transform:translateY(16px) scale(.98);} to{opacity:1; transform:translateY(0) scale(1);} }
+            .fly-window {
+                background:#1c1f25; border:1px solid #2e3138; border-radius:14px;
+                width:100%; max-width:480px; max-height:86vh;
+                display:flex; flex-direction:column;
+                box-shadow:0 20px 60px rgba(0,0,0,.5);
+                animation:flySlideUp .25s ease-out;
+            }
+            .fly-window-header {
+                padding:18px 22px; border-bottom:1px solid #2a2d34;
+                display:flex; align-items:center; justify-content:space-between;
+            }
+            .fly-window-header h3 {
+                margin:0; font-size:13px; font-weight:700; color:#00adb5;
+                text-transform:uppercase; letter-spacing:1px;
+            }
+            .fly-window-close {
+                background:none; border:none; color:#6b7280; font-size:18px;
+                cursor:pointer; line-height:1; padding:2px 6px; border-radius:6px;
+                transition:all .15s;
+            }
+            .fly-window-close:hover { color:#f87171; background:#2a1210; }
+            .fly-window-body { padding:18px 22px; overflow-y:auto; flex:1; }
+            .fly-review-row {
+                display:flex; justify-content:space-between; gap:14px;
+                padding:9px 0; border-bottom:1px dashed #2a2d34;
+                font-size:13px;
+            }
+            .fly-review-row:last-child { border-bottom:none; }
+            .fly-review-row .fly-label {
+                color:#6b7280; font-weight:600; font-size:11px;
+                text-transform:uppercase; letter-spacing:.4px;
+                flex:0 0 38%; padding-top:1px;
+            }
+            .fly-review-row .fly-value {
+                color:#e5e7eb; text-align:right; flex:1; word-break:break-word;
+            }
+            .fly-review-row .fly-value.empty { color:#4b5563; font-style:italic; }
+            .fly-review-row .fly-value.price { color:#34d399; font-weight:700; }
+            .fly-review-note {
+                margin-top:4px; padding:10px 12px; background:#13151a;
+                border:1px solid #2a2d34; border-radius:8px;
+                color:#9ca3af; font-size:12px; line-height:1.5; white-space:pre-wrap;
+            }
+            .fly-window-footer {
+                padding:16px 22px; border-top:1px solid #2a2d34;
+                display:flex; gap:10px; justify-content:flex-end;
+            }
+            .fly-btn {
+                padding:9px 18px; border-radius:8px; font-size:12px; font-weight:700;
+                letter-spacing:.4px; cursor:pointer; transition:all .2s; border:1px solid transparent;
+            }
+            .fly-btn-cancel { background:#23262d; color:#9ca3af; border-color:#2e3138; }
+            .fly-btn-cancel:hover { background:#2a2d34; color:#e5e7eb; }
+            .fly-btn-confirm { background:#00adb5; color:#0f1115; }
+            .fly-btn-confirm:hover { box-shadow:0 0 0 3px rgba(0,173,181,.2); }
+
             /* ── Save bar ────────────────────────────────────────────── */
             .save-bar { margin-top:20px; padding:14px 20px; background:#1e2127; border:1px solid #2e3138; border-radius:12px; display:flex; justify-content:flex-end; }
             #form-price-list { width:100%; display:flex; flex-direction:column; align-items:center; }
@@ -1284,6 +1366,7 @@
                                         <option value="stock">STOCK LENS</option>
                                         <option value="lab">LAB LENS (CUSTOM ORDER)</option>
                                     </select>
+                                    <p class="field-error-msg" id="err_new_group">Group is required.</p>
                                 </div>
                                 <div class="form-field">
                                     <label>Category</label>
@@ -1310,12 +1393,14 @@
                                         placeholder="e.g. ASPHERIC"
                                         style="display:none; margin-top:8px;" autocomplete="off">
                                     <input type="hidden" name="new_category" id="new_category_hidden" value="<?php echo htmlspecialchars($all_cats[0] ?? 'SINGLE VISION'); ?>">
+                                    <p class="field-error-msg" id="err_new_category">Category is required.</p>
                                 </div>
                                 <div class="form-field">
                                     <label>Lens Name</label>
-                                    <input type="text" name="new_lense_name" class="input-field uppercase-input"
+                                    <input type="text" name="new_lense_name" id="new_lense_name_input" class="input-field uppercase-input"
                                         oninput="this.value=this.value.toUpperCase()"
                                         placeholder="e.g. SV-CRMC" required>
+                                    <p class="field-error-msg" id="err_new_lense_name">Lens Name is required.</p>
                                 </div>
 
                                 <div class="form-field">
@@ -1327,6 +1412,7 @@
                                         <?php endforeach; ?>
                                     </select>
                                     <p class="description" style="margin-top:6px;">Managed in System Config &rarr; Lens Feature Presets &rarr; Sources.</p>
+                                    <p class="field-error-msg" id="err_new_lense_source">Source is required.</p>
                                 </div>
 
                                 <div class="lens-prices-row" style="margin:0;">
@@ -1335,18 +1421,21 @@
                                         <input type="text" id="add_display_cost" class="input-field" placeholder="IDR 0"
                                             oninput="formatCurrencyAdd(this,'add_real_cost')" onfocus="this.select()" autocomplete="off" required>
                                         <input type="hidden" name="new_lense_price_cost" id="add_real_cost">
+                                        <p class="field-error-msg" id="err_add_real_cost">Cost Price is required.</p>
                                     </div>
                                     <div class="price-col sell-col form-field" style="margin:0;">
                                         <label>Selling Price</label>
                                         <input type="text" id="add_display_selling" class="input-field" placeholder="IDR 0"
                                             oninput="formatCurrencyAdd(this,'add_real_selling')" onfocus="this.select()" autocomplete="off" required>
                                         <input type="hidden" name="new_lense_price_selling" id="add_real_selling">
+                                        <p class="field-error-msg" id="err_add_real_selling">Selling Price is required.</p>
                                     </div>
                                 </div>
 
                                 <!-- Features -->
                                 <div class="form-field">
                                     <label>Features</label>
+                                    <p class="field-error-msg" id="err_feat_hidden_new_lense">At least one Feature must be selected.</p>
                                     <div class="features-preset-label" style="margin-top:0;">Quick select &mdash; click to toggle:</div>
                                     <div class="preset-features-grid" id="preset-new_lense"></div>
                                     <div class="features-selected-label">Selected features:</div>
@@ -1409,10 +1498,30 @@
 
                             </div>
                             <div style="margin-top:20px;">
-                                <button type="submit" name="add_new_lense" class="btn-save" style="width:100%;">Add Lens</button>
+                                <input type="hidden" name="add_new_lense" value="1">
+                                <button type="button" id="btn-review-add-lens" class="btn-save" style="width:100%;" onclick="handleAddLensSubmit()">Add Lens</button>
                             </div>
                         </div>
                     </form>
+
+                    <!-- ════════════════════════════════════
+                        FLY WINDOW: Review New Lens Before Save
+                    ════════════════════════════════════ -->
+                    <div class="fly-window-overlay" id="fly-window-overlay">
+                        <div class="fly-window" role="dialog" aria-modal="true" aria-labelledby="fly-window-title">
+                            <div class="fly-window-header">
+                                <h3 id="fly-window-title">Review New Lens</h3>
+                                <button type="button" class="fly-window-close" aria-label="Close" onclick="closeFlyWindow()">&times;</button>
+                            </div>
+                            <div class="fly-window-body" id="fly-window-body">
+                                <!-- Filled dynamically by JS before the user confirms -->
+                            </div>
+                            <div class="fly-window-footer">
+                                <button type="button" class="fly-btn fly-btn-cancel" onclick="closeFlyWindow()">Back &amp; Edit</button>
+                                <button type="button" class="fly-btn fly-btn-confirm" id="fly-window-confirm-btn" onclick="confirmAddLens()">Confirm &amp; Save</button>
+                            </div>
+                        </div>
+                    </div>
 
                     <!-- ════════════════════════════════════
                         PRICE LIST
@@ -2170,6 +2279,136 @@
                 document.getElementById('del_last_category').value = fc ? fc.value : (category || '');
                 document.getElementById('delete-lense-form').submit();
             }
+
+            // ─── Add New Lens: validate required fields, then show Fly Window ──
+            // Required before "Add Lens" can proceed: Group, Category, Lens Name,
+            // Source, Cost Price, Selling Price, and at least one Feature.
+            function clearAddLensErrors() {
+                document.querySelectorAll('#form-add-lense .field-error-msg').forEach(el => el.classList.remove('show'));
+                document.querySelectorAll('#form-add-lense .field-invalid').forEach(el => el.classList.remove('field-invalid'));
+            }
+            function markAddLensFieldInvalid(fieldEl, errId) {
+                if (fieldEl) fieldEl.classList.add('field-invalid');
+                const errEl = document.getElementById(errId);
+                if (errEl) errEl.classList.add('show');
+            }
+            function validateAddLensForm() {
+                clearAddLensErrors();
+                let firstInvalid = null;
+                let ok = true;
+
+                const groupSel    = document.getElementById('new_group_select');
+                const catHidden   = document.getElementById('new_category_hidden');
+                const catSel      = document.getElementById('new_category_select');
+                const nameInput   = document.getElementById('new_lense_name_input');
+                const sourceSel   = document.getElementById('new_lense_source_select');
+                const costHidden  = document.getElementById('add_real_cost');
+                const costDisplay = document.getElementById('add_display_cost');
+                const sellHidden  = document.getElementById('add_real_selling');
+                const sellDisplay = document.getElementById('add_display_selling');
+                const featuresArr = lenseFeatures['new_lense'] || [];
+
+                if (!groupSel || !groupSel.value) {
+                    markAddLensFieldInvalid(groupSel, 'err_new_group');
+                    ok = false; firstInvalid = firstInvalid || groupSel;
+                }
+                if (!catHidden || !catHidden.value.trim()) {
+                    markAddLensFieldInvalid(catSel, 'err_new_category');
+                    ok = false; firstInvalid = firstInvalid || catSel;
+                }
+                if (!nameInput || !nameInput.value.trim()) {
+                    markAddLensFieldInvalid(nameInput, 'err_new_lense_name');
+                    ok = false; firstInvalid = firstInvalid || nameInput;
+                }
+                if (!sourceSel || !sourceSel.value.trim()) {
+                    markAddLensFieldInvalid(sourceSel, 'err_new_lense_source');
+                    ok = false; firstInvalid = firstInvalid || sourceSel;
+                }
+                if (!costHidden || !costHidden.value.trim()) {
+                    markAddLensFieldInvalid(costDisplay, 'err_add_real_cost');
+                    ok = false; firstInvalid = firstInvalid || costDisplay;
+                }
+                if (!sellHidden || !sellHidden.value.trim()) {
+                    markAddLensFieldInvalid(sellDisplay, 'err_add_real_selling');
+                    ok = false; firstInvalid = firstInvalid || sellDisplay;
+                }
+                if (!featuresArr.length) {
+                    const errEl = document.getElementById('err_feat_hidden_new_lense');
+                    if (errEl) errEl.classList.add('show');
+                    ok = false; firstInvalid = firstInvalid || document.getElementById('preset-new_lense');
+                }
+
+                if (!ok && firstInvalid && typeof firstInvalid.scrollIntoView === 'function') {
+                    firstInvalid.scrollIntoView({behavior:'smooth', block:'center'});
+                    setTimeout(() => { try { firstInvalid.focus(); } catch(e) {} }, 250);
+                }
+                return ok;
+            }
+
+            // Format a raw IDR integer string back into "IDR 1.234.567" for display
+            function formatIdrForReview(raw) {
+                const v = String(raw || '').replace(/\D/g,'');
+                if (!v) return '';
+                return 'IDR ' + new Intl.NumberFormat('id-ID').format(v);
+            }
+
+            function buildFlyReviewRow(label, value, extraClass) {
+                const hasValue = value !== null && value !== undefined && String(value).trim() !== '';
+                const cls = 'fly-value' + (extraClass ? ' ' + extraClass : '') + (hasValue ? '' : ' empty');
+                const shown = hasValue ? escapeHtml(String(value)) : '&mdash; none &mdash;';
+                return `<div class="fly-review-row"><div class="fly-label">${escapeHtml(label)}</div><div class="${cls}">${shown}</div></div>`;
+            }
+
+            // Step 1: validate, then populate and open the Fly Window for review
+            function handleAddLensSubmit() {
+                if (!validateAddLensForm()) return;
+
+                const groupSel  = document.getElementById('new_group_select');
+                const groupText = groupSel.options[groupSel.selectedIndex].text;
+                const category  = document.getElementById('new_category_hidden').value.trim();
+                const name      = document.getElementById('new_lense_name_input').value.trim();
+                const source    = document.getElementById('new_lense_source_select').value.trim();
+                const cost      = document.getElementById('add_real_cost').value;
+                const selling   = document.getElementById('add_real_selling').value;
+                const features  = (lenseFeatures['new_lense'] || []).join(', ');
+                const note      = (document.querySelector('[name="new_limits[note]"]') || {}).value || '';
+
+                const body = document.getElementById('fly-window-body');
+                body.innerHTML =
+                    buildFlyReviewRow('Group', groupText) +
+                    buildFlyReviewRow('Category', category) +
+                    buildFlyReviewRow('Lens Name', name) +
+                    buildFlyReviewRow('Source', source) +
+                    buildFlyReviewRow('Cost Price', formatIdrForReview(cost), 'price') +
+                    buildFlyReviewRow('Selling Price', formatIdrForReview(selling), 'price') +
+                    buildFlyReviewRow('Features', features) +
+                    (note.trim() ? `<div class="fly-review-note">&#9888; Note: ${escapeHtml(note.trim())}</div>` : '');
+
+                document.getElementById('fly-window-overlay').classList.add('active');
+            }
+
+            function closeFlyWindow() {
+                document.getElementById('fly-window-overlay').classList.remove('active');
+            }
+
+            // Step 2: user confirmed in the Fly Window — submit the real form
+            function confirmAddLens() {
+                closeFlyWindow();
+                document.getElementById('form-add-lense').submit();
+            }
+
+            // Click outside the Fly Window panel closes it (same as Cancel)
+            document.addEventListener('click', function(e) {
+                const overlay = document.getElementById('fly-window-overlay');
+                if (overlay && e.target === overlay) closeFlyWindow();
+            });
+            // Esc key closes the Fly Window
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape') {
+                    const overlay = document.getElementById('fly-window-overlay');
+                    if (overlay && overlay.classList.contains('active')) closeFlyWindow();
+                }
+            });
 
             // ─── Category dropdown / custom input ────────────────────────
             function handleCategorySelect(sel) {
