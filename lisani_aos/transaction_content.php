@@ -779,6 +779,7 @@ $currentYear     = date('Y');
   </style>
   <div class="tab-group" id="stTabGroup">
     <div class="tab active" data-st-tab="order">New Order</div>
+    <div class="tab" data-st-tab="booking">Booking</div>
     <div class="tab" data-st-tab="returns">Returns</div>
     <div class="tab" data-st-tab="customers">Customers</div>
   </div>
@@ -834,6 +835,55 @@ $currentYear     = date('Y');
       <div style="display:flex; justify-content:flex-end; margin-top:var(--space-4);">
         <button type="button" class="btn btn-primary" id="btnStReview">Review Order</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Tab: Booking — customer pays DP (full or partial) for qty of specific
+       products; stock is RESERVED immediately (remaining_primary_qty /
+       defective_qty goes down) but nothing leaves the warehouse yet — no
+       logistic_movements row, total_taken_qty unchanged. Releasing the
+       reserved stock (partially or fully) is a separate feature, not built
+       yet. See ajax/create_booking.php. -->
+  <div id="stTabPanelBooking" style="display:none;">
+    <div class="empty-sub" id="bkSuccessBox" style="display:none; color:var(--success); margin-bottom:var(--space-3);"></div>
+
+    <div class="form-group">
+      <div class="label">Customer</div>
+      <select class="select" id="bkCustomer">
+        <option value="">-- select customer --</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <div class="label">Booking Date</div>
+      <input type="date" class="input" id="bkDate">
+    </div>
+
+    <div class="label">Products</div>
+    <div class="form-group" style="display:flex; gap:var(--space-2); align-items:flex-end; flex-wrap:wrap;">
+      <div style="flex:2; min-width:180px;">
+        <select class="select" id="bkProductSelect">
+          <option value="">-- select product --</option>
+        </select>
+      </div>
+      <div style="flex:1; min-width:100px;">
+        <input type="text" inputmode="decimal" class="input input-number-comma" id="bkQtyInput" placeholder="Qty">
+      </div>
+      <button type="button" class="btn btn-secondary" id="btnBkAddItem">+ Add</button>
+    </div>
+    <div class="empty-sub" id="bkAddError" style="display:none; color:var(--danger);"></div>
+
+    <div id="bkItemList"></div>
+    <div class="empty-sub" id="bkItemEmpty">No products added yet.</div>
+
+    <div class="form-group" style="margin-top:var(--space-4);">
+      <div class="label">DP Amount (optional)</div>
+      <input type="text" inputmode="decimal" class="input input-number-comma" id="bkDpAmount" placeholder="0">
+    </div>
+
+    <div class="empty-sub" id="bkReviewError" style="display:none; color:var(--danger); white-space:pre-line;"></div>
+    <div style="display:flex; justify-content:flex-end; margin-top:var(--space-4);">
+      <button type="button" class="btn btn-primary" id="btnBkReview">Review Booking</button>
     </div>
   </div>
 
@@ -1556,6 +1606,45 @@ $currentYear     = date('Y');
   </div>
 </div>
 
+<!-- Booking — price for products this customer has no price for yet, same
+     pattern as stPriceOverlay. -->
+<div class="modal-overlay" id="bkPriceOverlay" style="display:none;">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-header">
+      <div class="modal-title">Set Price</div>
+    </div>
+    <div class="modal-body">
+      <div class="empty-sub" id="bkPriceIntro" style="margin-bottom:var(--space-3);"></div>
+      <div id="bkPriceRows"></div>
+      <div class="empty-sub" id="bkPriceError" style="display:none; color:var(--danger);"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" id="btnBkPriceCancel">Cancel</button>
+      <button type="button" class="btn btn-primary" id="btnBkPriceContinue">Continue</button>
+    </div>
+  </div>
+</div>
+
+<!-- Booking — details to confirm before Confirm & Save (preview from
+     create_booking.php with dry_run=1). Stock is already shown as reserved
+     (remaining_before -> remaining_after) even though nothing has left the
+     warehouse yet. -->
+<div class="modal-overlay" id="bkConfirmOverlay" style="display:none;">
+  <div class="modal" style="max-width:460px;">
+    <div class="modal-header">
+      <div class="modal-title">Confirm Booking</div>
+    </div>
+    <div class="modal-body">
+      <div id="bkConfirmBody"></div>
+      <div class="empty-sub" id="bkConfirmError" style="display:none; color:var(--danger); white-space:pre-line; margin-top:var(--space-3);"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" id="btnBkConfirmCancel">Cancel</button>
+      <button type="button" class="btn btn-primary" id="btnBkConfirmSave">Confirm &amp; Save</button>
+    </div>
+  </div>
+</div>
+
 <!-- Sales Transaction — shown after Read Message ONLY when the selected
      customer already has other order(s) on the same order date. Lets the
      user say whether this message is a standalone New Order, or should be
@@ -1784,6 +1873,10 @@ $currentYear     = date('Y');
   var stOrderPickOverlay = document.getElementById('stOrderPickOverlay');
   var stDriverWarnOverlay = document.getElementById('stDriverWarnOverlay');
 
+  // Booking tab fly windows.
+  var bkPriceOverlay   = document.getElementById('bkPriceOverlay');
+  var bkConfirmOverlay = document.getElementById('bkConfirmOverlay');
+
   // Returns tab fly windows.
   var rtProductOverlay  = document.getElementById('rtProductOverlay');
   var rtConfirmOverlay  = document.getElementById('rtConfirmOverlay');
@@ -1806,6 +1899,7 @@ $currentYear     = date('Y');
     txnCategoryOverlay, disbDepartmentOverlay, disbActivityOverlay, disbDetailsOverlay, disbManageCategoryOverlay,
     capFieldPickerOverlay, stProductOverlay, stPriceOverlay, stStockSourceOverlay, stConfirmOverlay,
     stOrderModeOverlay, stOrderPickOverlay, stDriverWarnOverlay,
+    bkPriceOverlay, bkConfirmOverlay,
     rtProductOverlay, rtConfirmOverlay, rtReverifyOverlay,
     refundOverlay, applyCreditOverlay, document.getElementById('invPrintOverlay'),
     document.getElementById('acctPickOverlay'), document.getElementById('acctRegisterOverlay')];
@@ -5894,8 +5988,10 @@ $currentYear     = date('Y');
         var list = res.ok ? res.data : [];
         var keep = stCustomer.value;
         var keepRt = rtCustomer.value;
+        var keepBk = bkCustomer.value;
         stCustomer.innerHTML = '<option value="">-- select customer --</option>';
         rtCustomer.innerHTML = '<option value="">-- select customer --</option>';
+        bkCustomer.innerHTML = '<option value="">-- select customer --</option>';
         list.forEach(function (c) {
           var opt = document.createElement('option');
           opt.value = c.id;
@@ -5906,9 +6002,15 @@ $currentYear     = date('Y');
           rtOpt.value = c.id;
           rtOpt.textContent = c.customer_name + ' (' + c.year + ')';
           rtCustomer.appendChild(rtOpt);
+
+          var bkOpt = document.createElement('option');
+          bkOpt.value = c.id;
+          bkOpt.textContent = c.customer_name + ' (' + c.year + ')';
+          bkCustomer.appendChild(bkOpt);
         });
         stCustomer.value = keep;
         rtCustomer.value = keepRt;
+        bkCustomer.value = keepBk;
         return list;
       })
       .catch(function () { return []; });
@@ -5920,6 +6022,7 @@ $currentYear     = date('Y');
   function openSalesView() {
     hide(txnCategoryOverlay);
     resetSalesForm();
+    resetBookingForm();
     resetReturnForm();
     setActiveStTab('order');
     showOnlyView(viewSales);
@@ -6738,10 +6841,341 @@ $currentYear     = date('Y');
       });
   });
 
-  // ---------- Tabs: New Order <-> Customers ----------
+  // ==========================================================
+  // Sales Transaction — Booking (DP). Customer pays up front for qty of
+  // specific products; stock is RESERVED immediately but nothing is
+  // dispatched yet — see the big comment at the top of ajax/create_booking.php
+  // for exactly what that does and does not touch. Deliberately a plain
+  // manual form (pick product + qty, Add), NOT the WhatsApp-paste flow New
+  // Order uses — this tab is meant to just record what was booked and how
+  // much DP came in. Releasing the reserved stock later is a separate
+  // feature, not built yet.
+  // Endpoint: create_booking.php (dry_run=1 preview -> dry_run=0 save).
+  // Product list + prices reuse the same plumbing as Itemized Pricing
+  // (loadPriceableProducts) and New Order (stPost, stShowError, stHideError,
+  // stAddRow, fmtQty, formatPriceDate, formatIDR) — nothing new there.
+  // ==========================================================
+  var bkCustomer      = document.getElementById('bkCustomer');
+  var bkDate          = document.getElementById('bkDate');
+  var bkProductSelect = document.getElementById('bkProductSelect');
+  var bkQtyInput       = document.getElementById('bkQtyInput');
+  var btnBkAddItem     = document.getElementById('btnBkAddItem');
+  var bkAddError       = document.getElementById('bkAddError');
+  var bkItemList        = document.getElementById('bkItemList');
+  var bkItemEmpty       = document.getElementById('bkItemEmpty');
+  var bkDpAmount        = document.getElementById('bkDpAmount');
+  var bkReviewError     = document.getElementById('bkReviewError');
+  var btnBkReview       = document.getElementById('btnBkReview');
+  var bkSuccessBox      = document.getElementById('bkSuccessBox');
+
+  var bkPriceIntro = document.getElementById('bkPriceIntro');
+  var bkPriceRows  = document.getElementById('bkPriceRows');
+  var bkPriceError = document.getElementById('bkPriceError');
+
+  var bkConfirmBody    = document.getElementById('bkConfirmBody');
+  var bkConfirmError   = document.getElementById('bkConfirmError');
+  var btnBkConfirmSave = document.getElementById('btnBkConfirmSave');
+
+  initNumberCommaInput(bkQtyInput);
+  initNumberCommaInput(bkDpAmount);
+
+  var bkItems      = []; // [{logistic_id, product_name, unit_label, qty}]
+  var bkNewPrices  = {}; // logistic_id -> price typed in the Set Price window
+  var bkPriceMissing = [];
+  var bkSaving = false;
+
+  function resetBookingForm() {
+    bkCustomer.value = '';
+    bkDate.value = todayISO();
+    bkItems = [];
+    bkNewPrices = {};
+    bkPriceMissing = [];
+    bkSaving = false;
+    bkProductSelect.value = '';
+    bkQtyInput.value = '';
+    bkDpAmount.value = '';
+    btnBkReview.disabled = false;
+    btnBkConfirmSave.disabled = false;
+    renderBkItems();
+    stHideError(bkAddError);
+    stHideError(bkReviewError);
+    stHideError(bkConfirmError);
+    stHideError(bkPriceError);
+    bkSuccessBox.style.display = 'none';
+    hide(bkPriceOverlay);
+    hide(bkConfirmOverlay);
+  }
+
+  // A price typed for one customer must never leak into another customer's booking.
+  bkCustomer.addEventListener('change', function () { bkNewPrices = {}; });
+
+  function populateBkProducts() {
+    loadPriceableProducts(function (products) {
+      var keep = bkProductSelect.value;
+      bkProductSelect.innerHTML = '<option value="">-- select product --</option>';
+      products.forEach(function (p) {
+        var opt = document.createElement('option');
+        opt.value = p.logistic_id;
+        opt.textContent = p.activity_name;
+        opt.setAttribute('data-unit', p.primary_unit_label || '');
+        bkProductSelect.appendChild(opt);
+      });
+      bkProductSelect.value = keep;
+    });
+  }
+
+  function renderBkItems() {
+    bkItemList.innerHTML = '';
+    bkItemEmpty.style.display = bkItems.length ? 'none' : 'block';
+    bkItems.forEach(function (it, idx) {
+      var box = document.createElement('div');
+      box.className = 'st-mov';
+
+      var top = document.createElement('div');
+      top.className = 'st-mov-top';
+      var nm = document.createElement('div');
+      nm.style.fontWeight = '600';
+      nm.textContent = it.product_name;
+      var qtyEl = document.createElement('div');
+      qtyEl.textContent = fmtQty(it.qty) + ' ' + (it.unit_label || '');
+      top.appendChild(nm);
+      top.appendChild(qtyEl);
+
+      var sub = document.createElement('div');
+      sub.className = 'st-mov-sub';
+      var rm = document.createElement('a');
+      rm.href = '#';
+      rm.textContent = 'Remove';
+      rm.style.color = 'var(--danger)';
+      rm.addEventListener('click', function (e) {
+        e.preventDefault();
+        bkItems.splice(idx, 1);
+        renderBkItems();
+      });
+      sub.appendChild(rm);
+
+      box.appendChild(top);
+      box.appendChild(sub);
+      bkItemList.appendChild(box);
+    });
+  }
+
+  btnBkAddItem.addEventListener('click', function () {
+    stHideError(bkAddError);
+    var lid = bkProductSelect.value;
+    if (!lid) { stShowError(bkAddError, 'Select a product first.'); return; }
+    var qty = parseNumberInput(bkQtyInput.value);
+    if (isNaN(qty) || qty <= 0) { stShowError(bkAddError, 'Enter a quantity above zero.'); return; }
+    var opt = bkProductSelect.selectedOptions[0];
+
+    var existing = bkItems.filter(function (x) { return String(x.logistic_id) === String(lid); })[0];
+    if (existing) {
+      existing.qty = Math.round((existing.qty + qty) * 100) / 100;
+    } else {
+      bkItems.push({
+        logistic_id: parseInt(lid, 10),
+        product_name: opt.textContent,
+        unit_label: opt.getAttribute('data-unit') || '',
+        qty: qty
+      });
+    }
+    bkProductSelect.value = '';
+    bkQtyInput.value = '';
+    renderBkItems();
+  });
+
+  function bkBuildPayload(dryRun) {
+    stHideError(bkReviewError);
+    if (!bkCustomer.value) { stShowError(bkReviewError, 'Select a customer first.'); return null; }
+    if (!bkDate.value) { stShowError(bkReviewError, 'Booking date is required.'); return null; }
+    if (!bkItems.length) { stShowError(bkReviewError, 'Add at least one product.'); return null; }
+
+    var dp = bkDpAmount.value ? parseNumberInput(bkDpAmount.value) : 0;
+    if (isNaN(dp) || dp < 0) { stShowError(bkReviewError, 'DP amount is not valid.'); return null; }
+
+    var items = bkItems.map(function (it) {
+      return { logistic_id: it.logistic_id, qty: it.qty, stock_source: 'normal' };
+    });
+
+    return {
+      customer_id: bkCustomer.value,
+      booking_date: bkDate.value,
+      items: JSON.stringify(items),
+      new_prices: JSON.stringify(bkNewPrices),
+      dp_amount: dp,
+      dry_run: dryRun ? '1' : '0'
+    };
+  }
+
+  function bkReview() {
+    var payload = bkBuildPayload(true);
+    if (!payload) return;
+
+    btnBkReview.disabled = true;
+    stPost('ajax/create_booking.php', payload)
+      .then(function (res) {
+        btnBkReview.disabled = false;
+        if (res.ok) { showBkConfirm(res.booking); return; }
+        if (res.code === 'missing_prices') { openBkPrice(res.missing || []); return; }
+        stShowError(bkReviewError, res.message || 'Could not review the booking.');
+      })
+      .catch(function () {
+        btnBkReview.disabled = false;
+        stShowError(bkReviewError, 'Connection error.');
+      });
+  }
+  btnBkReview.addEventListener('click', bkReview);
+
+  // --- Set Price (same pattern as New Order's stPriceOverlay) ---
+  function openBkPrice(missing) {
+    bkPriceMissing = missing;
+    stHideError(bkPriceError);
+    bkPriceIntro.textContent = 'No price is set for the products below on '
+      + formatPriceDate(bkDate.value)
+      + '. The price you enter is saved for this customer, effective that date.';
+    bkPriceRows.innerHTML = '';
+
+    missing.forEach(function (m) {
+      var g = document.createElement('div');
+      g.className = 'form-group';
+
+      var label = document.createElement('div');
+      label.className = 'label';
+      label.textContent = m.product_name + ' (per ' + (m.unit_label || 'unit') + ')';
+      g.appendChild(label);
+
+      var inp = document.createElement('input');
+      inp.type = 'text';
+      inp.setAttribute('inputmode', 'decimal');
+      inp.className = 'input input-number-comma';
+      inp.placeholder = 'Price';
+      inp.setAttribute('data-lid', m.logistic_id);
+      if (bkNewPrices[m.logistic_id]) {
+        inp.value = formatNumberInput(String(bkNewPrices[m.logistic_id]));
+      }
+      initNumberCommaInput(inp);
+
+      g.appendChild(inp);
+      bkPriceRows.appendChild(g);
+    });
+    show(bkPriceOverlay);
+  }
+
+  document.getElementById('btnBkPriceCancel').addEventListener('click', function () {
+    hide(bkPriceOverlay);
+  });
+
+  document.getElementById('btnBkPriceContinue').addEventListener('click', function () {
+    stHideError(bkPriceError);
+    var entered = {};
+    var inputs = bkPriceRows.querySelectorAll('input[data-lid]');
+    for (var i = 0; i < inputs.length; i++) {
+      var n = parseNumberInput(inputs[i].value);
+      if (isNaN(n) || n <= 0) {
+        stShowError(bkPriceError, 'Enter a price above zero for every product.');
+        return;
+      }
+      entered[inputs[i].getAttribute('data-lid')] = n;
+    }
+    Object.keys(entered).forEach(function (k) { bkNewPrices[k] = entered[k]; });
+    hide(bkPriceOverlay);
+    bkReview(); // ask the server again, now with the prices
+  });
+
+  // --- Confirm ---
+  function showBkConfirm(b) {
+    stHideError(bkConfirmError);
+    bkConfirmBody.innerHTML = '';
+
+    stAddRow(bkConfirmBody, 'Customer', b.customer.name);
+    stAddRow(bkConfirmBody, 'Booking Date', formatPriceDate(b.booking_date));
+    stAddRow(bkConfirmBody, 'Invoice', b.invoice.number + (b.invoice.is_new ? ' (new)' : ''));
+
+    var lbl = document.createElement('div');
+    lbl.className = 'st-section-label';
+    lbl.textContent = 'Products (reserved, not yet released)';
+    bkConfirmBody.appendChild(lbl);
+
+    b.items.forEach(function (ln) {
+      var box = document.createElement('div');
+      box.className = 'st-mov';
+
+      var top = document.createElement('div');
+      top.className = 'st-mov-top';
+      var nm = document.createElement('div');
+      nm.style.fontWeight = '600';
+      nm.textContent = ln.product_name;
+      var tot = document.createElement('div');
+      tot.textContent = formatIDR(ln.total_price);
+      top.appendChild(nm);
+      top.appendChild(tot);
+
+      var sub = document.createElement('div');
+      sub.className = 'st-mov-sub';
+      sub.textContent = fmtQty(ln.qty) + ' ' + (ln.unit_label || '') + ' \u00d7 ' + formatIDR(ln.price)
+        + ' \u00b7 ' + (ln.price_source === 'new' ? 'new price, saved for this customer' : 'price of ' + formatPriceDate(ln.price_date))
+        + ' \u00b7 stock ' + fmtQty(ln.remaining_before) + ' \u2192 ' + fmtQty(ln.remaining_after) + ' (reserved)';
+
+      box.appendChild(top);
+      box.appendChild(sub);
+      bkConfirmBody.appendChild(box);
+    });
+
+    var sep = document.createElement('div');
+    sep.className = 'st-section-label';
+    sep.textContent = 'Total';
+    bkConfirmBody.appendChild(sep);
+    stAddRow(bkConfirmBody, 'Booking Total', formatIDR(b.grand_total));
+    stAddRow(bkConfirmBody, 'DP', formatIDR(b.dp_amount));
+    stAddRow(bkConfirmBody, 'Outstanding', formatIDR(b.outstanding));
+    stAddRow(bkConfirmBody, 'Invoice After', formatIDR(b.invoice.total_after));
+
+    show(bkConfirmOverlay);
+  }
+
+  document.getElementById('btnBkConfirmCancel').addEventListener('click', function () {
+    hide(bkConfirmOverlay);
+  });
+
+  btnBkConfirmSave.addEventListener('click', function () {
+    if (bkSaving) return;
+    stHideError(bkConfirmError);
+    var payload = bkBuildPayload(false);
+    if (!payload) { hide(bkConfirmOverlay); return; }
+
+    bkSaving = true;
+    btnBkConfirmSave.disabled = true;
+    stPost('ajax/create_booking.php', payload)
+      .then(function (res) {
+        bkSaving = false;
+        btnBkConfirmSave.disabled = false;
+        if (!res.ok) {
+          if (res.code === 'missing_prices') { hide(bkConfirmOverlay); openBkPrice(res.missing || []); return; }
+          stShowError(bkConfirmError, res.message || 'Failed to save the booking.');
+          return;
+        }
+        var b = res.booking;
+        var summary = 'Booking saved \u2014 ' + b.customer.name
+          + ' \u00b7 Invoice ' + b.invoice.number
+          + ' \u00b7 total ' + formatIDR(b.grand_total)
+          + ' \u00b7 DP ' + formatIDR(b.dp_amount);
+        resetBookingForm(); // also closes the fly windows
+        bkSuccessBox.textContent = summary;
+        bkSuccessBox.style.display = 'block';
+        loadStCustomers();
+      })
+      .catch(function () {
+        bkSaving = false;
+        btnBkConfirmSave.disabled = false;
+        stShowError(bkConfirmError, 'Connection error.');
+      });
+  });
+
+  // ---------- Tabs: New Order <-> Booking <-> Returns <-> Customers ----------
   var stTabs = document.querySelectorAll('#stTabGroup .tab');
   var stTabPanelMap = {
     order:     document.getElementById('stTabPanelOrder'),
+    booking:   document.getElementById('stTabPanelBooking'),
     returns:   document.getElementById('stTabPanelReturns'),
     customers: document.getElementById('stTabPanelCustomers')
   };
@@ -6760,6 +7194,7 @@ $currentYear     = date('Y');
       var name = t.getAttribute('data-st-tab');
       setActiveStTab(name);
       if (name === 'customers') loadStCustomerCards(); // refresh every visit
+      if (name === 'booking') populateBkProducts(); // refresh product list every visit
     });
   });
 
