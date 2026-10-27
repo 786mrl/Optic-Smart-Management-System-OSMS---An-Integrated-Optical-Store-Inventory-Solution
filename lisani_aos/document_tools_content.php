@@ -248,7 +248,7 @@
         <div class="form-group" id="docUploadFormGroup" style="max-width:320px;">
           <label class="label">Upload Document (JPG/PNG/PDF)</label>
           <input type="file" class="input" id="docEditorFileInput" accept="image/*,application/pdf">
-          <div class="header-sub">DOCX belum didukung - konversi dulu ke PDF, atau screenshot per halaman.</div>
+          <div class="header-sub">DOCX is not supported yet - convert to PDF first, or screenshot each page.</div>
         </div>
 
         <div class="doc-page-thumbs-wrap" id="docPageThumbsWrap" style="display:none;"></div>
@@ -307,6 +307,43 @@
               <button type="button" class="btn btn-secondary" id="docAddVGuideBtn" disabled>
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="3" x2="12" y2="21"/></svg>
                 Add Vertical Guide
+              </button>
+            </div>
+          </div>
+
+          <!-- 27 Okt 2026: satu grup gabungan "Convert to Text" - isinya
+               Exclude Zone (penanda area yang di-skip, lihat addExcludeZone()
+               di bawah; beda dari Guide Box: bisa >1 instance per halaman,
+               tiap klik "Add Exclude Zone" = rect baru, tidak menggantikan
+               yang lama) DAN tombol OCR→DOCX (docOcrBtn, lihat
+               convertDocumentToDocx()) dalam satu panel - sengaja tidak
+               dipisah grup sendiri-sendiri (revisi atas permintaan user)
+               supaya dari nama grupnya saja sudah jelas Exclude Zone ini
+               fungsinya untuk apa (dipakai saat convert, bukan fitur
+               berdiri sendiri). Exclude Zone sendiri tetap alat bantu
+               visual yang dikecualikan dari Save/flatten PDF (lihat
+               renderPageToDataURL()) - OCR punya jalur render sendiri
+               (renderPageForOcr()) yang memutihkan area zone itu, bukan
+               menghapusnya dari dokumen asli. Checkbox "Apply to all pages"
+               (pola sama seperti Insert Letterhead) dipakai untuk area yang
+               posisinya sama di semua halaman (letterhead header/footer). -->
+          <div class="doc-ribbon-group" data-ribbon-group="exclude">
+            <button type="button" class="doc-ribbon-trigger" data-ribbon-trigger="exclude">
+              <i class="ti ti-file-text"></i>
+              <span>Convert to Text</span>
+              <svg class="doc-ribbon-chevron" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+            <div class="doc-ribbon-panel" data-ribbon-panel="exclude">
+              <button type="button" class="btn btn-secondary" id="docAddExcludeZoneBtn" disabled>
+                <i class="ti ti-eye-off"></i> Add Exclude Zone
+              </button>
+              <label class="header-sub" style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+                <input type="checkbox" id="docExcludeApplyAllPages" checked>
+                Apply to all pages
+              </label>
+              <span class="header-sub" style="display:block;margin-top:4px;">Mark letterhead/signature above with Exclude Zone first, then convert:</span>
+              <button type="button" class="btn btn-primary" id="docOcrBtn" disabled>
+                <i class="ti ti-letter-case"></i> Export as DOCX (OCR)
               </button>
             </div>
           </div>
@@ -388,6 +425,24 @@
               <button type="button" class="btn btn-secondary" id="docBlockCancelBtn">Cancel Block</button>
             </div>
           </div>
+
+          <!-- 27 Okt 2026 (revisi: user minta 1 klik langsung, bukan
+               dropdown): "Done" - TIDAK pakai class .doc-ribbon-group,
+               jadi TIDAK diproses wireDocRibbonMenus() (tidak ada
+               trigger/panel/chevron) - tombol polos langsung di toolbar,
+               klik sekali = langsung jalan. Latar belakang: user
+               melaporkan klik di area kosong setelah Add Exclude Zone /
+               Insert Letterhead membuat hasil kerjanya hilang ("pindah ke
+               belakang halaman"). Show/hide lewat
+               showZoneDoneGroup()/hideZoneDoneGroup() di JS (dipanggil
+               setelah addExcludeZone() dan sehabis gambar letterhead
+               header selesai dimuat). Warna hijau (beda dari amber
+               #docBlockAdjustGroup) - style inline di sini (bukan
+               ditambahkan ke theme.css, supaya tidak menebak isi file itu
+               yang belum diupload). -->
+          <button type="button" class="btn" id="docZoneDoneGroup" style="display:none;background:#1fb15a;border-color:#1fb15a;color:#fff;">
+            <i class="ti ti-check"></i> Done
+          </button>
         </div>
         <div class="header-sub" id="docEditorHint">Upload a document first to enable the tools above.</div>
 
@@ -406,9 +461,9 @@
               <input type="date" class="input" id="docEditorDateInput" required>
             </div>
             <div class="form-group">
-              <label class="label">Judul Kegiatan</label>
+              <label class="label">Activity Title</label>
               <input type="text" class="input" id="docEditorActivityInput" list="sigActivityOptions"
-                     placeholder="Pilih yang sudah ada, atau ketik judul baru" required>
+                     placeholder="Choose an existing one, or type a new title" required>
             </div>
           </div>
 
@@ -2158,6 +2213,10 @@
   var docAddHGuideBtn = document.getElementById('docAddHGuideBtn');
   var docAddVGuideBtn = document.getElementById('docAddVGuideBtn');
   var docGuideBoxBtn = document.getElementById('docGuideBoxBtn');
+  var docAddExcludeZoneBtn = document.getElementById('docAddExcludeZoneBtn');
+  var docExcludeApplyAllPages = document.getElementById('docExcludeApplyAllPages');
+  var docOcrBtn = document.getElementById('docOcrBtn');
+  var docZoneDoneGroup = document.getElementById('docZoneDoneGroup'); // tombol itu sendiri, bukan wrapper lagi
   var docInsertSigBtn = document.getElementById('docInsertSigBtn');
   var docUndoBtn = document.getElementById('docUndoBtn');
   var docDeleteSelectedBtn = document.getElementById('docDeleteSelectedBtn');
@@ -2175,6 +2234,10 @@
   var docEditorSaveForm = document.getElementById('docEditorSaveForm');
   var docEditorNameInput = document.getElementById('docEditorNameInput');
   var docEditorDateInput = document.getElementById('docEditorDateInput');
+  // 27 Okt 2026: default Date = tanggal akses hari ini (local time), sama
+  // pola seperti todayDateInputValue() di Signature Editor di atas - fungsi
+  // itu dipakai ulang di sini (satu IIFE file, sudah terdefinisi lebih dulu).
+  docEditorDateInput.value = todayDateInputValue();
   var docEditorActivityInput = document.getElementById('docEditorActivityInput');
   var docEditorMessage = document.getElementById('docEditorMessage');
   var docEditorSaveBtn = document.getElementById('docEditorSaveBtn');
@@ -2219,6 +2282,11 @@
   // syncLetterheadTransform() di bawah (fitur "edit letterhead ikut sync ke
   // semua halaman").
   var docLetterheadSyncCounter = 0;
+  // 27 Okt 2026: sama pola seperti docLetterheadSyncCounter - dipakai bikin
+  // excludeSyncId unik tiap kali "Add Exclude Zone" dipanggil DENGAN "Apply
+  // to all pages" dicentang, supaya geser/resize satu zone bisa dicari
+  // kembarannya di halaman lain dan disamakan - lihat syncExcludeZoneTransform().
+  var docExcludeZoneSyncCounter = 0;
 
   // 24 Okt 2026: Undo untuk Document Editor - history stack PER HALAMAN
   // (disimpan di docPages[i].undoStack, bukan satu stack global, supaya
@@ -2301,7 +2369,7 @@
   function currentPage() { return docPages[currentPageIndex]; }
 
   function setDocToolbarEnabled(enabled) {
-    [docBlockTextBtn, docAddHGuideBtn, docAddVGuideBtn, docGuideBoxBtn, docGuideBoxPresetSelect, docInsertSigBtn, docInsertLetterheadBtn, docClearAllBtn,
+    [docBlockTextBtn, docAddHGuideBtn, docAddVGuideBtn, docGuideBoxBtn, docGuideBoxPresetSelect, docAddExcludeZoneBtn, docOcrBtn, docInsertSigBtn, docInsertLetterheadBtn, docClearAllBtn,
      docZoomOutBtn, docZoomInBtn, docZoomFitBtn].forEach(function (btn) {
       btn.disabled = !enabled;
     });
@@ -2337,10 +2405,20 @@
       // Clicking a real action button inside the panel closes the menu too,
       // so it behaves like Word (pick an option, menu goes away) instead of
       // staying open until the user clicks elsewhere.
+      // 27 Okt 2026: stopPropagation() di sini WAJIB - tanpa ini, event click
+      // di dalam panel (termasuk klik native <select> docGuideBoxPresetSelect)
+      // tetap menggelembung ke listener document di bawah, yang langsung
+      // closeAll() dan membuat panel ter-hide sebelum browser sempat
+      // menampilkan dropdown opsi select (select jadi "tidak bisa diklik
+      // sama sekali"). Grup Zoom & View dikecualikan dari auto-close supaya
+      // tombol di dalamnya (Zoom In/Out/Fit) bisa diklik berkali-kali tanpa
+      // panelnya ikut tertutup - panel ini hanya tertutup lewat trigger-nya
+      // sendiri atau klik di luar panel.
       var panel = group.querySelector('.doc-ribbon-panel');
       if (panel) {
         panel.addEventListener('click', function (e) {
-          if (e.target.closest('button')) group.classList.remove('open');
+          e.stopPropagation();
+          if (group.dataset.ribbonGroup !== 'zoom' && e.target.closest('button')) group.classList.remove('open');
         });
       }
     });
@@ -2360,9 +2438,11 @@
     pendingBlockRect = null;
     pendingBlockType = null;
     docBlockAdjustGroup.style.display = 'none';
+    hideZoneDoneGroup();
     guideBox = null;
     insertedSignatureIds = {};
     insertedLetterheadIds = {};
+    docExcludeZoneSyncCounter = 0;
     currentZoom = 1;
     docBlockTextBtn.classList.remove('active');
     docDeleteSelectedBtn.disabled = true;
@@ -2378,7 +2458,7 @@
     var page = currentPage();
     if (!page || !docFabricCanvas) return;
     if (!page.undoStack) page.undoStack = [];
-    page.undoStack.push(docFabricCanvas.toJSON(['blockType', 'isGuideBox', 'isGuideLine', 'guideOrientation', 'letterheadSyncId', 'letterheadPart']));
+    page.undoStack.push(docFabricCanvas.toJSON(['blockType', 'isGuideBox', 'isGuideLine', 'guideOrientation', 'letterheadSyncId', 'letterheadPart', 'isExcludeZone', 'excludeSyncId']));
     if (page.undoStack.length > DOC_UNDO_LIMIT) page.undoStack.shift();
     updateDocUndoBtn();
   }
@@ -2526,7 +2606,7 @@
       var thumb = document.createElement('button');
       thumb.type = 'button';
       thumb.className = 'doc-page-thumb';
-      thumb.textContent = 'Hal ' + (idx + 1);
+      thumb.textContent = 'Page ' + (idx + 1);
       thumb.addEventListener('click', function () { switchToPage(idx); });
       docPageThumbsWrap.appendChild(thumb);
     });
@@ -2546,7 +2626,7 @@
      has never been opened/edited yet). ---- */
   function syncCurrentPageState() {
     if (docFabricCanvas && currentPageIndex >= 0 && docPages[currentPageIndex]) {
-      docPages[currentPageIndex].json = docFabricCanvas.toJSON(['blockType', 'isGuideBox', 'isGuideLine', 'guideOrientation', 'letterheadSyncId', 'letterheadPart']);
+      docPages[currentPageIndex].json = docFabricCanvas.toJSON(['blockType', 'isGuideBox', 'isGuideLine', 'guideOrientation', 'letterheadSyncId', 'letterheadPart', 'isExcludeZone', 'excludeSyncId']);
     }
   }
 
@@ -2557,6 +2637,7 @@
     // (not committed yet), so switching pages would silently drop it from
     // view while leaving docBlockAdjustGroup shown. Cancel it explicitly.
     if (pendingBlockRect) cancelPendingBlock();
+    hideZoneDoneGroup();
     syncCurrentPageState();
     if (docFabricCanvas) {
       docFabricCanvas.dispose();
@@ -2674,6 +2755,7 @@
       // sync wired in wireDocCanvasSelection() would otherwise miss
       // keyboard nudges entirely - call it explicitly here too.
       syncLetterheadTransform(activeObj);
+      syncExcludeZoneTransform(activeObj);
     }
   });
 
@@ -2735,7 +2817,10 @@
     // after a drag/resize/rotate is released (not during). See
     // syncLetterheadTransform(); no-op for any object that isn't a
     // letterhead layer (function returns early).
-    docFabricCanvas.on('object:modified', function (e) { syncLetterheadTransform(e.target); });
+    docFabricCanvas.on('object:modified', function (e) {
+      syncLetterheadTransform(e.target);
+      syncExcludeZoneTransform(e.target);
+    });
 
     // 26 Okt 2026 (susulan ketiga, laporan user: "undo malah menghilangkan
     // letterhead, bukan balik ke posisi sebelum digeser"). Akar masalah:
@@ -3010,6 +3095,128 @@
     docFabricCanvas.requestRenderAll();
   });
 
+  // 27 Okt 2026: lihat komentar HTML #docZoneDoneGroup di atas untuk latar
+  // belakang fitur ini. showZoneDoneGroup() TIDAK menutup grup ribbon lain
+  // (beda dari wireDocRibbonMenus() punya closeAll()) - cuma menampilkan
+  // trigger-nya, panel-nya sendiri tetap tertutup sampai user klik trigger
+  // atau langsung klik "Done" di dalamnya.
+  function showZoneDoneGroup() { docZoneDoneGroup.style.display = ''; }
+  function hideZoneDoneGroup() { docZoneDoneGroup.style.display = 'none'; }
+  docZoneDoneGroup.addEventListener('click', function () {
+    if (docFabricCanvas) {
+      docFabricCanvas.discardActiveObject();
+      docFabricCanvas.requestRenderAll();
+    }
+    hideZoneDoneGroup();
+  });
+
+  /* ---- Exclude Zone (27 Okt 2026, Tahap 1 - alat bantu visual saja, belum
+     disambungkan ke OCR). Beda dari Guide Box: BISA lebih dari satu per
+     halaman (tiap klik "Add Exclude Zone" = rect baru, yang lama tidak
+     dihapus/diganti) - jadi tidak ada 1 module-level var tunggal seperti
+     `guideBox`; semua rect isExcludeZone dicari langsung dari
+     docFabricCanvas.getObjects() saat dibutuhkan. Dikecualikan dari
+     flatten/Save sama seperti Guide Box/Guide Line - lihat
+     renderPageToDataURL(). Checkbox "Apply to all pages" pakai pola sync
+     yang SAMA seperti Letterhead (excludeSyncId, lihat
+     syncExcludeZoneTransform() dan addExcludeZoneToPageData()) - dipakai
+     untuk area letterhead header/footer yang posisinya sama di semua
+     halaman; kalau tidak dicentang, zone itu cuma berlaku di halaman yang
+     sedang dibuka. ---- */
+  function addExcludeZone() {
+    if (!docEditorReady()) return;
+    pushDocUndoSnapshot();
+    var page = currentPage();
+    var applyAll = !!(docExcludeApplyAllPages && docExcludeApplyAllPages.checked);
+    var syncId = applyAll ? ('ex' + Date.now() + '_' + (docExcludeZoneSyncCounter++)) : null;
+    // Default: kotak di area atas halaman (lokasi umum letterhead), user
+    // tinggal geser/resize setelahnya - sama seperti Guide Box, bukan asumsi
+    // final.
+    var w = Math.round(page.width * 0.9);
+    var h = Math.round(page.height * 0.12);
+    var zone = new fabric.Rect({
+      left: Math.round((page.width - w) / 2),
+      top: Math.round(page.height * 0.03),
+      width: w, height: h,
+      fill: 'rgba(255,0,90,0.10)', stroke: '#ff005a', strokeDashArray: [6, 4], strokeWidth: 2,
+      cornerColor: '#ff005a', transparentCorners: false,
+      isExcludeZone: true, excludeSyncId: syncId,
+    });
+    docFabricCanvas.add(zone);
+    docFabricCanvas.setActiveObject(zone);
+    docFabricCanvas.requestRenderAll();
+    showZoneDoneGroup();
+    if (applyAll) applyExcludeZoneToOtherPages(zone, syncId);
+  }
+  docAddExcludeZoneBtn.addEventListener('click', addExcludeZone);
+
+  // Sama pola seperti addLetterheadToPageData(), tapi lebih sederhana (rect
+  // polos, tidak perlu fetch gambar) - halaman yang sudah pernah dibuka
+  // (page.json ada) tinggal disisipi object rect baru langsung ke
+  // page.json.objects; halaman yang belum pernah dibuka dibikin dulu
+  // page.json-nya dari bitmap asli (workingCanvas) lewat StaticCanvas
+  // offscreen, sama seperti cabang "belum pernah dibuka" di
+  // addLetterheadToPageData().
+  function addExcludeZoneToPageData(page, zone, syncId) {
+    return new Promise(function (resolve) {
+      var rectJson = zone.toObject(['isExcludeZone', 'excludeSyncId']);
+      if (page.json) {
+        if (!page.json.objects) page.json.objects = [];
+        page.json.objects.push(rectJson);
+        resolve();
+        return;
+      }
+      var tmp = new fabric.StaticCanvas(null, { width: page.width, height: page.height });
+      fabric.Image.fromURL(page.workingCanvas.toDataURL('image/png'), function (bgImg) {
+        bgImg.set({ left: 0, top: 0, selectable: false, evented: false, hasControls: false });
+        tmp.add(bgImg);
+        tmp.sendToBack(bgImg);
+        fabric.util.enlivenObjects([rectJson], function (enlivened) {
+          enlivened.forEach(function (o) { tmp.add(o); });
+          tmp.renderAll();
+          page.json = tmp.toJSON(['blockType', 'isGuideBox', 'isGuideLine', 'guideOrientation', 'letterheadSyncId', 'letterheadPart', 'isExcludeZone', 'excludeSyncId']);
+          tmp.dispose();
+          resolve();
+        });
+      });
+    });
+  }
+
+  function applyExcludeZoneToOtherPages(zone, syncId) {
+    var others = [];
+    docPages.forEach(function (page, idx) {
+      if (idx !== currentPageIndex) others.push(page);
+    });
+    if (!others.length) return;
+    Promise.all(others.map(function (page) { return addExcludeZoneToPageData(page, zone, syncId); }))
+      .then(function () {
+        highlightActiveThumbnail();
+        docEditorMessage.textContent = 'Exclude zone applied to all ' + docPages.length + ' page(s).';
+        docEditorMessage.className = 'settings-message settings-message-success';
+      });
+  }
+
+  // Sama pola seperti syncLetterheadTransform() - dipanggil sehabis
+  // drag/resize (object:modified) atau arrow-key nudge pada rect
+  // isExcludeZone yang punya excludeSyncId (no-op kalau tidak dicentang
+  // "Apply to all pages" saat dibuat, karena excludeSyncId-nya null).
+  function syncExcludeZoneTransform(obj) {
+    if (!obj || !obj.isExcludeZone || !obj.excludeSyncId) return;
+    var syncId = obj.excludeSyncId;
+    var left = obj.left, top = obj.top, scaleX = obj.scaleX, scaleY = obj.scaleY,
+        width = obj.width, height = obj.height, angle = obj.angle;
+    docPages.forEach(function (page, idx) {
+      if (idx === currentPageIndex) return;
+      if (!page.json || !page.json.objects) return;
+      page.json.objects.forEach(function (o) {
+        if (o.isExcludeZone && o.excludeSyncId === syncId) {
+          o.left = left; o.top = top; o.scaleX = scaleX; o.scaleY = scaleY;
+          o.width = width; o.height = height; o.angle = angle;
+        }
+      });
+    });
+  }
+
   docDeleteSelectedBtn.addEventListener('click', function () {
     if (!docEditorReady()) return;
     var active = docFabricCanvas.getActiveObject();
@@ -3193,6 +3400,7 @@
       // the front instead of relying on add()'s default position.
       docFabricCanvas.bringToFront(img);
       docFabricCanvas.requestRenderAll();
+      showZoneDoneGroup();
     }, { crossOrigin: 'anonymous' });
   }
 
@@ -3234,7 +3442,7 @@
           });
         })).then(function () {
           tmp.renderAll();
-          page.json = tmp.toJSON(['blockType', 'isGuideBox', 'isGuideLine', 'guideOrientation', 'letterheadSyncId', 'letterheadPart']);
+          page.json = tmp.toJSON(['blockType', 'isGuideBox', 'isGuideLine', 'guideOrientation', 'letterheadSyncId', 'letterheadPart', 'isExcludeZone', 'excludeSyncId']);
           tmp.dispose();
           resolve();
         });
@@ -3329,7 +3537,13 @@
       }
       var tmp = new fabric.StaticCanvas(null, { width: page.width, height: page.height });
       tmp.loadFromJSON(page.json, function () {
-        tmp.getObjects().filter(function (o) { return o.isGuideBox || o.isGuideLine; }).forEach(function (o) { tmp.remove(o); });
+        // 27 Okt 2026: Exclude Zone Tahap 1 masih murni alat bantu visual
+        // (belum disambung ke OCR) - dikecualikan dari Save/flatten PDF sama
+        // seperti Guide Box/Guide Line, supaya tidak ikut tercetak di
+        // dokumen final. Tahap 2 (OCR) akan BACA rect ini sebelum baris ini
+        // dijalankan (lihat rencana di PROJECT_NOTES.md), bukan mengubah
+        // baris ini.
+        tmp.getObjects().filter(function (o) { return o.isGuideBox || o.isGuideLine || o.isExcludeZone; }).forEach(function (o) { tmp.remove(o); });
         tmp.renderAll();
         var dataUrl = tmp.toDataURL({ format: 'png' });
         tmp.dispose();
@@ -3337,6 +3551,468 @@
       });
     });
   }
+
+  /* =====================================================================
+     Tahap 2 (27 Okt 2026): Convert to Text (OCR) - baca SEMUA halaman
+     dokumen dengan Tesseract.js, area di dalam Exclude Zone diputihkan
+     dulu (dokumen asli / page.json TIDAK berubah - cuma di canvas
+     offscreen sekali pakai, lihat renderPageForOcr()), lalu digabung jadi
+     SATU file .docx yang dibuat murni di browser (OOXML minimal + JSZip,
+     TANPA PHPWord/Composer di server - lihat PROJECT_NOTES.md §6 Document
+     Editor untuk alasannya) dan langsung didownload (tidak dikirim ke
+     server sama sekali, beda dari Save Edited Document yang ke
+     ajax/save_edited_document.php).
+     ===================================================================== */
+
+  // Lazy-load SEKALI, sama pola seperti ensureCaptureLibs() di
+  // transaction_content.php - tesseract.js URL/versi SENGAJA disamakan
+  // persis (5.0.4) dengan modul itu supaya tidak ada dua versi beda yang
+  // bentrok kalau kebetulan sama-sama pernah dipakai di satu page load.
+  // JSZip belum dipakai modul manapun di proyek ini sampai sekarang - cek
+  // PROJECT_NOTES.md §8 kalau nanti ada modul lain yang mulai butuh file
+  // .zip juga, supaya loadernya bisa disatukan.
+  var ocrLibLoadPromise = null;
+  function ensureOcrLibs() {
+    if (ocrLibLoadPromise) return ocrLibLoadPromise;
+    ocrLibLoadPromise = new Promise(function (resolve, reject) {
+      var pending = 2;
+      function done() { pending--; if (pending === 0) resolve(); }
+      function fail(src) { return function () { reject(new Error('Failed to load ' + src)); }; }
+      if (window.Tesseract) {
+        done();
+      } else {
+        var s1 = document.createElement('script');
+        s1.src = 'https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.0.4/tesseract.min.js';
+        s1.onload = done;
+        s1.onerror = fail('tesseract.js');
+        document.head.appendChild(s1);
+      }
+      if (window.JSZip) {
+        done();
+      } else {
+        var s2 = document.createElement('script');
+        s2.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+        s2.onload = done;
+        s2.onerror = fail('jszip');
+        document.head.appendChild(s2);
+      }
+    });
+    return ocrLibLoadPromise;
+  }
+
+  // Render satu halaman KHUSUS untuk OCR: sama seperti renderPageToDataURL()
+  // (guide box/guide line/exclude zone dibuang, tidak ikut tampak) TAPI
+  // bedanya area bekas tiap Exclude Zone diputihkan solid dulu - supaya
+  // konten asli di baliknya (letterhead/signature/dll) tidak ikut terbaca
+  // Tesseract. Urutan WAJIB: render dulu objek yang tersisa (renderAll()),
+  // BARU gambar kotak putih manual di atasnya - kalau dibalik, renderAll()
+  // akan menimpa ulang kotak putihnya dengan konten asli di baliknya.
+  // toDataURL dipanggil langsung dari elemen <canvas> asli (bukan lewat
+  // tmp.toDataURL() Fabric) supaya dipastikan tidak ada render ulang
+  // tersembunyi yang menghapus kotak putih manual tadi.
+  // Sama seperti sebelumnya (putihkan area Exclude Zone sebelum di-OCR),
+  // TAPI sekarang juga meng-crop tiap Exclude Zone jadi PNG tersendiri dari
+  // page.workingCanvas (bitmap asli, SEBELUM diputihkan) - supaya area itu
+  // bisa disisipkan balik sebagai GAMBAR ke DOCX hasil export (bukan teks,
+  // dan bukan hilang begitu saja seperti sebelumnya). Resolve dengan
+  // { dataUrl, zones: [{x,y,w,h,imageDataUrl}, ...] } - koordinat x/y/w/h
+  // dalam pixel page asli, dipakai buildDocxBlob() untuk posisi floating
+  // image. Urutan tetap WAJIB: render dulu (renderAll()), baru putihkan -
+  // lihat catatan asli di bawah.
+  function renderPageForOcr(page) {
+    return new Promise(function (resolve) {
+      var tmp = new fabric.StaticCanvas(null, { width: page.width, height: page.height });
+      function afterLoaded() {
+        var zoneRects = tmp.getObjects()
+          .filter(function (o) { return o.isExcludeZone; })
+          .map(function (o) { return o.getBoundingRect(true, true); });
+        tmp.getObjects()
+          .filter(function (o) { return o.isGuideBox || o.isGuideLine || o.isExcludeZone; })
+          .forEach(function (o) { tmp.remove(o); });
+        tmp.renderAll();
+
+        // Crop tiap zone dari workingCanvas (bitmap asli) SEBELUM kanvas
+        // offscreen diputihkan, supaya gambar yang disisipkan ke DOCX
+        // nanti adalah konten asli di balik zone itu (letterhead/foto/dll).
+        var zones = zoneRects.map(function (r) {
+          var x = Math.max(0, Math.round(r.left));
+          var y = Math.max(0, Math.round(r.top));
+          var w = Math.min(Math.round(r.width), page.width - x);
+          var h = Math.min(Math.round(r.height), page.height - y);
+          if (w <= 0 || h <= 0) return null;
+          var cropCanvas = document.createElement('canvas');
+          cropCanvas.width = w;
+          cropCanvas.height = h;
+          cropCanvas.getContext('2d').drawImage(page.workingCanvas, x, y, w, h, 0, 0, w, h);
+          return { x: x, y: y, w: w, h: h, imageDataUrl: cropCanvas.toDataURL('image/png') };
+        }).filter(Boolean);
+
+        var ctx = tmp.getContext();
+        zoneRects.forEach(function (r) {
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(r.left, r.top, r.width, r.height);
+        });
+        var dataUrl = tmp.lowerCanvasEl.toDataURL('image/png');
+        tmp.dispose();
+        resolve({ dataUrl: dataUrl, zones: zones });
+      }
+      if (page.json) {
+        tmp.loadFromJSON(page.json, afterLoaded);
+      } else {
+        fabric.Image.fromURL(page.workingCanvas.toDataURL('image/png'), function (bgImg) {
+          bgImg.set({ left: 0, top: 0, selectable: false, evented: false, hasControls: false });
+          tmp.add(bgImg);
+          tmp.sendToBack(bgImg);
+          afterLoaded();
+        });
+      }
+    });
+  }
+
+  // GANTI dari extractParagraphs() lama (hanya teks berurutan, rata kiri,
+  // ukuran font seragam - dikeluhkan user 27 Okt 2026: "layout kacau, tidak
+  // sama persis dengan aslinya"). Sekarang pakai bbox tiap paragraf
+  // (Tesseract.js v5 Paragraph.bbox: {x0,y0,x1,y1} dalam pixel gambar yang
+  // di-OCR - dikonfirmasi dari tesseract.js index.d.ts, BUKAN tebakan) untuk
+  // membangun layout block per paragraf: posisi x/y, lebar, tinggi font, dan
+  // bold - supaya tiap paragraf dari rekonstruksi di DOCX bisa diposisikan
+  // floating di koordinat yang sama seperti di halaman asli (user minta
+  // presisi tinggi + font size/bold/alignment ikut style asli). Urutan baca
+  // tetap dari urutan blocks/paragraphs bawaan Tesseract (sudah terbukti
+  // OK secara urutan, masalah user murni di presisi posisi & style render,
+  // bukan urutan baca - dikonfirmasi "satu kolom biasa tapi layoutnya
+  // kacau").
+  //
+  // is_bold diambil dari MAYORITAS word di paragraf itu (>50% kata bold)
+  // dipakai utk Word.is_bold, bukan dihitung manual.
+  // alignment: heuristik sederhana bandingkan margin kiri (x0) dan margin
+  // kanan (page.width - x1) paragraf itu - kalau margin kanan&kiri mirip
+  // (selisih < 15% lebar halaman) dianggap center; kalau margin kiri jauh
+  // lebih besar drpd biasanya (bukan ukuran mutlak, krn tiap dokumen beda)
+  // heuristik ini TIDAK mencoba deteksi "rata kanan" krn jarang dipakai di
+  // surat/kontrak Indonesia dan riskan salah deteksi - selalu fallback ke
+  // left kalau tidak textbook-center.
+  function extractLayoutBlocks(data, pageWidthPx) {
+    var out = [];
+    if (data && data.blocks && data.blocks.length) {
+      data.blocks.forEach(function (block) {
+        (block.paragraphs || []).forEach(function (p) {
+          var t = (p.text || '').replace(/\s*\n\s*/g, ' ').trim();
+          if (!t || !p.bbox) return;
+
+          var x0 = p.bbox.x0, y0 = p.bbox.y0, x1 = p.bbox.x1, y1 = p.bbox.y1;
+          var widthPx = Math.max(1, x1 - x0);
+          var heightPx = Math.max(1, y1 - y0);
+
+          // Tinggi font diperkirakan dari tinggi baris pertama paragraf
+          // (bukan tinggi seluruh paragraf yang bisa multi-baris) supaya
+          // tidak membesar-besarkan ukuran font paragraf panjang.
+          var lineHeightPx = heightPx;
+          if (p.lines && p.lines.length && p.lines[0].bbox) {
+            lineHeightPx = Math.max(1, p.lines[0].bbox.y1 - p.lines[0].bbox.y0);
+          }
+
+          var boldWordCount = 0, totalWordCount = 0;
+          (p.words || []).forEach(function (w) {
+            totalWordCount += 1;
+            if (w.is_bold) boldWordCount += 1;
+          });
+          var isBold = totalWordCount > 0 && (boldWordCount / totalWordCount) > 0.5;
+
+          var leftMargin = x0;
+          var rightMargin = Math.max(0, pageWidthPx - x1);
+          var isCentered = Math.abs(leftMargin - rightMargin) < (pageWidthPx * 0.15) && leftMargin > (pageWidthPx * 0.08);
+
+          out.push({
+            text: t,
+            x: x0, y: y0, w: widthPx, h: heightPx,
+            fontSizePx: lineHeightPx,
+            bold: isBold,
+            align: isCentered ? 'center' : 'left',
+          });
+        });
+      });
+    }
+    if (!out.length && data && data.text) {
+      // Fallback tanpa bbox (versi/konfigurasi worker tanpa data.blocks):
+      // tidak ada posisi, jadi tetap alur teks biasa seperti sebelumnya -
+      // y null jadi penanda "tidak ada posisi, taruh berurutan" di
+      // buildDocxBlob().
+      data.text.split(/\n\s*\n/).forEach(function (chunk) {
+        var t = chunk.replace(/\n/g, ' ').trim();
+        if (t) out.push({ text: t, x: null, y: null, w: null, h: null, fontSizePx: null, bold: false, align: 'left' });
+      });
+    }
+    return out;
+  }
+
+  function xmlEscape(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  // Px -> EMU (satuan ukuran resmi OOXML drawing; 914400 EMU = 1 inch).
+  // WAJIB pakai DOC_DPI (150, lihat definisinya & catatannya di atas dekat
+  // inchesToPx/guide box) - BUKAN 96. page.width/height dan semua koordinat
+  // zone (x/y/w/h) ada dalam ruang pixel working canvas, yang di seluruh
+  // proyek ini (lihat juga save_edited_document.php, $ASSUMED_DPI) dianggap
+  // 150 px/inch, bukan px CSS 96 DPI. Salah pakai 96 di sini bikin ukuran &
+  // posisi floating image di DOCX membesar ~1.56x dan geser dari posisi
+  // aslinya (bug dilaporkan user 27 Okt 2026, ketahuan dari pembesaran itu).
+  function pxToEmu(px) {
+    return Math.round((px / DOC_DPI) * 914400);
+  }
+
+  // Px -> half-points (satuan w:sz / w:szCs di OOXML run properties, 1pt =
+  // 2 half-point). Dipakai utk font size tiap paragraf, dari fontSizePx
+  // hasil extractLayoutBlocks() (tinggi baris pertama paragraf dalam
+  // pixel). px -> pt lewat DOC_DPI yang sama (150), lalu pt -> half-point.
+  // Clamp 6-72pt (12-144 half-pt) supaya hasil OCR yang bbox-nya aneh
+  // (noise/garis tipis kebaca jadi "paragraf" 1 pixel tinggi, atau
+  // sebaliknya) tidak menghasilkan font raksasa/nol yang bikin dokumen
+  // tidak terbaca.
+  function pxHeightToHalfPoint(px) {
+    var pt = (px / DOC_DPI) * 72;
+    var halfPt = Math.round(pt * 2);
+    return Math.max(12, Math.min(144, halfPt));
+  }
+
+  // OOXML .docx dengan 2 jenis floating content: gambar (Exclude Zone,
+  // wp:anchor > a:graphic > a:graphicData(uri=picture) > pic:pic) dan
+  // textbox per paragraf (hasil OCR, wp:anchor > a:graphic >
+  // a:graphicData(uri=wordprocessingShape) > wps:wsp > wps:txbx). Pola
+  // wps:wsp persis dikutip dari test fixture parser DOCX dxpdf
+  // (docs.rs/crate/dxpdf, tests/shape_text_anchor.rs) supaya tidak
+  // menebak-nebak struktur textbox lagi seperti kegagalan unbound-prefix
+  // sebelumnya - PENTING: namespace wps di sini pakai URI
+  // "http://schemas.microsoft.com/office/word/2010/wordprocessingShape"
+  // (BUKAN openxmlformats.org seperti pic/a/wp - beda vendor/tahun rilis,
+  // jangan disamakan kalau nanti ubah2 lagi).
+  //
+  // Tiap paragraf dari extractLayoutBlocks() (constists teks + posisi x/y +
+  // tinggi font + bold + align) jadi SATU wps:wsp floating diposisikan page-
+  // relative persis di koordinat aslinya (pxToEmu), DIAM/noFill/noLine
+  // (background & border transparan) supaya tidak menimpa konten lain di
+  // halaman - jadi terlihat seolah teks "menempel" di posisi aslinya.
+  // Paragraf tanpa posisi (fallback data.text, x/y null - lihat
+  // extractLayoutBlocks) tetap jadi <w:p> alur teks biasa seperti versi
+  // lama, diselipkan SETELAH semua textbox halaman itu.
+  function buildDocxBlob(allPageLayoutBlocks, allPageZones) {
+    var bodyXml = '';
+    var relsEntries = []; // { rId, target: 'media/imageN.png' }
+    var mediaFiles = []; // { name: 'imageN.png', dataUrl }
+    var imgCounter = 0;
+    var shapeIdCounter = 0;
+
+    function zonesDrawingXml(zones) {
+      var xml = '';
+      zones.forEach(function (z) {
+        imgCounter += 1;
+        var rId = 'rIdImg' + imgCounter;
+        var mediaName = 'image' + imgCounter + '.png';
+        relsEntries.push({ rId: rId, target: 'media/' + mediaName });
+        mediaFiles.push({ name: mediaName, dataUrl: z.imageDataUrl });
+
+        var cx = pxToEmu(z.w), cy = pxToEmu(z.h);
+        var offX = pxToEmu(z.x), offY = pxToEmu(z.y);
+        var docPrId = 1000 + imgCounter;
+        xml +=
+          '<w:r><w:drawing>' +
+          '<wp:anchor behindDoc="0" distT="0" distB="0" distL="0" distR="0" simplePos="0" locked="0" layoutInCell="1" allowOverlap="1" relativeHeight="' + (251658240 + imgCounter) + '">' +
+          '<wp:simplePos x="0" y="0"/>' +
+          '<wp:positionH relativeFrom="page"><wp:posOffset>' + offX + '</wp:posOffset></wp:positionH>' +
+          '<wp:positionV relativeFrom="page"><wp:posOffset>' + offY + '</wp:posOffset></wp:positionV>' +
+          '<wp:extent cx="' + cx + '" cy="' + cy + '"/>' +
+          '<wp:wrapNone/>' +
+          '<wp:docPr id="' + docPrId + '" name="ExcludeZone' + imgCounter + '"/>' +
+          '<a:graphic>' +
+          '<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
+          '<pic:pic>' +
+          '<pic:nvPicPr><pic:cNvPr id="' + docPrId + '" name="' + mediaName + '"/><pic:cNvPicPr/></pic:nvPicPr>' +
+          '<pic:blipFill><a:blip r:embed="' + rId + '"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>' +
+          '<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="' + cx + '" cy="' + cy + '"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>' +
+          '</pic:pic></a:graphicData></a:graphic>' +
+          '</wp:anchor></w:drawing></w:r>';
+      });
+      return xml;
+    }
+
+    // Satu <w:r><w:drawing> berisi satu floating textbox untuk 1 paragraf
+    // hasil OCR, diposisikan page-relative di koordinat x/y aslinya. Tinggi
+    // textbox dilonggarkan dari bbox asli paragraf (* 1.3) supaya teks
+    // reflow Word yang sedikit beda lebar fontnya dari gambar asli tidak
+    // terpotong vertikal - lebar TIDAK dilonggarkan (dibiarkan presisi)
+    // karena user eksplisit minta posisi x presisi tinggi.
+    function paragraphTextboxXml(block) {
+      shapeIdCounter += 1;
+      var cx = pxToEmu(block.w);
+      var cy = pxToEmu(Math.round(block.h * 1.3));
+      var offX = pxToEmu(block.x), offY = pxToEmu(block.y);
+      var docPrId = 2000 + shapeIdCounter;
+      var halfPt = pxHeightToHalfPoint(block.fontSizePx);
+      // w:jc (alignment) WAJIB di dalam w:pPr, bukan child langsung <w:p> -
+      // dicek via referensi skema OOXML resmi (ECMA-376 §17.3.1.13), bukan
+      // tebakan, setelah belajar dari kesalahan unbound-prefix sebelumnya.
+      var pPr = block.align === 'center' ? '<w:pPr><w:jc w:val="center"/></w:pPr>' : '';
+      var boldXml = block.bold ? '<w:b/><w:bCs/>' : '';
+      var rPr = '<w:rPr>' + boldXml + '<w:sz w:val="' + halfPt + '"/><w:szCs w:val="' + halfPt + '"/></w:rPr>';
+
+      return (
+        '<w:r><w:drawing>' +
+        '<wp:anchor behindDoc="0" distT="0" distB="0" distL="0" distR="0" simplePos="0" locked="0" layoutInCell="1" allowOverlap="1" relativeHeight="' + (1000 + shapeIdCounter) + '">' +
+        '<wp:simplePos x="0" y="0"/>' +
+        '<wp:positionH relativeFrom="page"><wp:posOffset>' + offX + '</wp:posOffset></wp:positionH>' +
+        '<wp:positionV relativeFrom="page"><wp:posOffset>' + offY + '</wp:posOffset></wp:positionV>' +
+        '<wp:extent cx="' + cx + '" cy="' + cy + '"/>' +
+        '<wp:wrapNone/>' +
+        '<wp:docPr id="' + docPrId + '" name="OcrText' + shapeIdCounter + '"/>' +
+        '<a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">' +
+        '<wps:wsp>' +
+        '<wps:cNvSpPr/>' +
+        '<wps:spPr>' +
+        '<a:xfrm><a:off x="0" y="0"/><a:ext cx="' + cx + '" cy="' + cy + '"/></a:xfrm>' +
+        '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>' +
+        '<a:noFill/><a:ln><a:noFill/></a:ln>' +
+        '</wps:spPr>' +
+        '<wps:txbx><w:txbxContent>' +
+        '<w:p>' + pPr + '<w:r>' + rPr + '<w:t xml:space="preserve">' + xmlEscape(block.text) + '</w:t></w:r></w:p>' +
+        '</w:txbxContent></wps:txbx>' +
+        '<wps:bodyPr rot="0" vert="horz" wrap="square" lIns="0" tIns="0" rIns="0" bIns="0" anchor="t"/>' +
+        '</wps:wsp>' +
+        '</a:graphicData></a:graphic>' +
+        '</wp:anchor></w:drawing></w:r>'
+      );
+    }
+
+    allPageLayoutBlocks.forEach(function (blocks, pageIdx) {
+      var zones = (allPageZones && allPageZones[pageIdx]) || [];
+      bodyXml += '<w:p>' + zonesDrawingXml(zones) + '</w:p>';
+
+      // Blocks dgn posisi (x/y bukan null) jadi floating textbox; blocks
+      // fallback tanpa posisi (data.text split, lihat extractLayoutBlocks)
+      // jadi <w:p> alur teks biasa, ditaruh berurutan setelah semua
+      // floating textbox halaman itu.
+      var positioned = blocks.filter(function (b) { return b.x !== null; });
+      var unpositioned = blocks.filter(function (b) { return b.x === null; });
+
+      if (positioned.length === 0 && unpositioned.length === 0) {
+        bodyXml += '<w:p/>';
+      } else {
+        positioned.forEach(function (block) {
+          bodyXml += '<w:p>' + paragraphTextboxXml(block) + '</w:p>';
+        });
+        unpositioned.forEach(function (block) {
+          bodyXml += '<w:p><w:r><w:t xml:space="preserve">' + xmlEscape(block.text) + '</w:t></w:r></w:p>';
+        });
+      }
+
+      if (pageIdx < allPageLayoutBlocks.length - 1) {
+        bodyXml += '<w:p><w:r><w:br w:type="page"/></w:r></w:p>';
+      }
+    });
+
+    var documentXml =
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<w:document' +
+      ' xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"' +
+      ' xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"' +
+      ' xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"' +
+      ' xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"' +
+      ' xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"' +
+      ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+      '<w:body>' + bodyXml + '<w:sectPr/></w:body></w:document>';
+
+    var contentTypesXml =
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+      '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+      '<Default Extension="xml" ContentType="application/xml"/>' +
+      '<Default Extension="png" ContentType="image/png"/>' +
+      '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>' +
+      '</Types>';
+
+    var relsXml =
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>' +
+      '</Relationships>';
+
+    var docRelsXml =
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      relsEntries.map(function (r) {
+        return '<Relationship Id="' + r.rId + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="' + r.target + '"/>';
+      }).join('') +
+      '</Relationships>';
+
+    var zip = new window.JSZip();
+    zip.file('[Content_Types].xml', contentTypesXml);
+    zip.folder('_rels').file('.rels', relsXml);
+    var wordFolder = zip.folder('word');
+    wordFolder.file('document.xml', documentXml);
+    // document.xml.rels dibutuhkan SELALU ketika ada minimal 1 gambar;
+    // kalau tidak ada exclude zone di dokumen (relsEntries kosong), tetap
+    // aman ditulis sebagai Relationships kosong - Word mengabaikannya.
+    wordFolder.folder('_rels').file('document.xml.rels', docRelsXml);
+    var mediaFolder = wordFolder.folder('media');
+    mediaFiles.forEach(function (m) {
+      // dataUrl -> base64 mentah (buang prefix "data:image/png;base64,")
+      var base64 = m.dataUrl.split(',')[1];
+      mediaFolder.file(m.name, base64, { base64: true });
+    });
+
+    return zip.generateAsync({
+      type: 'blob',
+      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    });
+  }
+
+  function convertDocumentToDocx() {
+    if (!docEditorReady() && docPages.length === 0) return;
+    syncCurrentPageState();
+    docOcrBtn.disabled = true;
+    docEditorMessage.textContent = 'Loading OCR engine...';
+    docEditorMessage.className = 'settings-message';
+
+    ensureOcrLibs()
+      .then(function () {
+        var allPageLayoutBlocks = [];
+        var allPageZones = [];
+        var chain = Promise.resolve();
+        docPages.forEach(function (page, idx) {
+          chain = chain.then(function () {
+            docEditorMessage.textContent = 'Reading page ' + (idx + 1) + ' of ' + docPages.length + '...';
+            return renderPageForOcr(page)
+              .then(function (rendered) {
+                allPageZones.push(rendered.zones);
+                return window.Tesseract.recognize(rendered.dataUrl, 'eng+ind');
+              })
+              .then(function (result) { allPageLayoutBlocks.push(extractLayoutBlocks(result.data, page.width)); });
+          });
+        });
+        return chain.then(function () {
+          docEditorMessage.textContent = 'Building DOCX file...';
+          return buildDocxBlob(allPageLayoutBlocks, allPageZones);
+        });
+      })
+      .then(function (blob) {
+        var baseName = (docEditorNameInput.value || docSourceFilename || 'document').trim().replace(/\.[a-z0-9]+$/i, '') || 'document';
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = baseName + '.docx';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        docOcrBtn.disabled = false;
+        docEditorMessage.textContent = 'DOCX exported (' + docPages.length + ' page(s) of OCR text).';
+        docEditorMessage.className = 'settings-message settings-message-success';
+      })
+      .catch(function (err) {
+        docOcrBtn.disabled = false;
+        docEditorMessage.textContent = 'OCR/DOCX export failed: ' + ((err && err.message) || 'check your network/ad-blocker and try again.');
+        docEditorMessage.className = 'settings-message settings-message-error';
+      });
+  }
+  docOcrBtn.addEventListener('click', convertDocumentToDocx);
 
   docEditorSaveForm.addEventListener('submit', function (e) {
     e.preventDefault();
@@ -3379,6 +4055,18 @@
         docEditorMessage.textContent = 'Saved as a ' + docPages.length + '-page PDF.';
         docEditorMessage.className = 'settings-message settings-message-success';
         loadActivities();
+        // 27 Okt 2026: setelah Save berhasil, bersihkan dokumen yang sedang
+        // diupload supaya input file siap dipakai lagi untuk dokumen baru -
+        // pola sama seperti docClearAllBtn di atas (tanpa modal konfirmasi
+        // password, karena di sini bukan "discard belum tersimpan" tapi
+        // "sudah tersimpan, lanjut ke dokumen berikutnya").
+        if (docFabricCanvas) { docFabricCanvas.dispose(); docFabricCanvas = null; }
+        docEditorCanvasWrap.style.display = 'none';
+        docEditorFileInput.value = '';
+        resetDocEditorState();
+        setDocToolbarEnabled(false);
+        docEditorSaveForm.reset();
+        docEditorDateInput.value = todayDateInputValue();
       })
       .catch(function () {
         docEditorSaveBtn.disabled = false;

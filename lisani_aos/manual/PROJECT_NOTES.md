@@ -1,6 +1,6 @@
 # PROJECT_NOTES — lisani_aos
 
-> Versi ringkas (26 Okt 2026): hanya kondisi sekarang, aturan bisnis, peta file, dan pekerjaan terbuka.
+> Versi ringkas (27 Okt 2026): hanya kondisi sekarang, aturan bisnis, peta file, dan pekerjaan terbuka.
 > Riwayat per sesi ada di `NOTES_ARCHIVE.md` (upload hanya jika perlu tahu ALASAN keputusan lama).
 > Pekerjaan baru: tambahkan ±10 baris di "Log terbaru" (§8). Setelah dites, lebur ke modul terkait dan hapus dari log.
 
@@ -464,6 +464,16 @@ belum dibangun).
     `.doc-ribbon-group-contextual`, baik saat tertutup maupun saat `.open`). Pola ini (grup sama bentuk, beda
     warna trigger lewat 1 class tambahan) jadi referensi kalau nanti ada tombol/grup kontekstual lain yang perlu
     ditambahkan ke toolbar ini.
+  - **Ribbon interaction fixes** (27 Okt 2026, sudah dites): `docGuideBoxPresetSelect` sempat tidak bisa diklik
+    sama sekali — listener global `document.addEventListener('click', closeAll)` di `wireDocRibbonMenus()` ikut
+    menutup panel sebelum dropdown native sempat terbuka; fix dengan `panel.addEventListener('click', …)` ber-
+    `e.stopPropagation()`. Grup `data-ribbon-group="zoom"` dikecualikan dari auto-close-on-button-click, supaya
+    Zoom In/Out/Fit bisa diklik berkali-kali tanpa panel tertutup (tetap tertutup lewat trigger sendiri atau klik
+    luar). Setelah Save Edited Document sukses, dokumen upload otomatis dibersihkan (canvas dispose, file input &
+    toolbar reset) — pola sama seperti `docClearAllBtn` tapi tanpa modal password. Date default ke tanggal akses
+    hari ini (reuse `todayDateInputValue()` dari Signature Editor), berlaku saat card pertama dibuka maupun
+    setelah reset pasca-Save. Sisa teks UI Document Editor yang masih Indonesia diterjemahkan ke Inggris (hint
+    DOCX belum didukung, "Judul Kegiatan"→"Activity Title" + placeholder, "Hal N"→"Page N").
   - **Save**: semua halaman di-flatten jadi PNG (guide box dibuang dari export), dikirim sekaligus (`pages[]`)
     + `signature_ids[]` + `letterhead_ids[]` ke `ajax/save_edited_document.php`, digabung jadi **1 file PDF**
     via **FPDF** (reuse `optic_pos/fpdf/fpdf.php`). Tabel `edited_documents`: `signature_ids`/`letterhead_ids`
@@ -515,9 +525,6 @@ belum dibangun).
 
 ## 8. Pekerjaan terbuka
 
-### Log terbaru (belum dites, jangan lebur ke §6 sebelum dikonfirmasi)
-(kosong — semua entri terakhir sudah dites & dilebur ke §6 pada 26 Okt 2026)
-
 Belum dibangun (disengaja, bukan bug):
 - Fitur pembayaran bersama (disebut user saat desain Create New Logistic). Baru placeholder di form.
 - Filter/pagination Movements; retention `storage/recycle/`; `customers.profit`; edit/hapus alias & order; aturan stok minus;
@@ -539,6 +546,149 @@ Perlu konfirmasi keputusan:
   `.input-uppercase` jalan tanpa `flexOverlays` untuk 2 modal `invPickerOverlay`/`invPwOverlay` (kalau masih dipakai —
   cek apakah sudah terpakai di kode saat ini). Fitur lain di §6 Investor (Investment Input, Non-Project Expenses,
   Profit Payment & Rolled Capital, delete investor) belum dikonfirmasi ditest terpisah.
+
+**Document Editor → OCR to DOCX, Tahap 1 selesai dikoding (27 Okt 2026, SUDAH ditulis, BELUM semua ditest user)**
+- Rencana besar (disepakati user): OCR pakai Tesseract.js (reuse pola Input Transaction/Disbursement), ambil data
+  word-level + bounding box (bukan teks polos) supaya urutan baca & layout lebih akurat saat direkonstruksi jadi
+  paragraf/baris — user minta "paling akurat". Generate `.docx` murni di browser (OOXML sederhana, tanpa
+  PHPWord/Composer di server — DOCX sebelumnya ditunda krn Composer belum pasti ada, pendekatan client-side ini
+  menghindari masalah itu). Letterhead header/footer **otomatis** masuk exclude (lewat checkbox Apply to all
+  pages di Exclude Zone, bukan logika terpisah). Output: 1 file `.docx` gabungan semua halaman. Tombol OCR
+  nanti masuk grup ribbon baru sendiri.
+- **Tahap 1 (exclude zone + UX fix, sudah dikoding, test checklist di bawah):**
+  - Grup ribbon baru **"Exclude Zone"**: tombol **Add Exclude Zone** (bisa diklik berkali-kali, tiap klik = rect
+    baru, beda dari Guide Box yang cuma 1 instance) + checkbox **Apply to all pages** (default checked, pola sync
+    sama seperti Letterhead — `excludeSyncId`, `syncExcludeZoneTransform()`, `addExcludeZoneToPageData()`). Tahap
+    ini masih alat bantu visual murni (dikecualikan dari flatten/Save PDF, sama seperti Guide Box/Line) — belum
+    disambung ke OCR.
+  - Custom Fabric props baru: `isExcludeZone`, `excludeSyncId` — ditambahkan ke SEMUA 3 tempat daftar
+    `toJSON([...])` (pushDocUndoSnapshot, syncCurrentPageState, addLetterheadToPageData) — kalau nanti nambah
+    prop custom baru lagi di area ini, cari ketiga tempat itu sekaligus, gampang kelewatan salah satu.
+  - **Bug dilaporkan user**: setelah Add Exclude Zone / Insert Letterhead, klik di area kosong membuat hasil kerja
+    hilang ("pindah ke belakang halaman") — akar masalah belum ditelusuri/ditemukan, diatasi dengan workaround
+    atas permintaan user (bukan fix akar masalah): tombol **"Done"** (id `docZoneDoneGroup`, hijau `#1fb15a` —
+    beda warna dari `docBlockAdjustGroup` yang amber, style inline di HTML karena belum pegang `theme.css` untuk
+    nambah class resmi ke sana). **Revisi (27 Okt, atas permintaan user)**: awalnya dibuat sebagai grup ribbon
+    dropdown (trigger+panel) kayak grup lain, tapi user minta 1 klik langsung — sekarang `docZoneDoneGroup`
+    ADALAH tombolnya sendiri, bukan wrapper lagi, TIDAK pakai class `.doc-ribbon-group` (supaya tidak diproses
+    `wireDocRibbonMenus()`). Muncul setelah Add Exclude Zone / Insert Letterhead (`showZoneDoneGroup()`), klik
+    langsung `discardActiveObject()` + sembunyikan tombol. Disembunyikan juga saat pindah halaman/reset state.
+    **Kalau nanti bug akar masalahnya ditemukan**, tombol "Done" ini mungkin jadi tidak perlu lagi — jangan
+    dihapus dulu tanpa tanya user.
+  - **Sudah ditest user & OK**: Save (flatten PDF) dgn Exclude Zone ada di halaman — tidak ikut tercetak.
+  - Belum ditest ulang user setelah revisi tombol Done jadi 1-klik (versi dropdown sebelumnya belum sempat
+    dites user sampai selesai).
+- **Tahap 2 — OCR to DOCX, SUDAH DIKODING (27 Okt 2026), BELUM DITEST USER SAMA SEKALI:**
+  - Ribbon "Exclude Zone" digabung+diganti nama jadi **"Convert to Text"** (atas permintaan user, supaya jelas
+    Exclude Zone ini fungsinya untuk apa) — isinya: Add Exclude Zone + checkbox Apply to all pages (Tahap 1,
+    tidak berubah) + tombol baru **Export as DOCX (OCR)** (`docOcrBtn`) dalam satu panel yang sama.
+  - **Tesseract.js**: lazy-load `tesseract.js@5.0.4` dari cdnjs — **URL/versi disamakan persis** dengan yang
+    sudah dipakai `transaction_content.php` (Input Transaction/Disbursement OCR, `ensureCaptureLibs()`) supaya
+    tidak ada 2 versi beda yang bentrok kalau kebetulan sama-sama ke-load di 1 halaman. Bahasa dipakai
+    **`'eng+ind'`** (bukan cuma `'eng'` seperti di transaction_content.php) — ini keputusan sepihak saya karena
+    dokumennya Indonesia & user minta "paling akurat", **belum dikonfirmasi user**, gampang diubah balik ke
+    `'eng'` saja di `convertDocumentToDocx()` kalau hasilnya malah lebih jelek.
+  - **JSZip** (`jszip@3.10.1`, cdnjs) dipakai bikin kontainer `.docx` (zip minimal: `[Content_Types].xml`,
+    `_rels/.rels`, `word/document.xml`) — library baru di proyek ini, belum dipakai modul lain.
+  - `renderPageForOcr(page)`: sama seperti `renderPageToDataURL()` tapi area tiap Exclude Zone **diputihkan**
+    (bukan dihapus) di canvas offscreen sebelum di-OCR — dokumen asli (`page.json`) tidak berubah. Urutan WAJIB
+    render dulu baru gambar putih (kalau dibalik, `renderAll()` menimpa ulang) — pakai
+    `tmp.lowerCanvasEl.toDataURL()` langsung (bukan `tmp.toDataURL()` Fabric) supaya tidak ada render ulang
+    tersembunyi yang menghapus kotak putih manual itu.
+  - **Rekonstruksi paragraf**: PAKAI LANGSUNG hasil `data.blocks → paragraphs` dari Tesseract (layout analysis
+    bawaan Tesseract sendiri), BUKAN dihitung manual dari bounding box tiap word — keputusan ambil pendekatan
+    ini (bukan rencana awal word-level+bbox manual di log sebelumnya) karena lebih sederhana & percobaan
+    pertama sebaiknya reuse layout analysis Tesseract dulu. Fallback ke `data.text` dipecah baris kosong kalau
+    `data.blocks` kosong. **Ini yang paling perlu divalidasi user** — kalau hasil paragraf/urutan bacanya kacau
+    terutama di dokumen bertabel/multi-kolom, perlu direvisi ke pendekatan bbox manual yang lebih rumit.
+  - Semua halaman diproses berurutan (bukan paralel, supaya tidak membanjiri browser) → 1 file `.docx` gabungan,
+    page break antar halaman, langsung didownload dari browser (tidak lewat server/ajax sama sekali).
+  - **Checklist test user**: coba di dokumen 1 halaman dulu, cek urutan baca & pemisahan paragraf hasil DOCX;
+    cek Exclude Zone benar-benar tidak ikut terbaca; cek dokumen multi-halaman (page break benar); cek file
+    `.docx` hasil bisa dibuka normal di Word/LibreOffice/Google Docs (belum pernah dites — kemungkinan ada
+    bagian OOXML minimal ini yang perlu ditambah kalau ada software yang rewel).
+
+**Document Editor → Exclude Zone hilang total di DOCX export, DIPERBAIKI (27 Okt 2026, SUDAH ditulis, BELUM ditest user)**
+- **Bukan regresi** — klarifikasi ke user: fitur "area Exclude Zone muncul sebagai GAMBAR di DOCX" memang belum
+  pernah dibangun di Tahap 2 awal. `renderPageForOcr()` sudah benar memutihkan zone sebelum OCR (teks di
+  dalamnya tidak ikut terbaca), tapi `buildDocxBlob()` sebelumnya cuma menulis `<w:p>` teks — tidak ada logika
+  crop/embed gambar sama sekali, jadi area itu hilang total di hasil akhir, bukan tetap sebagai gambar.
+- **Perbaikan**: `renderPageForOcr()` sekarang JUGA meng-crop tiap Exclude Zone (pakai pola `cropCanvas` yang
+  sama seperti `cutBlockToLayer()`) dari `page.workingCanvas` (bitmap asli, SEBELUM diputihkan) — resolve value
+  berubah dari `dataUrl` string jadi `{ dataUrl, zones: [{x,y,w,h,imageDataUrl}, ...] }`. `convertDocumentToDocx()`
+  dan `buildDocxBlob()` diupdate menyesuaikan (param baru `allPageZones`).
+- `buildDocxBlob()`: OOXML tidak lagi minimal 3 bagian, sekarang juga tulis `word/_rels/document.xml.rels`
+  (relationship rIdN → `word/media/imageN.png`) + `word/media/*.png` (base64 dari crop) + `Default Extension="png"`
+  di `[Content_Types].xml`. Tiap zone jadi floating image (`wp:anchor`, `relativeFrom="page"`, posisi dari
+  `pxToEmu()` konversi koordinat pixel zone → EMU, 96 DPI) disisipkan di paragraf PERTAMA halaman terkait, supaya
+  posisinya kira-kira sama seperti di halaman asli (bukan ikut alur teks berurutan).
+- **Bug ditemukan user (percobaan pertama, 27 Okt 2026)**: Word gagal buka file (`try_6 (2).docx`) — "Word
+  experienced an error trying to open the file". **Root cause ditemukan & diperbaiki**: XML `word/document.xml`
+  punya *unbound prefix* — prefix `wp:` (dipakai di `<wp:anchor>` dll) tidak pernah dideklarasikan sama sekali
+  (lupa), dan `xmlns:a`/`xmlns:pic`/`xmlns:r` dideklarasikan lokal di elemen anak alih-alih di root
+  `<w:document>`. Dikonfirmasi lewat `xml.dom.minidom` (Python) — bukan dugaan, divalidasi aktual dengan
+  menjalankan ulang fungsi `buildDocxBlob()` di Node (eval fungsi asli + `jszip`) lalu parse tiap XML part di
+  dalam zip. **Fix**: semua 4 namespace (`wp`, `a`, `pic`, `r`) sekarang dideklarasikan sekali di root
+  `<w:document>`, dihapus dari deklarasi lokal per elemen.
+- **Sudah divalidasi (otomatis, bukan di Word asli)**: 3 skenario digenerate & dicek — (1) 2 halaman, 2 exclude
+  zone di halaman 1 → semua 4 XML part valid, `image1.png`+`image2.png` ter-embed, dibuka `python-docx` tanpa
+  error, teks & page break terbaca benar; (2) dokumen TANPA exclude zone sama sekali → tetap valid, no-op aman;
+  (3) `inline_shapes` python-docx = 0 itu NORMAL (gambar kita floating/anchor, bukan inline — python-docx cuma
+  hitung inline, bukan indikasi gambar hilang).
+- **Sudah ditest user di Word asli (percobaan ke-2, 27 Okt 2026)**: file berhasil dibuka (bug unbound prefix di
+  atas terkonfirmasi fix), TAPI ukuran & posisi gambar exclude zone (logo letterhead) salah — jauh lebih besar
+  & bergeser dari posisi aslinya di editor (dikonfirmasi user via screenshot perbandingan editor vs Word).
+- **Root cause ke-2 ditemukan & diperbaiki**: `pxToEmu()` salah asumsi 96 DPI (CSS px standar), padahal SELURUH
+  proyek ini (`DOC_DPI`, lihat dekat `inchesToPx()`/guide box presets, juga dipakai `save_edited_document.php`
+  sbg `$ASSUMED_DPI`) menetapkan working canvas = **150 DPI**, bukan 96. Rasio salahnya ~150/96 ≈ 1.56x, cocok
+  dengan gambar yang tampak membesar di screenshot. Fix: `pxToEmu()` sekarang pakai `DOC_DPI` (150) alih-alih
+  angka 96 hardcoded. Divalidasi: `pxToEmu(150)` sekarang tepat 914400 EMU (= 1 inch persis), sebelumnya salah.
+- **Sudah ditest user, posisi gambar Exclude Zone OK** ("sudah ok", 27 Okt 2026) — bug px→EMU 96 vs 150 DPI di
+  atas dikonfirmasi FIX, tidak perlu lanjut ke dugaan margin halaman.
+
+**Document Editor → OCR to DOCX, layout teks dirombak jadi floating per-paragraf (27 Okt 2026, SUDAH ditulis,
+BELUM ditest user)**
+- **Keluhan user setelah Exclude Zone gambar OK**: "layout tulisan yang di export itu sama persis dengan yang
+  di asli, sekarang ini kacau" — diklarifikasi by ask_user_input_v0: user minta (1) presisi tinggi, tiap
+  paragraf floating di koordinat x/y sama seperti halaman asli (bukan cuma urutan baca benar) + (2) font size,
+  bold, alignment ikut style asli juga (bukan cuma posisi). Dokumen masalahnya kolom tunggal (surat/kontrak),
+  BUKAN tabel/multi-kolom — jadi bukan soal urutan baca Tesseract, soal presisi render.
+- **Rombak total `extractParagraphs()` → `extractLayoutBlocks(data, pageWidthPx)`**: sebelumnya cuma ambil teks
+  tiap `paragraph.text` (rata kiri semua, satu ukuran font). Sekarang untuk tiap paragraf juga ambil
+  `paragraph.bbox` (x0/y0/x1/y1, field dikonfirmasi dari tesseract.js index.d.ts resmi via web search, BUKAN
+  tebakan), tinggi baris pertama (buat estimasi font size, bukan tinggi seluruh paragraf yg bisa multi-baris),
+  `is_bold` mayoritas word di paragraf (>50%), dan heuristik alignment (center kalau margin kiri≈kanan &
+  margin kiri > 8% lebar halaman, selain itu left — SENGAJA tidak coba deteksi "right align" krn jarang dipakai
+  di surat Indonesia & riskan salah). Fallback tanpa bbox (`data.text` dipecah baris kosong) tetap ada,
+  ditandai `x:null` → dirender sbg alur teks biasa, bukan floating.
+- **Rombak `buildDocxBlob()`**: tiap paragraf berposisi sekarang jadi **floating textbox** OOXML
+  (`wp:anchor > a:graphic > a:graphicData(uri=wordprocessingShape) > wps:wsp`), BUKAN `<w:p>` alur teks biasa
+  lagi. Struktur `wps:wsp` (cNvSpPr, spPr dgn xfrm+prstGeom+noFill+ln, txbx>txbxContent, bodyPr) **dikutip
+  persis dari test fixture resmi parser DOCX `dxpdf`** (docs.rs/crate/dxpdf/tests/shape_text_anchor.rs) supaya
+  tidak menebak struktur lagi seperti kegagalan unbound-prefix sebelumnya. **PENTING**: namespace `wps` di sini
+  pakai URI `http://schemas.microsoft.com/office/word/2010/wordprocessingShape` (BEDA dari openxmlformats.org
+  yang dipakai pic/a/wp/r — jangan disamakan kalau ubah2 lagi). Posisi textbox: `relativeFrom="page"` + offset
+  dari `pxToEmu(block.x/y)` (sama seperti Exclude Zone). Tinggi textbox dilonggarkan `*1.3` dari bbox asli
+  (reflow font Word vs gambar bisa beda lebar dikit) TAPI lebar TIDAK dilonggarkan (user minta presisi x
+  tinggi). Background/border textbox transparan (`a:noFill`) biar tidak menimpa teks lain.
+- **Font size**: fungsi baru `pxHeightToHalfPoint(px)` — px (150 DOC_DPI) → pt → half-point (satuan `w:sz`),
+  di-clamp 12–144 half-pt (6–72pt) biar noise OCR (bbox 1px dianggap "paragraf") tidak menghasilkan font
+  rusak. **Bold**: `<w:b/><w:bCs/>` kalau `block.bold`. **Alignment**: `<w:jc w:val="center">` — WAJIB dibungkus
+  `<w:pPr>` (bukan child langsung `<w:p>`), sempat salah taruh lepas di percobaan pertama rombakan ini,
+  dikonfirmasi & diperbaiki via referensi skema OOXML resmi (ECMA-376 §17.3.1.13) sebelum ditulis ke file utama.
+- **Divalidasi otomatis** (sebelum diserahkan ke user, belajar dari 2 kegagalan sebelumnya): generate ulang
+  `buildDocxBlob()` yang sama persis di Node+jszip dengan data bbox dummy (judul center-bold, paragraf kiri
+  biasa, 1 fallback tanpa posisi) → semua 4 XML part valid (`xml.dom.minidom`), `python-docx` bisa buka file
+  tanpa error, urutan elemen `wps:spPr` (xfrm→prstGeom→noFill→ln) dicocokkan ke skema resmi, posisi `w:jc` di
+  dalam `w:pPr` dicocokkan ke skema resmi, estimasi font size hasil `pxHeightToHalfPoint()` masuk akal (10.5pt
+  - 13.5pt utk input 22-28px, bukan ukuran ekstrem).
+- **Belum ditest user di Word asli** — perlu dicek (percobaan ke-4): posisi tiap paragraf vs posisi asli di
+  editor; ukuran font kelihatan wajar (bukan kekecilan/kebesaran); bold & center-alignment judul/heading
+  kebaca benar; textbox transparan tidak menimpa/menutupi teks lain yg overlap; performa/waktu export dgn
+  banyak paragraf per halaman (tiap paragraf = 1 floating shape, dokumen padat teks bisa jadi ratusan shape -
+  belum ada pengujian batas jumlah); device/versi Word lain (LibreOffice, Google Docs) belum dicoba sama
+  sekali untuk namespace `wps` khusus Microsoft ini - ada risiko LibreOffice/Google Docs render beda atau
+  kurang sempurna karena wps bukan namespace ECMA-376 standar, murni ekstensi Microsoft 2010.
 
 ## 9. Cara lanjut di sesi baru
 1. Upload PROJECT_NOTES.md ini + hanya file kode yang relevan (Sales: `transaction_content.php` + `ajax/` terkait;
