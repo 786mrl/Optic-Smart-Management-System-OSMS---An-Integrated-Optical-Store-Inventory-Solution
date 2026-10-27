@@ -563,6 +563,56 @@ seimbang + semua `getElementById` ada id-nya di markup, tapi itu bukan pengganti
   manual per halaman, belum diukur).
 - Deteksi tepi otomatis (OpenCV.js) untuk Deskew masih menyusul nanti — saat ini murni 4-titik manual.
 
+**REVISI 27 Okt 2026 (sore, lanjutan revisi di atas) — 3 perbaikan UX ribbon, BELUM DITES user:**
+- **Tombol -/+ Photo Correction tidak lagi menutup ribbon saat diklik** (sebelumnya tiap klik tombol di
+  dalam panel langsung menutup grupnya, termasuk -/+ threshold/ink contrast yang harusnya bisa diklik
+  berkali-kali). Fix: class baru `.doc-ribbon-keepopen` ditambahkan ke 4 tombol (`docBgThresholdMinusBtn`/
+  `PlusBtn`, `docInkContrastMinusBtn`/`PlusBtn`); `wireDocRibbonMenus()` sekarang mengecualikan tombol
+  manapun yang punya class ini dari auto-close (sebelumnya pengecualian cuma per-GRUP, khusus grup
+  `zoom` — sekarang jadi dua lapis: per-grup zoom DAN per-tombol `.doc-ribbon-keepopen`). Tombol Deskew di
+  grup yang sama TIDAK dikasih class ini, jadi tetap menutup ribbon sekali klik seperti sebelumnya (sesuai
+  permintaan user — perilaku lama dipertahankan khusus untuk Deskew).
+- **Dropdown ribbon (termasuk "Adjust Corners" punya Deskew) tidak lagi terpotong di pojok layar.**
+  Sebelumnya `.doc-ribbon-panel` `position:absolute` ter-anchor ke `.doc-ribbon-group`-nya — kalau grupnya
+  dekat sudut/tepi toolbar, panelnya ikut terpotong viewport. Sekarang `position:fixed`, koordinat
+  `top`/`left` dihitung JS (`positionRibbonPanel()` di dalam `wireDocRibbonMenus()`) dari
+  `getBoundingClientRect()` trigger-nya SETIAP kali dibuka, lalu diklem (clamp) ke dalam
+  `window.innerWidth`/`innerHeight` — kalau ketabrak tepi kanan, panel nempel ke kanan (bukan ke kiri
+  trigger); kalau tidak muat di bawah trigger, panel dibuka ke ATAS trigger alih-alih kepotong di bawah.
+- **Toolbar jadi satu baris + scroll horizontal (ganti wrap ke baris baru).** `.doc-editor-toolbar`:
+  `flex-wrap: nowrap` + `overflow-x: auto` (sebelumnya `flex-wrap: wrap`); `.doc-ribbon-group` dikasih
+  `flex-shrink: 0` supaya grup tidak gepeng duluan sebelum overflow-x kebagian. **`margin-left:auto` pada
+  `.doc-ribbon-group-zoom` DIHAPUS** (sebelumnya mendorong grup Zoom & View — dan apa pun sesudahnya di DOM,
+  termasuk Adjust Block/Adjust Corners — ke ujung kanan toolbar, ini akar masalah "terpotong di sudut" di
+  atas) — sekarang Zoom & View duduk normal di urutan flex, sejajar/setara dengan grup lain (Photo
+  Correction/Blocks/Guide Lines/Convert to Text/Actions), persis seperti diminta user.
+  ⚠ Konsekuensi position:fixed: panel TIDAK ikut bergeser saat toolbar di-scroll horizontal (fixed itu
+  relatif ke viewport, bukan ke toolbar) — supaya tidak ada panel "mengambang" di posisi lama, toolbar diberi
+  listener `scroll` yang langsung `closeAll()` semua panel.
+- Belum dites sama sekali di browser (CSS/JS lolos cek statis saja — `new Function()` per `<script>`, kurung
+  PHP seimbang, semua `getElementById` ada id-nya di markup): perilaku clamp kanan/atas `positionRibbonPanel()`
+  di layar sempit (HP), apakah scroll horizontal toolbar terasa nyaman dipakai (ada scrollbar visible atau
+  perlu indikator tambahan), serta interaksi -/+ keepopen dengan drag slider `<input type="range">` (range
+  bukan `<button>` jadi harusnya otomatis tidak menutup ribbon juga, tapi belum dicoba beneran).
+
+**REVISI 27 Okt 2026 (sore, lanjutan lagi) — Guide Lines + Clear All, BELUM DITES user:**
+- **Warna Guide Lines diganti merah solid** (`addGuideLine()`) — dulu teal putus-putus `#00d2ff`
+  strokeWidth 1, sekarang `#ff0000` strokeWidth 2 (permintaan user: lebih jelas kelihatan di atas foto
+  dokumen). Guide Box/preview Block Text/Exclude Zone TIDAK ikut berubah (beda elemen, warnanya sendiri-
+  sendiri) — cuma garis dari `docAddHGuideBtn`/`docAddVGuideBtn`.
+- **Tombol baru "Remove Guide Lines"** (`docRemoveGuideLinesBtn`, btn-danger) ditambahkan ke ribbon Guide
+  Lines yang sudah ada, di bawah Add Horizontal/Add Vertical. `removeAllGuideLines()` menghapus SEMUA
+  object `isGuideLine` di halaman yang sedang dibuka sekaligus (bukan cuma yang sedang aktif/dipilih —
+  beda dari Delete Selected yang cuma 1 object), tidak menyentuh Guide Box/Exclude Zone/block/ttd/kop lain
+  di halaman yang sama. Ikut `pushDocUndoSnapshot()` seperti aksi lain, jadi bisa di-Undo.
+- **Clear All (ribbon Actions) tidak lagi minta password.** Sebelumnya lewat `openConfirmModal()` (pola
+  password_verify (a) di §3 WAJIB) — permintaan user: langsung jalan saat tombol diklik, tanpa modal
+  konfirmasi sama sekali. Teardown-nya (`docFabricCanvas.dispose()`, reset state, dst) tidak berubah, cuma
+  pintu masuknya. ⚠ Ini SATU-SATUNYA aksi destruktif di Document Editor yang sekarang tanpa konfirmasi apa
+  pun (Delete Selected & aksi lain tetap seperti sebelumnya) — keputusan sadar atas permintaan eksplisit
+  user, dicatat di sini kalau nanti dipertanyakan lagi.
+- Belum dites sama sekali di browser.
+
 Perlu konfirmasi keputusan:
 - Invoice numbering `sequence_number` lanjut per customer lintas bulan (bukan reset bulanan). Kalau ternyata tidak,
   kembalikan filter `period_month/period_year` di query MAX di `create_order.php`.

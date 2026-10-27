@@ -291,16 +291,16 @@
               </button>
               <div class="header-sub" style="display:flex;align-items:center;gap:6px;">
                 <span>Remove White Background</span>
-                <button type="button" class="btn btn-secondary doc-zoom-btn" id="docBgThresholdMinusBtn" aria-label="Lower threshold" disabled>-</button>
+                <button type="button" class="btn btn-secondary doc-zoom-btn doc-ribbon-keepopen" id="docBgThresholdMinusBtn" aria-label="Lower threshold" disabled>-</button>
                 <input type="range" id="docBgThreshold" min="0" max="255" value="0" style="width:120px;" disabled>
-                <button type="button" class="btn btn-secondary doc-zoom-btn" id="docBgThresholdPlusBtn" aria-label="Raise threshold" disabled>+</button>
+                <button type="button" class="btn btn-secondary doc-zoom-btn doc-ribbon-keepopen" id="docBgThresholdPlusBtn" aria-label="Raise threshold" disabled>+</button>
                 <span id="docBgThresholdValue">0</span>
               </div>
               <div class="header-sub" style="display:flex;align-items:center;gap:6px;">
                 <span>Ink Contrast</span>
-                <button type="button" class="btn btn-secondary doc-zoom-btn" id="docInkContrastMinusBtn" aria-label="Lower ink contrast" disabled>-</button>
+                <button type="button" class="btn btn-secondary doc-zoom-btn doc-ribbon-keepopen" id="docInkContrastMinusBtn" aria-label="Lower ink contrast" disabled>-</button>
                 <input type="range" id="docInkContrast" min="0" max="100" value="0" style="width:120px;" disabled>
-                <button type="button" class="btn btn-secondary doc-zoom-btn" id="docInkContrastPlusBtn" aria-label="Raise ink contrast" disabled>+</button>
+                <button type="button" class="btn btn-secondary doc-zoom-btn doc-ribbon-keepopen" id="docInkContrastPlusBtn" aria-label="Raise ink contrast" disabled>+</button>
                 <span id="docInkContrastValue">0</span>
               </div>
             </div>
@@ -344,6 +344,9 @@
               <button type="button" class="btn btn-secondary" id="docAddVGuideBtn" disabled>
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="3" x2="12" y2="21"/></svg>
                 Add Vertical Guide
+              </button>
+              <button type="button" class="btn btn-danger" id="docRemoveGuideLinesBtn" disabled>
+                <i class="ti ti-eraser"></i> Remove Guide Lines
               </button>
             </div>
           </div>
@@ -895,11 +898,14 @@
 
   .doc-editor-toolbar {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap; /* 27 Okt 2026 (revisi): satu baris saja, bukan wrap - lihat .doc-ribbon-group
+      flex-shrink:0 di bawah supaya grup tidak gepeng duluan sebelum overflow-x kebagian */
     align-items: flex-start;
     gap: 10px;
     margin: 14px 0 6px 0;
-    position: relative; /* dropdown panels (position:absolute) anchor to this */
+    overflow-x: auto; /* digeser/scroll kalau grup ribbon tidak cukup dalam satu baris */
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 4px; /* ruang untuk scrollbar supaya tidak menempel pas di tombol */
   }
   .doc-editor-toolbar .btn { display: inline-flex; align-items: center; gap: 6px; width: auto; }
 
@@ -907,7 +913,7 @@
      (icon + group name + chevron) that opens a dropdown panel holding the
      group's real buttons. 26 Okt 2026 redesign - see wireDocRibbonMenus()
      in JS. ---- */
-  .doc-ribbon-group { position: relative; }
+  .doc-ribbon-group { position: relative; flex-shrink: 0; }
   .doc-ribbon-trigger {
     display: inline-flex;
     align-items: center;
@@ -933,10 +939,12 @@
   .doc-ribbon-group.open .doc-ribbon-chevron { transform: rotate(180deg); }
   .doc-ribbon-panel {
     display: none;
-    position: absolute;
-    top: calc(100% + 6px);
-    left: 0;
-    z-index: 40;
+    position: fixed; /* 27 Okt 2026 (revisi): dulu absolute (anchor ke .doc-ribbon-group, ikut
+      kepotong kalau groupnya dekat sudut/tepi toolbar yang sekarang overflow-x:auto) - top/left
+      di-set JS tiap dibuka (lihat positionRibbonPanel() di wireDocRibbonMenus()), dihitung dari
+      getBoundingClientRect() trigger-nya lalu diklem ke dalam viewport supaya tidak pernah
+      terpotong di layar, termasuk saat trigger-nya dekat sudut kanan (mis. Adjust Corners). */
+    z-index: 200;
     flex-direction: column;
     align-items: stretch;
     gap: 8px;
@@ -950,7 +958,6 @@
   .doc-ribbon-group.open .doc-ribbon-panel { display: flex; }
   .doc-ribbon-panel .btn { justify-content: flex-start; }
 
-  .doc-ribbon-group-zoom { margin-left: auto; }
   .doc-zoom-level-badge {
     font-size: 11px;
     color: var(--text-muted, #9a9a9a);
@@ -2318,6 +2325,8 @@
   var docBlockCancelBtn = document.getElementById('docBlockCancelBtn');
   // 27 Okt 2026 (Tahap 14): Photo Correction - lihat blok JS "PHOTO CORRECTION" di
   // bawah (dekat Guide Box) untuk fungsi-fungsinya.
+  var docEditorToolbar = document.getElementById('docEditorToolbar');
+  var docRemoveGuideLinesBtn = document.getElementById('docRemoveGuideLinesBtn');
   var docDeskewBtn = document.getElementById('docDeskewBtn');
   var docBgThresholdInput = document.getElementById('docBgThreshold');
   var docBgThresholdValue = document.getElementById('docBgThresholdValue');
@@ -2479,7 +2488,7 @@
   function currentPage() { return docPages[currentPageIndex]; }
 
   function setDocToolbarEnabled(enabled) {
-    [docBlockTextBtn, docAddHGuideBtn, docAddVGuideBtn, docGuideBoxBtn, docGuideBoxPresetSelect, docAddExcludeZoneBtn, docOcrBtn, docInsertSigBtn, docInsertLetterheadBtn, docClearAllBtn,
+    [docBlockTextBtn, docAddHGuideBtn, docAddVGuideBtn, docRemoveGuideLinesBtn, docGuideBoxBtn, docGuideBoxPresetSelect, docAddExcludeZoneBtn, docOcrBtn, docInsertSigBtn, docInsertLetterheadBtn, docClearAllBtn,
      docZoomOutBtn, docZoomInBtn, docZoomFitBtn, docDeskewBtn,
      docBgThresholdInput, docBgThresholdMinusBtn, docBgThresholdPlusBtn,
      docInkContrastInput, docInkContrastMinusBtn, docInkContrastPlusBtn].forEach(function (btn) {
@@ -2506,13 +2515,37 @@
         if (g !== except) g.classList.remove('open');
       });
     }
+    // 27 Okt 2026 (revisi): panel sekarang position:fixed (lihat CSS .doc-ribbon-panel) supaya
+    // tidak pernah terpotong di sudut/tepi layar (kasus nyata: Adjust Corners, trigger-nya dekat
+    // pojok kanan toolbar) dan tidak ikut terklip saat toolbar sendiri di-scroll horizontal
+    // (overflow-x:auto, lihat .doc-editor-toolbar). Posisi dihitung dari getBoundingClientRect()
+    // trigger, lalu diklem (clamp) ke dalam lebar/tinggi viewport.
+    function positionRibbonPanel(trigger, panel) {
+      panel.style.left = '0px'; // reset dulu supaya offsetWidth/Height yang diukur bukan hasil clamp lama
+      panel.style.top = '0px';
+      var tRect = trigger.getBoundingClientRect();
+      var margin = 8;
+      var left = tRect.left;
+      var top = tRect.bottom + 6;
+      var maxLeft = window.innerWidth - panel.offsetWidth - margin;
+      if (left > maxLeft) left = Math.max(margin, maxLeft); // tempel ke kanan trigger, bukan kiri, kalau ketabrak tepi kanan
+      if (left < margin) left = margin;
+      var maxTop = window.innerHeight - panel.offsetHeight - margin;
+      if (top > maxTop) top = Math.max(margin, tRect.top - panel.offsetHeight - 6); // tidak muat di bawah -> buka ke atas trigger
+      panel.style.left = left + 'px';
+      panel.style.top = top + 'px';
+    }
     groups.forEach(function (group) {
       var trigger = group.querySelector('.doc-ribbon-trigger');
+      var panel = group.querySelector('.doc-ribbon-panel');
       trigger.addEventListener('click', function (e) {
         e.stopPropagation();
         var willOpen = !group.classList.contains('open');
         closeAll(null);
-        if (willOpen) group.classList.add('open');
+        if (willOpen) {
+          group.classList.add('open');
+          if (panel) positionRibbonPanel(trigger, panel);
+        }
       });
       // Clicking a real action button inside the panel closes the menu too,
       // so it behaves like Word (pick an option, menu goes away) instead of
@@ -2522,15 +2555,19 @@
       // tetap menggelembung ke listener document di bawah, yang langsung
       // closeAll() dan membuat panel ter-hide sebelum browser sempat
       // menampilkan dropdown opsi select (select jadi "tidak bisa diklik
-      // sama sekali"). Grup Zoom & View dikecualikan dari auto-close supaya
-      // tombol di dalamnya (Zoom In/Out/Fit) bisa diklik berkali-kali tanpa
-      // panelnya ikut tertutup - panel ini hanya tertutup lewat trigger-nya
-      // sendiri atau klik di luar panel.
-      var panel = group.querySelector('.doc-ribbon-panel');
+      // sama sekali"). Grup Zoom & View dikecualikan dari auto-close (semua
+      // tombolnya) supaya Zoom In/Out/Fit bisa diklik berkali-kali tanpa
+      // panelnya ikut tertutup. 27 Okt 2026 (revisi): pengecualian yang sama
+      // kini juga berlaku PER TOMBOL lewat class .doc-ribbon-keepopen (dipakai
+      // tombol -/+ Remove White Background & Ink Contrast di Photo
+      // Correction) - supaya bisa diklik berulang kali tanpa ribbon tertutup,
+      // SEDANGKAN tombol Deskew di grup yang sama tetap menutup ribbon seperti
+      // sebelumnya (tidak dikecualikan, karena bukan tombol -/+).
       if (panel) {
         panel.addEventListener('click', function (e) {
           e.stopPropagation();
-          if (group.dataset.ribbonGroup !== 'zoom' && e.target.closest('button')) group.classList.remove('open');
+          var keepOpen = group.dataset.ribbonGroup === 'zoom' || e.target.closest('.doc-ribbon-keepopen');
+          if (!keepOpen && e.target.closest('button')) group.classList.remove('open');
         });
       }
     });
@@ -2538,6 +2575,12 @@
     document.addEventListener('keydown', function (e) {
       if (e.key === 'Escape') closeAll(null);
     });
+    // 27 Okt 2026: toolbar sekarang bisa digeser horizontal (overflow-x:auto) - panel yang
+    // position:fixed tidak ikut bergeser bersama trigger-nya saat toolbar di-scroll, jadi
+    // ditutup saja supaya tidak ada panel "mengambang" di posisi lama.
+    if (docEditorToolbar) {
+      docEditorToolbar.addEventListener('scroll', function () { closeAll(null); });
+    }
   }
   wireDocRibbonMenus();
 
@@ -3209,7 +3252,10 @@
     pushDocUndoSnapshot();
     var line;
     var commonOpts = {
-      stroke: '#00d2ff', strokeWidth: 1, strokeDashArray: [6, 4],
+      // 27 Okt 2026: merah solid (dulu teal putus-putus #00d2ff strokeWidth 1) - permintaan
+      // user, lebih jelas kelihatan di atas foto dokumen. strokeWidth dinaikkan ke 2 juga
+      // supaya makin jelas (bukan cuma ganti warna).
+      stroke: '#ff0000', strokeWidth: 2, strokeDashArray: [6, 6],
       selectable: true, evented: true, hasControls: false, hasBorders: false,
       lockScalingX: true, lockScalingY: true, lockRotation: true,
       padding: 8, isGuideLine: true, guideOrientation: orientation,
@@ -3227,8 +3273,22 @@
     docFabricCanvas.requestRenderAll();
   }
 
+  // 27 Okt 2026: hapus SEMUA guide line di halaman yang sedang dibuka sekaligus (beda dari
+  // Delete Selected yang cuma 1 object aktif) - cuma cari object isGuideLine, tidak menyentuh
+  // Guide Box/Exclude Zone/block/ttd/kop lain di halaman yang sama.
+  function removeAllGuideLines() {
+    if (!docEditorReady()) return;
+    var lines = docFabricCanvas.getObjects().filter(function (o) { return o.isGuideLine; });
+    if (!lines.length) return;
+    pushDocUndoSnapshot();
+    lines.forEach(function (o) { docFabricCanvas.remove(o); });
+    docFabricCanvas.discardActiveObject();
+    docFabricCanvas.requestRenderAll();
+  }
+
   docAddHGuideBtn.addEventListener('click', function () { addGuideLine('h'); });
   docAddVGuideBtn.addEventListener('click', function () { addGuideLine('v'); });
+  docRemoveGuideLinesBtn.addEventListener('click', removeAllGuideLines);
 
   docGuideBoxBtn.addEventListener('click', function () {
     if (!docEditorReady()) return;
@@ -3708,20 +3768,18 @@
     docDeleteSelectedBtn.disabled = true;
   });
 
+  // 27 Okt 2026 (revisi): DULU lewat openConfirmModal (password_verify, pola (a) di §3 WAJIB
+  // PROJECT_NOTES.md) - permintaan user: tidak perlu password, langsung jalan saat diklik.
+  // Teardown-nya sendiri sama persis seperti sebelumnya (dan sama seperti pola "bersihkan
+  // setelah Save berhasil" di atas, docEditorSaveForm 'submit' handler) - cuma pintu masuknya
+  // yang berubah dari modal password ke langsung.
   docClearAllBtn.addEventListener('click', function () {
     if (!docEditorReady() && docPages.length === 0) return;
-    openConfirmModal(
-      'Clear Document Editor',
-      'This will discard the current document (all pages) and everything moved/pasted on it (not yet saved). Enter your password to continue.',
-      function () {
-        hideModal(confirmOverlay);
-        if (docFabricCanvas) { docFabricCanvas.dispose(); docFabricCanvas = null; }
-        docEditorCanvasWrap.style.display = 'none';
-        docEditorFileInput.value = '';
-        resetDocEditorState();
-        setDocToolbarEnabled(false);
-      }
-    );
+    if (docFabricCanvas) { docFabricCanvas.dispose(); docFabricCanvas = null; }
+    docEditorCanvasWrap.style.display = 'none';
+    docEditorFileInput.value = '';
+    resetDocEditorState();
+    setDocToolbarEnabled(false);
   });
 
   /* ---- Insert Signature: reuses ajax/list_signatures.php and
