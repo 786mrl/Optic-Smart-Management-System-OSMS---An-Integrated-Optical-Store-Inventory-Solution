@@ -690,6 +690,93 @@ BELUM ditest user)**
   sekali untuk namespace `wps` khusus Microsoft ini - ada risiko LibreOffice/Google Docs render beda atau
   kurang sempurna karena wps bukan namespace ECMA-376 standar, murni ekstensi Microsoft 2010.
 
+**Document Editor → OCR to DOCX, layout teks masih kacau meski posisi gambar sudah OK (27 Okt 2026, percobaan ke-4, SUDAH ditulis, BELUM ditest user)**
+- **Root cause ditemukan** (extract `.docx` hasil user + inspeksi `word/document.xml` manual via `xml.dom.minidom`,
+  bukan dugaan): granularitas v3 sebelumnya salah pakai `Paragraph.bbox` Tesseract. Untuk dokumen satu-kolom
+  rapat (field "Nama:/Jabatan:/Alamat:" nyaris tanpa jarak vertikal), segmentasi paragraf Tesseract SENDIRI
+  menggabungkan banyak baris beda jadi SATU paragraph dgn bbox raksasa (hampir se-body halaman) — bukan bug di
+  kode kita, field2 terpisah itu jadi 1 textbox dipaksa reflow lebar penuh → numpuk & kelihatan center semua.
+  Heuristik `isCentered` lama juga longgar: bandingkan margin kiri/kanan BARIS/PARAGRAF itu sendiri saja, jadi
+  paragraf body yang kebetulan hampir selebar halaman ikut terdeteksi "center" (margin kiri≈kanan padahal cuma
+  rata-kiri panjang).
+- **Fix**: `extractLayoutBlocks()` dirombak dari granularitas per-PARAGRAF ke per-BARIS (`Paragraph.lines[]`,
+  bbox lebih presisi & stabil). Heuristik alignment baru: hitung dulu margin-kiri-umum 1 halaman (x0 paling
+  sering muncul, dibulatkan kelipatan 10px) lewat 2-pass; baris dianggap center HANYA kalau menjorok jauh dari
+  margin umum itu (>5% lebar halaman) DAN margin kiri≈kanan baris itu sendiri (<15%) — dua syarat sekaligus.
+  `buildDocxBlob()`: kelonggaran tinggi textbox diturunkan `*1.3`→`*1.15` (1 blok = 1 baris sekarang, bukan
+  paragraf multi-baris, jadi risiko kepotong vertikal lebih kecil).
+- **Divalidasi otomatis** (extract fungsi ke Node, eval + data dummy meniru kasus gagal asli — paragraf Tesseract
+  gabungan banyak baris): hasil JADI 4 blok terpisah sesuai ekspektasi (bukan 1 blok raksasa), judul terdeteksi
+  center, baris field pendek & baris body panjang yang sama-sama rata kiri TIDAK ikut ke-false-positive center.
+  XML hasil `buildDocxBlob()` divalidasi `xml.dom.minidom` — well-formed.
+- **Sudah ditest user di Word asli, posisi/ukuran OK** ("sudah ok", 27 Okt 2026) — TAPI user minta 1 perubahan:
+  tiap baris hasil export berupa floating textbox (`wps:wsp`) yang harus diklik dulu kotaknya sebelum bisa edit
+  teksnya — user mau "seperti biasa saja, jadi mudah saya editnya".
+- **v4 — floating textbox per baris DIBUANG, ganti paragraf alur teks biasa**: `paragraphTextboxXml()` dihapus,
+  diganti `normalParagraphXml(block)` → `<w:p>` biasa (bukan `wp:anchor`/`wps:wsp`) dgn `w:jc` (align),
+  `w:b`/`w:bCs` (bold), `w:sz`/`w:szCs` (font size) tetap dipertahankan dari hasil OCR - HANYA wadah floating-nya
+  yg dibuang. Trade-off DISADARI & diterima user: presisi x/y per baris dilepas, teks sekarang alur top-to-bottom
+  sesuai urutan baca asli (bukan lagi di koordinat persis) - tapi jadi mudah diedit langsung (klik & ketik).
+  Exclude Zone (gambar logo/letterhead, `zonesDrawingXml()`) TETAP floating seperti sebelumnya (itu gambar, bukan
+  teks yg mau diedit). Loop `positioned`/`unpositioned` disederhanakan jadi satu loop (semua block diperlakukan
+  sama, field `x`/`y` block skrg tidak dipakai lagi utk teks).
+- **Divalidasi otomatis** (eval fungsi di Node + data dummy termasuk kasus fallback tanpa bbox): XML valid
+  (`xml.dom.minidom`), dikonfirmasi TIDAK ADA `wps:wsp` lagi di output, paragraf berurutan sesuai urutan baca,
+  alignment/bold/font size per baris tetap terbawa.
+- **Sudah ditest user, paragraf biasa OK** ("sudah ok", 27 Okt 2026) — lanjut minta 1 fitur baru (bukan bug):
+  proses convert (OCR→DOCX) ditampilkan dalam **progress modal/"fly window"** biar user tahu kapan selesainya
+  (sebelumnya status cuma teks kecil `docEditorMessage` di bawah tombol, gampang kelewat).
+- **Ditambahkan `docConvertProgressOverlay`**: modal baru (pola sama `.modal-overlay>.modal` + `showModal()`/
+  `hideModal()` yang sudah ada di file ini, bukan komponen baru) dgn progress bar (`doctools-progress-bar-fill`,
+  width % via `updateConvertProgress(text, fraction)`) + teks status. Ditampilkan di awal
+  `convertDocumentToDocx()`, diupdate tiap tahap (loading engine → per halaman "Reading page N of M" → "Building
+  DOCX file..." → "Done!"), auto-tertutup sendiri 700ms setelah "Done!" (biar user sempat lihat), atau langsung
+  tertutup kalau gagal (`.catch`). `docEditorMessage` (teks sukses/gagal di bawah tombol) TETAP dipertahankan
+  jalan seperti sebelumnya, tidak diganti — overlay cuma lapisan tambahan selama proses berjalan, bukan
+  pengganti. Tidak ada tombol Cancel (Tesseract.js tidak ada mekanisme abort aman di tengah proses).
+  CSS pakai token yang sudah ada di file ini (`var(--primary)`, `var(--text-muted)`, `var(--bg-surface-alt)`),
+  bukan warna baru. **CATATAN**: `theme.css` tidak diupload sesi ini jadi CSS token diasumsikan sama persis
+  dgn yang sudah dipakai di tempat lain file ini (mis. `.sig-editor-group-controls .btn.active`) — kalau nanti
+  ternyata token itu sudah berubah di `theme.css`, sesuaikan.
+- **Divalidasi**: 2 `<script>` block di file diekstrak & dicek `new Function()` di Node — sintaks valid.
+- **Belum ditest user** — perlu dicek: modal muncul & progress bar bergerak sesuai tahap; auto-tertutup setelah
+  selesai; warna/style modal konsisten dgn tema gelap existing (krn `theme.css` tidak dicek langsung sesi ini).
+
+**Add Exclude Zone → klik-gambar sendiri (bukan kotak default siap pakai) (27 Okt 2026)**
+- **Permintaan user**: sebelumnya klik "Add Exclude Zone" langsung menaruh kotak default di area atas halaman
+  (lokasi umum letterhead) yang tinggal digeser/resize. User mau dia sendiri yang blok/gambar area dari awal
+  (klik-tahan-geser di canvas), kotak tetap bisa digeser/resize SESUDAHNYA seperti biasa - cuma titik awalnya
+  yang beda, bukan nambah langkah baru (bukan minta tahap Apply/Cancel terpisah).
+- **Implementasi**: dicontek dari pola Block Text yang sudah ada (`docDrawMode`/`wireDocCanvasDrawing()`
+  mouse:down/move/up, crosshair cursor) - `'excludeZone'` jadi value `docDrawMode` baru di samping `'block'`.
+  `addExcludeZone()` lama (langsung bikin rect default) dipecah jadi `startExcludeZoneDraw()` (arm mode gambar,
+  toggle tombol+cursor, saling eksklusif dgn Block Text) + `finalizeExcludeZoneDraw(drawnRect)` (dipanggil dari
+  `mouse:up` begitu user lepas klik - menaikkan status rect hasil gambar jadi object final isExcludeZone:
+  selectable/hasControls dinyalakan, `pushDocUndoSnapshot()`, sync "Apply to all pages" via
+  `applyExcludeZoneToOtherPages()` - isinya sama persis seperti versi lama, cuma sumber posisi/ukurannya dari
+  gambar user bukan hitungan default). Preview rect saat digambar dibedakan warna (merah dashed, bukan ungu
+  Block Text) sekadar feedback visual. `resetDocEditorState()` & `startBlockDraw()` diupdate biar kedua mode
+  saling eksklusif (ganti mode lain otomatis matikan highlight tombol satunya).
+- **Divalidasi**: 2 `<script>` block diekstrak & `new Function()` di Node - sintaks valid. Logika alur (bukan di-
+  run beneran, perlu Fabric.js+canvas asli) dicek manual thread-through.
+- **Belum ditest user** — perlu dicek: klik tombol lalu drag di canvas benar2 memunculkan preview merah mengikuti
+  drag; lepas klik langsung jadi object final yg bisa digeser/resize (bukan masih preview/pending); "Apply to all
+  pages" masih tersync ke halaman lain seperti sebelumnya; drag kecil (<4px, klik nyasar) tidak bikin zone kosong
+  nyangkut & tool tetap armed.
+
+**Convert to DOCX → bersihkan halaman setelah download berhasil (27 Okt 2026)**
+- **Permintaan user**: setelah convert+download DOCX sukses, halaman dibersihkan supaya siap upload dokumen baru
+  - SAMA PERSIS seperti yang sudah terjadi sehabis Save berhasil (`docEditorSaveForm` submit handler).
+- **Implementasi**: di `convertDocumentToDocx()` bagian `.then(blob)` (setelah trigger download `<a>` & progress
+  modal "Done!"), ditambahkan blok reset yang DICONTEK PERSIS dari submit handler Save (dispose
+  `docFabricCanvas`, sembunyikan `docEditorCanvasWrap`, kosongkan `docEditorFileInput`, `resetDocEditorState()`,
+  `setDocToolbarEnabled(false)`, `docEditorSaveForm.reset()`, reset tanggal ke hari ini) - bukan reset versi
+  beda sendiri. `docEditorMessage` (teks sukses "DOCX exported...") TETAP kelihatan sesudahnya, tidak ikut
+  kehapus (sama seperti pola di Save, `docEditorMessage` ada di luar `<form>` jadi tidak kena `.reset()`).
+- **Divalidasi**: 2 `<script>` block diekstrak & `new Function()` di Node - sintaks valid.
+- **Belum ditest user** — perlu dicek: sehabis download DOCX selesai, halaman Document Editor benar2 bersih
+  (kembali ke kondisi awal siap upload), pesan sukses masih kebaca sebelum halaman bersih.
+
 ## 9. Cara lanjut di sesi baru
 1. Upload PROJECT_NOTES.md ini + hanya file kode yang relevan (Sales: `transaction_content.php` + `ajax/` terkait;
    Logistic: `logistic_content.php` + `list_logistic_movements.php`/`list_logistics.php`; Investor:

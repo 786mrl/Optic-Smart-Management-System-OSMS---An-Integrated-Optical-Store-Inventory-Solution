@@ -312,8 +312,8 @@
           </div>
 
           <!-- 27 Okt 2026: satu grup gabungan "Convert to Text" - isinya
-               Exclude Zone (penanda area yang di-skip, lihat addExcludeZone()
-               di bawah; beda dari Guide Box: bisa >1 instance per halaman,
+               Exclude Zone (penanda area yang di-skip, lihat startExcludeZoneDraw()/
+               finalizeExcludeZoneDraw() di bawah; beda dari Guide Box: bisa >1 instance per halaman,
                tiap klik "Add Exclude Zone" = rect baru, tidak menggantikan
                yang lama) DAN tombol OCR→DOCX (docOcrBtn, lihat
                convertDocumentToDocx()) dalam satu panel - sengaja tidak
@@ -435,7 +435,7 @@
                Insert Letterhead membuat hasil kerjanya hilang ("pindah ke
                belakang halaman"). Show/hide lewat
                showZoneDoneGroup()/hideZoneDoneGroup() di JS (dipanggil
-               setelah addExcludeZone() dan sehabis gambar letterhead
+               setelah finalizeExcludeZoneDraw() dan sehabis gambar letterhead
                header selesai dimuat). Warna hijau (beda dari amber
                #docBlockAdjustGroup) - style inline di sini (bukan
                ditambahkan ke theme.css, supaya tidak menebak isi file itu
@@ -549,6 +549,28 @@
   </div>
 </div>
 
+<!-- Progress modal selama proses OCR->DOCX (docOcrBtn) - user minta "fly
+     window" 27 Okt 2026 biar tahu kapan prosesnya selesai (sebelumnya
+     status cuma teks kecil docEditorMessage di bawah tombol, gampang
+     kelupaan/kelewat kalau user scroll). Tidak ada tombol Cancel - proses
+     OCR Tesseract.js tidak ada mekanisme abort yang aman di tengah jalan,
+     jadi overlay ini murni informatif, tertutup otomatis sendiri lewat
+     showConvertProgress()/hideConvertProgress() (lihat convertDocumentToDocx()
+     di bawah). docEditorMessage TETAP dipakai juga utk status akhir
+     (sukses/gagal) setelah overlay ini tertutup - tidak diganti, cuma
+     ditambah lapisan overlay di depannya selama proses berjalan. -->
+<div class="modal-overlay" id="docConvertProgressOverlay" style="display:none;">
+  <div class="modal doctools-progress-modal">
+    <div class="panel-header">
+      <div class="panel-title">Converting to DOCX</div>
+    </div>
+    <div class="doctools-progress-bar-track">
+      <div class="doctools-progress-bar-fill" id="docConvertProgressBarFill" style="width:0%;"></div>
+    </div>
+    <div class="doctools-progress-text" id="docConvertProgressText">Loading OCR engine...</div>
+  </div>
+</div>
+
 <!-- Fabric.js powers the Document Editor's layer/drag/resize canvas below
      (block selection, moved blocks, guide box, pasted signature are all
      fabric objects). Loaded once; guarded in case this file is ever
@@ -608,6 +630,23 @@
   .settings-form { margin-bottom: 20px; }
   .settings-form-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 10px; }
   .settings-message { margin-top: 8px; font-size: 13px; }
+
+  /* Progress modal (docConvertProgressOverlay) - lihat markup & catatan di
+     dekat docToolsConfirmOverlay. Token var(--primary/--text-muted) sama
+     dgn yang sudah dipakai di tempat lain file ini (mis. .sig-editor-group-
+     controls .btn.active), supaya warnanya konsisten dgn tema. */
+  .doctools-progress-modal { max-width: 340px; text-align: center; }
+  .doctools-progress-bar-track {
+    width: 100%; height: 8px; border-radius: 999px;
+    background: var(--bg-surface-alt, rgba(255, 255, 255, 0.08));
+    overflow: hidden; margin: 18px 0 12px;
+  }
+  .doctools-progress-bar-fill {
+    height: 100%; width: 0%; border-radius: 999px;
+    background: var(--primary, #6c5ce7);
+    transition: width 0.25s ease;
+  }
+  .doctools-progress-text { font-size: 13px; color: var(--text-muted, #9a9a9a); }
   .settings-message-error { color: var(--danger, #e5484d); }
   .settings-message-success { color: var(--success, #3dd68c); }
   .settings-confirm-message { margin: 4px 0 14px 0; font-size: 14px; line-height: 1.5; }
@@ -2241,6 +2280,9 @@
   var docEditorActivityInput = document.getElementById('docEditorActivityInput');
   var docEditorMessage = document.getElementById('docEditorMessage');
   var docEditorSaveBtn = document.getElementById('docEditorSaveBtn');
+  var docConvertProgressOverlay = document.getElementById('docConvertProgressOverlay');
+  var docConvertProgressBarFill = document.getElementById('docConvertProgressBarFill');
+  var docConvertProgressText = document.getElementById('docConvertProgressText');
   var docSigPickerOverlay = document.getElementById('docSigPickerOverlay');
   var docSigPickerList = document.getElementById('docSigPickerList');
   var docSigPickerCancel = document.getElementById('docSigPickerCancel');
@@ -2263,7 +2305,8 @@
   var currentPageIndex = -1;
   var docFabricCanvas = null;
   var docSourceFilename = '';
-  var docDrawMode = null; // null | 'block'
+  var docDrawMode = null; // null | 'block' | 'excludeZone' (27 Okt 2026: Exclude
+  // Zone sekarang ikut dipakai sebagai draw-mode, lihat startExcludeZoneDraw())
   var docDrawingRect = null;
   var docDrawStart = null;
   // 24 Okt 2026: rect yang baru digambar (mouse:up) TIDAK langsung dipotong
@@ -2445,6 +2488,8 @@
     docExcludeZoneSyncCounter = 0;
     currentZoom = 1;
     docBlockTextBtn.classList.remove('active');
+    docAddExcludeZoneBtn.classList.remove('active');
+    docEditorCanvasEl.style.cursor = '';
     docDeleteSelectedBtn.disabled = true;
     docUndoBtn.disabled = true;
     docPageThumbsWrap.innerHTML = '';
@@ -2855,10 +2900,18 @@
       docFabricCanvas.discardActiveObject();
       var p = docFabricCanvas.getPointer(opt.e);
       docDrawStart = p;
+      // 27 Okt 2026: preview rect Exclude Zone dibedakan warnanya (merah,
+      // sama seperti warna final isExcludeZone di bawah) dari preview
+      // Block Text (ungu) - sekadar feedback visual lebih jelas user lagi
+      // gambar yang mana, bukan fungsional.
+      var isExclude = docDrawMode === 'excludeZone';
       docDrawingRect = new fabric.Rect({
         left: p.x, top: p.y, width: 0, height: 0,
-        fill: 'rgba(108,92,231,0.15)', stroke: '#6c5ce7', strokeDashArray: [5, 5],
-        strokeWidth: 1, selectable: false, evented: false,
+        fill: isExclude ? 'rgba(255,0,90,0.10)' : 'rgba(108,92,231,0.15)',
+        stroke: isExclude ? '#ff005a' : '#6c5ce7',
+        strokeDashArray: isExclude ? [6, 4] : [5, 5],
+        strokeWidth: isExclude ? 2 : 1,
+        selectable: false, evented: false,
       });
       docFabricCanvas.add(docDrawingRect);
     });
@@ -2878,22 +2931,37 @@
     docFabricCanvas.on('mouse:up', function () {
       if (!docDrawMode || !docDrawingRect) return;
       var rect = docDrawingRect;
-      var blockType = docDrawMode;
+      var mode = docDrawMode;
       docDrawingRect = null;
 
       if (rect.width > 4 && rect.height > 4) {
-        // 24 Okt 2026: TIDAK langsung dipotong lagi - rect ini dijadikan
-        // object adjustable (enterPendingAdjustMode), baru dipotong
-        // beneran saat "Apply Block" diklik (applyPendingBlock()).
-        enterPendingAdjustMode(rect, blockType);
-        docDrawMode = null;
-        docBlockTextBtn.classList.remove('active');
-        docEditorCanvasEl.style.cursor = '';
+        if (mode === 'excludeZone') {
+          // 27 Okt 2026: beda dari Block Text - Exclude Zone LANGSUNG jadi
+          // object final begitu selesai digambar (tetap bisa
+          // digeser/di-resize sesudahnya seperti sebelumnya), TIDAK lewat
+          // tahap "Apply/Cancel" terpisah seperti pendingBlock, supaya
+          // perilakunya tetap satu-langkah sama seperti sebelum perubahan
+          // ini (user cuma minta titik AWAL-nya yang diganti dari kotak
+          // default ke area yang digambar sendiri, bukan nambah langkah
+          // baru) - lihat finalizeExcludeZoneDraw().
+          finalizeExcludeZoneDraw(rect);
+          docDrawMode = null;
+          docAddExcludeZoneBtn.classList.remove('active');
+          docEditorCanvasEl.style.cursor = '';
+        } else {
+          // 24 Okt 2026: TIDAK langsung dipotong lagi - rect ini dijadikan
+          // object adjustable (enterPendingAdjustMode), baru dipotong
+          // beneran saat "Apply Block" diklik (applyPendingBlock()).
+          enterPendingAdjustMode(rect, mode);
+          docDrawMode = null;
+          docBlockTextBtn.classList.remove('active');
+          docEditorCanvasEl.style.cursor = '';
+        }
       } else {
         // Drag too small to count (stray click) - discard the sliver rect
         // and KEEP the tool armed, same spirit as before: one press stays
-        // armed until an actual block is drawn, or the button is clicked
-        // again to cancel it.
+        // armed until an actual block/zone is drawn, or the button is
+        // clicked again to cancel it.
         docFabricCanvas.remove(rect);
       }
       docFabricCanvas.requestRenderAll();
@@ -2964,6 +3032,7 @@
     var turningOn = docDrawMode !== mode;
     docDrawMode = null;
     docBlockTextBtn.classList.remove('active');
+    docAddExcludeZoneBtn.classList.remove('active'); // 27 Okt 2026: saling eksklusif dgn mode Exclude Zone
     if (turningOn) {
       docDrawMode = mode;
       btn.classList.add('active');
@@ -3123,32 +3192,65 @@
      untuk area letterhead header/footer yang posisinya sama di semua
      halaman; kalau tidak dicentang, zone itu cuma berlaku di halaman yang
      sedang dibuka. ---- */
-  function addExcludeZone() {
+  // GANTI 27 Okt 2026 - sebelumnya klik "Add Exclude Zone" langsung
+  // menaruh kotak default di area atas halaman (lokasi umum letterhead)
+  // yang baru TINGGAL digeser/resize user. Permintaan user: dia yang
+  // gambar/blok area-nya dari awal (klik-tahan-geser di canvas), BUKAN
+  // disodori kotak siap pakai duluan - kotak tetap bisa digeser/resize
+  // SESUDAH digambar, sama seperti sebelumnya, cuma titik awalnya yang
+  // beda. Pola klik-tahan-geser ini CONTEK dari Block Text
+  // (startBlockDraw()/wireDocCanvasDrawing()) yang sudah ada duluan di
+  // file ini - 'excludeZone' jadi value docDrawMode baru di samping
+  // 'block', lihat percabangannya di wireDocCanvasDrawing() mouse:up.
+  function startExcludeZoneDraw() {
     if (!docEditorReady()) return;
+    // Mulai gambar Exclude Zone baru sementara masih ada Block Text yang
+    // pending (belum di-Apply/Cancel) akan membuang yang pending itu dulu -
+    // sama seperti startBlockDraw() membuang pending block kalau mulai
+    // gambar block baru, supaya tidak ada rect nyasar tertinggal di canvas.
+    if (pendingBlockRect) cancelPendingBlock();
+    var turningOn = docDrawMode !== 'excludeZone';
+    docDrawMode = null;
+    docBlockTextBtn.classList.remove('active');
+    docAddExcludeZoneBtn.classList.remove('active');
+    if (turningOn) {
+      docDrawMode = 'excludeZone';
+      docAddExcludeZoneBtn.classList.add('active');
+      docEditorCanvasEl.style.cursor = 'crosshair';
+    } else {
+      docEditorCanvasEl.style.cursor = '';
+    }
+  }
+  docAddExcludeZoneBtn.addEventListener('click', startExcludeZoneDraw);
+
+  // Dipanggil dari wireDocCanvasDrawing() mouse:up begitu user selesai
+  // menggambar (lepas klik) - drawnRect posisi/ukurannya SUDAH dari hasil
+  // gambar user (bukan default lagi), tinggal "dinaikkan statusnya" jadi
+  // object Exclude Zone final: nyalakan selectable/hasControls (supaya
+  // tetap bisa digeser/resize sesudahnya, sama seperti sebelumnya) +
+  // tandai isExcludeZone/excludeSyncId. Isi fungsinya sama persis seperti
+  // addExcludeZone() versi lama (pushDocUndoSnapshot, sync ke halaman
+  // lain via applyExcludeZoneToOtherPages kalau "Apply to all pages"
+  // dicentang, showZoneDoneGroup) - cuma sumber posisi/ukurannya yang
+  // beda (dari gambar user, bukan hitungan page.width*0.9 dkk).
+  function finalizeExcludeZoneDraw(drawnRect) {
+    if (!docEditorReady()) { docFabricCanvas.remove(drawnRect); return; }
     pushDocUndoSnapshot();
-    var page = currentPage();
     var applyAll = !!(docExcludeApplyAllPages && docExcludeApplyAllPages.checked);
     var syncId = applyAll ? ('ex' + Date.now() + '_' + (docExcludeZoneSyncCounter++)) : null;
-    // Default: kotak di area atas halaman (lokasi umum letterhead), user
-    // tinggal geser/resize setelahnya - sama seperti Guide Box, bukan asumsi
-    // final.
-    var w = Math.round(page.width * 0.9);
-    var h = Math.round(page.height * 0.12);
-    var zone = new fabric.Rect({
-      left: Math.round((page.width - w) / 2),
-      top: Math.round(page.height * 0.03),
-      width: w, height: h,
+    drawnRect.set({
       fill: 'rgba(255,0,90,0.10)', stroke: '#ff005a', strokeDashArray: [6, 4], strokeWidth: 2,
       cornerColor: '#ff005a', transparentCorners: false,
+      selectable: true, evented: true, hasControls: true, hasBorders: true,
+      lockRotation: true, strokeUniform: true,
       isExcludeZone: true, excludeSyncId: syncId,
     });
-    docFabricCanvas.add(zone);
-    docFabricCanvas.setActiveObject(zone);
+    drawnRect.setControlsVisibility({ mtr: false });
+    docFabricCanvas.setActiveObject(drawnRect);
     docFabricCanvas.requestRenderAll();
     showZoneDoneGroup();
-    if (applyAll) applyExcludeZoneToOtherPages(zone, syncId);
+    if (applyAll) applyExcludeZoneToOtherPages(drawnRect, syncId);
   }
-  docAddExcludeZoneBtn.addEventListener('click', addExcludeZone);
 
   // Sama pola seperti addLetterheadToPageData(), tapi lebih sederhana (rect
   // polos, tidak perlu fetch gambar) - halaman yang sudah pernah dibuka
@@ -3669,51 +3771,71 @@
     });
   }
 
-  // GANTI dari extractParagraphs() lama (hanya teks berurutan, rata kiri,
-  // ukuran font seragam - dikeluhkan user 27 Okt 2026: "layout kacau, tidak
-  // sama persis dengan aslinya"). Sekarang pakai bbox tiap paragraf
-  // (Tesseract.js v5 Paragraph.bbox: {x0,y0,x1,y1} dalam pixel gambar yang
-  // di-OCR - dikonfirmasi dari tesseract.js index.d.ts, BUKAN tebakan) untuk
-  // membangun layout block per paragraf: posisi x/y, lebar, tinggi font, dan
-  // bold - supaya tiap paragraf dari rekonstruksi di DOCX bisa diposisikan
-  // floating di koordinat yang sama seperti di halaman asli (user minta
-  // presisi tinggi + font size/bold/alignment ikut style asli). Urutan baca
-  // tetap dari urutan blocks/paragraphs bawaan Tesseract (sudah terbukti
-  // OK secara urutan, masalah user murni di presisi posisi & style render,
-  // bukan urutan baca - dikonfirmasi "satu kolom biasa tapi layoutnya
-  // kacau").
+  // RIWAYAT: v1 extractParagraphs() (teks berurutan, rata kiri, 1 ukuran
+  // font) -> v2 per-PARAGRAF pakai Paragraph.bbox (dikeluhkan user 27 Okt
+  // 2026 percobaan ke-4: "layout tulisan... sekarang ini kacau"). Root
+  // cause v2 ditemukan dgn extract .docx hasil & inspeksi XML manual
+  // (xml.dom.minidom): untuk dokumen satu-kolom yang baris2nya rapat
+  // (surat/kontrak - field "Nama:/Jabatan:/Alamat:" nyaris tanpa jarak
+  // vertikal ekstra), segmentasi PARAGRAF Tesseract sendiri menggabungkan
+  // banyak baris berbeda (bahkan nyaris seluruh isi body) jadi SATU
+  // "paragraph" dengan satu bbox raksasa - bukan bug di kode kita, tapi
+  // granularitas sumber datanya salah dipakai. Field terpisah yang
+  // harusnya baris sendiri2 malah jadi satu textbox digabung & dipaksa
+  // reflow Word di lebar penuh -> kelihatan numpuk/center semua.
+  // FIX v3: pakai granularitas Paragraph.lines[] (BUKAN paragraphs[]
+  // langsung) - tiap BARIS hasil OCR (bbox lebih presisi & stabil
+  // drpd grouping paragraf Tesseract) jadi satu layout block sendiri.
+  // Konsekuensi: urutan baca tetap sama (lines sudah urut dalam
+  // paragraphs->blocks bawaan Tesseract), textbox per halaman jadi lebih
+  // banyak (1 per baris, bukan per paragraf) - lihat catatan risiko
+  // performa di §8 PROJECT_NOTES.
   //
-  // is_bold diambil dari MAYORITAS word di paragraf itu (>50% kata bold)
-  // dipakai utk Word.is_bold, bukan dihitung manual.
-  // alignment: heuristik sederhana bandingkan margin kiri (x0) dan margin
-  // kanan (page.width - x1) paragraf itu - kalau margin kanan&kiri mirip
-  // (selisih < 15% lebar halaman) dianggap center; kalau margin kiri jauh
-  // lebih besar drpd biasanya (bukan ukuran mutlak, krn tiap dokumen beda)
-  // heuristik ini TIDAK mencoba deteksi "rata kanan" krn jarang dipakai di
-  // surat/kontrak Indonesia dan riskan salah deteksi - selalu fallback ke
-  // left kalau tidak textbook-center.
+  // is_bold diambil dari MAYORITAS word di baris itu (>50% kata bold).
+  // alignment: v2 cuma bandingkan margin kiri vs kanan BARIS itu sendiri -
+  // salah deteksi "center" untuk baris body yang kebetulan hampir
+  // memenuhi lebar halaman (margin kiri≈kanan padahal itu cuma baris rata
+  // kiri yang panjang, bukan judul center). FIX v3: hitung dulu "margin
+  // kiri umum" 1 halaman (nilai x0 yang paling sering muncul di antara
+  // semua baris, dibulatkan ke kelipatan 10px) sebagai representasi
+  // margin kolom teks rata-kiri dokumen ini. Baris dianggap center HANYA
+  // kalau (a) margin kirinya menjorok jauh dari margin umum itu (>5%
+  // lebar halaman) DAN (b) margin kiri&kanan baris itu sendiri mirip
+  // (<15% lebar halaman) - dua syarat sekaligus, bukan salah satu saja.
   function extractLayoutBlocks(data, pageWidthPx) {
     var out = [];
     if (data && data.blocks && data.blocks.length) {
+      var allLines = [];
       data.blocks.forEach(function (block) {
         (block.paragraphs || []).forEach(function (p) {
-          var t = (p.text || '').replace(/\s*\n\s*/g, ' ').trim();
-          if (!t || !p.bbox) return;
+          (p.lines || []).forEach(function (ln) {
+            if (ln.bbox && (ln.text || '').trim()) allLines.push(ln);
+          });
+        });
+      });
 
-          var x0 = p.bbox.x0, y0 = p.bbox.y0, x1 = p.bbox.x1, y1 = p.bbox.y1;
+      if (allLines.length) {
+        var marginCounts = {};
+        allLines.forEach(function (ln) {
+          var bucket = Math.round(ln.bbox.x0 / 10) * 10;
+          marginCounts[bucket] = (marginCounts[bucket] || 0) + 1;
+        });
+        var commonLeftMargin = allLines[0].bbox.x0;
+        var bestCount = 0;
+        Object.keys(marginCounts).forEach(function (k) {
+          if (marginCounts[k] > bestCount) { bestCount = marginCounts[k]; commonLeftMargin = Number(k); }
+        });
+
+        allLines.forEach(function (ln) {
+          var t = (ln.text || '').trim();
+          if (!t) return;
+
+          var x0 = ln.bbox.x0, y0 = ln.bbox.y0, x1 = ln.bbox.x1, y1 = ln.bbox.y1;
           var widthPx = Math.max(1, x1 - x0);
           var heightPx = Math.max(1, y1 - y0);
 
-          // Tinggi font diperkirakan dari tinggi baris pertama paragraf
-          // (bukan tinggi seluruh paragraf yang bisa multi-baris) supaya
-          // tidak membesar-besarkan ukuran font paragraf panjang.
-          var lineHeightPx = heightPx;
-          if (p.lines && p.lines.length && p.lines[0].bbox) {
-            lineHeightPx = Math.max(1, p.lines[0].bbox.y1 - p.lines[0].bbox.y0);
-          }
-
           var boldWordCount = 0, totalWordCount = 0;
-          (p.words || []).forEach(function (w) {
+          (ln.words || []).forEach(function (w) {
             totalWordCount += 1;
             if (w.is_bold) boldWordCount += 1;
           });
@@ -3721,17 +3843,19 @@
 
           var leftMargin = x0;
           var rightMargin = Math.max(0, pageWidthPx - x1);
-          var isCentered = Math.abs(leftMargin - rightMargin) < (pageWidthPx * 0.15) && leftMargin > (pageWidthPx * 0.08);
+          var isIndented = (leftMargin - commonLeftMargin) > (pageWidthPx * 0.05);
+          var isSymmetric = Math.abs(leftMargin - rightMargin) < (pageWidthPx * 0.15);
+          var isCentered = isIndented && isSymmetric;
 
           out.push({
             text: t,
             x: x0, y: y0, w: widthPx, h: heightPx,
-            fontSizePx: lineHeightPx,
+            fontSizePx: heightPx,
             bold: isBold,
             align: isCentered ? 'center' : 'left',
           });
         });
-      });
+      }
     }
     if (!out.length && data && data.text) {
       // Fallback tanpa bbox (versi/konfigurasi worker tanpa data.blocks):
@@ -3836,72 +3960,47 @@
       return xml;
     }
 
-    // Satu <w:r><w:drawing> berisi satu floating textbox untuk 1 paragraf
-    // hasil OCR, diposisikan page-relative di koordinat x/y aslinya. Tinggi
-    // textbox dilonggarkan dari bbox asli paragraf (* 1.3) supaya teks
-    // reflow Word yang sedikit beda lebar fontnya dari gambar asli tidak
-    // terpotong vertikal - lebar TIDAK dilonggarkan (dibiarkan presisi)
-    // karena user eksplisit minta posisi x presisi tinggi.
-    function paragraphTextboxXml(block) {
-      shapeIdCounter += 1;
-      var cx = pxToEmu(block.w);
-      var cy = pxToEmu(Math.round(block.h * 1.3));
-      var offX = pxToEmu(block.x), offY = pxToEmu(block.y);
-      var docPrId = 2000 + shapeIdCounter;
-      var halfPt = pxHeightToHalfPoint(block.fontSizePx);
+    // GANTI dari floating textbox per baris (v3) ke paragraf alur teks
+    // BIASA (v4) - atas permintaan eksplisit user 27 Okt 2026 setelah
+    // posisi/ukuran sudah OK: "setiap baris itu hasilnya seperti dalam
+    // text box... kalau bisa tidak dalam teks box, seperti biasa saja,
+    // jadi mudah saya editnya". Konsekuensi yang DISADARI & diterima user:
+    // presisi x/y per baris DILEPAS (teks sekarang mengalir top-to-bottom
+    // sesuai urutan baris asli, bukan floating di koordinat persis) demi
+    // kemudahan edit (klik & ketik langsung, bukan harus klik kotak dulu).
+    // Alignment (center/left), bold, dan ukuran font per baris TETAP
+    // dipertahankan dari hasil OCR - hanya wadah floating-nya yang dibuang.
+    // Exclude Zone (gambar letterhead/logo, lihat zonesDrawingXml di atas)
+    // TETAP floating seperti biasa karena itu gambar, bukan teks yang mau
+    // diedit user.
+    function normalParagraphXml(block) {
       // w:jc (alignment) WAJIB di dalam w:pPr, bukan child langsung <w:p> -
       // dicek via referensi skema OOXML resmi (ECMA-376 §17.3.1.13), bukan
       // tebakan, setelah belajar dari kesalahan unbound-prefix sebelumnya.
       var pPr = block.align === 'center' ? '<w:pPr><w:jc w:val="center"/></w:pPr>' : '';
       var boldXml = block.bold ? '<w:b/><w:bCs/>' : '';
-      var rPr = '<w:rPr>' + boldXml + '<w:sz w:val="' + halfPt + '"/><w:szCs w:val="' + halfPt + '"/></w:rPr>';
-
-      return (
-        '<w:r><w:drawing>' +
-        '<wp:anchor behindDoc="0" distT="0" distB="0" distL="0" distR="0" simplePos="0" locked="0" layoutInCell="1" allowOverlap="1" relativeHeight="' + (1000 + shapeIdCounter) + '">' +
-        '<wp:simplePos x="0" y="0"/>' +
-        '<wp:positionH relativeFrom="page"><wp:posOffset>' + offX + '</wp:posOffset></wp:positionH>' +
-        '<wp:positionV relativeFrom="page"><wp:posOffset>' + offY + '</wp:posOffset></wp:positionV>' +
-        '<wp:extent cx="' + cx + '" cy="' + cy + '"/>' +
-        '<wp:wrapNone/>' +
-        '<wp:docPr id="' + docPrId + '" name="OcrText' + shapeIdCounter + '"/>' +
-        '<a:graphic><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">' +
-        '<wps:wsp>' +
-        '<wps:cNvSpPr/>' +
-        '<wps:spPr>' +
-        '<a:xfrm><a:off x="0" y="0"/><a:ext cx="' + cx + '" cy="' + cy + '"/></a:xfrm>' +
-        '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>' +
-        '<a:noFill/><a:ln><a:noFill/></a:ln>' +
-        '</wps:spPr>' +
-        '<wps:txbx><w:txbxContent>' +
-        '<w:p>' + pPr + '<w:r>' + rPr + '<w:t xml:space="preserve">' + xmlEscape(block.text) + '</w:t></w:r></w:p>' +
-        '</w:txbxContent></wps:txbx>' +
-        '<wps:bodyPr rot="0" vert="horz" wrap="square" lIns="0" tIns="0" rIns="0" bIns="0" anchor="t"/>' +
-        '</wps:wsp>' +
-        '</a:graphicData></a:graphic>' +
-        '</wp:anchor></w:drawing></w:r>'
-      );
+      // fontSizePx null terjadi utk fallback tanpa bbox (lihat
+      // extractLayoutBlocks) - biarkan Word pakai ukuran default-nya
+      // sendiri (jangan paksa w:sz) drpd error/NaN.
+      var szXml = block.fontSizePx != null
+        ? '<w:sz w:val="' + pxHeightToHalfPoint(block.fontSizePx) + '"/><w:szCs w:val="' + pxHeightToHalfPoint(block.fontSizePx) + '"/>'
+        : '';
+      var rPr = (boldXml || szXml) ? ('<w:rPr>' + boldXml + szXml + '</w:rPr>') : '';
+      return '<w:p>' + pPr + '<w:r>' + rPr + '<w:t xml:space="preserve">' + xmlEscape(block.text) + '</w:t></w:r></w:p>';
     }
 
     allPageLayoutBlocks.forEach(function (blocks, pageIdx) {
       var zones = (allPageZones && allPageZones[pageIdx]) || [];
       bodyXml += '<w:p>' + zonesDrawingXml(zones) + '</w:p>';
 
-      // Blocks dgn posisi (x/y bukan null) jadi floating textbox; blocks
-      // fallback tanpa posisi (data.text split, lihat extractLayoutBlocks)
-      // jadi <w:p> alur teks biasa, ditaruh berurutan setelah semua
-      // floating textbox halaman itu.
-      var positioned = blocks.filter(function (b) { return b.x !== null; });
-      var unpositioned = blocks.filter(function (b) { return b.x === null; });
-
-      if (positioned.length === 0 && unpositioned.length === 0) {
+      if (blocks.length === 0) {
         bodyXml += '<w:p/>';
       } else {
-        positioned.forEach(function (block) {
-          bodyXml += '<w:p>' + paragraphTextboxXml(block) + '</w:p>';
-        });
-        unpositioned.forEach(function (block) {
-          bodyXml += '<w:p><w:r><w:t xml:space="preserve">' + xmlEscape(block.text) + '</w:t></w:r></w:p>';
+        // Semua block (baik yg punya posisi bbox maupun fallback tanpa
+        // posisi) sekarang diperlakukan sama: paragraf biasa berurutan
+        // sesuai urutan baca asli dari extractLayoutBlocks().
+        blocks.forEach(function (block) {
+          bodyXml += normalParagraphXml(block);
         });
       }
 
@@ -3966,12 +4065,33 @@
     });
   }
 
+  // Helper progress modal (docConvertProgressOverlay) - dipanggil dari
+  // convertDocumentToDocx() di bawah. fraction 0..1 dipakai utk lebar bar;
+  // dikasih null kalau belum tahu total langkah (contoh: "Loading OCR
+  // engine..." sebelum tahu jumlah halaman) supaya bar tidak bohong
+  // ("Building DOCX..." ikut masuk sebagai 1 langkah tambahan di
+  // penyebut, lihat convertDocumentToDocx()).
+  function updateConvertProgress(text, fraction) {
+    docConvertProgressText.textContent = text;
+    if (fraction !== null) {
+      docConvertProgressBarFill.style.width = Math.max(0, Math.min(100, Math.round(fraction * 100))) + '%';
+    }
+  }
+
   function convertDocumentToDocx() {
     if (!docEditorReady() && docPages.length === 0) return;
     syncCurrentPageState();
     docOcrBtn.disabled = true;
-    docEditorMessage.textContent = 'Loading OCR engine...';
+    docEditorMessage.textContent = '';
     docEditorMessage.className = 'settings-message';
+    docConvertProgressBarFill.style.width = '0%';
+    updateConvertProgress('Loading OCR engine...', null);
+    showModal(docConvertProgressOverlay);
+
+    // +1 di penyebut = langkah "Building DOCX file..." setelah semua
+    // halaman selesai di-OCR, supaya bar tidak langsung mentok 100% pas
+    // halaman terakhir padahal masih ada proses build/zip sesudahnya.
+    var totalSteps = docPages.length + 1;
 
     ensureOcrLibs()
       .then(function () {
@@ -3980,7 +4100,7 @@
         var chain = Promise.resolve();
         docPages.forEach(function (page, idx) {
           chain = chain.then(function () {
-            docEditorMessage.textContent = 'Reading page ' + (idx + 1) + ' of ' + docPages.length + '...';
+            updateConvertProgress('Reading page ' + (idx + 1) + ' of ' + docPages.length + '...', idx / totalSteps);
             return renderPageForOcr(page)
               .then(function (rendered) {
                 allPageZones.push(rendered.zones);
@@ -3990,7 +4110,7 @@
           });
         });
         return chain.then(function () {
-          docEditorMessage.textContent = 'Building DOCX file...';
+          updateConvertProgress('Building DOCX file...', docPages.length / totalSteps);
           return buildDocxBlob(allPageLayoutBlocks, allPageZones);
         });
       })
@@ -4002,11 +4122,30 @@
         document.body.appendChild(a);
         a.click();
         a.remove();
+        updateConvertProgress('Done!', 1);
+        // Dibiarkan "Done!" kelihatan sebentar sebelum overlay tertutup
+        // sendiri, supaya user sempat lihat prosesnya benar2 selesai
+        // (bukan cuma lompat langsung hilang) - ini inti permintaan user
+        // 27 Okt 2026 ("jadi saya tau kapan selesainya").
+        setTimeout(function () { hideModal(docConvertProgressOverlay); }, 700);
         docOcrBtn.disabled = false;
         docEditorMessage.textContent = 'DOCX exported (' + docPages.length + ' page(s) of OCR text).';
         docEditorMessage.className = 'settings-message settings-message-success';
+        // 27 Okt 2026: setelah convert+download DOCX berhasil, bersihkan
+        // dokumen yang sedang diupload supaya input file siap dipakai lagi
+        // utk dokumen baru - pola PERSIS SAMA seperti docEditorSaveForm
+        // 'submit' handler di bawah sehabis Save berhasil (lihat komentar
+        // di sana), bukan dibuat beda sendiri.
+        if (docFabricCanvas) { docFabricCanvas.dispose(); docFabricCanvas = null; }
+        docEditorCanvasWrap.style.display = 'none';
+        docEditorFileInput.value = '';
+        resetDocEditorState();
+        setDocToolbarEnabled(false);
+        docEditorSaveForm.reset();
+        docEditorDateInput.value = todayDateInputValue();
       })
       .catch(function (err) {
+        hideModal(docConvertProgressOverlay);
         docOcrBtn.disabled = false;
         docEditorMessage.textContent = 'OCR/DOCX export failed: ' + ((err && err.message) || 'check your network/ad-blocker and try again.');
         docEditorMessage.className = 'settings-message settings-message-error';
