@@ -419,12 +419,43 @@ tetap `fmtIDR`; CSV tetap angka mentah + kolom Type). Belum ada: edit kategori t
     PDF selalu render dari `fabric.StaticCanvas` terpisah di resolusi asli (`renderPageToDataURL()`), tidak
     terpengaruh zoom layar. **Default tampilan = Fit to Width** (`fit = containerWidth / page.width`, scroll di
     `.doc-editor-canvas-wrap`). Tidak ada fitur Fullscreen (dihapus atas permintaan user).
-  - **Toolbar**: ribbon ala Microsoft Word — tiap grup (Blocks, Guide Lines, Actions, Zoom & View, **Convert to
-    Text**) satu `.doc-ribbon-trigger` (ikon + nama + chevron) membuka `.doc-ribbon-panel` dropdown berisi
+  - **Photo Correction** (grup ribbon paling kiri, sejajar Blocks/Guide Lines/Convert to Text/Actions/Zoom & View):
+    2 kontrol — **Deskew** (`startDeskew()`/`applyDeskew()`/`cancelDeskew()`: 4 handle `fabric.Circle` + `fabric.Polygon`
+    penghubung diseret user ke tiap pojok kertas, grup kontekstual `#docDeskewAdjustGroup` Apply/Cancel; homography DLT
+    buatan sendiri `computeHomography()`/`solveLinearSystem()`/`applyHomographyPoint()` (solve 8x8 Gaussian elimination
+    + partial pivot) lalu inverse-warp nearest-neighbor per piksel `warpQuadToRect()` ke `page.workingCanvas`; ukuran
+    halaman tidak berubah jadi object lain di halaman — block/ttd/kop/dst — tidak perlu digeser, cuma background-nya
+    diganti via `refreshPageBackgroundImage()`) dan **Remove White Background + Ink Contrast** (2 slider
+    `#docBgThreshold`/`#docInkContrast` + tombol -/+ per slider, algoritma PERSIS SAMA seperti Signature Library
+    tapi background jadi **putih solid**, bukan transparan, karena `page.workingCanvas` = seluruh halaman, tidak ada
+    apa pun di belakangnya; non-destructive — `page.bgSourceCanvas` menyimpan bitmap SEBELUM koreksi disentuh,
+    tiap slider digeser dihitung ULANG dari situ; `page.bgThreshold`/`page.bgInkContrast` per halaman untuk
+    sinkronisasi tampilan slider saat `switchToPage()`; default 0/0 = no-op). Fungsi ink contrast dinamai
+    `stepDocInkContrast()` (beda dari `stepInkContrast()` milik Signature Library — keduanya hidup di satu IIFE yang
+    sama, lihat §3 WAJIB soal IIFE per file). `docCropPageBtn`/"Crop Page" dan `docCleanBgToggle` (checkbox Clean
+    Background lama) sudah **dihapus** — redundan dengan Deskew (warp penuh ke `page.width x page.height` sudah
+    menghasilkan efek crop yang sama). Saling eksklusif dengan Block/Exclude Zone/pending block lain (tiap `start*()`
+    saling cancel); Undo dan pindah halaman ikut membatalkan Deskew/pending block yang masih menggantung. Scope per
+    halaman saja, tidak ada "Apply to all pages" (beda dari Letterhead/Exclude Zone, posisi kertas tiap foto beda-beda).
+    Deteksi tepi otomatis (OpenCV.js) belum ada — murni 4 titik manual untuk saat ini.
+  - **Guide Lines** (grup ribbon terpisah dari Guide Box oranye di atas): `docAddHGuideBtn`/`docAddVGuideBtn`
+    menggambar garis (`addGuideLine()`) merah solid `#ff0000` strokeWidth 2 (beda elemen dari Guide Box/preview
+    Block Text/Exclude Zone, warnanya sendiri-sendiri). Tombol **Remove Guide Lines** (`docRemoveGuideLinesBtn`,
+    btn-danger) menghapus SEMUA object `isGuideLine` di halaman yang sedang dibuka sekaligus (beda dari Delete
+    Selected yang cuma 1 object, tidak menyentuh Guide Box/Exclude Zone/block/ttd/kop lain), ikut
+    `pushDocUndoSnapshot()` jadi bisa di-Undo.
+  - **Toolbar**: ribbon ala Microsoft Word — tiap grup (Photo Correction, Blocks, Guide Lines, Actions, Zoom & View,
+    **Convert to Text**) satu `.doc-ribbon-trigger` (ikon + nama + chevron) membuka `.doc-ribbon-panel` dropdown berisi
     tombol-tombol aslinya. `wireDocRibbonMenus()` handle show/hide + outside-click + Escape, 1 panel terbuka
-    sekaligus; grup `data-ribbon-group="zoom"` dikecualikan dari auto-close-on-button-click. Grup kontekstual
-    (`#docBlockAdjustGroup` - Apply/Cancel Block, warna amber via class `.doc-ribbon-group-contextual`) bentuknya
-    sama seperti grup biasa.
+    sekaligus; grup `data-ribbon-group="zoom"` **dan** tombol manapun berclass `.doc-ribbon-keepopen` (4 tombol
+    -/+ Remove White Background/Ink Contrast) dikecualikan dari auto-close-on-button-click — Deskew di grup yang
+    sama TIDAK dikasih class ini, tetap menutup ribbon sekali klik. Panel `.doc-ribbon-panel` `position:fixed`,
+    koordinat `top`/`left` dihitung JS (`positionRibbonPanel()`) dari `getBoundingClientRect()` trigger SETIAP kali
+    dibuka, diklem ke `window.innerWidth`/`innerHeight` (ketabrak kanan → nempel kanan; tidak muat di bawah → buka
+    ke atas trigger). `.doc-editor-toolbar` satu baris + scroll horizontal (`flex-wrap:nowrap`+`overflow-x:auto`,
+    `.doc-ribbon-group` `flex-shrink:0`); listener `scroll` pada toolbar langsung `closeAll()` panel (panel fixed
+    tidak ikut bergeser saat toolbar di-scroll). Grup kontekstual (`#docBlockAdjustGroup` - Apply/Cancel Block, warna
+    amber via class `.doc-ribbon-group-contextual`) bentuknya sama seperti grup biasa.
   - **Exclude Zone** (grup ribbon **"Convert to Text"**): tombol **Add Exclude Zone** — klik lalu drag di canvas
     (pola sama seperti Block Text, `docDrawMode='excludeZone'`, preview merah dashed) untuk menggambar area
     sendiri dari awal (bukan kotak default), lepas klik langsung jadi object final (selectable/resizable) + sync
@@ -454,6 +485,10 @@ tetap `fmtIDR`; CSV tetap angka mentah + kolom Type). Belum ada: edit kategori t
       ada risiko render beda di software lain.
     - Semua halaman diproses berurutan (bukan paralel). Dokumen padat teks bisa menghasilkan banyak paragraf;
       belum ada pengujian batas performa untuk dokumen sangat panjang.
+  - **Clear All** (grup ribbon Actions) jalan langsung tanpa password/modal konfirmasi apa pun (teardown
+    `docFabricCanvas.dispose()` + reset state tidak berubah, cuma pintu masuknya) — **satu-satunya** aksi destruktif
+    di Document Editor tanpa konfirmasi (Delete Selected & aksi lain tetap pakai pola password biasa); keputusan
+    sadar atas permintaan eksplisit user, dicatat di sini kalau nanti dipertanyakan lagi.
   - **Save** (PDF, bukan DOCX): semua halaman di-flatten jadi PNG (guide box & exclude zone dibuang dari export),
     dikirim sekaligus (`pages[]`) + `signature_ids[]` + `letterhead_ids[]` ke `ajax/save_edited_document.php`,
     digabung jadi **1 file PDF** via **FPDF** (reuse `optic_pos/fpdf/fpdf.php`). Tabel `edited_documents`:
@@ -513,105 +548,11 @@ Belum dibangun (disengaja, bukan bug):
 - Opsi: `DROP COLUMN logistics.defective_reference_price` (ireversibel, belum dijalankan).
 - Opsi: host Chart.js lokal di server, kalau jaringan user terus memblokir cdnjs.
 
-Sedang dikerjakan (27 Okt 2026) — Document Editor, Tahap 14 (lihat rangkuman_tool_ttd_dokumen.md §14).
-**REVISI 27 Okt 2026 (sore)**: Crop Page dihapus, Clean Background diganti total. Kode sudah ditulis ulang di
-`document_tools_content.php`, **BELUM DITES user** (cek JS lolos `new Function()` per `<script>` + kurung PHP
-seimbang + semua `getElementById` ada id-nya di markup, tapi itu bukan pengganti tes nyata di browser):
-- Grup ribbon **"Photo Correction"** (`data-ribbon-group="photocorrect"`, paling kiri toolbar, sejajar
-  Blocks/Guide Lines/Convert to Text/Actions/Zoom & View) sekarang cuma 2 kontrol: `docDeskewBtn` dan sepasang
-  slider Remove White Background/Ink Contrast. **`docCropPageBtn` dan tombol "Crop Page" DIHAPUS** (konfirmasi
-  user: redundan — men-deskew dengan menyeret 4 titik ke pinggir kertas sudah menghasilkan efek crop yang sama,
-  karena hasil warp dipetakan penuh ke `page.width x page.height`). `applyCropPage()`, `cleanBackgroundCanvas()`,
-  dan `docCleanBgToggle` (checkbox) semuanya dihapus dari file.
-  - **Deskew** (`startDeskew()`/`applyDeskew()`/`cancelDeskew()`): TIDAK BERUBAH. 4 handle `fabric.Circle`
-    (+ `fabric.Polygon` penghubung) diseret user ke tiap pojok kertas, grup kontekstual `#docDeskewAdjustGroup`
-    (Apply/Cancel, pola sama seperti `#docBlockAdjustGroup`). Apply menjalankan homography DLT buatan sendiri
-    (`computeHomography()`/`solveLinearSystem()`/`applyHomographyPoint()`, solve 8x8 Gaussian elimination +
-    partial pivot) lalu inverse-warp per piksel nearest-neighbor (`warpQuadToRect()`) ke `page.workingCanvas`.
-    Ukuran halaman TIDAK berubah, jadi object lain di halaman (block/ttd/kop/dst) tidak perlu digeser — cuma
-    background-nya yang diganti lewat `refreshPageBackgroundImage()`.
-  - **Remove White Background + Ink Contrast** (ganti Clean Background lama): 2 slider (`#docBgThreshold`,
-    `#docInkContrast`, masing-masing dengan tombol -/+ dan label nilai) — algoritma PERSIS SAMA seperti
-    "Remove White Background"/"Ink Contrast" di Signature Library (`renderEditor()`): threshold near-white →
-    background, ink-contrast mendorong piksel non-background ke arah hitam pekat. Bedanya dari Signature
-    Library: di sana background jadi TRANSPARAN (alpha=0, karena ditempel di atas dokumen lain); di sini
-    (`applyBackgroundCorrection()`) background dijadikan **putih solid**, bukan transparan, karena
-    `page.workingCanvas` adalah seluruh halaman (tidak ada apa pun di belakangnya). Non-destructive:
-    `page.bgSourceCanvas` menyimpan bitmap SEBELUM koreksi disentuh sama sekali di halaman itu (diisi sekali
-    saat slider pertama digeser), tiap slider digeser dihitung ULANG dari situ (bukan dari hasil filter
-    sebelumnya). `page.bgThreshold`/`page.bgInkContrast` menyimpan nilai slider per halaman untuk sinkronisasi
-    tampilan slider tiap pindah halaman di `switchToPage()`. Default 0/0 = no-op (halaman yang belum disentuh
-    sliders-nya tidak berubah, sama seperti Clean Background lama yang OFF by default).
-    ⚠ Nama fungsi `stepDocInkContrast()` (bukan `stepInkContrast()`) — sengaja dibedakan dari `stepInkContrast()`
-    milik Signature Library karena keduanya hidup di satu top-level IIFE yang sama (lihat §3 WAJIB soal IIFE per
-    file — Signature Library & Document Editor berbagi SATU IIFE dalam file ini, beda dari file `*_content.php`
-    lain yang masing-masing IIFE sendiri); tanpa pembedaan nama, deklarasi kedua akan menimpa yang pertama.
-  - Object background tetap ditandai `isPageBackground:true` (flag di semua array custom-prop `toJSON()` —
-    `pushDocUndoSnapshot`, `syncCurrentPageState`, `addExcludeZoneToPageData`, `addLetterheadToPageData`) supaya
-    Deskew/background-correction bisa membedakannya dari layer lain tanpa menebak index array.
-  - Saling eksklusif dengan Block/Exclude Zone/pending block lainnya (tiap `start*()` saling cancel satu sama
-    lain); Undo (`docUndoBtn`) dan pindah halaman (`switchToPage()`) ikut membatalkan Deskew/pending block yang
-    masih menggantung sebelum snapshot/reload, supaya tidak ada handle liar tertinggal.
-- **Scope: per halaman saja** — tidak ada "Apply to all pages" (beda dari Letterhead/Exclude Zone), karena
-  posisi kertas di tiap foto biasanya beda-beda.
-- Output akhir tetap satu file PDF lewat jalur Save (FPDF) yang sudah ada — tidak diubah sama sekali (Deskew/
-  Remove White Background-Ink Contrast cuma mengubah `page.workingCanvas` sebelum flatten, format ekspor sama).
-- Belum dites: SEMUA hal di atas end-to-end di browser (ini baru saja direvisi). Khususnya: slider threshold/ink
-  contrast beneran menghilangkan latar krem/bayangan seperti yang diharapkan user, interaksi dengan Undo (ada
-  `pushDocUndoSnapshot()` tiap slider 'change' — lepas drag, bukan tiap 'input' — belum dicoba apakah ini bikin
-  Undo kebanjiran snapshot kalau user sering geser-geser), serta performa `warpQuadToRect()` Deskew (loop piksel
-  manual per halaman, belum diukur).
-- Deteksi tepi otomatis (OpenCV.js) untuk Deskew masih menyusul nanti — saat ini murni 4-titik manual.
-
-**REVISI 27 Okt 2026 (sore, lanjutan revisi di atas) — 3 perbaikan UX ribbon, BELUM DITES user:**
-- **Tombol -/+ Photo Correction tidak lagi menutup ribbon saat diklik** (sebelumnya tiap klik tombol di
-  dalam panel langsung menutup grupnya, termasuk -/+ threshold/ink contrast yang harusnya bisa diklik
-  berkali-kali). Fix: class baru `.doc-ribbon-keepopen` ditambahkan ke 4 tombol (`docBgThresholdMinusBtn`/
-  `PlusBtn`, `docInkContrastMinusBtn`/`PlusBtn`); `wireDocRibbonMenus()` sekarang mengecualikan tombol
-  manapun yang punya class ini dari auto-close (sebelumnya pengecualian cuma per-GRUP, khusus grup
-  `zoom` — sekarang jadi dua lapis: per-grup zoom DAN per-tombol `.doc-ribbon-keepopen`). Tombol Deskew di
-  grup yang sama TIDAK dikasih class ini, jadi tetap menutup ribbon sekali klik seperti sebelumnya (sesuai
-  permintaan user — perilaku lama dipertahankan khusus untuk Deskew).
-- **Dropdown ribbon (termasuk "Adjust Corners" punya Deskew) tidak lagi terpotong di pojok layar.**
-  Sebelumnya `.doc-ribbon-panel` `position:absolute` ter-anchor ke `.doc-ribbon-group`-nya — kalau grupnya
-  dekat sudut/tepi toolbar, panelnya ikut terpotong viewport. Sekarang `position:fixed`, koordinat
-  `top`/`left` dihitung JS (`positionRibbonPanel()` di dalam `wireDocRibbonMenus()`) dari
-  `getBoundingClientRect()` trigger-nya SETIAP kali dibuka, lalu diklem (clamp) ke dalam
-  `window.innerWidth`/`innerHeight` — kalau ketabrak tepi kanan, panel nempel ke kanan (bukan ke kiri
-  trigger); kalau tidak muat di bawah trigger, panel dibuka ke ATAS trigger alih-alih kepotong di bawah.
-- **Toolbar jadi satu baris + scroll horizontal (ganti wrap ke baris baru).** `.doc-editor-toolbar`:
-  `flex-wrap: nowrap` + `overflow-x: auto` (sebelumnya `flex-wrap: wrap`); `.doc-ribbon-group` dikasih
-  `flex-shrink: 0` supaya grup tidak gepeng duluan sebelum overflow-x kebagian. **`margin-left:auto` pada
-  `.doc-ribbon-group-zoom` DIHAPUS** (sebelumnya mendorong grup Zoom & View — dan apa pun sesudahnya di DOM,
-  termasuk Adjust Block/Adjust Corners — ke ujung kanan toolbar, ini akar masalah "terpotong di sudut" di
-  atas) — sekarang Zoom & View duduk normal di urutan flex, sejajar/setara dengan grup lain (Photo
-  Correction/Blocks/Guide Lines/Convert to Text/Actions), persis seperti diminta user.
-  ⚠ Konsekuensi position:fixed: panel TIDAK ikut bergeser saat toolbar di-scroll horizontal (fixed itu
-  relatif ke viewport, bukan ke toolbar) — supaya tidak ada panel "mengambang" di posisi lama, toolbar diberi
-  listener `scroll` yang langsung `closeAll()` semua panel.
-- Belum dites sama sekali di browser (CSS/JS lolos cek statis saja — `new Function()` per `<script>`, kurung
-  PHP seimbang, semua `getElementById` ada id-nya di markup): perilaku clamp kanan/atas `positionRibbonPanel()`
-  di layar sempit (HP), apakah scroll horizontal toolbar terasa nyaman dipakai (ada scrollbar visible atau
-  perlu indikator tambahan), serta interaksi -/+ keepopen dengan drag slider `<input type="range">` (range
-  bukan `<button>` jadi harusnya otomatis tidak menutup ribbon juga, tapi belum dicoba beneran).
-
-**REVISI 27 Okt 2026 (sore, lanjutan lagi) — Guide Lines + Clear All, BELUM DITES user:**
-- **Warna Guide Lines diganti merah solid** (`addGuideLine()`) — dulu teal putus-putus `#00d2ff`
-  strokeWidth 1, sekarang `#ff0000` strokeWidth 2 (permintaan user: lebih jelas kelihatan di atas foto
-  dokumen). Guide Box/preview Block Text/Exclude Zone TIDAK ikut berubah (beda elemen, warnanya sendiri-
-  sendiri) — cuma garis dari `docAddHGuideBtn`/`docAddVGuideBtn`.
-- **Tombol baru "Remove Guide Lines"** (`docRemoveGuideLinesBtn`, btn-danger) ditambahkan ke ribbon Guide
-  Lines yang sudah ada, di bawah Add Horizontal/Add Vertical. `removeAllGuideLines()` menghapus SEMUA
-  object `isGuideLine` di halaman yang sedang dibuka sekaligus (bukan cuma yang sedang aktif/dipilih —
-  beda dari Delete Selected yang cuma 1 object), tidak menyentuh Guide Box/Exclude Zone/block/ttd/kop lain
-  di halaman yang sama. Ikut `pushDocUndoSnapshot()` seperti aksi lain, jadi bisa di-Undo.
-- **Clear All (ribbon Actions) tidak lagi minta password.** Sebelumnya lewat `openConfirmModal()` (pola
-  password_verify (a) di §3 WAJIB) — permintaan user: langsung jalan saat tombol diklik, tanpa modal
-  konfirmasi sama sekali. Teardown-nya (`docFabricCanvas.dispose()`, reset state, dst) tidak berubah, cuma
-  pintu masuknya. ⚠ Ini SATU-SATUNYA aksi destruktif di Document Editor yang sekarang tanpa konfirmasi apa
-  pun (Delete Selected & aksi lain tetap seperti sebelumnya) — keputusan sadar atas permintaan eksplisit
-  user, dicatat di sini kalau nanti dipertanyakan lagi.
-- Belum dites sama sekali di browser.
+Selesai & sudah dites (27 Okt 2026) — Document Editor, Tahap 14: Crop Page/Clean Background dihapus & diganti
+grup ribbon Photo Correction (Deskew + Remove White Background/Ink Contrast), fix 3 UX ribbon (tombol -/+ tidak
+menutup ribbon, panel dropdown position:fixed + clamp viewport, toolbar satu baris scroll horizontal), Guide
+Lines jadi merah solid + tombol Remove Guide Lines, Clear All tanpa password. Detail lengkap sudah dilebur ke
+§6 Document Tools → Document Editor (bullet Photo Correction, Guide Lines, Toolbar, Clear All).
 
 Perlu konfirmasi keputusan:
 - Invoice numbering `sequence_number` lanjut per customer lintas bulan (bukan reset bulanan). Kalau ternyata tidak,
