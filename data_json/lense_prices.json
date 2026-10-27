@@ -245,6 +245,78 @@
                     "note": ""
                 },
                 "source": "Domas"
+            },
+            "SV LENTI OMEGA": {
+                "cost": 304000,
+                "selling": 886000,
+                "features": [
+                    "UV400",
+                    "SCRATCH-RESISTANT COATING",
+                    "PURPLE \/ GREEN AR COATING",
+                    "INDEX 1.56",
+                    "HIGH-POWER ASPHERIC LENS"
+                ],
+                "limits": {
+                    "sph_from": 700,
+                    "sph_to": 1700,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 1700,
+                    "note": ""
+                },
+                "source": "Domas"
+            },
+            "SV LENTI OMEGA (2)": {
+                "cost": 314000,
+                "selling": 943000,
+                "features": [
+                    "UV400",
+                    "SCRATCH-RESISTANT COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "SATIN GREEN AR COATING",
+                    "HIGH-POWER ASPHERIC LENS",
+                    "INDEX 1.56"
+                ],
+                "limits": {
+                    "sph_from": 700,
+                    "sph_to": 1700,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 1700,
+                    "note": ""
+                },
+                "source": "Domas"
+            },
+            "SV LENTI OMEGA (3)": {
+                "cost": 330000,
+                "selling": 1029000,
+                "features": [
+                    "UV400",
+                    "SCRATCH-RESISTANT COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "SATIN BLUE AR COATING",
+                    "HIGH-POWER ASPHERIC LENS",
+                    "INDEX 1.56"
+                ],
+                "limits": {
+                    "sph_from": 700,
+                    "sph_to": 1700,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 1700,
+                    "note": ""
+                },
+                "source": "Domas"
             }
         }
     }
