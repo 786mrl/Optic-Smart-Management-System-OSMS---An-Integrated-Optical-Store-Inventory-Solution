@@ -1213,6 +1213,16 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
       bodyInner.appendChild(accordionRowClickable('Remaining Primary Qty', fmtNum(l.remaining_primary_qty) + ' / ' + fmtNum(l.primary_qty), function () { openNormalLedger(l); }));
       bodyInner.appendChild(accordionRowClickable('Defective Stock', fmtNum(l.defective_qty), function () { openDefectiveHistory(l); }));
       bodyInner.appendChild(accordionRow('Total All Stock', fmtNum(l.total_all_stock) + ' ' + (l.primary_unit_label || '')));
+      // Only shown for a product that currently has at least one active
+      // booking (l.booking is null otherwise — see list_logistics.php).
+      // total_booked includes qty already released, same meaning as
+      // qty_booked in list_customer_bookings.php, just summed across every
+      // active booking of this product.
+      if (l.booking) {
+        bodyInner.appendChild(accordionRow('Booking',
+          'Total ' + fmtNum(l.booking.total_booked) + ' \u00b7 Taken ' + fmtNum(l.booking.taken)
+          + ' \u00b7 Remaining ' + fmtNum(l.booking.remaining) + ' ' + (l.primary_unit_label || '')));
+      }
       bodyInner.appendChild(accordionRow('Secondary Packaging', fmtNum(l.secondary_qty) + ' ' + (l.secondary_unit_label || '') + '  (' + fmtNum(l.secondary_total_weight_kg) + ' KG)'));
       bodyInner.appendChild(accordionRow('Documents', 'Shipper: ' + l.documents.shipper + ' · Custom: ' + l.documents.custom + ' · Consignee: ' + l.documents.consignee));
 

@@ -371,36 +371,20 @@ try {
         );
     }
 
-    // ---- Invoice: reuse the customer's open invoice, otherwise plan a new
-    //      one — same numbering + reuse rule as create_order.php (§5.11) ----
-    $st = $lisani_conn->prepare(
-        "SELECT id, invoice_number, total_amount, paid_amount
-         FROM invoices
-         WHERE customer_id = ? AND status = 'open'
-         ORDER BY id DESC
-         LIMIT 1
-         FOR UPDATE"
-    );
-    $st->bind_param('i', $customerId);
-    $st->execute();
-    $invoice = $st->get_result()->fetch_assoc();
-    $st->close();
-
+    // ---- Invoice: a booking ALWAYS gets its own new invoice — unlike
+    //      New Order/Returns, it never reuses the customer's open invoice
+    //      (so a booking's bill never gets silently merged into whatever
+    //      other open invoice happens to exist for that customer). Same
+    //      numbering scheme as create_order.php (§5.11), just always the
+    //      "new invoice" branch.
     $invoiceId     = null;
     $invoiceNumber = '';
     $invoiceSeq    = 0;
-    $invoiceIsNew  = false;
+    $invoiceIsNew  = true;
     $totalBefore   = 0.0;
     $paidBefore    = 0.0;
 
-    if ($invoice) {
-        $invoiceId     = (int) $invoice['id'];
-        $invoiceNumber = $invoice['invoice_number'];
-        $totalBefore   = (float) $invoice['total_amount'];
-        $paidBefore    = (float) $invoice['paid_amount'];
-    } else {
-        $invoiceIsNew = true;
-
+    {
         $st = $lisani_conn->prepare(
             'SELECT COALESCE(MAX(sequence_number), 0) AS max_seq
              FROM invoices

@@ -1692,6 +1692,47 @@ $currentYear     = date('Y');
   </div>
 </div>
 
+<!-- Edit Booking — change qty on existing lines (min = qty already
+     released). Save does dry_run=1 then, if that comes back clean,
+     immediately dry_run=0 — no separate confirm screen, the preview IS the
+     validation. -->
+<div class="modal-overlay" id="bkEditOverlay" style="display:none;">
+  <div class="modal" style="max-width:460px;">
+    <div class="modal-header">
+      <div class="modal-title">Edit Booking</div>
+    </div>
+    <div class="modal-body">
+      <div class="empty-sub" id="bkEditIntro" style="margin-bottom:var(--space-3);"></div>
+      <div id="bkEditRows"></div>
+      <div class="empty-sub" id="bkEditError" style="display:none; color:var(--danger); white-space:pre-line;"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" id="btnBkEditCancel">Cancel</button>
+      <button type="button" class="btn btn-primary" id="btnBkEditSave">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<!-- Cancel Booking — cancels whatever is still reserved/not released, all
+     lines at once. Preview (dry_run=1) is fetched the moment the window
+     opens, so the person sees exactly what comes back to stock before
+     confirming. -->
+<div class="modal-overlay" id="bkCancelOverlay" style="display:none;">
+  <div class="modal" style="max-width:460px;">
+    <div class="modal-header">
+      <div class="modal-title">Cancel Booking</div>
+    </div>
+    <div class="modal-body">
+      <div id="bkCancelBody"></div>
+      <div class="empty-sub" id="bkCancelError" style="display:none; color:var(--danger); white-space:pre-line; margin-top:var(--space-3);"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" id="btnBkCancelBack">Back</button>
+      <button type="button" class="btn btn-danger" id="btnBkCancelConfirm">Confirm Cancel</button>
+    </div>
+  </div>
+</div>
+
 <!-- Sales Transaction — shown after Read Message ONLY when the selected
      customer already has other order(s) on the same order date. Lets the
      user say whether this message is a standalone New Order, or should be
@@ -1925,6 +1966,8 @@ $currentYear     = date('Y');
   var bkConfirmOverlay = document.getElementById('bkConfirmOverlay');
   var bkReleaseOverlay        = document.getElementById('bkReleaseOverlay');
   var bkReleaseConfirmOverlay = document.getElementById('bkReleaseConfirmOverlay');
+  var bkEditOverlay   = document.getElementById('bkEditOverlay');
+  var bkCancelOverlay = document.getElementById('bkCancelOverlay');
 
   // Returns tab fly windows.
   var rtProductOverlay  = document.getElementById('rtProductOverlay');
@@ -1949,6 +1992,7 @@ $currentYear     = date('Y');
     capFieldPickerOverlay, stProductOverlay, stPriceOverlay, stStockSourceOverlay, stConfirmOverlay,
     stOrderModeOverlay, stOrderPickOverlay, stDriverWarnOverlay,
     bkPriceOverlay, bkConfirmOverlay, bkReleaseOverlay, bkReleaseConfirmOverlay,
+    bkEditOverlay, bkCancelOverlay,
     rtProductOverlay, rtConfirmOverlay, rtReverifyOverlay,
     refundOverlay, applyCreditOverlay, document.getElementById('invPrintOverlay'),
     document.getElementById('acctPickOverlay'), document.getElementById('acctRegisterOverlay')];
@@ -7255,7 +7299,11 @@ $currentYear     = date('Y');
         id: bk.invoice_id,
         invoice_number: bk.invoice_number,
         total_amount: bk.invoice_total_amount,
-        paid_amount: bk.invoice_paid_amount
+        paid_amount: bk.invoice_paid_amount,
+        // Only .length of this is ever read (see recalcPayCapNotes) — a
+        // same-length placeholder array is enough to get "First/Second/..."
+        // right without fetching every payment's full detail here.
+        payments: new Array(bk.invoice_payment_count || 0)
       }, customer);
     });
     btnWrap.appendChild(payBtn);
@@ -7271,6 +7319,26 @@ $currentYear     = date('Y');
         openBkRelease(bk, customer);
       });
       btnWrap.appendChild(relBtn);
+
+      var editBtn = document.createElement('button');
+      editBtn.type = 'button';
+      editBtn.className = 'btn btn-secondary st-mini-btn';
+      editBtn.textContent = 'Edit';
+      editBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        openBkEdit(bk, customer);
+      });
+      btnWrap.appendChild(editBtn);
+
+      var cancelBtn = document.createElement('button');
+      cancelBtn.type = 'button';
+      cancelBtn.className = 'btn btn-danger st-mini-btn';
+      cancelBtn.textContent = 'Cancel';
+      cancelBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        openBkCancel(bk, customer);
+      });
+      btnWrap.appendChild(cancelBtn);
     }
 
     top.appendChild(left);
@@ -7449,6 +7517,201 @@ $currentYear     = date('Y');
         bkReleaseSaving = false;
         btnBkReleaseConfirmSave.disabled = false;
         stShowError(bkReleaseConfirmError, 'Connection error.');
+      });
+  });
+
+  // ==========================================================
+  // Edit Booking — change qty on existing lines only (no add/remove
+  // product). Every line of the booking must be sent back, each >= its
+  // qty_released. See edit_booking.php for the full contract.
+  // ==========================================================
+  var bkEditIntro = document.getElementById('bkEditIntro');
+  var bkEditRows  = document.getElementById('bkEditRows');
+  var bkEditError = document.getElementById('bkEditError');
+  var btnBkEditSave = document.getElementById('btnBkEditSave');
+  var bkEditBookingId = null;
+  var bkEditCustomerId = null;
+  var bkEditSaving = false;
+
+  function openBkEdit(bk, customer) {
+    bkEditBookingId = bk.id;
+    bkEditCustomerId = customer.id;
+    stHideError(bkEditError);
+    bkEditIntro.textContent = 'A line cannot go below what has already been released for it. Set a line to its released amount to drop the rest.';
+    bkEditRows.innerHTML = '';
+
+    bk.items.forEach(function (it) {
+      var g = document.createElement('div');
+      g.className = 'form-group';
+      var label = document.createElement('div');
+      label.className = 'label';
+      label.textContent = it.product_name
+        + (it.qty_released > 0.0001 ? ' \u2014 min ' + fmtQty(it.qty_released) + ' (already released)' : '')
+        + ' (' + (it.unit_label || '') + ')';
+      g.appendChild(label);
+      var inp = document.createElement('input');
+      inp.type = 'text';
+      inp.setAttribute('inputmode', 'decimal');
+      inp.className = 'input input-number-comma';
+      inp.setAttribute('data-booking-item-id', it.booking_item_id);
+      inp.setAttribute('data-min', it.qty_released);
+      inp.value = formatNumberInput(fmtQty(it.qty_booked));
+      initNumberCommaInput(inp);
+      g.appendChild(inp);
+      bkEditRows.appendChild(g);
+    });
+
+    show(bkEditOverlay);
+  }
+
+  document.getElementById('btnBkEditCancel').addEventListener('click', function () {
+    hide(bkEditOverlay);
+  });
+
+  btnBkEditSave.addEventListener('click', function () {
+    if (bkEditSaving) return;
+    stHideError(bkEditError);
+
+    var items = [];
+    var inputs = bkEditRows.querySelectorAll('input[data-booking-item-id]');
+    for (var i = 0; i < inputs.length; i++) {
+      var qty = parseNumberInput(inputs[i].value);
+      var min = parseFloat(inputs[i].getAttribute('data-min'));
+      if (isNaN(qty) || qty < min - 0.0001) {
+        stShowError(bkEditError, 'Each quantity must be ' + fmtQty(min) + ' or more.');
+        return;
+      }
+      items.push({ booking_item_id: inputs[i].getAttribute('data-booking-item-id'), qty: qty });
+    }
+
+    var basePayload = {
+      booking_id: bkEditBookingId,
+      items: JSON.stringify(items)
+    };
+
+    bkEditSaving = true;
+    btnBkEditSave.disabled = true;
+    // Preview first (dry_run=1) purely as validation — on success, save for
+    // real (dry_run=0) right away. See the overlay's own comment for why
+    // there is no separate confirm screen here.
+    stPost('ajax/edit_booking.php', Object.assign({}, basePayload, { dry_run: '1' }))
+      .then(function (res) {
+        if (!res.ok) { throw { handled: true, message: res.message }; }
+        return stPost('ajax/edit_booking.php', Object.assign({}, basePayload, { dry_run: '0' }));
+      })
+      .then(function (res) {
+        bkEditSaving = false;
+        btnBkEditSave.disabled = false;
+        if (!res.ok) { stShowError(bkEditError, res.message || 'Failed to save the changes.'); return; }
+        hide(bkEditOverlay);
+        var cid = bkEditCustomerId;
+        bkEditBookingId = null;
+        bkEditCustomerId = null;
+        if (cid) refreshStCustomerCard(cid);
+      })
+      .catch(function (err) {
+        bkEditSaving = false;
+        btnBkEditSave.disabled = false;
+        stShowError(bkEditError, (err && err.handled) ? err.message : 'Connection error.');
+      });
+  });
+
+  // ==========================================================
+  // Cancel Booking — cancels everything still reserved on the booking in
+  // one go (all lines). Preview fetched the moment the window opens.
+  // ==========================================================
+  var bkCancelBody  = document.getElementById('bkCancelBody');
+  var bkCancelError = document.getElementById('bkCancelError');
+  var btnBkCancelConfirm = document.getElementById('btnBkCancelConfirm');
+  var bkCancelBookingId = null;
+  var bkCancelCustomerId = null;
+  var bkCancelSaving = false;
+
+  function openBkCancel(bk, customer) {
+    bkCancelBookingId = bk.id;
+    bkCancelCustomerId = customer.id;
+    stHideError(bkCancelError);
+    bkCancelBody.innerHTML = '<div class="empty-sub">Loading preview\u2026</div>';
+    btnBkCancelConfirm.disabled = true;
+    show(bkCancelOverlay);
+
+    stPost('ajax/cancel_booking.php', { booking_id: bk.id, dry_run: '1' })
+      .then(function (res) {
+        if (!res.ok) {
+          bkCancelBody.innerHTML = '';
+          stShowError(bkCancelError, res.message || 'Could not load the preview.');
+          return;
+        }
+        renderBkCancelPreview(res.cancel);
+        btnBkCancelConfirm.disabled = false;
+      })
+      .catch(function () {
+        bkCancelBody.innerHTML = '';
+        stShowError(bkCancelError, 'Connection error.');
+      });
+  }
+
+  function renderBkCancelPreview(c) {
+    bkCancelBody.innerHTML = '';
+    stAddRow(bkCancelBody, 'Invoice', c.invoice.number);
+
+    var lbl = document.createElement('div');
+    lbl.className = 'st-section-label';
+    lbl.textContent = 'Returned to stock';
+    bkCancelBody.appendChild(lbl);
+
+    c.items.forEach(function (ln) {
+      var box = document.createElement('div');
+      box.className = 'st-mov';
+      var top = document.createElement('div');
+      top.className = 'st-mov-top';
+      var nm = document.createElement('div');
+      nm.style.fontWeight = '600';
+      nm.textContent = ln.product_name;
+      var qtyEl = document.createElement('div');
+      qtyEl.textContent = fmtQty(ln.qty_cancelled) + ' ' + (ln.unit_label || '');
+      top.appendChild(nm);
+      top.appendChild(qtyEl);
+      box.appendChild(top);
+      bkCancelBody.appendChild(box);
+    });
+
+    var sep = document.createElement('div');
+    sep.className = 'st-section-label';
+    sep.textContent = 'Invoice';
+    bkCancelBody.appendChild(sep);
+    stAddRow(bkCancelBody, 'Total Before', formatIDR(c.invoice.total_before));
+    stAddRow(bkCancelBody, 'Cancelled Value', '-' + formatIDR(c.total_cancelled_value));
+    stAddRow(bkCancelBody, 'Total After', formatIDR(c.invoice.total_after));
+  }
+
+  document.getElementById('btnBkCancelBack').addEventListener('click', function () {
+    hide(bkCancelOverlay);
+  });
+
+  btnBkCancelConfirm.addEventListener('click', function () {
+    if (bkCancelSaving || !bkCancelBookingId) return;
+    stHideError(bkCancelError);
+    bkCancelSaving = true;
+    btnBkCancelConfirm.disabled = true;
+    stPost('ajax/cancel_booking.php', { booking_id: bkCancelBookingId, dry_run: '0' })
+      .then(function (res) {
+        bkCancelSaving = false;
+        if (!res.ok) {
+          btnBkCancelConfirm.disabled = false;
+          stShowError(bkCancelError, res.message || 'Failed to cancel the booking.');
+          return;
+        }
+        hide(bkCancelOverlay);
+        var cid = bkCancelCustomerId;
+        bkCancelBookingId = null;
+        bkCancelCustomerId = null;
+        if (cid) refreshStCustomerCard(cid);
+      })
+      .catch(function () {
+        bkCancelSaving = false;
+        btnBkCancelConfirm.disabled = false;
+        stShowError(bkCancelError, 'Connection error.');
       });
   });
 

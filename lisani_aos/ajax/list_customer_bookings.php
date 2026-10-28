@@ -8,9 +8,15 @@
 // GET: customer_id
 //
 // Response: { ok, data: [ { id, booking_date, status, invoice_id, invoice_number,
-//   invoice_total_amount, invoice_paid_amount,
+//   invoice_total_amount, invoice_paid_amount, invoice_payment_count,
 //   items: [ { booking_item_id, logistic_id, product_name, unit_label, stock_source,
 //              qty_booked, qty_released, qty_remaining, price } ] } ] }
+//
+// invoice_payment_count = COUNT(*) of invoice_payments for that invoice so
+// far — the frontend's "+ Add Payment" button needs this (not just the
+// amounts) to word the auto-filled note correctly ("First/Second/... payment
+// for invoice ..."), the same way list_customer_orders.php's inv.payments
+// does for every other invoice.
 
 ini_set('display_errors', '0');
 ob_start();
@@ -79,6 +85,28 @@ try {
     if ($bookings) {
         $ids = array_keys($byId);
         $marks = implode(',', array_fill(0, count($ids), '?'));
+
+        $invoiceIds = [];
+        foreach ($bookings as $b) {
+            $invoiceIds[$b['invoice_id']] = true;
+        }
+        $invoiceIds = array_keys($invoiceIds);
+        $invMarks = implode(',', array_fill(0, count($invoiceIds), '?'));
+        $payCounts = [];
+        $st = $lisani_conn->prepare(
+            'SELECT invoice_id, COUNT(*) AS total FROM invoice_payments WHERE invoice_id IN (' . $invMarks . ') GROUP BY invoice_id'
+        );
+        $st->bind_param(str_repeat('i', count($invoiceIds)), ...$invoiceIds);
+        $st->execute();
+        $pr = $st->get_result();
+        while ($row = $pr->fetch_assoc()) {
+            $payCounts[(int) $row['invoice_id']] = (int) $row['total'];
+        }
+        $st->close();
+        foreach ($bookings as $i => $b) {
+            $bookings[$i]['invoice_payment_count'] = $payCounts[$b['invoice_id']] ?? 0;
+        }
+
         $st = $lisani_conn->prepare(
             'SELECT bi.id, bi.booking_id, bi.logistic_id, bi.stock_source,
                     bi.qty_booked, bi.qty_released, bi.price,

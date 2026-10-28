@@ -572,6 +572,46 @@ Perlu dites: shortage check saat Release (qty > sisa reservasi), rilis sebagian 
 habis → status booking jadi completed, `total_inflow` & `total_taken_qty` match, movement hasil rilis tampil
 normal di Products/Print Invoice, lalu `+ Add Payment` dari kartu Active Bookings (slip DP, OCR, bisa dicicil).
 
+**Bugfix (dites user, ditemukan)**: tombol `+ Add Payment` di kartu Active Bookings selalu nulis "First payment
+for invoice ..." di Notes walau sudah ada pembayaran sebelumnya — penyebabnya kartu itu manggil
+`openPayCaptureView()` tanpa `inv.payments` (cuma dipakai `.length`-nya buat penomoran First/Second/...).
+Diperbaiki: `list_customer_bookings.php` sekarang juga mengembalikan `invoice_payment_count` (COUNT dari
+`invoice_payments` per invoice), dipakai di `transaction_content.php` sebagai `payments: new
+Array(invoice_payment_count)` saat buka form itu. **Perlu dites ulang**: bayar invoice booking 2x, cek Notes
+pembayaran kedua bener-bener bilang "Second payment...".
+
+**Logistic List — kolom Booking (baru, belum dites)**: di tab Logistic List (`logistic_content.php`), tiap
+produk sekarang punya baris **"Booking"** (setelah "Total All Stock") berisi Total/Taken/Remaining dari qty yang
+masih berstatus booking **active** untuk produk itu — baris ini cuma muncul kalau produk itu memang sedang ada
+booking aktif (query di `list_logistics.php` cuma mengembalikan key `booking` kalau ada, `null` kalau tidak;
+frontend cek `if (l.booking)`). `list_logistics.php` nambah agregat dari `booking_items` JOIN `bookings` WHERE
+`status='active'` GROUP BY `logistic_id`, dengan guard `SHOW TABLES` (sama polanya dengan guard `defective_qty`
+yang sudah ada) biar DB yang belum jalanin `migration_bookings.sql` tidak error. Perlu dites: produk dengan
+booking aktif → baris Booking muncul dengan angka benar; produk tanpa booking → baris tidak muncul sama sekali;
+booking yang sudah `completed`/`cancelled` tidak ikut kehitung.
+
+**Booking selalu invoice baru (belum dites)**: `create_booking.php` sekarang **tidak lagi** reuse invoice open
+customer — tiap booking selalu bikin invoice baru sendiri (beda dari New Order/Returns yang masih reuse invoice
+open per §5.11). Perlu dites: 2 booking berturutan utk customer yang sama → harus jadi 2 invoice beda, bukan
+digabung.
+
+**Edit Booking & Cancel Booking (baru, belum dites)**: tombol **Edit** dan **Cancel** muncul di kartu Active
+Bookings (tab Customers) selama booking itu masih punya sisa qty yang belum dirilis.
+- **Edit** (`ajax/edit_booking.php`) — cuma ubah qty di baris yang SUDAH ada (tidak bisa tambah/hapus produk);
+  tiap baris wajib dikirim semua (bukan partial), qty baru tidak boleh kurang dari qty yang sudah dirilis.
+  Reservasi stok (`remaining_primary_qty`/`defective_qty`) & `invoices.total_amount` disesuaikan dengan delta.
+  Harga per baris tidak bisa diubah di sini. UI-nya tidak pakai layar confirm terpisah — tombol "Save Changes"
+  langsung jalanin dry_run=1 lalu (kalau sukses) dry_run=0 berturutan.
+- **Cancel** (`ajax/cancel_booking.php`) — batalkan SEMUA sisa qty yang belum dirilis sekaligus (bukan per
+  baris); qty yang sudah dirilis tidak kesentuh. Stok yang dibatalkan dikembalikan ke
+  `remaining_primary_qty`/`defective_qty`, `invoices.total_amount` dikurangi senilai qty yang dibatalkan,
+  `bookings.status` jadi `cancelled`. Preview (dry_run=1) otomatis diambil begitu overlay dibuka.
+
+Perlu dites: Edit naikkan qty (stok harus cukup, kalau tidak harus gagal dengan pesan jelas), Edit turunkan qty
+di bawah qty_released (harus ditolak), Cancel booking yang masih ada sisa → invoice total turun & stok balik,
+Cancel booking yang sudah full released (harus ditolak, "already fully released"), tombol Edit/Cancel hilang
+begitu booking jadi `completed` (full released) atau `cancelled`.
+
 Belum dibangun (disengaja, bukan bug):
 - Fitur pembayaran bersama (disebut user saat desain Create New Logistic). Baru placeholder di form.
 - Filter/pagination Movements; retention `storage/recycle/`; `customers.profit`; edit/hapus alias & order; aturan stok minus;

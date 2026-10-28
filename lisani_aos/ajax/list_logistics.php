@@ -44,6 +44,16 @@ function aosColumnExists(mysqli $conn, string $table, string $column): bool
     return $res instanceof mysqli_result && $res->num_rows > 0;
 }
 $hasDefectiveQty   = aosColumnExists($lisani_conn, 'logistics', 'defective_qty');
+// Booking feature tables (migration_bookings.sql) may not have run yet on
+// this DB — same defensive reasoning as $hasDefectiveQty above: check once,
+// never issue the query at all when the table isn't there.
+function aosTableExists(mysqli $conn, string $table): bool
+{
+    $t = str_replace('`', '', $table);
+    $res = $conn->query("SHOW TABLES LIKE '" . $conn->real_escape_string($t) . "'");
+    return $res instanceof mysqli_result && $res->num_rows > 0;
+}
+$hasBookings = aosTableExists($lisani_conn, 'bookings') && aosTableExists($lisani_conn, 'booking_items');
 // NOTE: there is no separate `restock_bucket` column — create_return.php
 // writes the destination bucket for 'in' rows into the SAME `stock_source`
 // column used by 'out' rows for the source bucket (see create_return.php,
@@ -121,6 +131,37 @@ if ($hasStockSource) {
                 'movement_date' => $h['movement_date'],
                 'created_at'    => $h['created_at'],
                 'qty'           => $h['qty_primary_package'],
+            ];
+        }
+    }
+}
+
+// Booking summary per logistic_id — ONLY from 'active' bookings (a
+// completed/cancelled booking has nothing reserved any more). total_booked
+// = still-reserved qty_booked sum, taken = qty_released sum, remaining =
+// total_booked - taken (same as qty_remaining in list_customer_bookings.php,
+// just summed across every active booking of that product). A product with
+// no active booking at all simply has no key here — the frontend shows this
+// row only when one exists.
+$bookingByLogistic = [];
+if ($hasBookings) {
+    $bkResult = $lisani_conn->query(
+        "SELECT bi.logistic_id,
+                SUM(bi.qty_booked) AS total_booked,
+                SUM(bi.qty_released) AS total_taken
+         FROM booking_items bi
+         JOIN bookings b ON b.id = bi.booking_id
+         WHERE b.status = 'active'
+         GROUP BY bi.logistic_id"
+    );
+    if ($bkResult instanceof mysqli_result) {
+        while ($bk = $bkResult->fetch_assoc()) {
+            $totalBooked = (float) $bk['total_booked'];
+            $totalTaken  = (float) $bk['total_taken'];
+            $bookingByLogistic[(int) $bk['logistic_id']] = [
+                'total_booked' => $totalBooked,
+                'taken'        => $totalTaken,
+                'remaining'    => round($totalBooked - $totalTaken, 2),
             ];
         }
     }
@@ -230,6 +271,10 @@ while ($r = $result->fetch_assoc()) {
         'defective_qty'              => $defectiveQtyRaw,
         'total_all_stock'            => $totalAllStock,
         'defective_history'          => $defectiveHistory[(int) $r['id']] ?? [],
+        // null when this product has no active booking at all (see
+        // $bookingByLogistic above) — the frontend uses that to decide
+        // whether to show the Booking row at all.
+        'booking'                    => $bookingByLogistic[(int) $r['id']] ?? null,
         'secondary_qty'              => $secondaryQty,
         'secondary_unit_label'       => $r['secondary_unit_label'],
         'secondary_total_weight_kg'  => $secondaryTotalWeightKg,
