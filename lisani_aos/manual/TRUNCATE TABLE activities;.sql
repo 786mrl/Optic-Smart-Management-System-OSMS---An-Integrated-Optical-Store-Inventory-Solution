@@ -1,6 +1,7 @@
 TRUNCATE activities;
 TRUNCATE booking_items;
 TRUNCATE bookings;
+TRUNCATE booking_item_release;
 TRUNCATE company_documents;
 TRUNCATE customer_item_prices;
 TRUNCATE customers;

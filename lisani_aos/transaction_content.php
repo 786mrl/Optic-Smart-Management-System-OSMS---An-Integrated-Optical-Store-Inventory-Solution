@@ -7348,8 +7348,20 @@ $currentYear     = date('Y');
     bk.items.forEach(function (it) {
       var sub = document.createElement('div');
       sub.className = 'st-mov-sub';
+      // "released" stays gross (it's the release-slot/reservation figure —
+      // also what Edit's minimum qty is checked against, see
+      // edit_booking.php). "still with customer" is net of any returns
+      // against those specific releases (qty_released_net, see
+      // list_customer_bookings.php) — shown separately so the two don't
+      // get conflated; it's only added when it actually differs from the
+      // gross figure (no returns yet = nothing new to say).
+      var releasedTxt = 'released ' + fmtQty(it.qty_released);
+      if (typeof it.qty_released_net === 'number' && Math.abs(it.qty_released_net - it.qty_released) > 0.0001) {
+        releasedTxt += ' (' + fmtQty(it.qty_released_net) + ' still with customer, '
+          + fmtQty(it.qty_returned) + ' returned)';
+      }
       sub.textContent = it.product_name + ': booked ' + fmtQty(it.qty_booked)
-        + ', released ' + fmtQty(it.qty_released)
+        + ', ' + releasedTxt
         + ', still reserved ' + fmtQty(it.qty_remaining) + ' ' + (it.unit_label || '')
         + (it.stock_source === 'defective' ? ' \u00b7 defective stock' : '');
       box.appendChild(sub);

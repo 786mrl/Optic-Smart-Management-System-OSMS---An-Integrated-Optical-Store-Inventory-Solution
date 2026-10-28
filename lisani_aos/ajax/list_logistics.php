@@ -54,6 +54,11 @@ function aosTableExists(mysqli $conn, string $table): bool
     return $res instanceof mysqli_result && $res->num_rows > 0;
 }
 $hasBookings = aosTableExists($lisani_conn, 'bookings') && aosTableExists($lisani_conn, 'booking_items');
+// migration_booking_item_releases.sql may not have run yet on this DB —
+// same defensive reasoning as $hasBookings above. Needed to net returns
+// off "Taken" (see booking summary block below); without it "Taken" falls
+// back to the old gross qty_released.
+$hasBookingReleases = aosTableExists($lisani_conn, 'booking_item_releases');
 // NOTE: there is no separate `restock_bucket` column — create_return.php
 // writes the destination bucket for 'in' rows into the SAME `stock_source`
 // column used by 'out' rows for the source bucket (see create_return.php,
@@ -138,17 +143,34 @@ if ($hasStockSource) {
 
 // Booking summary per logistic_id — ONLY from 'active' bookings (a
 // completed/cancelled booking has nothing reserved any more). total_booked
-// = still-reserved qty_booked sum, taken = qty_released sum, remaining =
-// total_booked - taken (same as qty_remaining in list_customer_bookings.php,
-// just summed across every active booking of that product). A product with
-// no active booking at all simply has no key here — the frontend shows this
+// = still-reserved qty_booked sum (gross); taken = NET qty_released
+// (qty_released minus any returns against those specific releases, via
+// booking_item_releases — see migration_booking_item_releases.sql and the
+// header comment in list_customer_bookings.php); remaining = total_booked -
+// GROSS qty_released (still-reserved-but-not-yet-released qty — this one
+// stays gross on purpose: a return does not reopen a release slot, it just
+// means less of what was released is still physically with the customer).
+// So "taken" and "remaining" together do NOT sum back to total_booked once
+// a return has happened — that's expected, "taken" alone answers "how much
+// is actually still out with a customer right now" while "remaining"
+// answers "how much is still waiting to be released". A product with no
+// active booking at all simply has no key here — the frontend shows this
 // row only when one exists.
 $bookingByLogistic = [];
 if ($hasBookings) {
     $bkResult = $lisani_conn->query(
         "SELECT bi.logistic_id,
                 SUM(bi.qty_booked) AS total_booked,
-                SUM(bi.qty_released) AS total_taken
+                SUM(bi.qty_released) AS total_released_gross"
+         . ($hasBookingReleases ? ",
+                (SELECT COALESCE(SUM(m.qty_primary_package), 0)
+                 FROM booking_item_releases bir
+                 JOIN logistic_movements m
+                   ON m.source_movement_id = bir.movement_id AND m.movement_type = 'in'
+                 JOIN booking_items bi2 ON bi2.id = bir.booking_item_id
+                 WHERE bi2.logistic_id = bi.logistic_id
+                   AND bi2.booking_id IN (SELECT b2.id FROM bookings b2 WHERE b2.status = 'active')
+                ) AS total_returned" : '') . "
          FROM booking_items bi
          JOIN bookings b ON b.id = bi.booking_id
          WHERE b.status = 'active'
@@ -156,12 +178,14 @@ if ($hasBookings) {
     );
     if ($bkResult instanceof mysqli_result) {
         while ($bk = $bkResult->fetch_assoc()) {
-            $totalBooked = (float) $bk['total_booked'];
-            $totalTaken  = (float) $bk['total_taken'];
+            $totalBooked  = (float) $bk['total_booked'];
+            $totalRelGross = (float) $bk['total_released_gross'];
+            $totalReturned = $hasBookingReleases ? (float) $bk['total_returned'] : 0.0;
+            $totalTakenNet = round($totalRelGross - $totalReturned, 2);
             $bookingByLogistic[(int) $bk['logistic_id']] = [
                 'total_booked' => $totalBooked,
-                'taken'        => $totalTaken,
-                'remaining'    => round($totalBooked - $totalTaken, 2),
+                'taken'        => $totalTakenNet,
+                'remaining'    => round($totalBooked - $totalRelGross, 2),
             ];
         }
     }
@@ -198,6 +222,20 @@ while ($r = $result->fetch_assoc()) {
     $defectiveQty     = $defectiveQtyRaw !== null ? (float) $defectiveQtyRaw : 0.0;
     $remainingQty     = $r['remaining_primary_qty'] !== null ? (float) $r['remaining_primary_qty'] : null;
     $totalAllStock    = $remainingQty !== null ? $remainingQty + $defectiveQty : null;
+
+    // Actual Remaining Qty on Storage: physically still in the warehouse
+    // right now, in EITHER bucket, PLUS whatever is still reserved by an
+    // active booking but not yet released (that stock has not left the
+    // building — create_booking.php reserves it by subtracting it from
+    // remaining_primary_qty/defective_qty, but it still physically sits on
+    // the shelf until release_booking.php actually dispatches it). This is
+    // NOT the same as total_all_stock above: total_all_stock is "stock free
+    // of any booking reservation", this is "stock physically on hand"
+    // (total_all_stock + still-reserved-not-yet-released booking qty, the
+    // bookingByLogistic 'remaining' computed above — gross, on purpose, see
+    // that block's comment).
+    $bookingStillOnSite = isset($bookingByLogistic[(int) $r['id']]) ? $bookingByLogistic[(int) $r['id']]['remaining'] : 0.0;
+    $actualRemainingOnStorage = $totalAllStock !== null ? round($totalAllStock + $bookingStillOnSite, 2) : null;
 
     // ---- Normal-stock ledger for the "Remaining Primary Qty" fly window ----
     // Steps, in order:
@@ -270,6 +308,7 @@ while ($r = $result->fetch_assoc()) {
         'normal_stock_ledger'        => $normalLedger,
         'defective_qty'              => $defectiveQtyRaw,
         'total_all_stock'            => $totalAllStock,
+        'actual_remaining_qty_on_storage' => $actualRemainingOnStorage,
         'defective_history'          => $defectiveHistory[(int) $r['id']] ?? [],
         // null when this product has no active booking at all (see
         // $bookingByLogistic above) — the frontend uses that to decide

@@ -1212,12 +1212,23 @@ $LOG_SUPPORTED_DEPARTMENT = 'dates';
       bodyInner.appendChild(accordionRow('Primary Packaging', fmtNum(l.primary_qty) + ' ' + (l.primary_unit_label || '') + '  (' + fmtNum(l.primary_total_weight_kg) + ' KG)'));
       bodyInner.appendChild(accordionRowClickable('Remaining Primary Qty', fmtNum(l.remaining_primary_qty) + ' / ' + fmtNum(l.primary_qty), function () { openNormalLedger(l); }));
       bodyInner.appendChild(accordionRowClickable('Defective Stock', fmtNum(l.defective_qty), function () { openDefectiveHistory(l); }));
-      bodyInner.appendChild(accordionRow('Total All Stock', fmtNum(l.total_all_stock) + ' ' + (l.primary_unit_label || '')));
+      // "Actual Remaining Qty on Storage" = physically still in the
+      // warehouse right now: free stock (RPQ + defective, i.e.
+      // total_all_stock) PLUS whatever is reserved by an active booking but
+      // not yet released — that qty hasn't left the building yet, it's just
+      // earmarked. Differs from total_all_stock (which only counts
+      // unreserved stock) on purpose: once something is booked but not
+      // released, it's still sitting on the shelf. See list_logistics.php.
+      bodyInner.appendChild(accordionRow('Actual Remaining Qty on Storage', fmtNum(l.actual_remaining_qty_on_storage) + ' ' + (l.primary_unit_label || '')));
       // Only shown for a product that currently has at least one active
       // booking (l.booking is null otherwise — see list_logistics.php).
-      // total_booked includes qty already released, same meaning as
-      // qty_booked in list_customer_bookings.php, just summed across every
-      // active booking of this product.
+      // total_booked = still-reserved qty, gross. taken = NET qty actually
+      // still out with a customer right now (released minus any returns
+      // against those releases). remaining = qty still reserved but not
+      // yet released (gross — a return does not free a release slot), and
+      // this exact number is already folded into Actual Remaining Qty on
+      // Storage above. taken + remaining therefore do NOT have to add up to
+      // total_booked once a return has happened; that's expected.
       if (l.booking) {
         bodyInner.appendChild(accordionRow('Booking',
           'Total ' + fmtNum(l.booking.total_booked) + ' \u00b7 Taken ' + fmtNum(l.booking.taken)

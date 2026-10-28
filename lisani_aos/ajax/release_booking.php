@@ -31,6 +31,10 @@
 //     stock_source='defective' lines — remaining_primary_qty/defective_qty
 //     are NOT touched (already reserved)
 //   - booking_items.qty_released (+)
+//   - booking_item_releases: 1 row per released line, recording which
+//     logistic_movements 'out' row this release produced (so a later
+//     return against it can be netted off — see
+//     migration_booking_item_releases.sql and list_customer_bookings.php)
 //   - bookings.status -> 'completed' once every item's qty_released reaches
 //     its qty_booked
 //   - customers.total_inflow (+ released value) — this is the point where
@@ -287,6 +291,12 @@ try {
     $itemUpd = $lisani_conn->prepare(
         'UPDATE booking_items SET qty_released = qty_released + ? WHERE id = ?'
     );
+    // Records which logistic_movements row this release produced, so a
+    // later return against it (source_movement_id) can be netted off when
+    // computing "Taken" — see migration_booking_item_releases.sql.
+    $relIns = $lisani_conn->prepare(
+        'INSERT INTO booking_item_releases (booking_item_id, movement_id, qty) VALUES (?, ?, ?)'
+    );
     $logUpdNormal = $lisani_conn->prepare(
         'UPDATE logistics SET total_taken_qty = total_taken_qty + ? WHERE id = ?'
     );
@@ -308,7 +318,11 @@ try {
             $driverDb, $policeDb, $q, $p, $t, $invoiceId, $userId
         );
         $movIns->execute();
-        $movementIds[] = (int) $lisani_conn->insert_id;
+        $newMovementId = (int) $lisani_conn->insert_id;
+        $movementIds[] = $newMovementId;
+
+        $relIns->bind_param('iis', $ln['booking_item_id'], $newMovementId, $q);
+        $relIns->execute();
 
         if ($ss === 'defective') {
             $logUpdDefective->bind_param('ssi', $q, $q, $lid);
@@ -323,6 +337,7 @@ try {
     }
     $movIns->close();
     $itemUpd->close();
+    $relIns->close();
     $logUpdNormal->close();
     $logUpdDefective->close();
 

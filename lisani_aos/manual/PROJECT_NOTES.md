@@ -612,6 +612,36 @@ di bawah qty_released (harus ditolak), Cancel booking yang masih ada sisa → in
 Cancel booking yang sudah full released (harus ditolak, "already fully released"), tombol Edit/Cancel hilang
 begitu booking jadi `completed` (full released) atau `cancelled`.
 
+**Bugfix (dites user, OK) — Booking "Taken" harus net, bukan gross**: `booking_items.qty_released` cuma
+akumulator (naik terus tiap `release_booking.php`, **tidak pernah turun** saat barang yang sudah dirilis itu
+di-retur lewat tab Logistic/`create_return.php`, yang memang tidak tahu apa-apa soal booking). Begitu ada retur
+lalu booking di-edit (nambah qty), "Taken"/"Remaining" di kartu booking jadi ganda-hitung dengan
+`remaining_primary_qty` (RPQ) — seolah stok yang available lebih banyak dari yang sebenarnya. Fix: tabel baru
+`booking_item_releases` (`booking_item_id`, `movement_id`, `qty`; append-only, tidak pernah di-UPDATE) —
+`release_booking.php` nulis 1 baris tiap release, mencatat `logistic_movements.id` hasil release itu. "Taken net"
+dihitung on-the-fly = `qty_released − SUM(retur yang source_movement_id-nya nunjuk ke release itu)`, pola yang
+sama dengan retur/pickup biasa (§5.4). `qty_released` sendiri **tetap gross**, tidak diubah — itu masih jadi
+patokan kapan booking `completed` & batas bawah Edit (barang yang sudah dirilis tidak bisa "ditarik balik"
+reservasinya walau nanti diretur, itu transaksi terpisah). "Remaining" (sisa reservasi belum dirilis) juga tetap
+gross, sengaja — retur tidak membuka slot rilis baru. Jadi "Taken" + "Remaining" booking **tidak harus** balik
+jumlah ke "Total" begitu sudah ada retur (disengaja, bukan bug baru). File: migration baru
+`migration_booking_item_releases.sql`, `release_booking.php`, `list_customer_bookings.php` (tambah
+`qty_released_net`/`qty_returned`), `list_logistics.php` (agregat `booking.taken` per logistic_id ikut net),
+`transaction_content.php` (kartu Active Bookings tampilkan net kalau beda dari gross).
+
+**Bugfix (dites user, OK) — kolom baru "Actual Remaining Qty on Storage" (Logistic List)**: sebelumnya tidak ada
+angka yang jawab "barang fisik yang masih ada di gudang sekarang, apapun statusnya" — `total_all_stock`
+(RPQ+defective_qty, baris lama yang dulu dipakai utk ini) ternyata cuma stok yang **belum** direservasi booking
+apapun; begitu ada booking yang belum di-release, barangnya masih fisik di gudang tapi sudah tidak kehitung di
+situ (sempat salah didefinisikan = `total_all_stock` doang di iterasi pertama fix ini, tampil 0 padahal
+seharusnya sisa booking yang belum rilis). Rumus final: `actual_remaining_qty_on_storage = total_all_stock +
+Σ(qty_booked − qty_released) booking aktif produk itu (gross, booking yang belum dirilis)`. Field baru di
+`list_logistics.php`, field lama `total_all_stock` TIDAK diubah/dihapus (masih dipakai tempat lain, maknanya
+tetap "stok bebas dari reservasi"). Ditampilkan di `logistic_content.php` sebagai baris accordion label "Actual
+Remaining Qty on Storage" (ganti label dari "Total All Stock" yang lama ke field baru ini), selalu muncul (bukan
+cuma kalau ada booking aktif). Invariant yang sudah divalidasi: `actual_remaining_qty_on_storage + taken_net
+(booking) = primary_qty`, kapan pun, di titik manapun dalam siklus booking→release→retur→edit.
+
 Belum dibangun (disengaja, bukan bug):
 - Fitur pembayaran bersama (disebut user saat desain Create New Logistic). Baru placeholder di form.
 - Filter/pagination Movements; retention `storage/recycle/`; `customers.profit`; edit/hapus alias & order; aturan stok minus;

@@ -10,13 +10,27 @@
 // Response: { ok, data: [ { id, booking_date, status, invoice_id, invoice_number,
 //   invoice_total_amount, invoice_paid_amount, invoice_payment_count,
 //   items: [ { booking_item_id, logistic_id, product_name, unit_label, stock_source,
-//              qty_booked, qty_released, qty_remaining, price } ] } ] }
+//              qty_booked, qty_released, qty_released_net, qty_returned,
+//              qty_remaining, price } ] } ] }
 //
 // invoice_payment_count = COUNT(*) of invoice_payments for that invoice so
 // far — the frontend's "+ Add Payment" button needs this (not just the
 // amounts) to word the auto-filled note correctly ("First/Second/... payment
 // for invoice ..."), the same way list_customer_orders.php's inv.payments
 // does for every other invoice.
+//
+// qty_released vs qty_released_net: qty_released is a pure accumulator (only
+// ever goes up, written by release_booking.php) — it is what decides when a
+// booking is "fully released" / completed, and MUST stay gross for that to
+// work. It does NOT reflect goods the customer later returned. qty_returned
+// sums every logistic_movements 'in' row whose source_movement_id points at
+// one of this item's releases (tracked in booking_item_releases, written by
+// release_booking.php — see migration_booking_item_releases.sql).
+// qty_released_net = qty_released - qty_returned is what the frontend should
+// show as "Taken" (net, still actually with the customer right now).
+// qty_remaining (qty_booked - qty_released, gross) is UNCHANGED — it is a
+// reservation figure, not a physical-goods figure, and a return does not
+// free up a new release slot on its own.
 
 ini_set('display_errors', '0');
 ob_start();
@@ -119,26 +133,59 @@ try {
         $st->bind_param(str_repeat('i', count($ids)), ...$ids);
         $st->execute();
         $r2 = $st->get_result();
+        $bookingItemIds = [];
+        $rowsOut = [];
         while ($row = $r2->fetch_assoc()) {
             $bid = (int) $row['booking_id'];
             if (!isset($byId[$bid])) {
                 continue;
             }
-            $qtyBooked   = (float) $row['qty_booked'];
-            $qtyReleased = (float) $row['qty_released'];
-            $bookings[$byId[$bid]]['items'][] = [
-                'booking_item_id' => (int) $row['id'],
-                'logistic_id'     => (int) $row['logistic_id'],
-                'product_name'    => $row['product_name'],
-                'unit_label'      => $row['primary_unit_label'],
-                'stock_source'    => $row['stock_source'],
-                'qty_booked'      => $qtyBooked,
-                'qty_released'    => $qtyReleased,
-                'qty_remaining'   => round($qtyBooked - $qtyReleased, 2),
-                'price'           => (float) $row['price'],
-            ];
+            $bookingItemIds[] = (int) $row['id'];
+            $rowsOut[] = $row;
         }
         $st->close();
+
+        // Net returns per booking_item, via booking_item_releases ->
+        // source_movement_id — see header comment above.
+        $returnedByItem = [];
+        if ($bookingItemIds) {
+            $biMarks = implode(',', array_fill(0, count($bookingItemIds), '?'));
+            $st = $lisani_conn->prepare(
+                'SELECT bir.booking_item_id, COALESCE(SUM(m.qty_primary_package), 0) AS returned
+                 FROM booking_item_releases bir
+                 JOIN logistic_movements m ON m.source_movement_id = bir.movement_id AND m.movement_type = "in"
+                 WHERE bir.booking_item_id IN (' . $biMarks . ')
+                 GROUP BY bir.booking_item_id'
+            );
+            $st->bind_param(str_repeat('i', count($bookingItemIds)), ...$bookingItemIds);
+            $st->execute();
+            $rr = $st->get_result();
+            while ($row = $rr->fetch_assoc()) {
+                $returnedByItem[(int) $row['booking_item_id']] = (float) $row['returned'];
+            }
+            $st->close();
+        }
+
+        foreach ($rowsOut as $row) {
+            $bid         = (int) $row['booking_id'];
+            $biId        = (int) $row['id'];
+            $qtyBooked   = (float) $row['qty_booked'];
+            $qtyReleased = (float) $row['qty_released'];
+            $qtyReturned = $returnedByItem[$biId] ?? 0.0;
+            $bookings[$byId[$bid]]['items'][] = [
+                'booking_item_id'  => $biId,
+                'logistic_id'      => (int) $row['logistic_id'],
+                'product_name'     => $row['product_name'],
+                'unit_label'       => $row['primary_unit_label'],
+                'stock_source'     => $row['stock_source'],
+                'qty_booked'       => $qtyBooked,
+                'qty_released'     => $qtyReleased,
+                'qty_returned'     => round($qtyReturned, 2),
+                'qty_released_net' => round($qtyReleased - $qtyReturned, 2),
+                'qty_remaining'    => round($qtyBooked - $qtyReleased, 2),
+                'price'            => (float) $row['price'],
+            ];
+        }
     }
 
     aos_json(['ok' => true, 'data' => $bookings]);
