@@ -4,7 +4,7 @@ TRUNCATE bookings;
 TRUNCATE company_documents;
 TRUNCATE customer_item_prices;
 TRUNCATE customers;
-TRUNCATE defective_stock_event;
+TRUNCATE defective_stock_events;
 TRUNCATE edited_documents;
 TRUNCATE investor_activity_allocations;
 TRUNCATE investor_activity_settings;
