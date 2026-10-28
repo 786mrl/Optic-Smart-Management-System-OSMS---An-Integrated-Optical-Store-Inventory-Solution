@@ -15,18 +15,20 @@
 //                    same rules as create_order.php: one stock_source per
 //                    product, max 50 lines.
 //   new_prices JSON  { "10": 145000 }   optional, same semantics as create_order.php
-//   dp_amount  decimal string, optional (default 0) — added straight to
-//              invoices.paid_amount (no invoice_payments row: this form does
-//              not collect bank/proof details — use the existing
-//              "+ Add Payment" flow afterwards for a fully audited payment).
 //   dry_run    "1" | "0"
+//
+// DP / payment is NOT handled here on purpose: the invoice this endpoint
+// creates/reuses is a normal row in `invoices`, so it already shows up in
+// the Customers tab's regular Invoices list with its own "+ Add Payment"
+// button — the existing OCR slip-upload flow (create_invoice_payment.php)
+// is reused as-is, which already supports paying in several installments
+// (one invoice_payments row per upload).
 //
 // Response contract: { ok, message, ... }
 //   ok: true  -> booking { customer, booking_date,
 //                          invoice{id,number,is_new,total_before,total_after,
 //                                   paid_before,paid_after},
-//                          items[], grand_total, dp_amount, outstanding, dry_run,
-//                          booking_id? }
+//                          items[], grand_total, dry_run, booking_id? }
 //   ok: false -> message, and for a missing price also
 //                code: "missing_prices", missing: [ {logistic_id, product_name, unit_label} ]
 //
@@ -37,8 +39,7 @@
 //   - stock_source='defective': logistics.defective_qty (-)
 //     (total_taken_qty / defective_taken_qty are NOT touched — see note above)
 //   - invoices: the customer's open invoice is reused, or a new one is created,
-//     same numbering scheme as create_order.php; total_amount (+ grand_total),
-//     paid_amount (+ dp_amount)
+//     same numbering scheme as create_order.php; total_amount (+ grand_total)
 //   - customers.total_inflow is deliberately NOT touched here (it only moves
 //     when the goods actually leave, i.e. at release time)
 
@@ -173,13 +174,9 @@ function invoice_initials_index(mysqli $conn, int $customerId, string $initials)
 $customerId  = (int) post_str('customer_id');
 $bookingDate = post_str('booking_date');
 $dryRun      = post_str('dry_run') !== '0';
-$dpAmount    = clean_number(post_str('dp_amount')) ?? 0.0;
 
 if ($customerId <= 0) {
     aos_fail('Customer is missing.');
-}
-if ($dpAmount < 0) {
-    aos_fail('DP amount cannot be negative.');
 }
 
 $dateObj = DateTime::createFromFormat('Y-m-d', $bookingDate);
@@ -374,10 +371,6 @@ try {
         );
     }
 
-    if ($dpAmount > $grand + 0.0001) {
-        throw new AosBookingError('DP amount cannot be more than the booking total.');
-    }
-
     // ---- Invoice: reuse the customer's open invoice, otherwise plan a new
     //      one — same numbering + reuse rule as create_order.php (§5.11) ----
     $st = $lisani_conn->prepare(
@@ -447,12 +440,10 @@ try {
             'total_before' => $totalBefore,
             'total_after'  => round($totalBefore + $grand, 2),
             'paid_before'  => $paidBefore,
-            'paid_after'   => round($paidBefore + $dpAmount, 2),
+            'paid_after'   => $paidBefore, // unchanged here — DP goes through + Add Payment
         ],
         'items'        => $lines,
         'grand_total'  => $grand,
-        'dp_amount'    => $dpAmount,
-        'outstanding'  => round($grand - $dpAmount, 2),
     ];
 
     // ---- Preview only ----
@@ -532,14 +523,6 @@ try {
     $st->bind_param('si', $g, $invoiceId);
     $st->execute();
     $st->close();
-
-    if ($dpAmount > 0) {
-        $d = money($dpAmount);
-        $st = $lisani_conn->prepare('UPDATE invoices SET paid_amount = paid_amount + ? WHERE id = ?');
-        $st->bind_param('si', $d, $invoiceId);
-        $st->execute();
-        $st->close();
-    }
 
     $lisani_conn->commit();
 

@@ -540,20 +540,37 @@ tetap `fmtIDR`; CSV tetap angka mentah + kolom Type). Belum ada: edit kategori t
 
 ## 8. Pekerjaan terbuka
 
-**Log terbaru (belum dites) — Fitur Booking/DP**: tab baru **"Booking"** di Sales Transaction (posisi setelah New
-Order). Customer bayar DP (boleh 0, boleh sebagian/penuh) untuk qty produk tertentu; stok langsung direservasi
+**Log terbaru (bagian pencatatan sudah dites user, OK) — Fitur Booking/DP**: tab baru **"Booking"** di Sales
+Transaction (posisi setelah New Order). Customer bayar DP untuk qty produk tertentu; stok langsung direservasi
 (`remaining_primary_qty`/`defective_qty` dipotong saat booking disimpan) tapi **belum** bikin `logistic_movements`
-dan **belum** menambah `total_taken_qty`/`customers.total_inflow` — barang baru resmi "keluar" saat fitur rilis
-dibangun (belum ada). Tabel baru: `bookings` (status active/completed/cancelled) + `booking_items` (qty_booked,
-qty_released akumulator, untuk rilis bertahap nanti) — lihat `migration_bookings.sql`. Endpoint baru
-`ajax/create_booking.php` (pola dry_run sama seperti `create_order.php`; reuse invoice open yang sama seperti
-New Order §5.11; penomoran invoice sama). DP di form Booking **langsung nambah `invoices.paid_amount`** tanpa
-baris `invoice_payments` (tidak ada bank/bukti di form ini — pembayaran lengkap tetap lewat + Add Payment yang
-sudah ada). UI manual (pilih produk dari dropdown + qty, bukan paste pesan WA seperti New Order), reuse
-`loadPriceableProducts()` dari Itemized Pricing untuk daftar produk. Field stock_source di backend sudah
-mendukung defective, tapi UI Booking saat ini cuma expose normal stock (belum ada toggle normal/defective).
-Perlu dites: reservasi stok (shortage check), reuse/force invoice, Set Price overlay utk produk tanpa harga,
-flow dry_run → Confirm → Save, lalu cek `remaining_primary_qty` & `invoices.total_amount/paid_amount` di DB.
+dan **belum** menambah `total_taken_qty`/`customers.total_inflow` — barang baru resmi "keluar" setelah **dirilis**
+(lihat di bawah). Tabel baru: `bookings` (status active/completed/cancelled) + `booking_items` (qty_booked,
+qty_released akumulator) — lihat `migration_bookings.sql`. Endpoint `ajax/create_booking.php` (pola dry_run sama
+seperti `create_order.php`; reuse invoice open yang sama seperti New Order §5.11; penomoran invoice sama). UI
+manual (pilih produk dari dropdown + qty, bukan paste pesan WA seperti New Order), reuse `loadPriceableProducts()`
+dari Itemized Pricing. Field stock_source di backend sudah mendukung defective, tapi UI Booking saat ini cuma
+expose normal stock (belum ada toggle normal/defective).
+
+**DP/pembayaran booking** sengaja TIDAK ditangani di `create_booking.php` — invoice hasil booking adalah row
+`invoices` biasa, jadi otomatis muncul di tab Customers dengan tombol **+ Add Payment** yang sudah ada (upload
+slip + OCR, `create_invoice_payment.php`), bisa dibayar berkali-kali/dicicil (satu baris `invoice_payments` per
+upload) — tidak ada kode pembayaran baru yang dibuat, murni reuse.
+
+**Rilis stok (baru, belum dites)**: section **"Active Bookings"** di tab Customers (hanya booking status
+`active`, muncul di bawah Refund History) — tiap booking ditampilkan sebagai kartu dengan tombol **+ Add
+Payment** (reuse, lihat atas) dan **Release** (muncul kalau masih ada sisa reservasi). Release buka fly window
+qty per produk (default = sisa reservasi, bisa diedit untuk rilis sebagian) + tanggal + driver/police opsional →
+dry run → Confirm → `ajax/release_booking.php`. Efeknya: bikin `logistic_movements` (`out`) sungguhan per baris
+(invoice_id = invoice booking, jadi tampil & diprint normal seperti order biasa), `total_taken_qty` (+
+`defective_taken_qty` kalau defective) naik, `booking_items.qty_released` naik, `customers.total_inflow` baru
+naik DI SINI (bukan saat booking dibuat), `bookings.status` jadi `completed` kalau semua item sudah habis
+dirilis. `remaining_primary_qty`/`defective_qty` TIDAK disentuh lagi di rilis (sudah dipotong saat booking).
+Endpoint baru: `ajax/list_customer_bookings.php` (GET customer_id, dipanggil bareng `list_customer_orders.php`
+pakai Promise.all tiap buka kartu customer).
+
+Perlu dites: shortage check saat Release (qty > sisa reservasi), rilis sebagian beberapa kali sampai qty_booked
+habis → status booking jadi completed, `total_inflow` & `total_taken_qty` match, movement hasil rilis tampil
+normal di Products/Print Invoice, lalu `+ Add Payment` dari kartu Active Bookings (slip DP, OCR, bisa dicicil).
 
 Belum dibangun (disengaja, bukan bug):
 - Fitur pembayaran bersama (disebut user saat desain Create New Logistic). Baru placeholder di form.

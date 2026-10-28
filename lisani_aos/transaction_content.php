@@ -875,11 +875,7 @@ $currentYear     = date('Y');
 
     <div id="bkItemList"></div>
     <div class="empty-sub" id="bkItemEmpty">No products added yet.</div>
-
-    <div class="form-group" style="margin-top:var(--space-4);">
-      <div class="label">DP Amount (optional)</div>
-      <input type="text" inputmode="decimal" class="input input-number-comma" id="bkDpAmount" placeholder="0">
-    </div>
+    <div class="empty-sub" style="margin-top:var(--space-2);">DP / payment is added afterwards from the Customers tab (+ Add Payment on this booking's invoice) — upload the slip there, same as any other invoice, and it can be paid in several installments.</div>
 
     <div class="empty-sub" id="bkReviewError" style="display:none; color:var(--danger); white-space:pre-line;"></div>
     <div style="display:flex; justify-content:flex-end; margin-top:var(--space-4);">
@@ -1645,6 +1641,57 @@ $currentYear     = date('Y');
   </div>
 </div>
 
+<!-- Release (reserved booking qty -> real stock-out). Opened from the
+     "Active Bookings" section in the Customers tab. Quantity per line
+     defaults to what's still reserved but is editable for a partial
+     release. -->
+<div class="modal-overlay" id="bkReleaseOverlay" style="display:none;">
+  <div class="modal" style="max-width:460px;">
+    <div class="modal-header">
+      <div class="modal-title">Release Booking</div>
+    </div>
+    <div class="modal-body">
+      <div class="empty-sub" id="bkReleaseIntro" style="margin-bottom:var(--space-3);"></div>
+      <div id="bkReleaseRows"></div>
+
+      <div class="form-group" style="margin-top:var(--space-3);">
+        <div class="label">Release Date</div>
+        <input type="date" class="input" id="bkReleaseDate">
+      </div>
+      <div class="form-group">
+        <div class="label">Driver (optional)</div>
+        <input type="text" class="input" id="bkReleaseDriver">
+      </div>
+      <div class="form-group">
+        <div class="label">Police Number (optional)</div>
+        <input type="text" class="input" id="bkReleasePolice">
+      </div>
+      <div class="empty-sub" id="bkReleaseError" style="display:none; color:var(--danger); white-space:pre-line;"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" id="btnBkReleaseCancel">Cancel</button>
+      <button type="button" class="btn btn-primary" id="btnBkReleaseReview">Review Release</button>
+    </div>
+  </div>
+</div>
+
+<!-- Release — confirm step (preview from release_booking.php, dry_run=1). -->
+<div class="modal-overlay" id="bkReleaseConfirmOverlay" style="display:none;">
+  <div class="modal" style="max-width:460px;">
+    <div class="modal-header">
+      <div class="modal-title">Confirm Release</div>
+    </div>
+    <div class="modal-body">
+      <div id="bkReleaseConfirmBody"></div>
+      <div class="empty-sub" id="bkReleaseConfirmError" style="display:none; color:var(--danger); white-space:pre-line; margin-top:var(--space-3);"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" id="btnBkReleaseConfirmCancel">Cancel</button>
+      <button type="button" class="btn btn-primary" id="btnBkReleaseConfirmSave">Confirm &amp; Release</button>
+    </div>
+  </div>
+</div>
+
 <!-- Sales Transaction — shown after Read Message ONLY when the selected
      customer already has other order(s) on the same order date. Lets the
      user say whether this message is a standalone New Order, or should be
@@ -1876,6 +1923,8 @@ $currentYear     = date('Y');
   // Booking tab fly windows.
   var bkPriceOverlay   = document.getElementById('bkPriceOverlay');
   var bkConfirmOverlay = document.getElementById('bkConfirmOverlay');
+  var bkReleaseOverlay        = document.getElementById('bkReleaseOverlay');
+  var bkReleaseConfirmOverlay = document.getElementById('bkReleaseConfirmOverlay');
 
   // Returns tab fly windows.
   var rtProductOverlay  = document.getElementById('rtProductOverlay');
@@ -1899,7 +1948,7 @@ $currentYear     = date('Y');
     txnCategoryOverlay, disbDepartmentOverlay, disbActivityOverlay, disbDetailsOverlay, disbManageCategoryOverlay,
     capFieldPickerOverlay, stProductOverlay, stPriceOverlay, stStockSourceOverlay, stConfirmOverlay,
     stOrderModeOverlay, stOrderPickOverlay, stDriverWarnOverlay,
-    bkPriceOverlay, bkConfirmOverlay,
+    bkPriceOverlay, bkConfirmOverlay, bkReleaseOverlay, bkReleaseConfirmOverlay,
     rtProductOverlay, rtConfirmOverlay, rtReverifyOverlay,
     refundOverlay, applyCreditOverlay, document.getElementById('invPrintOverlay'),
     document.getElementById('acctPickOverlay'), document.getElementById('acctRegisterOverlay')];
@@ -6863,7 +6912,6 @@ $currentYear     = date('Y');
   var bkAddError       = document.getElementById('bkAddError');
   var bkItemList        = document.getElementById('bkItemList');
   var bkItemEmpty       = document.getElementById('bkItemEmpty');
-  var bkDpAmount        = document.getElementById('bkDpAmount');
   var bkReviewError     = document.getElementById('bkReviewError');
   var btnBkReview       = document.getElementById('btnBkReview');
   var bkSuccessBox      = document.getElementById('bkSuccessBox');
@@ -6877,7 +6925,6 @@ $currentYear     = date('Y');
   var btnBkConfirmSave = document.getElementById('btnBkConfirmSave');
 
   initNumberCommaInput(bkQtyInput);
-  initNumberCommaInput(bkDpAmount);
 
   var bkItems      = []; // [{logistic_id, product_name, unit_label, qty}]
   var bkNewPrices  = {}; // logistic_id -> price typed in the Set Price window
@@ -6893,7 +6940,6 @@ $currentYear     = date('Y');
     bkSaving = false;
     bkProductSelect.value = '';
     bkQtyInput.value = '';
-    bkDpAmount.value = '';
     btnBkReview.disabled = false;
     btnBkConfirmSave.disabled = false;
     renderBkItems();
@@ -6990,9 +7036,6 @@ $currentYear     = date('Y');
     if (!bkDate.value) { stShowError(bkReviewError, 'Booking date is required.'); return null; }
     if (!bkItems.length) { stShowError(bkReviewError, 'Add at least one product.'); return null; }
 
-    var dp = bkDpAmount.value ? parseNumberInput(bkDpAmount.value) : 0;
-    if (isNaN(dp) || dp < 0) { stShowError(bkReviewError, 'DP amount is not valid.'); return null; }
-
     var items = bkItems.map(function (it) {
       return { logistic_id: it.logistic_id, qty: it.qty, stock_source: 'normal' };
     });
@@ -7002,7 +7045,6 @@ $currentYear     = date('Y');
       booking_date: bkDate.value,
       items: JSON.stringify(items),
       new_prices: JSON.stringify(bkNewPrices),
-      dp_amount: dp,
       dry_run: dryRun ? '1' : '0'
     };
   }
@@ -7126,8 +7168,6 @@ $currentYear     = date('Y');
     sep.textContent = 'Total';
     bkConfirmBody.appendChild(sep);
     stAddRow(bkConfirmBody, 'Booking Total', formatIDR(b.grand_total));
-    stAddRow(bkConfirmBody, 'DP', formatIDR(b.dp_amount));
-    stAddRow(bkConfirmBody, 'Outstanding', formatIDR(b.outstanding));
     stAddRow(bkConfirmBody, 'Invoice After', formatIDR(b.invoice.total_after));
 
     show(bkConfirmOverlay);
@@ -7158,7 +7198,7 @@ $currentYear     = date('Y');
         var summary = 'Booking saved \u2014 ' + b.customer.name
           + ' \u00b7 Invoice ' + b.invoice.number
           + ' \u00b7 total ' + formatIDR(b.grand_total)
-          + ' \u00b7 DP ' + formatIDR(b.dp_amount);
+          + '. Open the Customers tab to add a DP payment on this invoice.';
         resetBookingForm(); // also closes the fly windows
         bkSuccessBox.textContent = summary;
         bkSuccessBox.style.display = 'block';
@@ -7168,6 +7208,247 @@ $currentYear     = date('Y');
         bkSaving = false;
         btnBkConfirmSave.disabled = false;
         stShowError(bkConfirmError, 'Connection error.');
+      });
+  });
+
+  // ==========================================================
+  // Booking cards in the Customers tab ("Active Bookings") + Release.
+  // bk = one entry from list_customer_bookings.php (id, booking_date, status,
+  // invoice_id, invoice_number, invoice_total_amount, invoice_paid_amount,
+  // items[]). Only 'active' bookings are passed in here (filtered in
+  // loadStCustomerDetailInto) — nothing left to release on a completed one.
+  // ==========================================================
+  var bkReleaseIntro  = document.getElementById('bkReleaseIntro');
+  var bkReleaseRows   = document.getElementById('bkReleaseRows');
+  var bkReleaseDate   = document.getElementById('bkReleaseDate');
+  var bkReleaseDriver = document.getElementById('bkReleaseDriver');
+  var bkReleasePolice = document.getElementById('bkReleasePolice');
+  var bkReleaseError  = document.getElementById('bkReleaseError');
+
+  var bkReleaseConfirmBody  = document.getElementById('bkReleaseConfirmBody');
+  var bkReleaseConfirmError = document.getElementById('bkReleaseConfirmError');
+  var btnBkReleaseConfirmSave = document.getElementById('btnBkReleaseConfirmSave');
+
+  var bkReleaseBookingId = null;
+  var bkReleaseCustomerId = null;
+  var bkReleaseSaving = false;
+
+  function buildBkBookingCard(bk, customer) {
+    var box = document.createElement('div');
+    box.className = 'st-mov';
+
+    var top = document.createElement('div');
+    top.className = 'st-mov-top';
+    var left = document.createElement('div');
+    left.textContent = formatPriceDate(bk.booking_date) + ' \u00b7 ' + bk.invoice_number;
+    var btnWrap = document.createElement('div');
+    btnWrap.style.display = 'flex';
+    btnWrap.style.gap = 'var(--space-2)';
+
+    var payBtn = document.createElement('button');
+    payBtn.type = 'button';
+    payBtn.className = 'btn btn-secondary st-mini-btn';
+    payBtn.textContent = '+ Add Payment';
+    payBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      openPayCaptureView({
+        id: bk.invoice_id,
+        invoice_number: bk.invoice_number,
+        total_amount: bk.invoice_total_amount,
+        paid_amount: bk.invoice_paid_amount
+      }, customer);
+    });
+    btnWrap.appendChild(payBtn);
+
+    var hasRemaining = bk.items.some(function (it) { return it.qty_remaining > 0.0001; });
+    if (hasRemaining) {
+      var relBtn = document.createElement('button');
+      relBtn.type = 'button';
+      relBtn.className = 'btn btn-primary st-mini-btn';
+      relBtn.textContent = 'Release';
+      relBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        openBkRelease(bk, customer);
+      });
+      btnWrap.appendChild(relBtn);
+    }
+
+    top.appendChild(left);
+    top.appendChild(btnWrap);
+    box.appendChild(top);
+
+    bk.items.forEach(function (it) {
+      var sub = document.createElement('div');
+      sub.className = 'st-mov-sub';
+      sub.textContent = it.product_name + ': booked ' + fmtQty(it.qty_booked)
+        + ', released ' + fmtQty(it.qty_released)
+        + ', still reserved ' + fmtQty(it.qty_remaining) + ' ' + (it.unit_label || '')
+        + (it.stock_source === 'defective' ? ' \u00b7 defective stock' : '');
+      box.appendChild(sub);
+    });
+
+    return box;
+  }
+
+  function openBkRelease(bk, customer) {
+    bkReleaseBookingId = bk.id;
+    bkReleaseCustomerId = customer.id;
+    stHideError(bkReleaseError);
+    bkReleaseIntro.textContent = 'Edit a quantity below to release only part of it \u2014 the rest stays reserved for later.';
+    bkReleaseRows.innerHTML = '';
+
+    bk.items.filter(function (it) { return it.qty_remaining > 0.0001; }).forEach(function (it) {
+      var g = document.createElement('div');
+      g.className = 'form-group';
+      var label = document.createElement('div');
+      label.className = 'label';
+      label.textContent = it.product_name + ' \u2014 reserved ' + fmtQty(it.qty_remaining) + ' ' + (it.unit_label || '');
+      g.appendChild(label);
+      var inp = document.createElement('input');
+      inp.type = 'text';
+      inp.setAttribute('inputmode', 'decimal');
+      inp.className = 'input input-number-comma';
+      inp.setAttribute('data-booking-item-id', it.booking_item_id);
+      inp.setAttribute('data-max', it.qty_remaining);
+      inp.value = formatNumberInput(fmtQty(it.qty_remaining));
+      initNumberCommaInput(inp);
+      g.appendChild(inp);
+      bkReleaseRows.appendChild(g);
+    });
+
+    bkReleaseDate.value = todayISO();
+    bkReleaseDriver.value = '';
+    bkReleasePolice.value = '';
+    show(bkReleaseOverlay);
+  }
+
+  document.getElementById('btnBkReleaseCancel').addEventListener('click', function () {
+    hide(bkReleaseOverlay);
+  });
+
+  function bkReleaseBuildPayload(dryRun) {
+    stHideError(bkReleaseError);
+    if (!bkReleaseDate.value) { stShowError(bkReleaseError, 'Release date is required.'); return null; }
+
+    var items = [];
+    var inputs = bkReleaseRows.querySelectorAll('input[data-booking-item-id]');
+    for (var i = 0; i < inputs.length; i++) {
+      var qty = parseNumberInput(inputs[i].value);
+      var max = parseFloat(inputs[i].getAttribute('data-max'));
+      if (isNaN(qty) || qty < 0 || qty > max + 0.0001) {
+        stShowError(bkReleaseError, 'Each quantity must be between 0 and what is still reserved.');
+        return null;
+      }
+      if (qty > 0.0001) {
+        items.push({ booking_item_id: inputs[i].getAttribute('data-booking-item-id'), qty: qty });
+      }
+    }
+    if (!items.length) {
+      stShowError(bkReleaseError, 'Enter a quantity above zero for at least one product.');
+      return null;
+    }
+
+    return {
+      booking_id: bkReleaseBookingId,
+      items: JSON.stringify(items),
+      movement_date: bkReleaseDate.value,
+      driver_name: bkReleaseDriver.value,
+      police_number: bkReleasePolice.value,
+      dry_run: dryRun ? '1' : '0'
+    };
+  }
+
+  document.getElementById('btnBkReleaseReview').addEventListener('click', function () {
+    var payload = bkReleaseBuildPayload(true);
+    if (!payload) return;
+    var btn = document.getElementById('btnBkReleaseReview');
+    btn.disabled = true;
+    stPost('ajax/release_booking.php', payload)
+      .then(function (res) {
+        btn.disabled = false;
+        if (!res.ok) { stShowError(bkReleaseError, res.message || 'Could not review the release.'); return; }
+        showBkReleaseConfirm(res.release);
+      })
+      .catch(function () {
+        btn.disabled = false;
+        stShowError(bkReleaseError, 'Connection error.');
+      });
+  });
+
+  function showBkReleaseConfirm(r) {
+    stHideError(bkReleaseConfirmError);
+    bkReleaseConfirmBody.innerHTML = '';
+
+    stAddRow(bkReleaseConfirmBody, 'Customer', r.customer.name);
+    stAddRow(bkReleaseConfirmBody, 'Release Date', formatPriceDate(r.movement_date));
+    stAddRow(bkReleaseConfirmBody, 'Invoice', r.invoice.number);
+
+    var lbl = document.createElement('div');
+    lbl.className = 'st-section-label';
+    lbl.textContent = 'Products leaving the warehouse now';
+    bkReleaseConfirmBody.appendChild(lbl);
+
+    r.items.forEach(function (ln) {
+      var box = document.createElement('div');
+      box.className = 'st-mov';
+      var top = document.createElement('div');
+      top.className = 'st-mov-top';
+      var nm = document.createElement('div');
+      nm.style.fontWeight = '600';
+      nm.textContent = ln.product_name;
+      var tot = document.createElement('div');
+      tot.textContent = formatIDR(ln.total_price);
+      top.appendChild(nm);
+      top.appendChild(tot);
+      var sub = document.createElement('div');
+      sub.className = 'st-mov-sub';
+      sub.textContent = fmtQty(ln.qty) + ' ' + (ln.unit_label || '') + ' \u00d7 ' + formatIDR(ln.price)
+        + ' \u00b7 still reserved after: ' + fmtQty(ln.qty_remaining_after);
+      box.appendChild(top);
+      box.appendChild(sub);
+      bkReleaseConfirmBody.appendChild(box);
+    });
+
+    var sep = document.createElement('div');
+    sep.className = 'st-section-label';
+    sep.textContent = 'Total';
+    bkReleaseConfirmBody.appendChild(sep);
+    stAddRow(bkReleaseConfirmBody, 'Released Value', formatIDR(r.grand_total));
+
+    show(bkReleaseConfirmOverlay);
+  }
+
+  document.getElementById('btnBkReleaseConfirmCancel').addEventListener('click', function () {
+    hide(bkReleaseConfirmOverlay);
+  });
+
+  btnBkReleaseConfirmSave.addEventListener('click', function () {
+    if (bkReleaseSaving) return;
+    stHideError(bkReleaseConfirmError);
+    var payload = bkReleaseBuildPayload(false);
+    if (!payload) { hide(bkReleaseConfirmOverlay); return; }
+
+    bkReleaseSaving = true;
+    btnBkReleaseConfirmSave.disabled = true;
+    stPost('ajax/release_booking.php', payload)
+      .then(function (res) {
+        bkReleaseSaving = false;
+        btnBkReleaseConfirmSave.disabled = false;
+        if (!res.ok) {
+          stShowError(bkReleaseConfirmError, res.message || 'Failed to save the release.');
+          return;
+        }
+        hide(bkReleaseConfirmOverlay);
+        hide(bkReleaseOverlay);
+        var cid = bkReleaseCustomerId;
+        bkReleaseBookingId = null;
+        bkReleaseCustomerId = null;
+        if (cid) refreshStCustomerCard(cid);
+      })
+      .catch(function () {
+        bkReleaseSaving = false;
+        btnBkReleaseConfirmSave.disabled = false;
+        stShowError(bkReleaseConfirmError, 'Connection error.');
       });
   });
 
@@ -7262,11 +7543,18 @@ $currentYear     = date('Y');
     inner.appendChild(loading);
     refreshOpenHeight(item);
 
-    fetch('ajax/list_customer_orders.php?customer_id=' + encodeURIComponent(c.id), { cache: 'no-store' })
-      .then(function (r) { return r.json(); })
-      .then(function (res) {
+    Promise.all([
+      fetch('ajax/list_customer_orders.php?customer_id=' + encodeURIComponent(c.id), { cache: 'no-store' }).then(function (r) { return r.json(); }),
+      fetch('ajax/list_customer_bookings.php?customer_id=' + encodeURIComponent(c.id), { cache: 'no-store' }).then(function (r) { return r.json(); })
+    ])
+      .then(function (results) {
+        var res = results[0], bkRes = results[1];
         if (!res.ok) { loading.textContent = res.message || 'Could not load the orders.'; refreshOpenHeight(item); return; }
-        renderStCustomerDetail(inner, res.data, item);
+        var data = res.data;
+        // Only bookings still reserving stock belong in "Active Bookings" —
+        // completed/cancelled ones have nothing left to release or show here.
+        data.bookings = (bkRes.ok ? bkRes.data : []).filter(function (b) { return b.status === 'active'; });
+        renderStCustomerDetail(inner, data, item);
       })
       .catch(function () {
         loading.textContent = 'Connection error.';
@@ -7369,6 +7657,20 @@ $currentYear     = date('Y');
           rfBox.appendChild(rfNotes);
         }
         container.appendChild(rfBox);
+      });
+    }
+
+    // Active Bookings — reserved qty that has not (fully) left the warehouse
+    // yet. Nothing here shows up in "Products" below until it's released
+    // (see release_booking.php): that section only reads logistic_movements.
+    if (data.bookings && data.bookings.length) {
+      var bkLabel = document.createElement('div');
+      bkLabel.className = 'st-section-label';
+      bkLabel.textContent = 'Active Bookings';
+      container.appendChild(bkLabel);
+
+      data.bookings.forEach(function (bk) {
+        container.appendChild(buildBkBookingCard(bk, data.customer));
       });
     }
 
