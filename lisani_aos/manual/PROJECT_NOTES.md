@@ -115,6 +115,12 @@ optic_pos/
 - **invoice_refunds**: refund dari kredit; kolom source_bank, source_account_number, source_account_name (nullable,
   opsional). **Tidak punya `invoice_id` maupun `activity_id`** — tidak bisa ditelusuri ke invoice/activity code
   tertentu, lihat §6 Report untuk konsekuensinya ke filter.
+- **bookings**: customer_id, invoice_id (selalu invoice baru sendiri, lihat §5), booking_date, status
+  (active/completed/cancelled), created_by. **booking_items**: booking_id, logistic_id, stock_source, qty_booked,
+  qty_released (akumulator **gross**, tidak pernah turun), price. **booking_item_releases**: booking_item_id,
+  movement_id (menunjuk `logistic_movements.id` hasil `release_booking.php`), qty — append-only, tidak pernah
+  di-UPDATE, dipakai hitung "Taken net" (lihat §5). Lihat `migration_bookings.sql` dan
+  `migration_booking_item_releases.sql`.
 - **defective_stock_events**: logistic_id, event_type (saat ini hanya `repaired_to_normal`), qty, created_by.
 - Lain: `logistic_documents` (key activity_id, dibagi semua produk dalam activity code), `transactions` + tabel bantu
   (Disbursement), company documents & bank accounts (Settings).
@@ -190,6 +196,20 @@ optic_pos/
     badge "RUGI", tetap dihitung apa adanya — **belum ada kebijakan otomatis**, menunggu keputusan manajemen.
 15. **Investor — hapus**: pola password (a) langsung (`password_verify()` di endpoint), bukan reverify 120 detik
     (keputusan user, beda dari pola delete customer/activity code di modul lain).
+16. **Booking — reservasi, rilis, net**: booking memotong `remaining_primary_qty`/`defective_qty` **saat dibuat**,
+    tapi belum bikin `logistic_movements` dan belum menambah `total_taken_qty`/`customers.total_inflow` — itu baru
+    terjadi saat **Release** (`release_booking.php`), yang bikin movement `out` sungguhan, `booking_items.qty_released`
+    naik, dan kalau semua item habis dirilis `bookings.status` jadi `completed`. Tiap booking **selalu invoice baru**
+    sendiri (beda dari Order/Retur yang reuse invoice open, §5.11). `qty_released` tetap **gross** (akumulator, tidak
+    pernah turun, jadi patokan kapan booking selesai & batas bawah Edit) — kalau barang yang sudah dirilis itu
+    kemudian diretur lewat tab Logistic, retur itu tidak "membuka slot rilis baru"; "Taken net" dihitung on-the-fly
+    dari `booking_item_releases` (append-only, 1 baris per release) dikurangi retur yang `source_movement_id`-nya
+    menunjuk ke release itu — pola yang sama dengan retur/pickup biasa (§5.4). Edit (`edit_booking.php`) bisa ubah
+    qty baris yang sudah ada (tidak boleh di bawah `qty_released`) **dan/atau** menambah produk baru (direservasi &
+    diberi harga persis seperti booking baru, lihat §6 Sales Transaction); Cancel (`cancel_booking.php`) membatalkan
+    SEMUA sisa yang belum dirilis sekaligus, mengembalikan stok & mengurangi invoice. `remaining_primary_qty`/
+    `defective_qty` TIDAK disentuh lagi saat Release (sudah dipotong saat booking) atau saat Cancel di luar
+    pengembalian itu.
 
 ## 6. Kondisi tiap modul
 **Transactions, Activity Code**: tab Preview (accordion, satu terbuka sekaligus; Edit/Delete pola a) + tab Create (nomor
@@ -244,6 +264,18 @@ bank/nama, duplikat per bank, share WA). Edit/Delete/Share pola (b).
   normal); **Defective Stock** → fly window "Return History" dengan tab Taken Out (`out`+defective) dan Returned In
   (`in`+defective), list scroll max-height 260px. Form Repair to Normal Stock hanya tampil bila `defective_qty>0`, qty
   default seluruh sisa. Import Document (Shipper/Custom/Consignee) collapsible.
+  - Baris **"Actual Remaining Qty on Storage"** (menggantikan label "Total All Stock" yang lama, selalu muncul):
+    jawab "barang fisik yang masih ada di gudang sekarang, apapun statusnya" = `total_all_stock` (RPQ+defective_qty)
+    + Σ(qty_booked − qty_released) booking **aktif** produk itu (gross, booking yang belum dirilis) — karena
+    `total_all_stock` sendiri cuma stok yang belum direservasi booking apapun. Field lama `total_all_stock` tidak
+    diubah/dihapus, masih dipakai tempat lain dengan makna "stok bebas dari reservasi". Invariant:
+    `actual_remaining_qty_on_storage + taken_net (booking) = primary_qty`, kapan pun di siklus booking→release→
+    retur→edit.
+  - Baris **"Booking"** (setelah "Actual Remaining Qty on Storage", cuma muncul kalau produk itu memang sedang ada
+    booking aktif): Total/Taken/Remaining dari qty yang masih berstatus booking `active` untuk produk itu (query
+    agregat `booking_items` JOIN `bookings` WHERE `status='active'` GROUP BY `logistic_id` di `list_logistics.php`,
+    dengan guard `SHOW TABLES` biar DB yang belum jalanin `migration_bookings.sql` tidak error; "Taken" di sini
+    net, bukan gross, lihat §5.16). Booking `completed`/`cancelled` tidak ikut kehitung.
 - *Movements*: per activity code → tahun → bulan → hari; total Taken/Returned/Discount/Actual di tiap level. Card
   Validation per activity code (3 badge): (1) Actual Taken gabungan vs `total_taken_qty`; (2) Actual Taken bucket normal
   vs `primary_qty − remaining_primary_qty`; (3) rekonsiliasi per customer vs tab Customers. Detail disembunyikan bila Valid.
@@ -252,15 +284,34 @@ bank/nama, duplikat per bank, share WA). Edit/Delete/Share pola (b).
   dipakai bersama semua produk dalam satu kali simpan. Satu Save → `create_logistic.php` menyimpan semua baris dalam satu
   transaction (all-or-nothing). Nama produk wajib unik per activity code.
 
-**Sales Transaction** (3 tab):
+**Sales Transaction** (4 tab):
 - *New Order*: tempel pesan WA → `parse_order_message.php` (alias produk via `save_order_alias.php`, pola di
   `json_file/order_patterns/`) → review → overlay stok normal/defective bila ada produk dengan `defective_qty>0` →
   Confirm → `create_order.php`. Order lain di tanggal sama → pilihan New Order / Update Existing. Checkbox
   "Open as a new invoice" (lihat §5.11).
+- *Booking*: DP untuk qty produk tertentu, stok direservasi langsung tapi belum resmi "keluar" (lihat §5.16). UI
+  manual — pilih produk dari dropdown + qty (bukan paste pesan WA seperti New Order), reuse `loadPriceableProducts()`
+  dari Itemized Pricing. Harga dari `customer_item_prices` (fallback overlay Set Price, sama seperti New Order).
+  Field `stock_source` backend sudah mendukung defective, tapi UI Booking saat ini cuma expose normal stock (belum
+  ada toggle normal/defective). Selalu bikin invoice baru sendiri (§5.16), **tidak** reuse invoice open customer.
+  DP/pembayaran booking sengaja tidak ditangani endpoint khusus — invoice hasil booking adalah row `invoices` biasa,
+  jadi otomatis bisa dibayar lewat tombol + Add Payment yang sudah ada di tab Customers (murni reuse, bisa dicicil).
+  `ajax/create_booking.php`, pola dry_run sama seperti `create_order.php`.
 - *Customers*: kartu customer (Total Ordered/Returned/Discounts/Actual, Total Paid, Total Balance = Total Actual − Total
   Paid; bisa negatif kalau overpaid, kelebihannya di Credit Balance), riwayat per invoice → kartu per batch. Badge RETURN
   (+NORMAL/DEFECTIVE) dan DISCOUNT (nilai bertanda minus), "from pickup on …". Tombol + Add Payment hanya untuk invoice
   `open`. Apply Credit hanya untuk invoice open. Refund ada di tab ini.
+  - **Active Bookings**: section terpisah di bawah Refund History, hanya booking status `active` — tiap booking
+    tampil sebagai kartu, "Taken"/"Remaining" ditampilkan **net** (lihat §5.16) kalau beda dari gross. Tombol:
+    **+ Add Payment** (reuse, lihat atas; notes penomoran First/Second/... pakai `invoice_payment_count` dari
+    `list_customer_bookings.php`, bukan `.length` array payments yang tidak dikirim di kartu ini), **Release**
+    (muncul kalau masih ada sisa reservasi — fly window qty per produk, default = sisa reservasi, bisa diedit untuk
+    rilis sebagian, + tanggal + driver/police opsional → dry run → Confirm → `ajax/release_booking.php`), **Edit**
+    dan **Cancel** (muncul selama masih ada sisa qty belum dirilis — lihat detail endpoint masing-masing di §7 dan
+    invarian di §5.16; Edit tanpa layar confirm terpisah, tombol "Save Changes" langsung dry_run=1 lalu dry_run=0
+    berturutan; Cancel otomatis ambil preview dry_run=1 begitu overlay dibuka). Endpoint list:
+    `ajax/list_customer_bookings.php` (GET customer_id, dipanggil bareng `list_customer_orders.php` pakai
+    Promise.all tiap buka kartu customer).
 - *Add Payment*: upload bukti (viewer + OCR). Field: source bank, source account number, source account name,
   destination bank, destination account number, destination account name (semua uppercase, editable). Datalist
   destination diisi dari `ajax/list_bank_accounts.php`, dimuat ulang (`loadDestBankAccounts`) tiap form dibuka dan
@@ -531,6 +582,13 @@ tetap `fmtIDR`; CSV tetap angka mentah + kolom Type). Belum ada: edit kategori t
   - `manage_defective_stock.php`: GET `action=history` (Taken Out) & `action=return_history` (Returned In) + `logistic_id`
     → `{data:{product_name, unit_label, defective_qty, defective_taken_qty, history:[…]}}`. POST `action=repair`
     `logistic_id, qty` (≤ defective_qty).
+  - **Booking** (§5.16 & §6 Sales Transaction untuk detail UI): `create_booking.php` (dry_run, selalu invoice baru),
+    `list_customer_bookings.php` (GET customer_id → booking `active` + `qty_released_net`/`qty_returned`,
+    `invoice_payment_count`), `release_booking.php` (dry_run, POST qty per booking_item → movement `out` + naikkan
+    `qty_released` & `total_taken_qty`/`customers.total_inflow`, tulis `booking_item_releases`), `edit_booking.php`
+    (dry_run, POST `items` campur `{booking_item_id,qty}` existing dan `{logistic_id,qty,stock_source}` baru +
+    `new_prices` optional — lihat header comment file untuk kontrak lengkap), `cancel_booking.php` (dry_run, batalkan
+    semua sisa belum dirilis sekaligus).
 - **Investor**: `investor_api.php`, satu endpoint untuk semua aksi (lihat §6 Investor untuk detail UI tiap action).
   Action relevan: `save_deposit`/`update_deposit`/`delete_deposit`, `save_support_expense`/`delete_support_expense`,
   `save_fund_shares` (batch alloc per activity, lihat §5.13 & §6), `save_pdp`, `save_profit_payment`,
@@ -540,107 +598,10 @@ tetap `fmtIDR`; CSV tetap angka mentah + kolom Type). Belum ada: edit kategori t
 
 ## 8. Pekerjaan terbuka
 
-**Log terbaru (bagian pencatatan sudah dites user, OK) — Fitur Booking/DP**: tab baru **"Booking"** di Sales
-Transaction (posisi setelah New Order). Customer bayar DP untuk qty produk tertentu; stok langsung direservasi
-(`remaining_primary_qty`/`defective_qty` dipotong saat booking disimpan) tapi **belum** bikin `logistic_movements`
-dan **belum** menambah `total_taken_qty`/`customers.total_inflow` — barang baru resmi "keluar" setelah **dirilis**
-(lihat di bawah). Tabel baru: `bookings` (status active/completed/cancelled) + `booking_items` (qty_booked,
-qty_released akumulator) — lihat `migration_bookings.sql`. Endpoint `ajax/create_booking.php` (pola dry_run sama
-seperti `create_order.php`; reuse invoice open yang sama seperti New Order §5.11; penomoran invoice sama). UI
-manual (pilih produk dari dropdown + qty, bukan paste pesan WA seperti New Order), reuse `loadPriceableProducts()`
-dari Itemized Pricing. Field stock_source di backend sudah mendukung defective, tapi UI Booking saat ini cuma
-expose normal stock (belum ada toggle normal/defective).
-
-**DP/pembayaran booking** sengaja TIDAK ditangani di `create_booking.php` — invoice hasil booking adalah row
-`invoices` biasa, jadi otomatis muncul di tab Customers dengan tombol **+ Add Payment** yang sudah ada (upload
-slip + OCR, `create_invoice_payment.php`), bisa dibayar berkali-kali/dicicil (satu baris `invoice_payments` per
-upload) — tidak ada kode pembayaran baru yang dibuat, murni reuse.
-
-**Rilis stok (baru, belum dites)**: section **"Active Bookings"** di tab Customers (hanya booking status
-`active`, muncul di bawah Refund History) — tiap booking ditampilkan sebagai kartu dengan tombol **+ Add
-Payment** (reuse, lihat atas) dan **Release** (muncul kalau masih ada sisa reservasi). Release buka fly window
-qty per produk (default = sisa reservasi, bisa diedit untuk rilis sebagian) + tanggal + driver/police opsional →
-dry run → Confirm → `ajax/release_booking.php`. Efeknya: bikin `logistic_movements` (`out`) sungguhan per baris
-(invoice_id = invoice booking, jadi tampil & diprint normal seperti order biasa), `total_taken_qty` (+
-`defective_taken_qty` kalau defective) naik, `booking_items.qty_released` naik, `customers.total_inflow` baru
-naik DI SINI (bukan saat booking dibuat), `bookings.status` jadi `completed` kalau semua item sudah habis
-dirilis. `remaining_primary_qty`/`defective_qty` TIDAK disentuh lagi di rilis (sudah dipotong saat booking).
-Endpoint baru: `ajax/list_customer_bookings.php` (GET customer_id, dipanggil bareng `list_customer_orders.php`
-pakai Promise.all tiap buka kartu customer).
-
-Perlu dites: shortage check saat Release (qty > sisa reservasi), rilis sebagian beberapa kali sampai qty_booked
-habis → status booking jadi completed, `total_inflow` & `total_taken_qty` match, movement hasil rilis tampil
-normal di Products/Print Invoice, lalu `+ Add Payment` dari kartu Active Bookings (slip DP, OCR, bisa dicicil).
-
-**Bugfix (dites user, ditemukan)**: tombol `+ Add Payment` di kartu Active Bookings selalu nulis "First payment
-for invoice ..." di Notes walau sudah ada pembayaran sebelumnya — penyebabnya kartu itu manggil
-`openPayCaptureView()` tanpa `inv.payments` (cuma dipakai `.length`-nya buat penomoran First/Second/...).
-Diperbaiki: `list_customer_bookings.php` sekarang juga mengembalikan `invoice_payment_count` (COUNT dari
-`invoice_payments` per invoice), dipakai di `transaction_content.php` sebagai `payments: new
-Array(invoice_payment_count)` saat buka form itu. **Perlu dites ulang**: bayar invoice booking 2x, cek Notes
-pembayaran kedua bener-bener bilang "Second payment...".
-
-**Logistic List — kolom Booking (baru, belum dites)**: di tab Logistic List (`logistic_content.php`), tiap
-produk sekarang punya baris **"Booking"** (setelah "Total All Stock") berisi Total/Taken/Remaining dari qty yang
-masih berstatus booking **active** untuk produk itu — baris ini cuma muncul kalau produk itu memang sedang ada
-booking aktif (query di `list_logistics.php` cuma mengembalikan key `booking` kalau ada, `null` kalau tidak;
-frontend cek `if (l.booking)`). `list_logistics.php` nambah agregat dari `booking_items` JOIN `bookings` WHERE
-`status='active'` GROUP BY `logistic_id`, dengan guard `SHOW TABLES` (sama polanya dengan guard `defective_qty`
-yang sudah ada) biar DB yang belum jalanin `migration_bookings.sql` tidak error. Perlu dites: produk dengan
-booking aktif → baris Booking muncul dengan angka benar; produk tanpa booking → baris tidak muncul sama sekali;
-booking yang sudah `completed`/`cancelled` tidak ikut kehitung.
-
-**Booking selalu invoice baru (belum dites)**: `create_booking.php` sekarang **tidak lagi** reuse invoice open
-customer — tiap booking selalu bikin invoice baru sendiri (beda dari New Order/Returns yang masih reuse invoice
-open per §5.11). Perlu dites: 2 booking berturutan utk customer yang sama → harus jadi 2 invoice beda, bukan
-digabung.
-
-**Edit Booking & Cancel Booking (baru, belum dites)**: tombol **Edit** dan **Cancel** muncul di kartu Active
-Bookings (tab Customers) selama booking itu masih punya sisa qty yang belum dirilis.
-- **Edit** (`ajax/edit_booking.php`) — cuma ubah qty di baris yang SUDAH ada (tidak bisa tambah/hapus produk);
-  tiap baris wajib dikirim semua (bukan partial), qty baru tidak boleh kurang dari qty yang sudah dirilis.
-  Reservasi stok (`remaining_primary_qty`/`defective_qty`) & `invoices.total_amount` disesuaikan dengan delta.
-  Harga per baris tidak bisa diubah di sini. UI-nya tidak pakai layar confirm terpisah — tombol "Save Changes"
-  langsung jalanin dry_run=1 lalu (kalau sukses) dry_run=0 berturutan.
-- **Cancel** (`ajax/cancel_booking.php`) — batalkan SEMUA sisa qty yang belum dirilis sekaligus (bukan per
-  baris); qty yang sudah dirilis tidak kesentuh. Stok yang dibatalkan dikembalikan ke
-  `remaining_primary_qty`/`defective_qty`, `invoices.total_amount` dikurangi senilai qty yang dibatalkan,
-  `bookings.status` jadi `cancelled`. Preview (dry_run=1) otomatis diambil begitu overlay dibuka.
-
-Perlu dites: Edit naikkan qty (stok harus cukup, kalau tidak harus gagal dengan pesan jelas), Edit turunkan qty
-di bawah qty_released (harus ditolak), Cancel booking yang masih ada sisa → invoice total turun & stok balik,
-Cancel booking yang sudah full released (harus ditolak, "already fully released"), tombol Edit/Cancel hilang
-begitu booking jadi `completed` (full released) atau `cancelled`.
-
-**Bugfix (dites user, OK) — Booking "Taken" harus net, bukan gross**: `booking_items.qty_released` cuma
-akumulator (naik terus tiap `release_booking.php`, **tidak pernah turun** saat barang yang sudah dirilis itu
-di-retur lewat tab Logistic/`create_return.php`, yang memang tidak tahu apa-apa soal booking). Begitu ada retur
-lalu booking di-edit (nambah qty), "Taken"/"Remaining" di kartu booking jadi ganda-hitung dengan
-`remaining_primary_qty` (RPQ) — seolah stok yang available lebih banyak dari yang sebenarnya. Fix: tabel baru
-`booking_item_releases` (`booking_item_id`, `movement_id`, `qty`; append-only, tidak pernah di-UPDATE) —
-`release_booking.php` nulis 1 baris tiap release, mencatat `logistic_movements.id` hasil release itu. "Taken net"
-dihitung on-the-fly = `qty_released − SUM(retur yang source_movement_id-nya nunjuk ke release itu)`, pola yang
-sama dengan retur/pickup biasa (§5.4). `qty_released` sendiri **tetap gross**, tidak diubah — itu masih jadi
-patokan kapan booking `completed` & batas bawah Edit (barang yang sudah dirilis tidak bisa "ditarik balik"
-reservasinya walau nanti diretur, itu transaksi terpisah). "Remaining" (sisa reservasi belum dirilis) juga tetap
-gross, sengaja — retur tidak membuka slot rilis baru. Jadi "Taken" + "Remaining" booking **tidak harus** balik
-jumlah ke "Total" begitu sudah ada retur (disengaja, bukan bug baru). File: migration baru
-`migration_booking_item_releases.sql`, `release_booking.php`, `list_customer_bookings.php` (tambah
-`qty_released_net`/`qty_returned`), `list_logistics.php` (agregat `booking.taken` per logistic_id ikut net),
-`transaction_content.php` (kartu Active Bookings tampilkan net kalau beda dari gross).
-
-**Bugfix (dites user, OK) — kolom baru "Actual Remaining Qty on Storage" (Logistic List)**: sebelumnya tidak ada
-angka yang jawab "barang fisik yang masih ada di gudang sekarang, apapun statusnya" — `total_all_stock`
-(RPQ+defective_qty, baris lama yang dulu dipakai utk ini) ternyata cuma stok yang **belum** direservasi booking
-apapun; begitu ada booking yang belum di-release, barangnya masih fisik di gudang tapi sudah tidak kehitung di
-situ (sempat salah didefinisikan = `total_all_stock` doang di iterasi pertama fix ini, tampil 0 padahal
-seharusnya sisa booking yang belum rilis). Rumus final: `actual_remaining_qty_on_storage = total_all_stock +
-Σ(qty_booked − qty_released) booking aktif produk itu (gross, booking yang belum dirilis)`. Field baru di
-`list_logistics.php`, field lama `total_all_stock` TIDAK diubah/dihapus (masih dipakai tempat lain, maknanya
-tetap "stok bebas dari reservasi"). Ditampilkan di `logistic_content.php` sebagai baris accordion label "Actual
-Remaining Qty on Storage" (ganti label dari "Total All Stock" yang lama ke field baru ini), selalu muncul (bukan
-cuma kalau ada booking aktif). Invariant yang sudah divalidasi: `actual_remaining_qty_on_storage + taken_net
-(booking) = primary_qty`, kapan pun, di titik manapun dalam siklus booking→release→retur→edit.
+Selesai & sudah dites (30 Okt 2026) — Fitur Booking/DP lengkap: tab Booking (create), Active Bookings di tab
+Customers (Add Payment reuse, Release, Edit termasuk tambah produk baru, Cancel), kolom "Booking" & "Actual
+Remaining Qty on Storage" di Logistic List, booking selalu invoice baru, "Taken" net vs gross (`booking_item_releases`).
+Detail lengkap sudah dilebur ke §4 Model data, §5.16, §6 Sales Transaction & Logistic, §7 endpoint map.
 
 Belum dibangun (disengaja, bukan bug):
 - Fitur pembayaran bersama (disebut user saat desain Create New Logistic). Baru placeholder di form.

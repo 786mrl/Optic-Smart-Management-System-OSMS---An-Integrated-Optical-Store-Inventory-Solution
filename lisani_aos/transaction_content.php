@@ -1693,9 +1693,13 @@ $currentYear     = date('Y');
 </div>
 
 <!-- Edit Booking — change qty on existing lines (min = qty already
-     released). Save does dry_run=1 then, if that comes back clean,
+     released) AND/OR add products that were not part of the original
+     booking (reserved + priced exactly like the Booking tab's Add, see
+     edit_booking.php). Save does dry_run=1 then, if that comes back clean,
      immediately dry_run=0 — no separate confirm screen, the preview IS the
-     validation. -->
+     validation. A new line missing a price comes back as code
+     "missing_prices"; the price input for it is revealed inline under
+     "Add a product" instead of a separate overlay. -->
 <div class="modal-overlay" id="bkEditOverlay" style="display:none;">
   <div class="modal" style="max-width:460px;">
     <div class="modal-header">
@@ -1704,6 +1708,21 @@ $currentYear     = date('Y');
     <div class="modal-body">
       <div class="empty-sub" id="bkEditIntro" style="margin-bottom:var(--space-3);"></div>
       <div id="bkEditRows"></div>
+
+      <div class="label" style="margin-top:var(--space-4);">Add a product not in this booking</div>
+      <div class="form-group" style="display:flex; gap:var(--space-2); align-items:flex-end; flex-wrap:wrap;">
+        <div style="flex:2; min-width:160px;">
+          <select class="select" id="bkEditProductSelect">
+            <option value="">-- select product --</option>
+          </select>
+        </div>
+        <div style="flex:1; min-width:90px;">
+          <input type="text" inputmode="decimal" class="input input-number-comma" id="bkEditQtyInput" placeholder="Qty">
+        </div>
+        <button type="button" class="btn btn-secondary" id="btnBkEditAddItem">+ Add</button>
+      </div>
+      <div id="bkEditNewRows"></div>
+
       <div class="empty-sub" id="bkEditError" style="display:none; color:var(--danger); white-space:pre-line;"></div>
     </div>
     <div class="modal-footer">
@@ -7533,9 +7552,16 @@ $currentYear     = date('Y');
   });
 
   // ==========================================================
-  // Edit Booking — change qty on existing lines only (no add/remove
-  // product). Every line of the booking must be sent back, each >= its
-  // qty_released. See edit_booking.php for the full contract.
+  // Edit Booking — change qty on existing lines (every line of the booking
+  // must be sent back, each >= its qty_released) AND/OR add products that
+  // were not on the original booking (product picker below the existing
+  // lines, same product list / stock reservation / price resolution as the
+  // Booking tab's own Add — normal stock only, reuses loadPriceableProducts).
+  // A new line with no price yet comes back from the server as
+  // code:"missing_prices"; instead of a separate overlay (like the Booking
+  // tab's Set Price window) the price input is just revealed inline under
+  // that new line and Save is clicked again. See edit_booking.php for the
+  // full contract.
   // ==========================================================
   var bkEditIntro = document.getElementById('bkEditIntro');
   var bkEditRows  = document.getElementById('bkEditRows');
@@ -7545,12 +7571,121 @@ $currentYear     = date('Y');
   var bkEditCustomerId = null;
   var bkEditSaving = false;
 
+  var bkEditProductSelect = document.getElementById('bkEditProductSelect');
+  var bkEditQtyInput      = document.getElementById('bkEditQtyInput');
+  var btnBkEditAddItem    = document.getElementById('btnBkEditAddItem');
+  var bkEditNewRows       = document.getElementById('bkEditNewRows');
+  var bkEditNewItems      = []; // [{logistic_id, product_name, unit_label, qty, needs_price, price}]
+
+  initNumberCommaInput(bkEditQtyInput);
+
+  function populateBkEditProducts() {
+    loadPriceableProducts(function (products) {
+      var keep = bkEditProductSelect.value;
+      bkEditProductSelect.innerHTML = '<option value="">-- select product --</option>';
+      products.forEach(function (p) {
+        var opt = document.createElement('option');
+        opt.value = p.logistic_id;
+        opt.textContent = p.activity_name;
+        opt.setAttribute('data-unit', p.primary_unit_label || '');
+        bkEditProductSelect.appendChild(opt);
+      });
+      bkEditProductSelect.value = keep;
+    });
+  }
+
+  function renderBkEditNewItems() {
+    bkEditNewRows.innerHTML = '';
+    bkEditNewItems.forEach(function (it, idx) {
+      var box = document.createElement('div');
+      box.className = 'st-mov';
+
+      var top = document.createElement('div');
+      top.className = 'st-mov-top';
+      var nm = document.createElement('div');
+      nm.style.fontWeight = '600';
+      nm.textContent = it.product_name + ' (new)';
+      var qtyEl = document.createElement('div');
+      qtyEl.textContent = fmtQty(it.qty) + ' ' + (it.unit_label || '');
+      top.appendChild(nm);
+      top.appendChild(qtyEl);
+      box.appendChild(top);
+
+      if (it.needs_price) {
+        var priceRow = document.createElement('div');
+        priceRow.className = 'form-group';
+        priceRow.style.marginTop = 'var(--space-2)';
+        var lbl = document.createElement('div');
+        lbl.className = 'label';
+        lbl.textContent = 'No price set for this customer \u2014 enter one';
+        priceRow.appendChild(lbl);
+        var pInp = document.createElement('input');
+        pInp.type = 'text';
+        pInp.setAttribute('inputmode', 'decimal');
+        pInp.className = 'input input-number-comma';
+        pInp.placeholder = 'Price';
+        if (it.price) { pInp.value = formatNumberInput(String(it.price)); }
+        initNumberCommaInput(pInp);
+        pInp.addEventListener('input', function () { it.price = parseNumberInput(pInp.value); });
+        priceRow.appendChild(pInp);
+        box.appendChild(priceRow);
+      }
+
+      var sub = document.createElement('div');
+      sub.className = 'st-mov-sub';
+      var rm = document.createElement('a');
+      rm.href = '#';
+      rm.textContent = 'Remove';
+      rm.style.color = 'var(--danger)';
+      rm.addEventListener('click', function (e) {
+        e.preventDefault();
+        bkEditNewItems.splice(idx, 1);
+        renderBkEditNewItems();
+      });
+      sub.appendChild(rm);
+      box.appendChild(sub);
+
+      bkEditNewRows.appendChild(box);
+    });
+  }
+
+  btnBkEditAddItem.addEventListener('click', function () {
+    stHideError(bkEditError);
+    var lid = bkEditProductSelect.value;
+    if (!lid) { stShowError(bkEditError, 'Select a product first.'); return; }
+    var qty = parseNumberInput(bkEditQtyInput.value);
+    if (isNaN(qty) || qty <= 0) { stShowError(bkEditError, 'Enter a quantity above zero.'); return; }
+    var opt = bkEditProductSelect.selectedOptions[0];
+
+    var existingNew = bkEditNewItems.filter(function (x) { return String(x.logistic_id) === String(lid); })[0];
+    if (existingNew) {
+      existingNew.qty = Math.round((existingNew.qty + qty) * 100) / 100;
+    } else {
+      bkEditNewItems.push({
+        logistic_id: parseInt(lid, 10),
+        product_name: opt.textContent,
+        unit_label: opt.getAttribute('data-unit') || '',
+        qty: qty,
+        needs_price: false,
+        price: null
+      });
+    }
+    bkEditProductSelect.value = '';
+    bkEditQtyInput.value = '';
+    renderBkEditNewItems();
+  });
+
   function openBkEdit(bk, customer) {
     bkEditBookingId = bk.id;
     bkEditCustomerId = customer.id;
     stHideError(bkEditError);
-    bkEditIntro.textContent = 'A line cannot go below what has already been released for it. Set a line to its released amount to drop the rest.';
+    bkEditIntro.textContent = 'A line cannot go below what has already been released for it. Set a line to its released amount to drop the rest. You can also add products that were not part of the original booking below.';
     bkEditRows.innerHTML = '';
+    bkEditNewItems = [];
+    bkEditProductSelect.value = '';
+    bkEditQtyInput.value = '';
+    populateBkEditProducts();
+    renderBkEditNewItems();
 
     bk.items.forEach(function (it) {
       var g = document.createElement('div');
@@ -7596,9 +7731,27 @@ $currentYear     = date('Y');
       items.push({ booking_item_id: inputs[i].getAttribute('data-booking-item-id'), qty: qty });
     }
 
+    var newPrices = {};
+    for (var j = 0; j < bkEditNewItems.length; j++) {
+      var ni = bkEditNewItems[j];
+      if (isNaN(ni.qty) || ni.qty <= 0) {
+        stShowError(bkEditError, 'Every added product needs a quantity above zero.');
+        return;
+      }
+      if (ni.needs_price) {
+        if (!ni.price || isNaN(ni.price) || ni.price <= 0) {
+          stShowError(bkEditError, 'Enter a price for ' + ni.product_name + '.');
+          return;
+        }
+        newPrices[ni.logistic_id] = ni.price;
+      }
+      items.push({ logistic_id: ni.logistic_id, qty: ni.qty, stock_source: 'normal' });
+    }
+
     var basePayload = {
       booking_id: bkEditBookingId,
-      items: JSON.stringify(items)
+      items: JSON.stringify(items),
+      new_prices: JSON.stringify(newPrices)
     };
 
     bkEditSaving = true;
@@ -7608,7 +7761,10 @@ $currentYear     = date('Y');
     // there is no separate confirm screen here.
     stPost('ajax/edit_booking.php', Object.assign({}, basePayload, { dry_run: '1' }))
       .then(function (res) {
-        if (!res.ok) { throw { handled: true, message: res.message }; }
+        if (!res.ok) {
+          if (res.code === 'missing_prices') { throw { handled: true, missingPrices: res.missing || [] }; }
+          throw { handled: true, message: res.message };
+        }
         return stPost('ajax/edit_booking.php', Object.assign({}, basePayload, { dry_run: '0' }));
       })
       .then(function (res) {
@@ -7624,6 +7780,15 @@ $currentYear     = date('Y');
       .catch(function (err) {
         bkEditSaving = false;
         btnBkEditSave.disabled = false;
+        if (err && err.missingPrices) {
+          err.missingPrices.forEach(function (m) {
+            var ni = bkEditNewItems.filter(function (x) { return String(x.logistic_id) === String(m.logistic_id); })[0];
+            if (ni) { ni.needs_price = true; }
+          });
+          renderBkEditNewItems();
+          stShowError(bkEditError, 'Enter a price for the new product(s) marked below, then Save again.');
+          return;
+        }
         stShowError(bkEditError, (err && err.handled) ? err.message : 'Connection error.');
       });
   });
