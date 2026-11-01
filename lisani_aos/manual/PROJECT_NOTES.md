@@ -598,6 +598,63 @@ tetap `fmtIDR`; CSV tetap angka mentah + kolom Type). Belum ada: edit kategori t
 
 ## 8. Pekerjaan terbuka
 
+**Log terbaru (belum dites) — Refund & Settlement**: dua kelemahan yang diperbaiki sekalian, satu fitur baru.
+
+1. **Cancel Booking sekarang menghitung DP yang sudah dibayar** (`cancel_booking.php`, sebelumnya tidak dihandel
+   sama sekali): kalau invoice booking itu sudah dibayar lebih dari `total_amount` yang baru (lebih kecil) setelah
+   dicancel, selisihnya (`overpaid_amount`) tidak lagi diam saja — `invoices.paid_amount` di-cap turun ke
+   `total_amount` baru, dan selisihnya diserahkan ke customer lewat `credit_action` (poin 3 di bawah). Kalau tidak
+   overpaid (DP ≤ sisa total setelah cancel), perilaku persis seperti sebelumnya, tidak ada perubahan.
+2. **`create_return.php` & `create_price_adjustment.php`**: titik "tidak ada invoice open" (dulu otomatis masuk
+   `customers.credit_balance`) sekarang juga lewat `credit_action` yang sama (poin 3).
+3. **`credit_action` = `"credit_balance"` | `"refund_queue"`** — pola baru dipakai di ketiga endpoint di atas: pada
+   `dry_run=1` pertama (tanpa `credit_action`), kalau ternyata tidak ada invoice untuk dikurangi (atau, khusus
+   Cancel Booking, invoice jadi overpaid), server menolak dengan `code:"credit_action_required"` + `amount`; client
+   (fungsi `askCreditAction()` di `transaction_content.php`, overlay generik `creditChoiceOverlay`) menanyakan ke
+   user, lalu mengirim ulang `dry_run=1` dengan `credit_action` terisi, baru `dry_run=0`. `"credit_balance"` =
+   perilaku lama (masuk `customers.credit_balance`, dipakai lewat Apply Credit). `"refund_queue"` = BARU: insert ke
+   tabel baru `customer_refund_queue` (`migration_refund_queue.sql`) berstatus `pending` — uang yang sungguhan
+   harus dikembalikan, bukan dipakai menutup invoice lain. `source_type` (`return`/`price_adjustment`/
+   `cancel_booking`) + `source_ref` (batch_id untuk return/adjustment, `booking_id` untuk cancel booking) mencatat
+   asalnya.
+4. **Activity code permanen "00-A" / departemen baru "Refund & Settlement"** (`departments.json`, key
+   `refund_settlement`): dibuat SEKALI lewat `migration_refund_queue.sql` (bukan lewat tombol + Add Activity Code
+   biasa — formatnya "00-A" sengaja tidak numerik murni supaya tidak pernah ketiban auto-numbering
+   `create_activity_code.php`), `relative_path` TANPA segmen tahun (`input/refund_settlement/00-A/`) karena
+   dipakai permanen lintas tahun, bukan di-reset per tahun seperti activity code lain.
+5. **Pelunasan via Disbursement** (`create_disbursement.php`, POST baru `refund_queue_ids` JSON array,
+   `list_refund_queue.php` baru untuk GET): satu Disbursement transaction BOLEH melunasi 1 atau lebih baris
+   antrian sekaligus (makanya `transaction_id` ada di `customer_refund_queue`, bukan tabel jembatan terpisah) —
+   TAPI jumlahnya harus PAS sama dengan `final_amount_idr` (server tolak kalau beda, toleransi 0.01), dan Activity
+   Code yang dipakai harus "00-A" itu. Di UI (`transaction_content.php`, layar capture Disbursement), begitu
+   departemen "Refund & Settlement" dipilih, muncul daftar collapsible per customer (default collapse) berisi
+   checkbox tiap baris pending beserta total berjalan yang harus pas dengan Final Amount (IDR) sebelum Save boleh
+   diklik. Server tetap jadi otoritas akhir (re-check dengan `FOR UPDATE` di dalam transaksi DB yang sama).
+
+**Bugfix (ditemukan user sebelum sempat dites) — invoice overpaid tidak benar-benar ditutup**: di `cancel_booking.php`,
+titik yang nge-cap `invoices.paid_amount` turun supaya pas dengan `total_amount` baru TIDAK pernah ikut nge-update
+kolom `invoices.status` — jadi status di DB tetap stale `open`, padahal secara angka (`paid_amount == total_amount`)
+tampilannya sudah kelihatan "lunas". Akibatnya order BERIKUTNYA untuk customer yang sama masih bisa numpuk ke
+invoice ini (karena logic reuse-open-invoice baca kolom `status` literal, bukan hitung ulang dari angka), padahal
+uangnya sudah dipindah ke credit_balance — bikin Total/Paid di invoice baru itu kacau (tercampur sisa booking yang
+sudah "dikosongkan"). Fix: begitu `paid_amount` di-cap (selalu persis sama dengan `total_amount` baru di titik itu),
+invoice itu SEKALIAN ditutup beneran — `status = 'paid'`, `paid_at = NOW()` (formula sama persis dengan yang dipakai
+`apply_customer_credit.php`). Response `cancel.invoice.will_close` ditambah buat UI kasih tau user invoice ini bakal
+ditutup begitu kelebihan DP-nya dipindah.
+
+Perlu dites: Return/Price Adjustment tanpa invoice open → pilih Credit Balance (perilaku lama, pastikan tidak
+berubah) dan pilih Refund Queue (row baru muncul di `customer_refund_queue` status pending, `source_ref` terisi
+batch_id yang benar setelah movement tersimpan); Cancel Booking pada invoice yang sudah full-paid lalu dicancel
+sebagian (overpaid muncul, pilih kedua opsi, invoice `paid_amount` ke-cap benar); Cancel Booking tanpa overpay
+sama sekali (tidak ditanya apa-apa, seperti sebelumnya); Disbursement di departemen Refund & Settlement: pilih
+beberapa baris dari beberapa customer sekaligus dalam satu disbursement (total harus pas), coba Save dengan total
+tidak pas (harus ditolak baik di client maupun kalau dipaksa di server), baris yang sudah `returned` tidak lagi
+muncul di picker; pastikan Activity Code lain (bukan 00-A) tetap bisa dipakai normal tanpa field `refund_queue_ids`
+sama sekali nyangkut. Khusus bugfix overpaid-tidak-ditutup di atas: Cancel Booking yang bikin overpaid → invoice itu
+beneran `status='paid'` setelahnya (cek lewat phpMyAdmin), lalu bikin New Order baru untuk customer yang sama →
+harus BUKA INVOICE BARU (bukan numpuk ke invoice booking yang tadi), credit_balance (kalau pilih opsi itu) baru
+kepake kalau user pilih Apply Credit secara eksplisit di invoice baru itu, bukan otomatis tercampur.
+
 Selesai & sudah dites (30 Okt 2026) — Fitur Booking/DP lengkap: tab Booking (create), Active Bookings di tab
 Customers (Add Payment reuse, Release, Edit termasuk tambah produk baru, Cancel), kolom "Booking" & "Actual
 Remaining Qty on Storage" di Logistic List, booking selalu invoice baru, "Taken" net vs gross (`booking_item_releases`).

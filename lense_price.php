@@ -123,6 +123,10 @@
     // back the old $data snapshot would silently overwrite / revert that
     // other save. Calling this function at the start of each write handler
     // (add/delete/save) ensures we always mutate the latest data on disk.
+    // Returns the normalized data array on success, or null if the on-disk
+    // JSON could not be safely read (see note below) — callers MUST check
+    // for null and abort the write instead of saving, or the file would be
+    // overwritten with near-empty data and every stored lens would be lost.
     function reload_lens_data($json_file, $default_limits) {
         $fh = @fopen($json_file, 'r');
         if ($fh) {
@@ -133,8 +137,26 @@
         } else {
             $raw = file_get_contents($json_file);
         }
-        $decoded = json_decode($raw, true);
-        if (!is_array($decoded)) $decoded = ["stock" => ["Single Vision" => []], "lab" => []];
+        $trimmed = trim((string)$raw);
+        if ($trimmed === '') {
+            // File genuinely missing/empty (e.g. first run) — safe to start fresh.
+            $decoded = ["stock" => ["Single Vision" => []], "lab" => []];
+        } else {
+            $decoded = json_decode($raw, true);
+            if (!is_array($decoded)) {
+                // BUGFIX: the file has content but failed to parse — almost
+                // certainly this read caught another process mid-write (flock
+                // can be unreliable on some filesystems, e.g. Android/Termux
+                // shared storage), or the file is otherwise corrupted. This
+                // used to silently fall back to an empty ["stock"=>...,"lab"=>[]]
+                // structure here, and the caller would then happily write that
+                // near-empty structure back to disk — permanently wiping out
+                // every previously saved lens except the one being saved right
+                // now. Returning null instead lets every caller detect this
+                // and abort the save without touching the file.
+                return null;
+            }
+        }
         return normalize_lens_data($decoded, $default_limits);
     }
 
@@ -147,6 +169,39 @@
     // Initial snapshot, used for rendering the page (GET) and as a fallback
     // starting point before each POST handler below re-loads fresh data.
     $data = normalize_lens_data($data, $DEFAULT_LIMITS);
+
+    // Groups the per-lens "Group" dropdown can offer. Always include the two
+    // known groups plus whatever already exists in the data, so the option
+    // is never missing even if one group is currently empty.
+    $available_groups = array_values(array_unique(array_merge(['stock', 'lab'], array_keys($data))));
+
+    // Verify a plaintext password against the MAIN admin's stored hash.
+    // "Main admin" = settings.setting_value where setting_key = 'main_admin_username',
+    // then users.password_hash for that username. Used to gate moving a lens
+    // between groups (e.g. stock -> lab) since that's a more consequential
+    // change than editing a single lens's own fields.
+    function verify_main_admin_password($conn, $password) {
+        if ($password === '' || $password === null) return false;
+
+        $stmt = $conn->prepare("SELECT setting_value FROM settings WHERE setting_key = 'main_admin_username' LIMIT 1");
+        if (!$stmt) return false;
+        $stmt->execute();
+        $stmt->bind_result($main_admin_username);
+        $found = $stmt->fetch();
+        $stmt->close();
+        if (!$found || trim((string)$main_admin_username) === '') return false;
+
+        $stmt2 = $conn->prepare("SELECT password_hash FROM users WHERE username = ? LIMIT 1");
+        if (!$stmt2) return false;
+        $stmt2->bind_param('s', $main_admin_username);
+        $stmt2->execute();
+        $stmt2->bind_result($password_hash);
+        $found2 = $stmt2->fetch();
+        $stmt2->close();
+        if (!$found2 || $password_hash === null || $password_hash === '') return false;
+
+        return password_verify($password, $password_hash);
+    }
 
     // Format Rx value for HTML input rendering.
     // Output plain integers (no "+" prefix) so browser type=number inputs accept the
@@ -254,6 +309,15 @@
             // between this page's load and this request (see reload_lens_data for details).
             $data = reload_lens_data($json_file, $DEFAULT_LIMITS);
 
+            // BUGFIX: reload_lens_data returns null when the on-disk JSON could
+            // not be safely parsed (e.g. another process was mid-write). Abort
+            // here instead of saving — proceeding would write this one lens on
+            // top of an empty structure and wipe out every other stored lens.
+            if ($data === null) {
+                $resp['message'] = 'Gagal membaca data lensa dari file (kemungkinan sedang ditulis proses lain). Coba simpan ulang beberapa detik lagi.';
+                echo json_encode($resp); exit;
+            }
+
             $group    = $_POST['group']        ?? '';
             $old_cat  = uc_trim($_POST['old_category'] ?? '');
             $old_name = uc_trim($_POST['old_name']     ?? '');
@@ -262,6 +326,9 @@
             $raw_new  = $_POST['new_name'] ?? $old_name;
             $new_name = uc_trim($raw_new);
             if ($new_name === '') $new_name = $old_name;
+            $new_group = trim($_POST['new_group'] ?? $group);
+            if ($new_group === '') $new_group = $group;
+            $group_changed = ($new_group !== $group);
 
             if ($group === '' || $old_cat === '' || $old_name === '') {
                 $resp['message'] = 'Invalid request: missing group / category / name.';
@@ -270,6 +337,17 @@
             if (!isset($data[$group][$old_cat][$old_name])) {
                 $resp['message'] = 'Lens not found on server. Please refresh the page.';
                 echo json_encode($resp); exit;
+            }
+
+            // Moving a lens to a different group (e.g. stock -> lab) requires
+            // re-entering the MAIN admin's password, since it's a more
+            // consequential change than editing the lens's own fields.
+            if ($group_changed) {
+                $admin_password = $_POST['admin_password'] ?? '';
+                if (!verify_main_admin_password($conn, $admin_password)) {
+                    $resp['message'] = 'Password admin utama salah atau tidak valid. Perubahan group dibatalkan.';
+                    echo json_encode($resp); exit;
+                }
             }
 
             $cost     = (float)($_POST['cost']    ?? 0);
@@ -291,38 +369,39 @@
                 'note'     => trim($lp['note'] ?? ''),
             ];
 
-            // Handle rename / category change with collision suffix (same rule
-            // as the add_new_lense handler, for consistency).
+            // Handle rename / category change / group change with collision
+            // suffix (same rule as the add_new_lense handler, for consistency).
             $save_name = $new_name;
-            $is_rename_or_move = ($new_name !== $old_name) || ($new_cat !== $old_cat);
+            $is_rename_or_move = ($new_name !== $old_name) || ($new_cat !== $old_cat) || $group_changed;
             if ($is_rename_or_move
-                && isset($data[$group][$new_cat][$save_name])
-                && !($new_cat === $old_cat && $save_name === $old_name)) {
+                && isset($data[$new_group][$new_cat][$save_name])
+                && !($new_group === $group && $new_cat === $old_cat && $save_name === $old_name)) {
                 $suffix = 2;
-                while (isset($data[$group][$new_cat][$new_name.' ('.$suffix.')'])) $suffix++;
+                while (isset($data[$new_group][$new_cat][$new_name.' ('.$suffix.')'])) $suffix++;
                 $save_name = $new_name.' ('.$suffix.')';
                 $resp['renamed']  = true;
-                $resp['message']  = "\"$new_name\" sudah ada di \"$new_cat\" — disimpan sebagai \"$save_name\".";
+                $resp['message']  = "\"$new_name\" sudah ada di \"$new_group / $new_cat\" — disimpan sebagai \"$save_name\".";
             }
 
-            // Preserve fields that this per-lens save form doesn't carry (e.g. "source",
-            // which only the Add New Lens form sets). Without this, every per-card save
-            // would silently wipe out "source" because this handler always rebuilt the
-            // entry from scratch instead of merging into the existing one. Captured
-            // BEFORE the old entry is unset below (rename/move case).
+            // Source is now editable from the per-lens card (dropdown populated from
+            // the preset sources list) and sent along with the save. Fall back to the
+            // previously stored value only if the POST key is missing entirely (e.g.
+            // an older client that doesn't send it yet) so a save never silently wipes
+            // it. Captured BEFORE the old entry is unset below (rename/move case).
             $preserved_source = $data[$group][$old_cat][$old_name]['source'] ?? '';
+            $source = array_key_exists('source', $_POST) ? trim($_POST['source']) : $preserved_source;
 
             // Remove old entry (rename / move)
             if ($is_rename_or_move || $save_name !== $old_name) {
                 unset($data[$group][$old_cat][$old_name]);
                 if (empty($data[$group][$old_cat])) unset($data[$group][$old_cat]);
             }
-            if (!isset($data[$group][$new_cat])) $data[$group][$new_cat] = [];
+            if (!isset($data[$new_group][$new_cat])) $data[$new_group][$new_cat] = [];
 
-            $data[$group][$new_cat][$save_name] = [
+            $data[$new_group][$new_cat][$save_name] = [
                 'cost' => $cost, 'selling' => $selling,
                 'features' => $features, 'limits' => $limits,
-                'source' => $preserved_source,
+                'source' => $source,
             ];
 
             $ok = @write_lens_data($json_file, $data);
@@ -336,20 +415,24 @@
             $log_line = "[".date('Y-m-d H:i:s')."] save_single_lens by user="
                       . ($_SESSION['username'] ?? $_SESSION['user'] ?? 'admin')
                       . " — $group / $old_cat / $old_name"
-                      . ($is_rename_or_move ? " → $new_cat / $save_name" : "")
+                      . ($is_rename_or_move ? " → $new_group / $new_cat / $save_name" : "")
+                      . ($group_changed ? " [group changed, admin password verified]" : "")
                       . "  [sph {$limits['sph_from']}..{$limits['sph_to']}"
                       . "  cyl {$limits['cyl_from']}..{$limits['cyl_to']}"
                       . "  add {$limits['add_from']}..{$limits['add_to']}"
                       . "  comb {$limits['comb_max']}]\n";
             @file_put_contents($log_file, $log_line, FILE_APPEND);
 
-            $resp['ok']         = true;
-            $resp['saved_name'] = $save_name;
-            $resp['saved_cat']  = $new_cat;
+            $resp['ok']           = true;
+            $resp['saved_name']   = $save_name;
+            $resp['saved_cat']    = $new_cat;
+            $resp['saved_group']  = $new_group;
+            $resp['group_changed']= $group_changed;
             $resp['limits']     = $limits;
             $resp['cost']       = $cost;
             $resp['selling']    = $selling;
             $resp['features']   = $features;
+            $resp['source']     = $source;
             if ($resp['message'] === '') {
                 $resp['message'] = "Saved: $save_name";
             }
@@ -480,6 +563,15 @@
             // between this page's load and this request (see reload_lens_data for details).
             $data = reload_lens_data($json_file, $DEFAULT_LIMITS);
 
+            // BUGFIX: see reload_lens_data — null means the file couldn't be
+            // safely read. Skip the add logic entirely so the shared write
+            // below (guarded by $data !== null) never fires and nothing on
+            // disk gets touched.
+            if ($data === null) {
+                $message = 'Gagal menambah lensa: data JSON tidak bisa dibaca (kemungkinan sedang ditulis proses lain). Silakan coba lagi.';
+                goto reload_failed_add;
+            }
+
             $new_group    = $_POST['new_group'];
             $new_cat      = uc_trim($_POST['new_category'] ?? '');
             if ($new_cat === '') $new_cat = 'GENERAL';
@@ -552,11 +644,21 @@
                 $active_tab = 'add';
                 skip_save:;
             }
+            reload_failed_add:;
 
         } elseif (isset($_POST['delete_lense'])) {
             // Re-read the file fresh so we never overwrite a save made by another tab/user
             // between this page's load and this request (see reload_lens_data for details).
             $data = reload_lens_data($json_file, $DEFAULT_LIMITS);
+
+            // BUGFIX: see reload_lens_data — null means the file couldn't be
+            // safely read. Don't let a delete proceed against null data (the
+            // shared write below is guarded by $data !== null anyway, but we
+            // also want the isset() checks right below to fail safely).
+            if ($data === null) {
+                $message = 'Gagal menghapus lensa: data JSON tidak bisa dibaca (kemungkinan sedang ditulis proses lain). Silakan coba lagi.';
+                $dg = $dc = $dn = '';
+            } else {
 
             $dg = $_POST['del_group']    ?? '';
             $dc = uc_trim($_POST['del_category'] ?? '');
@@ -571,14 +673,20 @@
             } else {
                 $message = "Could not delete: lens not found.";
             }
+            } // end else ($data !== null) — BUGFIX guard
         }
 
         // Only persist when add_new_lense or delete_lense actually ran (both reloaded
         // fresh data above before mutating it). A POST matching none of the branches
         // above must NOT write $data back — it would still hold the stale page-load
         // snapshot and could overwrite changes saved by another tab/user in the meantime.
+        // BUGFIX: also require $data !== null — otherwise a failed reload_lens_data()
+        // read (see reload_lens_data) would write a null/empty structure to disk and
+        // wipe out every previously saved lens.
         if (isset($_POST['add_new_lense']) || isset($_POST['delete_lense'])) {
-            write_lens_data($json_file, $data);
+            if ($data !== null) {
+                write_lens_data($json_file, $data);
+            }
         }
     }
 
@@ -1091,6 +1199,33 @@
             .save-toast.fade-out { animation:toastOut .3s ease-in forwards; }
             @keyframes toastIn  { from { opacity:0; transform:translateX(20px); } to { opacity:1; transform:translateX(0); } }
             @keyframes toastOut { to   { opacity:0; transform:translateX(20px); } }
+
+            /* ── Admin-password modal (required to change a lens's group) ── */
+            #admin-password-modal-backdrop {
+                display:none; position:fixed; inset:0; z-index:10000;
+                background:rgba(0,0,0,.6);
+                align-items:center; justify-content:center;
+            }
+            #admin-password-modal-backdrop.active { display:flex; }
+            .admin-password-modal {
+                width:90%; max-width:360px;
+                background:#1a1f27; border:1px solid #2a3340; border-radius:14px;
+                padding:22px 22px 18px; box-shadow:0 12px 40px rgba(0,0,0,.5);
+            }
+            .admin-password-modal h3 { margin:0 0 6px; font-size:15px; color:#e5e7eb; }
+            .admin-password-modal p  { margin:0 0 14px; font-size:12.5px; color:#9ca3af; line-height:1.5; }
+            .admin-password-modal input[type=password] {
+                width:100%; box-sizing:border-box; padding:10px 12px;
+                border-radius:8px; border:1px solid #374151; background:#0f1318;
+                color:#e5e7eb; font-size:14px; margin-bottom:6px;
+            }
+            .admin-password-modal .err-msg { color:#f87171; font-size:12px; min-height:16px; margin-bottom:8px; }
+            .admin-password-modal .btn-row { display:flex; gap:10px; justify-content:flex-end; }
+            .admin-password-modal button {
+                padding:9px 16px; border-radius:8px; border:none; font-size:13px; font-weight:600; cursor:pointer;
+            }
+            .admin-password-modal .btn-cancel { background:#2a313c; color:#d1d5db; }
+            .admin-password-modal .btn-confirm { background:#00adb5; color:#06222b; }
 
             /* ── Mobile ──────────────────────────────────────────────── */
             @media (max-width:600px) {
@@ -1648,12 +1783,27 @@
                                         </div>
                                     </div>
 
-                                    <?php if ($source !== ''): ?>
+                                    <div class="lens-source-row">
+                                        <span class="lens-source-label">Group:</span>
+                                        <select class="input-field lens-group-select" style="flex:1;max-width:240px;">
+                                            <?php foreach ($available_groups as $grp): ?>
+                                            <option value="<?php echo htmlspecialchars($grp); ?>" <?php echo ($grp === $group_key) ? 'selected' : ''; ?>><?php echo htmlspecialchars(ucfirst($grp)); ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+
                                     <div class="lens-source-row">
                                         <span class="lens-source-label">Source:</span>
-                                        <span class="lens-source-value"><?php echo htmlspecialchars($source); ?></span>
+                                        <select class="input-field lens-source-select" style="flex:1;max-width:240px;">
+                                            <option value="">&mdash; No source &mdash;</option>
+                                            <?php foreach ($preset_sources_list as $src): ?>
+                                            <option value="<?php echo htmlspecialchars($src); ?>" <?php echo ($src === $source) ? 'selected' : ''; ?>><?php echo htmlspecialchars($src); ?></option>
+                                            <?php endforeach; ?>
+                                            <?php if ($source !== '' && !in_array($source, $preset_sources_list, true)): ?>
+                                            <option value="<?php echo htmlspecialchars($source); ?>" selected><?php echo htmlspecialchars($source); ?> (not in preset list)</option>
+                                            <?php endif; ?>
+                                        </select>
                                     </div>
-                                    <?php endif; ?>
 
                                     <hr class="card-divider">
 
@@ -2679,6 +2829,51 @@
                 }
             }
 
+            // Show the admin-password modal and resolve with the entered password,
+            // or null if the user cancels / closes it without entering one.
+            function askAdminPassword(oldGroup, newGroup) {
+                return new Promise((resolve) => {
+                    const backdrop = document.getElementById('admin-password-modal-backdrop');
+                    const input    = document.getElementById('admin-password-modal-input');
+                    const errMsg   = document.getElementById('admin-password-modal-err');
+                    const text     = document.getElementById('admin-password-modal-text');
+                    const btnOk    = document.getElementById('admin-password-modal-confirm');
+                    const btnNo    = document.getElementById('admin-password-modal-cancel');
+                    if (!backdrop || !input || !btnOk || !btnNo) { resolve(null); return; }
+
+                    text.textContent = 'Moving this lens from "' + oldGroup + '" to "' + newGroup
+                                      + '" requires the main admin\'s password.';
+                    input.value = '';
+                    errMsg.textContent = '';
+                    backdrop.classList.add('active');
+                    setTimeout(() => input.focus(), 50);
+
+                    function cleanup() {
+                        backdrop.classList.remove('active');
+                        btnOk.removeEventListener('click', onConfirm);
+                        btnNo.removeEventListener('click', onCancel);
+                        input.removeEventListener('keydown', onKeydown);
+                    }
+                    function onConfirm() {
+                        const val = input.value;
+                        if (!val) { errMsg.textContent = 'Password is required.'; return; }
+                        cleanup();
+                        resolve(val);
+                    }
+                    function onCancel() {
+                        cleanup();
+                        resolve(null);
+                    }
+                    function onKeydown(e) {
+                        if (e.key === 'Enter') onConfirm();
+                        if (e.key === 'Escape') onCancel();
+                    }
+                    btnOk.addEventListener('click', onConfirm);
+                    btnNo.addEventListener('click', onCancel);
+                    input.addEventListener('keydown', onKeydown);
+                });
+            }
+
             // Collect everything needed to save ONE lens from its card DOM
             function collectLensCardData(card) {
                 const group     = card.dataset.group;
@@ -2699,6 +2894,14 @@
                 const featHidden = card.querySelector('input[name^="price_features["]');
                 const features  = featHidden ? (featHidden.value || '') : '';
 
+                // Group (select dropdown; a change here moves the lens to another group)
+                const groupSelect = card.querySelector('.lens-group-select');
+                const newGroup = groupSelect ? groupSelect.value.trim() : group;
+
+                // Source (select dropdown, populated from the preset sources list)
+                const sourceSelect = card.querySelector('.lens-source-select');
+                const source = sourceSelect ? sourceSelect.value.trim() : '';
+
                 // Rx limits — collect all 8 keys. Hidden inputs exist for
                 // CYL/ADD when the category doesn't show them.
                 const limitKeys = ['sph_from','sph_to','cyl_from','cyl_to','add_from','add_to','comb_max','note'];
@@ -2709,7 +2912,7 @@
                     limits[k] = input ? input.value : '';
                 });
 
-                return { group, oldCat, oldName, newName, cost, selling, features, limits };
+                return { group, newGroup, oldCat, oldName, newName, cost, selling, features, source, limits };
             }
 
             // Send one lens save to the server via fetch()
@@ -2722,17 +2925,36 @@
                     return;
                 }
 
+                // Moving a lens to a different group needs the MAIN admin's
+                // password. Ask for it before touching the network; if the
+                // user cancels or leaves it blank, abort and put the dropdown
+                // back to the lens's current group so nothing half-changes.
+                let adminPassword = '';
+                const groupChanged = data.newGroup && data.newGroup !== data.group;
+                if (groupChanged) {
+                    adminPassword = await askAdminPassword(data.group, data.newGroup);
+                    if (adminPassword === null) {
+                        const groupSelect = card.querySelector('.lens-group-select');
+                        if (groupSelect) groupSelect.value = data.group;
+                        setLensStatus(card, '', '');
+                        return;
+                    }
+                }
+
                 // Build form-encoded body
                 const body = new URLSearchParams();
                 body.append('save_single_lens', '1');
                 body.append('group',        data.group);
+                body.append('new_group',    data.newGroup);
                 body.append('old_category', data.oldCat);
                 body.append('old_name',     data.oldName);
                 body.append('new_category', data.oldCat); // category change not supported from card UI
                 body.append('new_name',     data.newName);
                 body.append('cost',         String(data.cost));
                 body.append('selling',      String(data.selling));
+                if (groupChanged) body.append('admin_password', adminPassword);
                 body.append('features',     data.features);
+                body.append('source',       data.source);
                 Object.keys(data.limits).forEach(k => {
                     body.append('limits[' + k + ']', data.limits[k]);
                 });
@@ -2785,6 +3007,13 @@
                     setLensStatus(card, 'ok', '✓ Saved');
                     showToast(json.message || ('Saved: ' + (json.saved_name || data.newName)),
                               json.renamed ? 'warn' : 'ok');
+
+                    if (json.group_changed) {
+                        // The lens now lives under a different group's server-rendered
+                        // section — reload so the list reflects that correctly.
+                        showToast('Group changed to "' + (json.saved_group || data.newGroup) + '" — reloading…', 'warn');
+                        setTimeout(() => window.location.reload(), 900);
+                    }
 
                 } catch (err) {
                     console.error('save lens failed:', err);
@@ -2850,7 +3079,7 @@
                 // ─── Dirty-tracking: mark card amber when any input changes ─
                 document.querySelectorAll('#lense-display-container .lens-card').forEach(card => {
                     const onChange = () => markCardDirty(card);
-                    card.querySelectorAll('input, textarea').forEach(el => {
+                    card.querySelectorAll('input, textarea, select').forEach(el => {
                         el.addEventListener('input',  onChange);
                         el.addEventListener('change', onChange);
                     });
@@ -2980,5 +3209,19 @@
 
         <!-- Toast container for per-lens save feedback -->
         <div id="save-toast-container"></div>
+
+        <!-- Admin-password confirmation modal (required to change a lens's group) -->
+        <div id="admin-password-modal-backdrop">
+            <div class="admin-password-modal">
+                <h3>Confirm group change</h3>
+                <p id="admin-password-modal-text">Moving this lens to another group requires the main admin's password.</p>
+                <input type="password" id="admin-password-modal-input" autocomplete="current-password" placeholder="Main admin password">
+                <div class="err-msg" id="admin-password-modal-err"></div>
+                <div class="btn-row">
+                    <button type="button" class="btn-cancel" id="admin-password-modal-cancel">Cancel</button>
+                    <button type="button" class="btn-confirm" id="admin-password-modal-confirm">Confirm</button>
+                </div>
+            </div>
+        </div>
     </body>
 </html>

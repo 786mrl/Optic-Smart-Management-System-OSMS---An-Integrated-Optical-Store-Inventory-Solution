@@ -4,6 +4,20 @@
 // + row in `transaction_disbursements` (incl. category_id -> disbursement_categories).
 // Called from transaction_content.php (btnCapSave) with multipart FormData.
 //
+// Revised 31 Okt 2026 — Refund & Settlement (activity code "00-A", see
+// migration_refund_queue.sql): optional POST field refund_queue_ids, a JSON
+// array of customer_refund_queue.id. When present, this disbursement is
+// understood to be PAYING OUT those pending refund(s) — their sum must
+// equal Final Amount (IDR) exactly (server doesn't trust the client's math),
+// every id must still be 'pending', and Activity Code must be the "00-A"
+// one (settling refunds from any other activity code makes no sense). On
+// success each row is marked 'returned', stamped with this transaction's id
+// and NOW(). One disbursement can settle several rows at once (e.g. several
+// customers paid back in the same bank trip) — that's why the link lives on
+// customer_refund_queue.transaction_id rather than needing a bridge table.
+// A normal disbursement (any other activity code) simply omits this field —
+// nothing below changes for it.
+//
 // Response contract: { ok: true|false, message: "...", ... }
 
 ini_set('display_errors', '0');
@@ -155,6 +169,19 @@ if ($finalAmount === null || (float)$finalAmount <= 0) {
     aos_fail('Final Amount (IDR) is not valid.');
 }
 
+// Refund & Settlement: which pending customer_refund_queue rows this
+// disbursement is paying out, if any — see header comment.
+$refundQueueIds = [];
+$rawRefundIds = json_decode(post_str('refund_queue_ids'), true);
+if (is_array($rawRefundIds)) {
+    foreach ($rawRefundIds as $rid) {
+        $rid = (int) $rid;
+        if ($rid > 0 && !in_array($rid, $refundQueueIds, true)) {
+            $refundQueueIds[] = $rid;
+        }
+    }
+}
+
 // ---------- Activity must exist (also gives us the storage folder) ----------
 $stmt = $lisani_conn->prepare('SELECT id, relative_path FROM activities WHERE id = ?');
 $stmt->bind_param('i', $activityId);
@@ -175,6 +202,41 @@ $stmt->close();
 
 if (!$categoryRow) {
     aos_fail('Disbursement Category was not found.');
+}
+
+// Fail fast (before even touching the uploaded file) if refund(s) were
+// picked: Activity Code must be the one permanent "00-A" row, and their sum
+// must equal Final Amount (IDR) exactly — the authoritative, FOR UPDATE
+// check happens again below inside the DB transaction.
+if ($refundQueueIds) {
+    if (trim((string) $activity['relative_path'], '/') !== 'input/refund_settlement/00-A') {
+        aos_fail('Refunds can only be settled under Activity Code "00-A" (Refund & Settlement).');
+    }
+    $marks = implode(',', array_fill(0, count($refundQueueIds), '?'));
+    $stmt = $lisani_conn->prepare(
+        "SELECT id, amount, status FROM customer_refund_queue WHERE id IN ($marks)"
+    );
+    $stmt->bind_param(str_repeat('i', count($refundQueueIds)), ...$refundQueueIds);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    $found = [];
+    $sum = 0.0;
+    while ($row = $res->fetch_assoc()) {
+        if ($row['status'] !== 'pending') {
+            aos_fail('One of the selected refunds is no longer pending — reload and try again.');
+        }
+        $found[(int) $row['id']] = true;
+        $sum = round($sum + (float) $row['amount'], 2);
+    }
+    $stmt->close();
+    foreach ($refundQueueIds as $rid) {
+        if (!isset($found[$rid])) {
+            aos_fail('One of the selected refunds was not found — reload and try again.');
+        }
+    }
+    if (abs($sum - (float) $finalAmount) > 0.01) {
+        aos_fail('The selected refunds total ' . number_format($sum, 2) . ', which does not match Final Amount (IDR) ' . number_format((float) $finalAmount, 2) . '.');
+    }
 }
 
 // relative_path looks like "input/2026/dates/001/" — normalise and refuse
@@ -276,6 +338,48 @@ try {
     $ins2->execute();
     $ins2->close();
 
+    // Settle the picked refund(s), if any — authoritative check (FOR UPDATE,
+    // re-verified here in case something changed between the fail-fast
+    // check above and now, e.g. a second disbursement racing to settle the
+    // same row).
+    if ($refundQueueIds) {
+        $marks = implode(',', array_fill(0, count($refundQueueIds), '?'));
+        $stmt = $lisani_conn->prepare(
+            "SELECT id, amount, status FROM customer_refund_queue WHERE id IN ($marks) FOR UPDATE"
+        );
+        $stmt->bind_param(str_repeat('i', count($refundQueueIds)), ...$refundQueueIds);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        $locked = [];
+        $sum = 0.0;
+        while ($row = $res->fetch_assoc()) {
+            if ($row['status'] !== 'pending') {
+                throw new RuntimeException('refund queue row ' . $row['id'] . ' is no longer pending');
+            }
+            $locked[(int) $row['id']] = true;
+            $sum = round($sum + (float) $row['amount'], 2);
+        }
+        $stmt->close();
+        foreach ($refundQueueIds as $rid) {
+            if (!isset($locked[$rid])) {
+                throw new RuntimeException('refund queue row ' . $rid . ' not found');
+            }
+        }
+        if (abs($sum - (float) $finalAmount) > 0.01) {
+            throw new RuntimeException('refund queue selection no longer matches final_amount_idr');
+        }
+
+        $updMarks = implode(',', array_fill(0, count($refundQueueIds), '?'));
+        $upd = $lisani_conn->prepare(
+            "UPDATE customer_refund_queue
+             SET status = 'returned', transaction_id = ?, returned_at = NOW()
+             WHERE id IN ($updMarks)"
+        );
+        $upd->bind_param('i' . str_repeat('i', count($refundQueueIds)), $transactionId, ...$refundQueueIds);
+        $upd->execute();
+        $upd->close();
+    }
+
     $lisani_conn->commit();
 } catch (Throwable $e) {
     $lisani_conn->rollback();
@@ -285,8 +389,9 @@ try {
 }
 
 aos_json([
-    'ok'            => true,
-    'message'       => 'Disbursement saved.',
-    'id'            => $transactionId,
-    'document_path' => $documentPath,
+    'ok'                 => true,
+    'message'            => 'Disbursement saved.',
+    'id'                 => $transactionId,
+    'document_path'      => $documentPath,
+    'refund_queue_ids'   => $refundQueueIds,
 ]);

@@ -1,9 +1,10 @@
 TRUNCATE activities;
 TRUNCATE booking_items;
 TRUNCATE bookings;
-TRUNCATE booking_item_release;
+TRUNCATE booking_item_releases;
 TRUNCATE company_documents;
 TRUNCATE customer_item_prices;
+TRUNCATE customer_refund_queue;
 TRUNCATE customers;
 TRUNCATE defective_stock_events;
 TRUNCATE edited_documents;

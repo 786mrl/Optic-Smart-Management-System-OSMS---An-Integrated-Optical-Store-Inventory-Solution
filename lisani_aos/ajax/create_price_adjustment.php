@@ -26,6 +26,13 @@
 //                     "old_price": 170000, "new_price": 150000},
 //                    ...
 //                  ]}, ... ]
+//   credit_action  "credit_balance" | "refund_queue" — ONLY read/required
+//                  when there turns out to be no open invoice to reduce.
+//                  Omit it on the first dry_run; if the server comes back
+//                  with code "credit_action_required" ask the user which
+//                  they want and resend with this filled in. Same rule as
+//                  create_return.php — see that file's header for the
+//                  "refund_queue" rationale.
 //   dry_run    "1" | "0"
 //
 // Each allocation is validated against remaining_adjustable of its source
@@ -211,6 +218,11 @@ $dryRun          = post_str('dry_run') !== '0'; // anything except an explicit "
 // to post against — empty means "auto" (old behaviour, below). Same flag as
 // create_return.php (both sent from the same Returns tab screen).
 $requestedInvoiceId = (int) post_str('invoice_id');
+// Only matters when there is no open invoice at all — empty is fine otherwise.
+$creditAction = post_str('credit_action');
+if ($creditAction !== '' && $creditAction !== 'credit_balance' && $creditAction !== 'refund_queue') {
+    aos_fail('Invalid choice for how to handle the credit.');
+}
 
 if ($customerId <= 0) {
     aos_fail('Customer is missing.');
@@ -489,6 +501,15 @@ try {
         $totalBefore   = (float) $invoice['total_amount'];
     }
 
+    // The choice only has to be made once we actually know there's no
+    // invoice to reduce — see create_return.php's header comment for why.
+    if ($toCredit && $creditAction === '') {
+        throw new AosPriceAdjustmentError(
+            'This customer has no open invoice — choose how to handle the amount.',
+            ['code' => 'credit_action_required', 'amount' => $grand]
+        );
+    }
+
     $creditBefore = (float) $customer['credit_balance'];
 
     $adj = [
@@ -504,9 +525,13 @@ try {
             'total_before' => $totalBefore,
             'total_after'  => round($totalBefore - $grand, 2),
         ],
-        'credit'          => $toCredit ? [
+        'credit'          => ($toCredit && $creditAction === 'credit_balance') ? [
             'balance_before' => $creditBefore,
             'balance_after'  => round($creditBefore + $grand, 2),
+        ] : null,
+        'refund_queue'    => ($toCredit && $creditAction === 'refund_queue') ? [
+            'amount' => $grand,
+            'status' => 'pending',
         ] : null,
         'items'           => $outLines,
         'grand_discount'  => $grand,
@@ -522,12 +547,26 @@ try {
     $driverDb = $driver !== '' ? $driver : null;
     $policeDb = $police !== '' ? $police : null;
 
+    $refundQueueId = null;
     if ($toCredit) {
         $g = money($grand);
-        $st = $lisani_conn->prepare('UPDATE customers SET credit_balance = credit_balance + ? WHERE id = ?');
-        $st->bind_param('si', $g, $customerId);
-        $st->execute();
-        $st->close();
+        if ($creditAction === 'refund_queue') {
+            // source_ref (batch_id) isn't known yet — filled in below, once
+            // the movement rows (and their lowest id) exist.
+            $qIns = $lisani_conn->prepare(
+                "INSERT INTO customer_refund_queue (customer_id, source_type, amount, queued_date, created_by)
+                 VALUES (?, 'price_adjustment', ?, ?, ?)"
+            );
+            $qIns->bind_param('issi', $customerId, $g, $adjustmentDate, $userId);
+            $qIns->execute();
+            $refundQueueId = $lisani_conn->insert_id;
+            $qIns->close();
+        } else {
+            $st = $lisani_conn->prepare('UPDATE customers SET credit_balance = credit_balance + ? WHERE id = ?');
+            $st->bind_param('si', $g, $customerId);
+            $st->execute();
+            $st->close();
+        }
         // $invoiceId stays null — same "(No invoice)" grouping as before.
     } else {
         $negGrand = money(0 - $grand);
@@ -575,6 +614,13 @@ try {
         $st->bind_param('i' . str_repeat('i', count($movementIds)), $batchId, ...$movementIds);
         $st->execute();
         $st->close();
+
+        if ($refundQueueId !== null) {
+            $st = $lisani_conn->prepare('UPDATE customer_refund_queue SET source_ref = ? WHERE id = ?');
+            $st->bind_param('ii', $batchId, $refundQueueId);
+            $st->execute();
+            $st->close();
+        }
     }
 
     $g = money($grand);

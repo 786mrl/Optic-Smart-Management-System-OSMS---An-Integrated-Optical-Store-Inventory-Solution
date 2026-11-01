@@ -8,6 +8,11 @@
             "id": 1,
             "label": "MASTER CARTON",
             "weight_kg": 10
+        },
+        {
+            "id": 2,
+            "label": "MASTER CARTON",
+            "weight_kg": 5
         }
     ]
 }

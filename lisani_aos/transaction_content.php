@@ -397,6 +397,19 @@ $currentYear     = date('Y');
     <div class="empty-sub">Auto-calculated from Amount &times; Exchange Rate when Currency isn't IDR — still editable.</div>
   </div>
 
+  <!-- Only shown when Activity Code "00-A" (department Refund & Settlement)
+       is selected — see list_refund_queue.php / create_disbursement.php.
+       Ticked rows (1 or more, any customer) must sum to exactly Final
+       Amount (IDR) above; collapsible per customer, collapsed by default,
+       so a long pending list stays easy to scan. -->
+  <div class="form-group" id="capRefundQueueGroup" style="display:none;">
+    <div style="display:flex; align-items:center; justify-content:space-between;">
+      <div class="label">Which refund(s) is this paying out?</div>
+      <div class="empty-sub" id="capRefundQueueSum">Selected: IDR 0</div>
+    </div>
+    <div id="capRefundQueueBox"><div class="empty-sub">Loading pending refunds…</div></div>
+  </div>
+
   <div class="empty-sub" id="capError" style="display:none; color:var(--danger);"></div>
 
   <div style="display:flex; gap:var(--space-3); justify-content:flex-end; margin-top:var(--space-5);">
@@ -1752,6 +1765,28 @@ $currentYear     = date('Y');
   </div>
 </div>
 
+<!-- Generic prompt reused by Returns/Price Adjustment (create_return.php /
+     create_price_adjustment.php) and Cancel Booking (cancel_booking.php)
+     whenever the server comes back with code "credit_action_required" — no
+     open invoice to reduce (or, for Cancel Booking, the invoice is now
+     overpaid). Resolved via the askCreditAction() JS helper below; this
+     overlay has no state of its own. -->
+<div class="modal-overlay" id="creditChoiceOverlay" style="display:none;">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-header">
+      <div class="modal-title">No Open Invoice</div>
+    </div>
+    <div class="modal-body">
+      <div class="empty-sub" id="creditChoiceIntro" style="margin-bottom:var(--space-3);"></div>
+    </div>
+    <div class="modal-footer" style="flex-wrap:wrap; gap:var(--space-2);">
+      <button type="button" class="btn btn-ghost" id="btnCreditChoiceCancel">Cancel</button>
+      <button type="button" class="btn btn-secondary" id="btnCreditChoiceBalance">Credit Balance</button>
+      <button type="button" class="btn btn-primary" id="btnCreditChoiceRefund">Refund (Settle Later)</button>
+    </div>
+  </div>
+</div>
+
 <!-- Sales Transaction — shown after Read Message ONLY when the selected
      customer already has other order(s) on the same order date. Lets the
      user say whether this message is a standalone New Order, or should be
@@ -2622,6 +2657,104 @@ $currentYear     = date('Y');
     capFinalAmountIdr.value = '';
     capExchangeRateGroup.style.display = 'none';
     document.getElementById('capError').style.display = 'none';
+
+    // Refund & Settlement (Activity Code "00-A") — see create_disbursement.php.
+    capRefundQueueSelected = {};
+    var refundGroup = document.getElementById('capRefundQueueGroup');
+    if (disbState.department_key === 'refund_settlement') {
+      refundGroup.style.display = 'block';
+      loadCapRefundQueue();
+    } else {
+      refundGroup.style.display = 'none';
+      document.getElementById('capRefundQueueBox').innerHTML = '';
+    }
+  }
+
+  // id -> amount, for whichever customer_refund_queue rows are currently ticked.
+  var capRefundQueueSelected = {};
+
+  function updateCapRefundQueueSum() {
+    var sum = 0;
+    Object.keys(capRefundQueueSelected).forEach(function (id) { sum += capRefundQueueSelected[id]; });
+    document.getElementById('capRefundQueueSum').textContent = 'Selected: ' + formatIDR(sum);
+    return sum;
+  }
+
+  function loadCapRefundQueue() {
+    var box = document.getElementById('capRefundQueueBox');
+    box.innerHTML = '<div class="empty-sub">Loading pending refunds\u2026</div>';
+    fetch('ajax/list_refund_queue.php?status=pending', { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (!res.ok) { box.innerHTML = '<div class="empty-sub">Could not load the refund queue.</div>'; return; }
+        renderCapRefundQueue(res.data.customers || []);
+      })
+      .catch(function () {
+        box.innerHTML = '<div class="empty-sub">Connection error.</div>';
+      });
+  }
+
+  function renderCapRefundQueue(customers) {
+    var box = document.getElementById('capRefundQueueBox');
+    box.innerHTML = '';
+    if (!customers.length) {
+      box.innerHTML = '<div class="empty-sub">No pending refunds right now.</div>';
+      return;
+    }
+    customers.forEach(function (cust) {
+      var wrap = document.createElement('div');
+      wrap.className = 'st-mov';
+      wrap.style.cursor = 'pointer';
+
+      var head = document.createElement('div');
+      head.className = 'st-mov-top';
+      var nm = document.createElement('div');
+      nm.style.fontWeight = '600';
+      nm.textContent = cust.customer_name + ' (' + cust.items.length + ')';
+      var tot = document.createElement('div');
+      tot.textContent = formatIDR(cust.total_pending);
+      head.appendChild(nm);
+      head.appendChild(tot);
+      wrap.appendChild(head);
+
+      var body = document.createElement('div');
+      body.style.display = 'none'; // collapsed by default
+      body.style.marginTop = 'var(--space-2)';
+
+      cust.items.forEach(function (it) {
+        var row = document.createElement('label');
+        row.style.display = 'flex';
+        row.style.alignItems = 'center';
+        row.style.gap = '8px';
+        row.style.padding = '4px 0';
+        row.style.cursor = 'pointer';
+
+        var cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.addEventListener('click', function (e) { e.stopPropagation(); });
+        cb.addEventListener('change', function () {
+          if (cb.checked) {
+            capRefundQueueSelected[it.id] = it.amount;
+          } else {
+            delete capRefundQueueSelected[it.id];
+          }
+          updateCapRefundQueueSum();
+        });
+
+        var lbl = document.createElement('span');
+        lbl.textContent = formatIDR(it.amount) + ' \u2014 ' + it.source_type.replace('_', ' ') + ' \u00b7 ' + formatPriceDate(it.queued_date);
+
+        row.appendChild(cb);
+        row.appendChild(lbl);
+        body.appendChild(row);
+      });
+
+      wrap.appendChild(body);
+      head.addEventListener('click', function () {
+        body.style.display = (body.style.display === 'none') ? 'block' : 'none';
+      });
+      box.appendChild(wrap);
+    });
   }
 
   // Shared by the Disbursement file input (capFileInput) AND the Invoice
@@ -3789,6 +3922,24 @@ $currentYear     = date('Y');
       return;
     }
 
+    // Refund & Settlement (Activity Code "00-A") — the server re-checks this
+    // for real (FOR UPDATE), but catching a mismatch here first avoids an
+    // upload for nothing. See create_disbursement.php.
+    var refundQueueIds = Object.keys(capRefundQueueSelected).map(function (k) { return parseInt(k, 10); });
+    if (disbState.department_key === 'refund_settlement') {
+      if (!refundQueueIds.length) {
+        errBox.textContent = 'Tick at least one pending refund this disbursement is paying out.';
+        errBox.style.display = 'block';
+        return;
+      }
+      var selectedSum = updateCapRefundQueueSum();
+      if (Math.abs(selectedSum - finalAmount) > 0.01) {
+        errBox.textContent = 'The selected refunds total ' + formatIDR(selectedSum) + ', which must match Final Amount (IDR) exactly.';
+        errBox.style.display = 'block';
+        return;
+      }
+    }
+
     var payload = new FormData();
     payload.append('activity_id', disbState.activity_id);
     payload.append('cashflow_type', disbState.cashflow);
@@ -3808,6 +3959,9 @@ $currentYear     = date('Y');
     payload.append('exchange_rate', isNaN(rate) ? '' : String(rate));
     payload.append('final_amount_idr', String(finalAmount));
     payload.append('document', capUploadedFile);
+    if (refundQueueIds.length) {
+      payload.append('refund_queue_ids', JSON.stringify(refundQueueIds));
+    }
 
     var saveBtn = document.getElementById('btnCapSave');
     saveBtn.disabled = true;
@@ -5564,6 +5718,36 @@ $currentYear     = date('Y');
       maximumFractionDigits: 2
     });
   }
+
+  // ==========================================================
+  // Generic "no open invoice" prompt, shared by Returns/Price Adjustment
+  // and Cancel Booking (anywhere a server endpoint can come back with
+  // code:"credit_action_required", see create_return.php's header comment
+  // for the full rationale). Resolves to 'credit_balance', 'refund_queue',
+  // or null if the user clicked Cancel.
+  // ==========================================================
+  var creditChoiceOverlay = document.getElementById('creditChoiceOverlay');
+  var creditChoiceIntro   = document.getElementById('creditChoiceIntro');
+  var creditChoiceResolve = null;
+
+  function askCreditAction(amount) {
+    creditChoiceIntro.textContent = 'There is no open invoice to apply ' + formatIDR(amount) + ' against. '
+      + 'Put it toward this customer\u2019s credit balance (offsets a future invoice), or queue it to be '
+      + 'refunded for real later \u2014 settled through a Disbursement transaction under Refund & Settlement?';
+    show(creditChoiceOverlay);
+    return new Promise(function (resolve) { creditChoiceResolve = resolve; });
+  }
+
+  function resolveCreditChoice(value) {
+    hide(creditChoiceOverlay);
+    var r = creditChoiceResolve;
+    creditChoiceResolve = null;
+    if (r) r(value);
+  }
+
+  document.getElementById('btnCreditChoiceBalance').addEventListener('click', function () { resolveCreditChoice('credit_balance'); });
+  document.getElementById('btnCreditChoiceRefund').addEventListener('click', function () { resolveCreditChoice('refund_queue'); });
+  document.getElementById('btnCreditChoiceCancel').addEventListener('click', function () { resolveCreditChoice(null); });
 
   // Rounds to 2 decimals, avoiding float noise like 799999.9999999999.
   function round2(v) {
@@ -7803,18 +7987,34 @@ $currentYear     = date('Y');
   var bkCancelBookingId = null;
   var bkCancelCustomerId = null;
   var bkCancelSaving = false;
+  // Only matters when the invoice is overpaid after cancelling (see
+  // cancel_booking.php's header comment) — reset per booking, same idea as
+  // rtCreditAction.
+  var bkCancelCreditAction = '';
 
   function openBkCancel(bk, customer) {
     bkCancelBookingId = bk.id;
     bkCancelCustomerId = customer.id;
+    bkCancelCreditAction = '';
     stHideError(bkCancelError);
     bkCancelBody.innerHTML = '<div class="empty-sub">Loading preview\u2026</div>';
     btnBkCancelConfirm.disabled = true;
     show(bkCancelOverlay);
+    loadBkCancelPreview();
+  }
 
-    stPost('ajax/cancel_booking.php', { booking_id: bk.id, dry_run: '1' })
+  function loadBkCancelPreview() {
+    stPost('ajax/cancel_booking.php', { booking_id: bkCancelBookingId, dry_run: '1', credit_action: bkCancelCreditAction })
       .then(function (res) {
         if (!res.ok) {
+          if (res.code === 'credit_action_required') {
+            askCreditAction(res.amount).then(function (choice) {
+              if (!choice) { hide(bkCancelOverlay); return; }
+              bkCancelCreditAction = choice;
+              loadBkCancelPreview();
+            });
+            return;
+          }
           bkCancelBody.innerHTML = '';
           stShowError(bkCancelError, res.message || 'Could not load the preview.');
           return;
@@ -7860,6 +8060,25 @@ $currentYear     = date('Y');
     stAddRow(bkCancelBody, 'Total Before', formatIDR(c.invoice.total_before));
     stAddRow(bkCancelBody, 'Cancelled Value', '-' + formatIDR(c.total_cancelled_value));
     stAddRow(bkCancelBody, 'Total After', formatIDR(c.invoice.total_after));
+
+    // Only present when the already-paid DP now exceeds the new, smaller
+    // total (see cancel_booking.php) — the user already chose where it goes
+    // via askCreditAction() before this preview was shown.
+    if (c.invoice.overpaid_amount > 0.0001) {
+      stAddRow(bkCancelBody, 'Already Paid', formatIDR(c.invoice.paid_amount));
+      if (c.credit) {
+        stAddRow(bkCancelBody, 'To Credit Balance', formatIDR(c.credit.balance_after - c.credit.balance_before));
+      } else if (c.refund_queue) {
+        stAddRow(bkCancelBody, 'Queued for Refund', formatIDR(c.refund_queue.amount));
+      }
+      if (c.invoice.will_close) {
+        var closeNote = document.createElement('div');
+        closeNote.className = 'empty-sub';
+        closeNote.style.marginTop = 'var(--space-2)';
+        closeNote.textContent = 'This invoice will be closed (marked paid) once the extra DP above is moved out \u2014 a future order for this customer will open a new invoice instead of reusing it.';
+        bkCancelBody.appendChild(closeNote);
+      }
+    }
   }
 
   document.getElementById('btnBkCancelBack').addEventListener('click', function () {
@@ -7871,7 +8090,7 @@ $currentYear     = date('Y');
     stHideError(bkCancelError);
     bkCancelSaving = true;
     btnBkCancelConfirm.disabled = true;
-    stPost('ajax/cancel_booking.php', { booking_id: bkCancelBookingId, dry_run: '0' })
+    stPost('ajax/cancel_booking.php', { booking_id: bkCancelBookingId, dry_run: '0', credit_action: bkCancelCreditAction })
       .then(function (res) {
         bkCancelSaving = false;
         if (!res.ok) {
@@ -7883,6 +8102,7 @@ $currentYear     = date('Y');
         var cid = bkCancelCustomerId;
         bkCancelBookingId = null;
         bkCancelCustomerId = null;
+        bkCancelCreditAction = '';
         if (cid) refreshStCustomerCard(cid);
       })
       .catch(function () {
@@ -8686,6 +8906,11 @@ $currentYear     = date('Y');
   var rtPickerItem    = null;
   var rtSaving        = false;
   var rtPriceCache    = {}; // logistic_id -> pickups response, so re-rendering a row doesn't refetch
+  // Only matters when the server comes back with code "credit_action_required"
+  // (no open invoice for this customer) — see askCreditAction() / create_return.php.
+  // Reset whenever the customer or the whole screen changes so a stale
+  // choice from a previous return never silently applies to a new one.
+  var rtCreditAction  = '';
 
   function rtPost(url, data) {
     return fetch(url, {
@@ -8721,6 +8946,7 @@ $currentYear     = date('Y');
     stHideError(rtConfirmError);
     stHideError(rtProductError);
     rtSuccessBox.style.display = 'none';
+    rtCreditAction = '';
     hide(rtProductOverlay);
     hide(rtConfirmOverlay);
     hide(rtReverifyOverlay);
@@ -8731,6 +8957,7 @@ $currentYear     = date('Y');
   // be different from whichever customer was selected before.
   rtCustomer.addEventListener('change', function () {
     rtPriceCache = {};
+    rtCreditAction = '';
     rtInvoiceSelect.innerHTML = '<option value="">Auto (this customer\u2019s open invoice, or a new one)</option>';
     var cid = rtCustomer.value;
     if (!cid) return;
@@ -9468,6 +9695,7 @@ $currentYear     = date('Y');
         police_number: police,
         invoice_id: invoiceId,
         items: JSON.stringify(returnItems),
+        credit_action: rtCreditAction,
         dry_run: dryRun ? '1' : '0'
       } : null,
       adjustPayload: adjustItems.length ? {
@@ -9477,6 +9705,7 @@ $currentYear     = date('Y');
         police_number: police,
         invoice_id: invoiceId,
         items: JSON.stringify(adjustItems),
+        credit_action: rtCreditAction,
         dry_run: dryRun ? '1' : '0'
       } : null
     };
@@ -9503,6 +9732,21 @@ $currentYear     = date('Y');
       btnRtReview.disabled = false;
       var retRes = results[0];
       var adjRes = results[1];
+
+      // No open invoice on either side — same choice applies to both (same
+      // customer, same screen), see askCreditAction(). Amount shown is
+      // whichever side(s) actually need it, summed.
+      var needChoice = (retRes && retRes.code === 'credit_action_required') || (adjRes && adjRes.code === 'credit_action_required');
+      if (needChoice) {
+        var amt = (retRes && retRes.code === 'credit_action_required' ? retRes.amount : 0)
+          + (adjRes && adjRes.code === 'credit_action_required' ? adjRes.amount : 0);
+        askCreditAction(amt).then(function (choice) {
+          if (!choice) return;
+          rtCreditAction = choice;
+          rtReview();
+        });
+        return;
+      }
 
       if (retRes && !retRes.ok) {
         if (retRes.code === 'not_returnable') { stShowError(rtReviewError, rtNotReturnableMessage(retRes.items)); return; }
@@ -9546,11 +9790,14 @@ $currentYear     = date('Y');
     // only show one "Invoice"/"Credit" row for the pair, preferring ret's.
     var invoiceSide = ret && ret.invoice ? ret.invoice : (adj && adj.invoice ? adj.invoice : null);
     var creditSide  = ret && ret.credit ? ret.credit : (adj && adj.credit ? adj.credit : null);
+    var refundSide  = ret && ret.refund_queue ? ret.refund_queue : (adj && adj.refund_queue ? adj.refund_queue : null);
 
     if (invoiceSide) {
       stAddRow(rtConfirmBody, 'Invoice', invoiceSide.number + (invoiceSide.is_new ? ' (new)' : ''));
     } else if (creditSide) {
       stAddRow(rtConfirmBody, 'Invoice', 'None \u2014 goes to customer credit');
+    } else if (refundSide) {
+      stAddRow(rtConfirmBody, 'Invoice', 'None \u2014 queued for refund (' + formatIDR(refundSide.amount) + ')');
     }
 
     var totalBefore  = invoiceSide ? invoiceSide.total_before : 0;
@@ -9752,10 +9999,12 @@ $currentYear     = date('Y');
         var parts = [];
         if (retRes) parts.push('Return \u2212' + formatIDR(retRes.ret.grand_total));
         if (adjRes) parts.push('Price Adjustment \u2212' + formatIDR(adjRes.adj.grand_discount));
-        // invoice is null when this landed on the customer's credit balance
-        // instead (no open invoice to reduce) — see PROJECT_NOTES.md §8.
+        // invoice is null when this landed on the customer's credit balance,
+        // or was queued for a real refund instead (no open invoice to
+        // reduce) — see create_return.php's header comment.
         var invoiceSide  = retRes && retRes.ret.invoice ? retRes.ret.invoice : (adjRes && adjRes.adj.invoice ? adjRes.adj.invoice : null);
-        var invoiceLabel = invoiceSide ? ('Invoice ' + invoiceSide.number) : 'Customer credit';
+        var refundSide2  = retRes && retRes.ret.refund_queue ? retRes.ret.refund_queue : (adjRes && adjRes.adj.refund_queue ? adjRes.adj.refund_queue : null);
+        var invoiceLabel = invoiceSide ? ('Invoice ' + invoiceSide.number) : (refundSide2 ? 'Queued for refund' : 'Customer credit');
         var customerName = retRes ? retRes.ret.customer.name : adjRes.adj.customer.name;
         var summary = 'Saved \u2014 ' + customerName + ' \u00b7 ' + invoiceLabel + ' \u00b7 ' + parts.join(' \u00b7 ');
 

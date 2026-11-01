@@ -19,7 +19,8 @@
                     "add_to": 0,
                     "comb_max": 0,
                     "note": ""
-                }
+                },
+                "source": "Off-Brand"
             },
             "SV HMC (2)": {
                 "cost": 20000,
@@ -39,7 +40,8 @@
                     "add_to": 0,
                     "comb_max": 0,
                     "note": ""
-                }
+                },
+                "source": "Off-Brand"
             },
             "SV HMC (3)": {
                 "cost": 57000,
@@ -59,7 +61,8 @@
                     "add_to": 0,
                     "comb_max": 0,
                     "note": ""
-                }
+                },
+                "source": "Domas"
             },
             "SV HMC (4)": {
                 "cost": 57000,
@@ -79,7 +82,8 @@
                     "add_to": 0,
                     "comb_max": 0,
                     "note": ""
-                }
+                },
+                "source": "Domas"
             },
             "SV HMC (5)": {
                 "cost": 57000,
@@ -99,7 +103,202 @@
                     "add_to": 0,
                     "comb_max": 0,
                     "note": ""
-                }
+                },
+                "source": "Domas"
+            },
+            "SV SUPERBLOCK": {
+                "cost": 76000,
+                "selling": 305000,
+                "features": [
+                    "UV420+CUT",
+                    "SCRATCH-RESISTANT COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING",
+                    "SATIN GREEN AR COATING",
+                    "INDEX 1.56"
+                ],
+                "limits": {
+                    "sph_from": -375,
+                    "sph_to": 0,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 0,
+                    "note": ""
+                },
+                "source": "Domas"
+            },
+            "SV SUPERBLOCK (2)": {
+                "cost": 76000,
+                "selling": 305000,
+                "features": [
+                    "UV420+CUT",
+                    "SCRATCH-RESISTANT COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING",
+                    "SATIN GREEN AR COATING",
+                    "INDEX 1.56"
+                ],
+                "limits": {
+                    "sph_from": 25,
+                    "sph_to": 400,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 0,
+                    "note": ""
+                },
+                "source": "Domas"
+            },
+            "SV SUPERBLOCK (3)": {
+                "cost": 76000,
+                "selling": 320000,
+                "features": [
+                    "UV420+CUT",
+                    "SCRATCH-RESISTANT COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING",
+                    "SATIN GREEN AR COATING",
+                    "INDEX 1.56"
+                ],
+                "limits": {
+                    "sph_from": -375,
+                    "sph_to": 0,
+                    "cyl_from": -25,
+                    "cyl_to": -200,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 0,
+                    "note": ""
+                },
+                "source": "Domas"
+            },
+            "SV 1.67 SUPERBLOCK": {
+                "cost": 176000,
+                "selling": 605000,
+                "features": [
+                    "UV420+CUT",
+                    "SCRATCH-RESISTANT COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING",
+                    "SATIN GREEN AR COATING",
+                    "INDEX 1.67"
+                ],
+                "limits": {
+                    "sph_from": -400,
+                    "sph_to": -1200,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 0,
+                    "note": ""
+                },
+                "source": "Domas"
+            },
+            "SV 1.67 SUPERBLOCK (2)": {
+                "cost": 176000,
+                "selling": 620000,
+                "features": [
+                    "UV420+CUT",
+                    "SCRATCH-RESISTANT COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING",
+                    "SATIN GREEN AR COATING",
+                    "INDEX 1.67"
+                ],
+                "limits": {
+                    "sph_from": -1225,
+                    "sph_to": -1500,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 0,
+                    "note": ""
+                },
+                "source": "Domas"
+            },
+            "SV 1.67 SUPERBLOCK (3)": {
+                "cost": 176000,
+                "selling": 620000,
+                "features": [
+                    "UV420+CUT",
+                    "SCRATCH-RESISTANT COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING",
+                    "SATIN GREEN AR COATING",
+                    "INDEX 1.67"
+                ],
+                "limits": {
+                    "sph_from": -400,
+                    "sph_to": -1200,
+                    "cyl_from": -25,
+                    "cyl_to": -200,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": 0,
+                    "note": ""
+                },
+                "source": "Domas"
+            }
+        },
+        "BIFOCAL": {
+            "KRYPTOK HMC": {
+                "cost": 18000,
+                "selling": 90000,
+                "features": [
+                    "UV400",
+                    "SCRATCH-RESISTANT COATING",
+                    "PURPLE \/ GREEN AR COATING",
+                    "INDEX 1.56"
+                ],
+                "limits": {
+                    "sph_from": -200,
+                    "sph_to": 200,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": 0,
+                    "note": "Reading power not exceed distance sph"
+                },
+                "source": "Off-Brand"
+            },
+            "KRYPTOK HMC (2)": {
+                "cost": 62000,
+                "selling": 153000,
+                "features": [
+                    "UV400",
+                    "SCRATCH-RESISTANT COATING",
+                    "INDEX 1.56",
+                    "PURPLE \/ GREEN AR COATING"
+                ],
+                "limits": {
+                    "sph_from": -200,
+                    "sph_to": 200,
+                    "cyl_from": 0,
+                    "cyl_to": 0,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": 0,
+                    "note": "Reading power must not exceed sph power"
+                },
+                "source": "Domas"
             }
         }
     },
@@ -314,6 +513,547 @@
                     "add_from": 0,
                     "add_to": 0,
                     "comb_max": 1700,
+                    "note": ""
+                },
+                "source": "Domas"
+            },
+            "SV HMC (2)": {
+                "cost": 127000,
+                "selling": 429000,
+                "features": [
+                    "UV400",
+                    "SCRATCH-RESISTANT COATING",
+                    "PURPLE \/ GREEN AR COATING",
+                    "INDEX 1.5"
+                ],
+                "limits": {
+                    "sph_from": 850,
+                    "sph_to": -1100,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": -1100,
+                    "note": ""
+                },
+                "source": "Domas"
+            },
+            "SV SHMC (3)": {
+                "cost": 142000,
+                "selling": 486000,
+                "features": [
+                    "UV400",
+                    "SCRATCH-RESISTANT COATING",
+                    "INDEX 1.5",
+                    "SATIN GREEN AR COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC"
+                ],
+                "limits": {
+                    "sph_from": 850,
+                    "sph_to": -1100,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": -1100,
+                    "note": ""
+                },
+                "source": "Domas"
+            },
+            "SV SHMC (4)": {
+                "cost": 157000,
+                "selling": 572000,
+                "features": [
+                    "UV400",
+                    "SCRATCH-RESISTANT COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "SATIN BLUE AR COATING",
+                    "INDEX 1.5"
+                ],
+                "limits": {
+                    "sph_from": 850,
+                    "sph_to": -1100,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": -1100,
+                    "note": ""
+                },
+                "source": "Domas"
+            },
+            "SV SUPERBLOCK": {
+                "cost": 198000,
+                "selling": 715000,
+                "features": [
+                    "UV420+CUT",
+                    "SCRATCH-RESISTANT COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING",
+                    "SATIN GREEN AR COATING",
+                    "INDEX 1.56"
+                ],
+                "limits": {
+                    "sph_from": -950,
+                    "sph_to": 850,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": -950,
+                    "note": ""
+                },
+                "source": "Domas"
+            },
+            "SV 1.67 SUPERBLOCK": {
+                "cost": 526000,
+                "selling": 1615000,
+                "features": [
+                    "UV420+CUT",
+                    "SCRATCH-RESISTANT COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "BLUE LIGHT BLOCKING",
+                    "SATIN GREEN AR COATING",
+                    "INDEX 1.67"
+                ],
+                "limits": {
+                    "sph_from": -300,
+                    "sph_to": -1400,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 0,
+                    "add_to": 0,
+                    "comb_max": -1400,
+                    "note": ""
+                },
+                "source": "Domas"
+            }
+        },
+        "BIFOCAL": {
+            "KRYPTOK HMC": {
+                "cost": 132000,
+                "selling": 458000,
+                "features": [
+                    "UV400",
+                    "SCRATCH-RESISTANT COATING",
+                    "PURPLE \/ GREEN AR COATING",
+                    "INDEX 1.5"
+                ],
+                "limits": {
+                    "sph_from": -700,
+                    "sph_to": 650,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -700,
+                    "note": ""
+                },
+                "source": "Domas"
+            },
+            "KRYPTOK SHMC": {
+                "cost": 142000,
+                "selling": 515000,
+                "features": [
+                    "UV400",
+                    "SCRATCH-RESISTANT COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "SATIN GREEN AR COATING",
+                    "INDEX 1.5"
+                ],
+                "limits": {
+                    "sph_from": -700,
+                    "sph_to": 650,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -700,
+                    "note": ""
+                },
+                "source": "Domas"
+            },
+            "KRYPTOK SHMC (2)": {
+                "cost": 158000,
+                "selling": 600000,
+                "features": [
+                    "UV400",
+                    "SCRATCH-RESISTANT COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "SATIN BLUE AR COATING",
+                    "INDEX 1.5"
+                ],
+                "limits": {
+                    "sph_from": -700,
+                    "sph_to": 650,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -700,
+                    "note": ""
+                },
+                "source": "Domas"
+            },
+            "KRYPTOK HMC (2)": {
+                "cost": 127000,
+                "selling": 515000,
+                "features": [
+                    "UV400",
+                    "SCRATCH-RESISTANT COATING",
+                    "PURPLE \/ GREEN AR COATING",
+                    "INDEX 1.56"
+                ],
+                "limits": {
+                    "sph_from": -900,
+                    "sph_to": 650,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -900,
+                    "note": ""
+                },
+                "source": "Domas"
+            },
+            "KRYPTOK SHMC (3)": {
+                "cost": 145000,
+                "selling": 572000,
+                "features": [
+                    "UV400",
+                    "SCRATCH-RESISTANT COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "SATIN GREEN AR COATING",
+                    "INDEX 1.56"
+                ],
+                "limits": {
+                    "sph_from": -900,
+                    "sph_to": 650,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -900,
+                    "note": ""
+                },
+                "source": "Domas"
+            },
+            "KRYPTOK SHMC (4)": {
+                "cost": 160000,
+                "selling": 658000,
+                "features": [
+                    "UV400",
+                    "SCRATCH-RESISTANT COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "SATIN BLUE AR COATING",
+                    "INDEX 1.56"
+                ],
+                "limits": {
+                    "sph_from": -900,
+                    "sph_to": 650,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -900,
+                    "note": ""
+                },
+                "source": "Domas"
+            },
+            "KRYPTOK LENTICULER HMC": {
+                "cost": 486000,
+                "selling": 1343000,
+                "features": [
+                    "UV400",
+                    "SCRATCH-RESISTANT COATING",
+                    "PURPLE \/ GREEN AR COATING",
+                    "HIGH-POWER LENSE",
+                    "INDEX 1.56"
+                ],
+                "limits": {
+                    "sph_from": 700,
+                    "sph_to": 1700,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 200,
+                    "add_to": 300,
+                    "comb_max": 1700,
+                    "note": ""
+                },
+                "source": "Domas"
+            },
+            "KRYPTOK LENTICULER SHMC": {
+                "cost": 496000,
+                "selling": 1400000,
+                "features": [
+                    "UV400",
+                    "SCRATCH-RESISTANT COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "SATIN GREEN AR COATING",
+                    "HIGH-POWER LENSE",
+                    "INDEX 1.56"
+                ],
+                "limits": {
+                    "sph_from": 700,
+                    "sph_to": 1700,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 200,
+                    "add_to": 300,
+                    "comb_max": 1700,
+                    "note": ""
+                },
+                "source": "Domas"
+            },
+            "KRYPTOK LENTICULER SHMC (2)": {
+                "cost": 511000,
+                "selling": 1486000,
+                "features": [
+                    "UV400",
+                    "SCRATCH-RESISTANT COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "SATIN BLUE AR COATING",
+                    "HIGH-POWER LENSE",
+                    "INDEX 1.56"
+                ],
+                "limits": {
+                    "sph_from": 700,
+                    "sph_to": 1700,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 200,
+                    "add_to": 300,
+                    "comb_max": 1700,
+                    "note": ""
+                },
+                "source": "Domas"
+            },
+            "KRYPTOK LENTICULER OMEGA HMC": {
+                "cost": 506000,
+                "selling": 1458000,
+                "features": [
+                    "UV400",
+                    "SCRATCH-RESISTANT COATING",
+                    "PURPLE \/ GREEN AR COATING",
+                    "HIGH-POWER ASPHERIC LENS",
+                    "INDEX 1.56"
+                ],
+                "limits": {
+                    "sph_from": 700,
+                    "sph_to": 1700,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 200,
+                    "add_to": 300,
+                    "comb_max": 1700,
+                    "note": ""
+                },
+                "source": "Domas"
+            },
+            "KRYPTOK LENTICULER OMEGA SHMC": {
+                "cost": 516000,
+                "selling": 1515000,
+                "features": [
+                    "UV400",
+                    "SCRATCH-RESISTANT COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "SATIN GREEN AR COATING",
+                    "HIGH-POWER ASPHERIC LENS",
+                    "INDEX 1.56"
+                ],
+                "limits": {
+                    "sph_from": 700,
+                    "sph_to": 1700,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 200,
+                    "add_to": 300,
+                    "comb_max": 1700,
+                    "note": ""
+                },
+                "source": "Domas"
+            },
+            "KRYPTOK LENTICULER OMEGA SHMC (2)": {
+                "cost": 531000,
+                "selling": 1600000,
+                "features": [
+                    "SATIN BLUE AR COATING",
+                    "UV400",
+                    "SCRATCH-RESISTANT COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "HIGH-POWER ASPHERIC LENS",
+                    "INDEX 1.56"
+                ],
+                "limits": {
+                    "sph_from": 700,
+                    "sph_to": 1700,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 200,
+                    "add_to": 300,
+                    "comb_max": 1700,
+                    "note": ""
+                },
+                "source": "Domas"
+            },
+            "FLATTOP HMC": {
+                "cost": 162000,
+                "selling": 526000,
+                "features": [
+                    "UV400",
+                    "SCRATCH-RESISTANT COATING",
+                    "PURPLE \/ GREEN AR COATING",
+                    "INDEX 1.5"
+                ],
+                "limits": {
+                    "sph_from": -500,
+                    "sph_to": 650,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -500,
+                    "note": ""
+                },
+                "source": "Domas"
+            },
+            "FLATTOP SHMC": {
+                "cost": 173000,
+                "selling": 583000,
+                "features": [
+                    "UV400",
+                    "SCRATCH-RESISTANT COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "SATIN GREEN AR COATING",
+                    "INDEX 1.5"
+                ],
+                "limits": {
+                    "sph_from": -500,
+                    "sph_to": 650,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -500,
+                    "note": ""
+                },
+                "source": "Domas"
+            },
+            "FLATTOP SHMC (2)": {
+                "cost": 188000,
+                "selling": 669000,
+                "features": [
+                    "UV400",
+                    "SCRATCH-RESISTANT COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "SATIN BLUE AR COATING",
+                    "INDEX 1.56"
+                ],
+                "limits": {
+                    "sph_from": -500,
+                    "sph_to": 650,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -500,
+                    "note": ""
+                },
+                "source": "Domas"
+            },
+            "FLATTOP HMC (2)": {
+                "cost": 175000,
+                "selling": 572000,
+                "features": [
+                    "UV400",
+                    "SCRATCH-RESISTANT COATING",
+                    "PURPLE \/ GREEN AR COATING",
+                    "INDEX 1.56"
+                ],
+                "limits": {
+                    "sph_from": -500,
+                    "sph_to": 650,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -500,
+                    "note": ""
+                },
+                "source": "Domas"
+            },
+            "FLATTOP SHMC (3)": {
+                "cost": 185000,
+                "selling": 629000,
+                "features": [
+                    "UV400",
+                    "SCRATCH-RESISTANT COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "SATIN GREEN AR COATING",
+                    "INDEX 1.56"
+                ],
+                "limits": {
+                    "sph_from": -500,
+                    "sph_to": 650,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -500,
+                    "note": ""
+                },
+                "source": "Domas"
+            },
+            "FLATTOP SHMC (4)": {
+                "cost": 200000,
+                "selling": 715000,
+                "features": [
+                    "UV400",
+                    "SCRATCH-RESISTANT COATING",
+                    "SMUDGE-RESISTANT",
+                    "HYDROPHOBIC",
+                    "ANTI-STATIC",
+                    "SATIN BLUE AR COATING",
+                    "INDEX 1.56"
+                ],
+                "limits": {
+                    "sph_from": -500,
+                    "sph_to": 650,
+                    "cyl_from": -25,
+                    "cyl_to": -400,
+                    "add_from": 100,
+                    "add_to": 300,
+                    "comb_max": -500,
                     "note": ""
                 },
                 "source": "Domas"

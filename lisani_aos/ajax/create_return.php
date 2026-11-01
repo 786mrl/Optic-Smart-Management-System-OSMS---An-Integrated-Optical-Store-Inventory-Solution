@@ -34,7 +34,22 @@
 //                    {"source_movement_id": 61, "qty": 3, "price": 165000,
 //                     "restock_bucket": "defective"}
 //                  ]}, ... ]
+//   credit_action  "credit_balance" | "refund_queue" — ONLY read/required
+//                  when there turns out to be no open invoice to reduce (see
+//                  "No open invoice" below). Omit it on the first dry_run;
+//                  if the server comes back with code "credit_action_required"
+//                  ask the user which they want and resend with this filled in.
 //   dry_run    "1" | "0"
+//
+// Revised 31 Okt 2026 ("No open invoice" used to always silently become
+// customers.credit_balance — see PROJECT_NOTES.md). Now the user is asked:
+// "credit_balance" keeps the old behaviour (offsets a future invoice).
+// "refund_queue" instead inserts a row into customer_refund_queue (status
+// 'pending') — money actually owed back, settled later through a real
+// Disbursement transaction (Input Transaction tab, Activity Code "00-A" /
+// department "Refund & Settlement", see create_disbursement.php). Only
+// matters when $toCredit ends up true below; when an open invoice exists,
+// credit_action is ignored entirely (nothing to choose).
 //
 // Revised 22 Sep 2026 (defective stock, "Kendala #1 & #2"): each allocation
 // now also carries restock_bucket ("normal" default, or "defective") — the
@@ -217,6 +232,12 @@ $dryRun     = post_str('dry_run') !== '0'; // anything except an explicit "0" is
 // user, 1 Okt 2026, once New Order got the ability to open a second invoice
 // alongside an existing one (see create_order.php's force_new_invoice).
 $requestedInvoiceId = (int) post_str('invoice_id');
+// Only matters when there is no open invoice at all (see "No open invoice"
+// in the header comment) — empty is fine otherwise.
+$creditAction = post_str('credit_action');
+if ($creditAction !== '' && $creditAction !== 'credit_balance' && $creditAction !== 'refund_queue') {
+    aos_fail('Invalid choice for how to handle the credit.');
+}
 
 if ($customerId <= 0) {
     aos_fail('Customer is missing.');
@@ -500,14 +521,26 @@ try {
     // No open invoice to reduce (none open at all, or the one requested
     // wasn't found — already thrown above) → this is now a CREDIT owed to
     // the customer instead of a stray negative-total invoice (see
-    // PROJECT_NOTES.md, 1 Okt 2026). Resolved later, manually, via Refund or
-    // Apply Credit — never applied automatically to anything.
+    // PROJECT_NOTES.md). Resolved later via credit_action (see header
+    // comment): "credit_balance" (old path, offsets a future invoice via
+    // Apply Credit) or "refund_queue" (owed back for real, paid out later
+    // through a Disbursement transaction).
     $toCredit = !$invoice;
 
     if ($invoice) {
         $invoiceId     = (int) $invoice['id'];
         $invoiceNumber = $invoice['invoice_number'];
         $totalBefore   = (float) $invoice['total_amount'];
+    }
+
+    // The choice only has to be made once we actually know there's no
+    // invoice to reduce — ask here rather than forcing the client to guess
+    // up front on every return.
+    if ($toCredit && $creditAction === '') {
+        throw new AosReturnError(
+            'This customer has no open invoice — choose how to handle the amount.',
+            ['code' => 'credit_action_required', 'amount' => $grand]
+        );
     }
 
     $creditBefore = (float) $customer['credit_balance'];
@@ -525,9 +558,13 @@ try {
             'total_before' => $totalBefore,
             'total_after'  => round($totalBefore - $grand, 2),
         ],
-        'credit'        => $toCredit ? [
+        'credit'        => ($toCredit && $creditAction === 'credit_balance') ? [
             'balance_before' => $creditBefore,
             'balance_after'  => round($creditBefore + $grand, 2),
+        ] : null,
+        'refund_queue'  => ($toCredit && $creditAction === 'refund_queue') ? [
+            'amount' => $grand,
+            'status' => 'pending',
         ] : null,
         'items'         => $outLines,
         'grand_total'   => $grand,
@@ -543,12 +580,26 @@ try {
     $driverDb = $driver !== '' ? $driver : null;
     $policeDb = $police !== '' ? $police : null;
 
+    $refundQueueId = null;
     if ($toCredit) {
         $g = money($grand);
-        $st = $lisani_conn->prepare('UPDATE customers SET credit_balance = credit_balance + ? WHERE id = ?');
-        $st->bind_param('si', $g, $customerId);
-        $st->execute();
-        $st->close();
+        if ($creditAction === 'refund_queue') {
+            // source_ref (batch_id) isn't known yet — filled in below, once
+            // the movement rows (and their lowest id) exist.
+            $qIns = $lisani_conn->prepare(
+                "INSERT INTO customer_refund_queue (customer_id, source_type, amount, queued_date, created_by)
+                 VALUES (?, 'return', ?, ?, ?)"
+            );
+            $qIns->bind_param('issi', $customerId, $g, $returnDate, $userId);
+            $qIns->execute();
+            $refundQueueId = $lisani_conn->insert_id;
+            $qIns->close();
+        } else {
+            $st = $lisani_conn->prepare('UPDATE customers SET credit_balance = credit_balance + ? WHERE id = ?');
+            $st->bind_param('si', $g, $customerId);
+            $st->execute();
+            $st->close();
+        }
         // $invoiceId stays null — these movements are recorded without an
         // invoice (same "(No invoice)" grouping list_customer_orders.php
         // already uses for older, pre-invoice rows).
@@ -625,6 +676,13 @@ try {
         $st->bind_param('i' . str_repeat('i', count($movementIds)), $batchId, ...$movementIds);
         $st->execute();
         $st->close();
+
+        if ($refundQueueId !== null) {
+            $st = $lisani_conn->prepare('UPDATE customer_refund_queue SET source_ref = ? WHERE id = ?');
+            $st->bind_param('ii', $batchId, $refundQueueId);
+            $st->execute();
+            $st->close();
+        }
     }
 
     $g = money($grand);
