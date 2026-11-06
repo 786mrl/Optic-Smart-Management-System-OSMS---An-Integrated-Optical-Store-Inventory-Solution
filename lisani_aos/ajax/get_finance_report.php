@@ -4,7 +4,12 @@
 // Aggregates three money-movement sources into one ledger + per-account balances:
 //   - outflow: transactions (category='disbursement') -> source_bank/source_account_number
 //             (+ ledger 'category' = disbursement_categories.category_name; invoice payments = fixed 'SALES PAYMENT'; refunds = null; display-only grouping label)
-//   - inflow:  invoice_payments                        -> destination_bank/destination_account_number
+//   - inflow:  invoice_payments, EXCLUDING source_bank='CREDIT BALANCE' rows -> destination_bank/destination_account_number
+//             (those rows are create_order.php's auto-apply of an existing credit_balance against
+//              a new invoice — not new cash; the real inflow was already counted when the credit
+//              was formed, see customer_credit_sources / migration_customer_credit_sources.sql.
+//              Fix 1 Nov 2026 — user-reported: Ledger total kept growing past what any account
+//              actually received, because this money was being counted twice.)
 //   - outflow: invoice_refunds (source account OPTIONAL, see migration_invoice_refunds_bank_fields.sql)
 // "Rekening" here are company bank accounts (json_file/bank_accounts.json), matched
 // by bank_name + account_number text (free-text columns, no FK) — case-insensitive,
@@ -185,18 +190,27 @@ while ($row = $res->fetch_assoc()) {
         'label'      => $row['transaction_purpose'],
         'category'   => $row['category_name'], // disbursement category (null for inflow/refund rows)
         'notes'      => $row['notes'],
+        'ledger_note' => null,
+        'group_id'   => null,
         'ref_id'     => (int)$row['id'],
     ];
 }
 $stmt->close();
 
 // ---------- Inflow: invoice payments ----------
+// Excludes source_bank='CREDIT BALANCE' rows (create_order.php auto-apply,
+// see "AUTO-APPLIED FROM CREDIT BALANCE"): that money isn't new cash in —
+// it was already counted as an inflow the first time it reached a real
+// account (the payment(s) traced in customer_credit_sources when the
+// credit_balance was formed). Counting it again here double-counted every
+// auto-applied invoice, inflating the ledger total and running balance past
+// what any account actually received (user-reported bug, 1 Nov 2026).
 $sql = "SELECT p.id, p.payment_date, p.destination_bank, p.destination_account_number,
                p.amount, p.notes, c.customer_name, i.invoice_number
         FROM invoice_payments p
         JOIN customers c ON c.id = p.customer_id
         JOIN invoices i ON i.id = p.invoice_id
-        WHERE 1=1" . ($hasFrom ? ' AND p.payment_date >= ?' : '') . ($hasTo ? ' AND p.payment_date <= ?' : '') .
+        WHERE p.source_bank <> 'CREDIT BALANCE'" . ($hasFrom ? ' AND p.payment_date >= ?' : '') . ($hasTo ? ' AND p.payment_date <= ?' : '') .
         ($hasActivity ? ' AND EXISTS (
             SELECT 1 FROM logistic_movements lm
             JOIN logistics lg ON lg.id = lm.logistic_id
@@ -231,6 +245,8 @@ while ($row = $res->fetch_assoc()) {
         'label'      => 'Payment — ' . $row['customer_name'] . ' (' . $row['invoice_number'] . ')',
         'category'   => 'SALES PAYMENT', // fixed label: every invoice payment is a sales payment
         'notes'      => $row['notes'],
+        'ledger_note' => null, // semantic tag shown in the dedicated "Notes" column (distinct from the free-text 'notes' above); see "Credit Balance" rows below
+        'group_id'   => null,  // visually clusters related rows (see credit-usage rows below); null = stands alone
         'ref_id'     => (int)$row['id'],
     ];
 }
@@ -270,10 +286,96 @@ while ($row = $res->fetch_assoc()) {
         'label'      => 'Refund — ' . $row['customer_name'] . ($row['method'] ? ' (' . $row['method'] . ')' : ''),
         'category'   => null,
         'notes'      => $row['notes'],
+        'ledger_note' => null,
+        'group_id'   => null,
         'ref_id'     => (int)$row['id'],
     ];
 }
 $stmt->close();
+
+// ---------- Credit-balance usage rows (informational, NOT counted in totals) ----------
+// customer_credit_applications (migration_customer_credit_sources.sql +
+// migration_customer_credit_applications_snapshot.sql, 1 Nov 2026 — guarded,
+// may not exist yet). The money behind these rows was already counted once,
+// as a real inflow, when the account first received it — these rows exist
+// only so the Ledger can show WHERE a credit_balance's money actually sits
+// (user request, 1 Nov 2026: "buat seolah-olah baris 1 dan 2 itu seperti
+// satu baris, jadi terkesan dari transaksi yang sama"). Each application
+// produces a PAIR of rows sharing one group_id (the application's own id),
+// rendered adjacent by the frontend:
+//   1. "remaining" — what's left of that credit source's account after this
+//      slice was taken (remaining_after_amount, the snapshot — never
+//      recomputed live, see create_order.php)
+//   2. "used"      — the slice itself, now attributed to the invoice it paid
+// Both get amount=0 toward accounts/monthly/totals (bump_monthly/accountsOut
+// untouched) — they are a split of money already counted, not new movement.
+// 'display_amount' carries the real figure for the UI to print in the
+// Amount column without affecting Running Balance (ledger_note explains why).
+$tableCheck = $lisani_conn->query(
+    "SELECT COUNT(*) c FROM information_schema.tables
+     WHERE table_schema = DATABASE() AND table_name = 'customer_credit_applications'"
+);
+$hasCreditApplications = $tableCheck && (int)($tableCheck->fetch_assoc()['c'] ?? 0) > 0;
+if ($hasCreditApplications) {
+    $sql = "SELECT a.id AS app_id, a.amount_used, a.remaining_after_amount, a.created_at,
+                   s.source_bank, s.source_account_number,
+                   p.payment_date, c.customer_name, i.invoice_number
+            FROM customer_credit_applications a
+            JOIN customer_credit_sources s ON s.id = a.credit_source_id
+            JOIN invoice_payments p ON p.id = a.invoice_payment_id
+            JOIN invoices i ON i.id = p.invoice_id
+            JOIN customers c ON c.id = p.customer_id
+            WHERE 1=1" . ($hasFrom ? ' AND p.payment_date >= ?' : '') . ($hasTo ? ' AND p.payment_date <= ?' : '') . "
+            ORDER BY p.payment_date ASC, a.id ASC";
+    $stmt = $lisani_conn->prepare($sql);
+    if ($params) { $stmt->bind_param($types, ...$params); }
+    $stmt->execute();
+    $res = $stmt->get_result();
+    while ($row = $res->fetch_assoc()) {
+        $used      = (float) $row['amount_used'];
+        $remaining = (float) $row['remaining_after_amount'];
+        $accId     = $row['source_bank'] ? resolve_account_id($accountsByKey, (string)$row['source_bank'], (string)$row['source_account_number']) : null;
+        $groupId   = 'credit_app_' . (int) $row['app_id'];
+        $acctLabelBank    = $row['source_bank'];
+        $acctLabelAccount = $row['source_account_number'];
+
+        $ledger[] = [
+            'date'          => $row['payment_date'],
+            'type'          => 'inflow', // display only — amount excluded from totals below
+            'source'        => 'credit_remaining',
+            'account_id'    => $accId,
+            'bank'          => $acctLabelBank,
+            'account_no'    => $acctLabelAccount,
+            'amount'        => 0.0, // does NOT move Running Balance — see header comment
+            'display_amount' => $remaining,
+            'original'      => null,
+            'label'         => 'Remaining credit balance',
+            'category'      => null,
+            'notes'         => null,
+            'ledger_note'   => 'Credit Balance',
+            'group_id'      => $groupId,
+            'ref_id'        => 'credit_app_' . (int) $row['app_id'] . '_0_remaining',
+        ];
+        $ledger[] = [
+            'date'          => $row['payment_date'],
+            'type'          => 'inflow',
+            'source'        => 'credit_used',
+            'account_id'    => $accId,
+            'bank'          => $acctLabelBank,
+            'account_no'    => $acctLabelAccount,
+            'amount'        => 0.0,
+            'display_amount' => $used,
+            'original'      => null,
+            'label'         => 'Applied to ' . $row['customer_name'] . ' (' . $row['invoice_number'] . ')',
+            'category'      => null,
+            'notes'         => null,
+            'ledger_note'   => 'Credit Balance — now company funds',
+            'group_id'      => $groupId,
+            'ref_id'        => 'credit_app_' . (int) $row['app_id'] . '_1_used',
+        ];
+    }
+    $stmt->close();
+}
 
 // ---------- Finalize balances ----------
 foreach ($accountsOut as &$acc) {
@@ -282,8 +384,16 @@ foreach ($accountsOut as &$acc) {
 unset($acc);
 $unassigned['balance'] = $unassigned['inflow'] - $unassigned['outflow'];
 
+// Sort key is cast to string throughout: $ref_id is an int for every
+// pre-existing row but a string ('credit_app_remaining_5' etc.) for the new
+// credit-usage rows above, and PHP 8's <=> compares int<=>non-numeric-string
+// unreliably. String comparison keeps a stable, predictable order and still
+// sorts plain ints correctly (numeric strings compare the same as the ints
+// they came from). The "remaining" row's ref_id has a literal '_0_' and
+// "used" a literal '_1_' (not relying on the words' own spelling), so within
+// one group_id (same date) "remaining" always sorts directly before "used".
 usort($ledger, function ($a, $b) {
-    return $a['date'] <=> $b['date'] ?: $a['ref_id'] <=> $b['ref_id'];
+    return $a['date'] <=> $b['date'] ?: strcmp((string) $a['ref_id'], (string) $b['ref_id']);
 });
 
 ksort($monthly);
@@ -315,6 +425,7 @@ while ($row = $r3->fetch_assoc()) {
         'outstanding'     => (float)$row['outstanding'],
     ];
 }
+
 
 aos_json([
     'ok'   => true,

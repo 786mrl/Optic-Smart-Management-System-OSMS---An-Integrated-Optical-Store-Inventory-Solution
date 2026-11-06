@@ -34,22 +34,40 @@
 //                    {"source_movement_id": 61, "qty": 3, "price": 165000,
 //                     "restock_bucket": "defective"}
 //                  ]}, ... ]
-//   credit_action  "credit_balance" | "refund_queue" — ONLY read/required
-//                  when there turns out to be no open invoice to reduce (see
-//                  "No open invoice" below). Omit it on the first dry_run;
-//                  if the server comes back with code "credit_action_required"
-//                  ask the user which they want and resend with this filled in.
 //   dry_run    "1" | "0"
 //
-// Revised 31 Okt 2026 ("No open invoice" used to always silently become
-// customers.credit_balance — see PROJECT_NOTES.md). Now the user is asked:
-// "credit_balance" keeps the old behaviour (offsets a future invoice).
-// "refund_queue" instead inserts a row into customer_refund_queue (status
-// 'pending') — money actually owed back, settled later through a real
-// Disbursement transaction (Input Transaction tab, Activity Code "00-A" /
-// department "Refund & Settlement", see create_disbursement.php). Only
-// matters when $toCredit ends up true below; when an open invoice exists,
-// credit_action is ignored entirely (nothing to choose).
+// Revised 31 Okt 2026: "No open invoice" always becomes customers.credit_balance
+// (see PROJECT_NOTES.md) — when $toCredit ends up true below.
+//
+// Revised 4 Nov 2026 (user decision): there used to be a second choice here
+// ("refund_queue" — a row in customer_refund_queue, settled later through a
+// real Disbursement transaction). Removed — the "Refund" button already next
+// to a customer's Credit Balance row (Sales Transaction > Customer List)
+// covers the exact same need by spending customer_credit_sources FIFO, so a
+// separate queue/table for the same money was redundant. customer_refund_queue
+// itself is left in the database (unused) rather than dropped.
+//
+// Revised 1 Nov 2026 (customer_credit_sources, FIFO per rekening — see
+// migration_customer_credit_sources.sql): "credit_balance" path now also
+// traces each allocation's value back to the REAL bank account(s) that
+// originally paid the invoice the returned item came from (invoice_payments,
+// oldest payment first). Rationale (user, 1 Nov 2026): credit_balance only
+// ever forms from a return whose source item was ALREADY PAID FOR (an item
+// never paid is just a stock reversal, no credit at all) — so that payment
+// trail is real and traceable. create_order.php's auto-apply later spends
+// these FIFO too and records which account(s) funded each auto-apply, so the
+// "AUTO-APPLIED FROM CREDIT BALANCE" row in a customer's invoice history can
+// show the real originating account(s) instead of nothing.
+//
+// Revised 1 Nov 2026 (unpaid-source guard, same session): enforces the
+// "already paid for" precondition above — if $toCredit, EVERY source invoice
+// behind this return's allocations must have at least one invoice_payments
+// row, or the whole
+// return is rejected ('source_invoice_unpaid') rather than silently letting
+// an unpaid item generate credit/refund money out of nowhere. Deliberately
+// all-or-nothing — mixing "partly credit, partly plain stock reversal" in
+// one return would need splitting the invoice/credit math mid-request, so
+// the user resends unpaid and paid items as two separate returns instead.
 //
 // Revised 22 Sep 2026 (defective stock, "Kendala #1 & #2"): each allocation
 // now also carries restock_bucket ("normal" default, or "defective") — the
@@ -137,6 +155,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 require_once dirname(__DIR__) . '/db_config.php'; // provides $lisani_conn (mysqli)
+require_once __DIR__ . '/credit_sources_helper.php'; // trace_credit_to_real_payments()
 
 // ---------- Helpers ----------
 function post_str(string $key): string
@@ -232,12 +251,6 @@ $dryRun     = post_str('dry_run') !== '0'; // anything except an explicit "0" is
 // user, 1 Okt 2026, once New Order got the ability to open a second invoice
 // alongside an existing one (see create_order.php's force_new_invoice).
 $requestedInvoiceId = (int) post_str('invoice_id');
-// Only matters when there is no open invoice at all (see "No open invoice"
-// in the header comment) — empty is fine otherwise.
-$creditAction = post_str('credit_action');
-if ($creditAction !== '' && $creditAction !== 'credit_balance' && $creditAction !== 'refund_queue') {
-    aos_fail('Invalid choice for how to handle the credit.');
-}
 
 if ($customerId <= 0) {
     aos_fail('Customer is missing.');
@@ -360,7 +373,7 @@ try {
     sort($smIds);
     $smMarks = implode(',', array_fill(0, count($smIds), '?'));
     $st = $lisani_conn->prepare(
-        "SELECT id, logistic_id, movement_date, qty_primary_package, stock_source
+        "SELECT id, logistic_id, movement_date, qty_primary_package, stock_source, invoice_id
          FROM logistic_movements
          WHERE id IN ($smMarks) AND customer_id = ? AND movement_type = 'out'
          FOR UPDATE"
@@ -520,11 +533,13 @@ try {
     $totalBefore   = 0.0;
     // No open invoice to reduce (none open at all, or the one requested
     // wasn't found — already thrown above) → this is now a CREDIT owed to
-    // the customer instead of a stray negative-total invoice (see
-    // PROJECT_NOTES.md). Resolved later via credit_action (see header
-    // comment): "credit_balance" (old path, offsets a future invoice via
-    // Apply Credit) or "refund_queue" (owed back for real, paid out later
-    // through a Disbursement transaction).
+    // the customer (customers.credit_balance), traced to real accounts via
+    // customer_credit_sources (see header comment). There used to be a
+    // second choice here ("refund_queue", owed back for real through a
+    // Disbursement transaction) — removed 4 Nov 2026 at the user's request:
+    // the "Refund" button already sitting next to a customer's Credit
+    // Balance row covers that exact need by spending customer_credit_sources
+    // FIFO, so a separate queue/table for the same money was redundant.
     $toCredit = !$invoice;
 
     if ($invoice) {
@@ -533,14 +548,50 @@ try {
         $totalBefore   = (float) $invoice['total_amount'];
     }
 
-    // The choice only has to be made once we actually know there's no
-    // invoice to reduce — ask here rather than forcing the client to guess
-    // up front on every return.
-    if ($toCredit && $creditAction === '') {
-        throw new AosReturnError(
-            'This customer has no open invoice — choose how to handle the amount.',
-            ['code' => 'credit_action_required', 'amount' => $grand]
-        );
+    // ---- Guard (user decision, 1 Nov 2026): credit_balance is only for
+    //      goods whose ORIGINAL invoice was actually paid for at least once
+    //      — an item never paid is just a stock reversal, no money owed at
+    //      all. Checked against EVERY source movement in this return (a
+    //      return can mix allocations from several invoices); if even one
+    //      source invoice has zero invoice_payments rows, the whole return
+    //      is rejected rather than silently splitting it into "partly
+    //      credit, partly plain stock" — the user re-sends it as two
+    //      separate returns instead (one per invoice-payment status). ----
+    if ($toCredit) {
+        $unpaidInvoiceIds = [];
+        $checkedInvoiceIds = [];
+        foreach ($sourceMovements as $sm) {
+            $srcInvId = $sm['invoice_id'] !== null ? (int) $sm['invoice_id'] : 0;
+            if ($srcInvId <= 0 || isset($checkedInvoiceIds[$srcInvId])) {
+                // No invoice at all behind this pickup (old pre-invoice data)
+                // is treated the same as "never paid" below — can't be a
+                // credit if there's no invoice_payments to point to at all.
+                if ($srcInvId <= 0) {
+                    $unpaidInvoiceIds[] = 0;
+                }
+                continue;
+            }
+            $checkedInvoiceIds[$srcInvId] = true;
+            $payCountSt = $lisani_conn->prepare(
+                'SELECT COUNT(*) c FROM invoice_payments WHERE invoice_id = ?'
+            );
+            $payCountSt->bind_param('i', $srcInvId);
+            $payCountSt->execute();
+            $payCount = (int) ($payCountSt->get_result()->fetch_assoc()['c'] ?? 0);
+            $payCountSt->close();
+            if ($payCount === 0) {
+                $unpaidInvoiceIds[] = $srcInvId;
+            }
+        }
+        if ($unpaidInvoiceIds) {
+            throw new AosReturnError(
+                'This return includes items whose original invoice was never paid — '
+                . 'those can only be returned as a plain stock reversal (no open invoice '
+                . 'to reduce and no invoice_payments on record for it), not as a credit. '
+                . 'Please return the unpaid items separately from any already-paid ones.',
+                ['code' => 'source_invoice_unpaid', 'invoice_ids' => array_values(array_unique($unpaidInvoiceIds))]
+            );
+        }
     }
 
     $creditBefore = (float) $customer['credit_balance'];
@@ -558,13 +609,9 @@ try {
             'total_before' => $totalBefore,
             'total_after'  => round($totalBefore - $grand, 2),
         ],
-        'credit'        => ($toCredit && $creditAction === 'credit_balance') ? [
+        'credit'        => $toCredit ? [
             'balance_before' => $creditBefore,
             'balance_after'  => round($creditBefore + $grand, 2),
-        ] : null,
-        'refund_queue'  => ($toCredit && $creditAction === 'refund_queue') ? [
-            'amount' => $grand,
-            'status' => 'pending',
         ] : null,
         'items'         => $outLines,
         'grand_total'   => $grand,
@@ -580,26 +627,73 @@ try {
     $driverDb = $driver !== '' ? $driver : null;
     $policeDb = $police !== '' ? $police : null;
 
-    $refundQueueId = null;
     if ($toCredit) {
         $g = money($grand);
-        if ($creditAction === 'refund_queue') {
-            // source_ref (batch_id) isn't known yet — filled in below, once
-            // the movement rows (and their lowest id) exist.
-            $qIns = $lisani_conn->prepare(
-                "INSERT INTO customer_refund_queue (customer_id, source_type, amount, queued_date, created_by)
-                 VALUES (?, 'return', ?, ?, ?)"
-            );
-            $qIns->bind_param('issi', $customerId, $g, $returnDate, $userId);
-            $qIns->execute();
-            $refundQueueId = $lisani_conn->insert_id;
-            $qIns->close();
-        } else {
-            $st = $lisani_conn->prepare('UPDATE customers SET credit_balance = credit_balance + ? WHERE id = ?');
-            $st->bind_param('si', $g, $customerId);
-            $st->execute();
-            $st->close();
+        $st = $lisani_conn->prepare('UPDATE customers SET credit_balance = credit_balance + ? WHERE id = ?');
+        $st->bind_param('si', $g, $customerId);
+        $st->execute();
+        $st->close();
+
+        // ---- customer_credit_sources: trace this credit back to the
+        //      real bank account(s) FIFO, per allocation (each
+        //      allocation can point to a different source movement, and
+        //      so a different original invoice). See credit_sources_helper.php. ----
+        // bind_param binds by REFERENCE, so these must be real variables
+        // (not array-element expressions) and can legally hold PHP null
+        // at execute() time for a nullable int/string column.
+        $ccsCustomerId = $customerId;
+        $ccsBank = $ccsAccNo = $ccsAccName = null;
+        $ccsAmount = $ccsRemaining = '0.00';
+        $ccsOriginInvoiceId = $ccsOriginPaymentId = null;
+        $ccsDate = $returnDate;
+        $ccsUserId = $userId;
+        $ccsIns = $lisani_conn->prepare(
+            'INSERT INTO customer_credit_sources
+               (customer_id, source_bank, source_account_number, source_account_name,
+                amount, remaining_amount, origin_type, origin_ref_invoice_id,
+                origin_invoice_payment_id, created_date, created_by)
+             VALUES (?, ?, ?, ?, ?, ?, \'return\', ?, ?, ?, ?)'
+        );
+        $ccsIns->bind_param(
+            'isssssiisi',
+            $ccsCustomerId, $ccsBank, $ccsAccNo, $ccsAccName,
+            $ccsAmount, $ccsRemaining, $ccsOriginInvoiceId, $ccsOriginPaymentId,
+            $ccsDate, $ccsUserId
+        );
+
+        foreach ($allocations as $al) {
+            $smid = $al['source_movement_id'];
+            $sourceInvoiceId = isset($sourceMovements[$smid]['invoice_id']) && $sourceMovements[$smid]['invoice_id'] !== null
+                ? (int) $sourceMovements[$smid]['invoice_id']
+                : 0;
+            $slices = $sourceInvoiceId > 0
+                ? trace_credit_to_real_payments($lisani_conn, $sourceInvoiceId, round($al['qty'] * $al['price'], 2))
+                : [[
+                    // No invoice at all behind this pickup (very old,
+                    // pre-invoice data — see PROJECT_NOTES.md "Data lama
+                    // order yang sudah terpecah sebelum batch_id") —
+                    // asal tidak diketahui, recorded as such.
+                    'source_bank' => null, 'source_account_number' => null,
+                    'source_account_name' => null,
+                    'amount' => round($al['qty'] * $al['price'], 2),
+                    'origin_invoice_payment_id' => null,
+                ]];
+
+            foreach ($slices as $slice) {
+                if ($slice['amount'] <= 0.0001) {
+                    continue;
+                }
+                $ccsBank = $slice['source_bank'];
+                $ccsAccNo = $slice['source_account_number'];
+                $ccsAccName = $slice['source_account_name'];
+                $ccsAmount = money($slice['amount']);
+                $ccsRemaining = $ccsAmount;
+                $ccsOriginInvoiceId = $sourceInvoiceId > 0 ? $sourceInvoiceId : null;
+                $ccsOriginPaymentId = $slice['origin_invoice_payment_id'];
+                $ccsIns->execute();
+            }
         }
+        $ccsIns->close();
         // $invoiceId stays null — these movements are recorded without an
         // invoice (same "(No invoice)" grouping list_customer_orders.php
         // already uses for older, pre-invoice rows).
@@ -676,13 +770,6 @@ try {
         $st->bind_param('i' . str_repeat('i', count($movementIds)), $batchId, ...$movementIds);
         $st->execute();
         $st->close();
-
-        if ($refundQueueId !== null) {
-            $st = $lisani_conn->prepare('UPDATE customer_refund_queue SET source_ref = ? WHERE id = ?');
-            $st->bind_param('ii', $batchId, $refundQueueId);
-            $st->execute();
-            $st->close();
-        }
     }
 
     $g = money($grand);

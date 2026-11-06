@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Oct 31, 2026 at 12:37 PM
+-- Generation Time: Nov 01, 2026 at 05:47 AM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -41,8 +41,7 @@ CREATE TABLE `activities` (
 --
 
 INSERT INTO `activities` (`id`, `activity_name`, `cashflow`, `relative_path`, `created_by`, `created_at`) VALUES
-(1, 'SAYYER', 'in-out', 'input/2026/dates/001/', 1, '2026-10-28 18:44:34'),
-(2, 'SUKKARI AL-QASSIM & AJWA', 'in-out', 'input/2026/dates/002/', 1, '2026-10-30 14:15:45');
+(1, 'SUKKARI AL-QASSIM & AJWA', 'in-out', 'input/2026/dates/001/', 1, '2026-11-01 08:54:45');
 
 -- --------------------------------------------------------
 
@@ -66,8 +65,7 @@ CREATE TABLE `bookings` (
 --
 
 INSERT INTO `bookings` (`id`, `customer_id`, `invoice_id`, `booking_date`, `status`, `created_by`, `created_at`, `updated_at`) VALUES
-(1, 1, 1, '2026-10-28', 'cancelled', 1, '2026-10-28 18:45:41', '2026-10-30 14:20:27'),
-(2, 1, 2, '2026-10-30', 'active', 1, '2026-10-30 14:26:05', '2026-10-30 14:26:05');
+(1, 1, 1, '2026-11-01', 'cancelled', 1, '2026-11-01 08:56:25', '2026-11-01 08:57:49');
 
 -- --------------------------------------------------------
 
@@ -91,9 +89,7 @@ CREATE TABLE `booking_items` (
 --
 
 INSERT INTO `booking_items` (`id`, `booking_id`, `logistic_id`, `stock_source`, `qty_booked`, `qty_released`, `price`, `created_at`) VALUES
-(1, 1, 1, 'normal', 1000.00, 1000.00, 267000.00, '2026-10-28 18:45:41'),
-(2, 1, 3, 'normal', 0.00, 0.00, 500000.00, '2026-10-30 14:18:35'),
-(3, 2, 2, 'normal', 1000.00, 0.00, 285000.00, '2026-10-30 14:26:05');
+(1, 1, 1, 'normal', 0.00, 0.00, 287000.00, '2026-11-01 08:56:25');
 
 -- --------------------------------------------------------
 
@@ -108,13 +104,6 @@ CREATE TABLE `booking_item_releases` (
   `qty` decimal(10,2) NOT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
---
--- Dumping data for table `booking_item_releases`
---
-
-INSERT INTO `booking_item_releases` (`id`, `booking_item_id`, `movement_id`, `qty`, `created_at`) VALUES
-(1, 1, 1, 1000.00, '2026-10-28 18:46:32');
 
 -- --------------------------------------------------------
 
@@ -161,7 +150,7 @@ CREATE TABLE `customers` (
 --
 
 INSERT INTO `customers` (`id`, `year`, `customer_name`, `phone_number`, `total_inflow`, `total_outflow`, `total_price_adjustments`, `total_paid`, `credit_balance`, `profit`, `created_at`) VALUES
-(1, 2026, 'RAIS', '+6281267646916', 267000000.00, 53400000.00, 0.00, 0.00, 0.00, 0.00, '2026-10-28 11:44:09');
+(1, 2026, 'RAIS', '+6281267646916', 14350000.00, 0.00, 0.00, 60000000.00, 60000000.00, 0.00, '2026-11-01 01:55:03');
 
 -- --------------------------------------------------------
 
@@ -185,9 +174,28 @@ CREATE TABLE `customer_item_prices` (
 --
 
 INSERT INTO `customer_item_prices` (`id`, `customer_id`, `logistic_id`, `price`, `price_date`, `unit_label`, `created_at`, `updated_at`) VALUES
-(1, 1, 1, 267000.00, '2026-10-28', 'MASTER CARTON', '2026-10-28 11:45:41', '2026-10-28 11:45:41'),
-(2, 1, 3, 500000.00, '2026-10-28', 'MASTER CARTON', '2026-10-30 07:18:35', '2026-10-30 07:18:35'),
-(3, 1, 2, 285000.00, '2026-10-30', 'MASTER CARTON', '2026-10-30 07:26:05', '2026-10-30 07:26:05');
+(1, 1, 1, 287000.00, '2026-11-01', 'MASTER CARTON', '2026-11-01 01:56:25', '2026-11-01 01:56:25');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `customer_refund_queue`
+--
+
+CREATE TABLE `customer_refund_queue` (
+  `id` int(10) UNSIGNED NOT NULL,
+  `customer_id` int(10) UNSIGNED NOT NULL,
+  `source_type` enum('return','price_adjustment','cancel_booking') NOT NULL,
+  `source_ref` int(10) UNSIGNED DEFAULT NULL,
+  `amount` decimal(15,2) NOT NULL,
+  `queued_date` date NOT NULL,
+  `status` enum('pending','returned') NOT NULL DEFAULT 'pending',
+  `transaction_id` int(10) UNSIGNED DEFAULT NULL,
+  `returned_at` datetime DEFAULT NULL,
+  `notes` varchar(500) DEFAULT NULL,
+  `created_by` int(10) UNSIGNED DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
 
@@ -363,7 +371,7 @@ CREATE TABLE `invoices` (
   `sequence_number` smallint(5) UNSIGNED NOT NULL,
   `period_month` tinyint(3) UNSIGNED NOT NULL,
   `period_year` smallint(5) UNSIGNED NOT NULL,
-  `status` enum('open','paid') NOT NULL DEFAULT 'open',
+  `status` enum('open','paid','cancelled') NOT NULL DEFAULT 'open',
   `total_amount` decimal(18,2) NOT NULL DEFAULT 0.00,
   `paid_amount` decimal(18,2) NOT NULL DEFAULT 0.00,
   `paid_at` datetime DEFAULT NULL,
@@ -376,8 +384,8 @@ CREATE TABLE `invoices` (
 --
 
 INSERT INTO `invoices` (`id`, `customer_id`, `invoice_number`, `sequence_number`, `period_month`, `period_year`, `status`, `total_amount`, `paid_amount`, `paid_at`, `created_at`, `updated_at`) VALUES
-(1, 1, '001/inv/laj-R-1/X/2026', 1, 10, 2026, 'open', 213600000.00, 0.00, NULL, '2026-10-28 11:45:41', '2026-10-30 07:20:27'),
-(2, 1, '002/inv/laj-R-1/X/2026', 2, 10, 2026, 'open', 285000000.00, 0.00, NULL, '2026-10-30 07:26:05', '2026-10-30 07:26:05');
+(1, 1, '001/inv/laj-R-1/XI/2026', 1, 11, 2026, 'paid', 0.00, 0.00, '2026-11-01 08:57:48', '2026-11-01 01:56:25', '2026-11-01 01:57:48'),
+(2, 1, '002/inv/laj-R-1/XI/2026', 2, 11, 2026, 'open', 14350000.00, 0.00, NULL, '2026-11-01 01:58:42', '2026-11-01 01:58:42');
 
 -- --------------------------------------------------------
 
@@ -402,6 +410,13 @@ CREATE TABLE `invoice_payments` (
   `created_by` int(10) UNSIGNED NOT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `invoice_payments`
+--
+
+INSERT INTO `invoice_payments` (`id`, `invoice_id`, `customer_id`, `payment_date`, `amount`, `source_bank`, `source_account_name`, `destination_bank`, `destination_account_number`, `destination_account_name`, `notes`, `proof_path`, `proof_original_name`, `created_by`, `created_at`) VALUES
+(1, 1, 1, '2026-11-01', 60000000.00, 'MANDIRI', 'PUTRI NUR ANDANI', 'MANDIRI', '1110 0160 9789 7', 'SYIS BIN SAMSUL BAHRI', 'FIRST PAYMENT FOR INVOICE 001/INV/LAJ-R-1/XI/2026', 'selling/2026/rais/payments/001_inv_laj_R_1_XI_2026_20261101.jpg', '07-xii-2025.jpeg', 1, '2026-11-01 01:57:38');
 
 -- --------------------------------------------------------
 
@@ -485,9 +500,8 @@ CREATE TABLE `logistics` (
 --
 
 INSERT INTO `logistics` (`id`, `activity_id`, `product_name`, `incoming_date`, `primary_qty`, `primary_unit_label`, `primary_unit_weight_kg`, `remaining_primary_qty`, `defective_qty`, `total_taken_qty`, `defective_taken_qty`, `defective_reference_price`, `secondary_unit_label`, `secondary_unit_weight_kg`, `secondary_ratio_per_primary`, `created_by`, `created_at`, `updated_at`) VALUES
-(1, 1, 'SAYYER', NULL, 2500.00, 'MASTER CARTON', 10.000, 1700.00, 0.00, 800.00, 0.00, NULL, 'NO PRIMARY CARTON', 10.000, 1.000, 1, '2026-10-28 18:45:15', '2026-10-30 14:20:27'),
-(2, 2, 'SUKKARI AL-QASSIM', NULL, 1875.00, 'MASTER CARTON', 12.000, 875.00, 0.00, 0.00, 0.00, NULL, 'BABY CARTON', 3.000, 4.000, 1, '2026-10-30 14:16:40', '2026-10-30 14:26:05'),
-(3, 2, 'AJWA', NULL, 200.00, 'MASTER CARTON', 10.000, 200.00, 0.00, 0.00, 0.00, NULL, 'NO PRIMARY CARTON', 10.000, 1.000, 1, '2026-10-30 14:17:10', '2026-10-30 14:19:51');
+(1, 1, 'SUKKARI AL-QASSIM', '2026-11-01', 1875.00, 'MASTER CARTON', 12.000, 1825.00, 0.00, 50.00, 0.00, NULL, 'BABY CARTON', 3.000, 4.000, 1, '2026-11-01 08:55:59', '2026-11-01 08:58:42'),
+(2, 1, 'AJWA', '2026-11-01', 500.00, 'MASTER CARTON', 5.000, 500.00, 0.00, 0.00, 0.00, NULL, 'NO PRIMARY CARTON', 5.000, 1.000, 1, '2026-11-01 08:55:59', '2026-11-01 08:55:59');
 
 -- --------------------------------------------------------
 
@@ -537,8 +551,7 @@ CREATE TABLE `logistic_movements` (
 --
 
 INSERT INTO `logistic_movements` (`id`, `logistic_id`, `source_movement_id`, `customer_id`, `movement_type`, `stock_source`, `movement_date`, `customer_name`, `driver_name`, `police_number`, `qty_primary_package`, `price`, `total_price`, `invoice_id`, `batch_id`, `created_by`, `created_at`) VALUES
-(1, 1, NULL, 1, 'out', 'normal', '2026-10-28', 'RAIS', 'PAK MAN', 'BK 2141 SFA', 1000.00, 267000.00, 267000000.00, 1, 1, 1, '2026-10-28 18:46:32'),
-(2, 1, 1, 1, 'in', 'normal', '2026-10-28', 'RAIS', 'PAK MAN', 'BK 3143 AFF', 200.00, 267000.00, 53400000.00, 1, 2, 1, '2026-10-28 18:55:12');
+(1, 1, NULL, 1, 'out', 'normal', '2026-11-01', 'RAIS', 'PAK FADLUN', 'BK 2131 SAD', 50.00, 287000.00, 14350000.00, 2, 1, 1, '2026-11-01 08:58:42');
 
 -- --------------------------------------------------------
 
@@ -630,7 +643,7 @@ CREATE TABLE `users` (
 --
 
 INSERT INTO `users` (`user_id`, `username`, `password_hash`, `role`, `is_approved`, `created_at`, `last_login`, `session_token`, `session_expires`) VALUES
-(1, 'Rais786', '$2y$10$QciWVGPK9aGHjy05rBoXgOWfCAesfocowc0vt4QCMHVeVzsVuGDS6', 'admin', 1, '2026-09-10 21:34:57', '2026-10-31 05:36:56', NULL, NULL);
+(1, 'Rais786', '$2y$10$QciWVGPK9aGHjy05rBoXgOWfCAesfocowc0vt4QCMHVeVzsVuGDS6', 'admin', 1, '2026-09-10 21:34:57', '2026-11-01 05:46:17', '83611e805121ab195ccdc4c8df439eb4b970fd3b5c26d1e4c96d48be43c1e9e1', '2026-11-01 13:46:17');
 
 --
 -- Indexes for dumped tables
@@ -690,6 +703,15 @@ ALTER TABLE `customer_item_prices`
   ADD PRIMARY KEY (`id`),
   ADD KEY `idx_customer` (`customer_id`),
   ADD KEY `idx_logistic` (`logistic_id`);
+
+--
+-- Indexes for table `customer_refund_queue`
+--
+ALTER TABLE `customer_refund_queue`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_crq_customer` (`customer_id`),
+  ADD KEY `idx_crq_status` (`status`),
+  ADD KEY `idx_crq_transaction` (`transaction_id`);
 
 --
 -- Indexes for table `defective_stock_events`
@@ -856,25 +878,25 @@ ALTER TABLE `users`
 -- AUTO_INCREMENT for table `activities`
 --
 ALTER TABLE `activities`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `bookings`
 --
 ALTER TABLE `bookings`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `booking_items`
 --
 ALTER TABLE `booking_items`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `booking_item_releases`
 --
 ALTER TABLE `booking_item_releases`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT for table `company_documents`
@@ -892,7 +914,13 @@ ALTER TABLE `customers`
 -- AUTO_INCREMENT for table `customer_item_prices`
 --
 ALTER TABLE `customer_item_prices`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+
+--
+-- AUTO_INCREMENT for table `customer_refund_queue`
+--
+ALTER TABLE `customer_refund_queue`
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT for table `defective_stock_events`
@@ -952,7 +980,7 @@ ALTER TABLE `invoices`
 -- AUTO_INCREMENT for table `invoice_payments`
 --
 ALTER TABLE `invoice_payments`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `invoice_refunds`
@@ -970,7 +998,7 @@ ALTER TABLE `letterhead_library`
 -- AUTO_INCREMENT for table `logistics`
 --
 ALTER TABLE `logistics`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
 -- AUTO_INCREMENT for table `logistic_documents`
@@ -982,7 +1010,7 @@ ALTER TABLE `logistic_documents`
 -- AUTO_INCREMENT for table `logistic_movements`
 --
 ALTER TABLE `logistic_movements`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `signature_library`

@@ -2,11 +2,17 @@
 // lisani_aos/ajax/apply_customer_credit.php
 // Applies part/all of a customer's credit_balance (see create_refund.php /
 // PROJECT_NOTES.md, 1 Okt 2026) to reduce one of their OPEN invoices.
-// Recorded as a normal invoice_payments row (payment_method = "CREDIT
-// BALANCE", no proof file — nothing was uploaded, it's not new cash) so it
-// shows up in that invoice's existing payment history.
+// Recorded as a normal invoice_payments row (source_bank = "CREDIT BALANCE"
+// as a marker — the table has no payment_method column, see "Bugfix 1 Nov
+// 2026" below; no proof file — nothing was uploaded, it's not new cash) so
+// it shows up in that invoice's existing payment history.
 // Unlike create_invoice_payment.php, this does NOT touch customers.total_paid
 // — no new cash came in, this just reallocates credit already on the books.
+//
+// Bugfix 1 Nov 2026: this file previously inserted into a `payment_method`
+// column that does not exist in invoice_payments (caught via
+// create_order.php's new auto-apply-credit feature hitting the identical
+// insert pattern and failing) — every call here was failing before this fix.
 //
 // Response contract: { ok: true|false, message: "...", ... }
 
@@ -129,14 +135,30 @@ try {
     $amountStr = (string) $amount;
     $today = date('Y-m-d');
 
+    // invoice_payments has NO payment_method column (checked against a live
+    // DESCRIBE, 1 Nov 2026 — this file was assuming a column that doesn't
+    // exist, so every call here was failing). source_bank/source_account_name/
+    // destination_* are all NOT NULL with no default, so every row must fill
+    // them even when, like this one, there's no real bank transfer —
+    // source_bank carries the "CREDIT BALANCE" marker (closest equivalent to
+    // the old payment_method intent), the rest are blank. Same fix as
+    // create_order.php's auto-apply-credit block.
+    $blank = '';
+    $srcBank = 'CREDIT BALANCE';
     $ins = $lisani_conn->prepare(
         'INSERT INTO invoice_payments
-           (invoice_id, customer_id, payment_date, amount, payment_method, notes,
-            proof_path, proof_original_name, created_by)
-         VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, ?)'
+           (invoice_id, customer_id, payment_date, amount,
+            source_bank, source_account_name, destination_bank,
+            destination_account_number, destination_account_name,
+            notes, proof_path, proof_original_name, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)'
     );
-    $method = 'CREDIT BALANCE';
-    $ins->bind_param('iissssi', $invoiceId, $customerId, $today, $amountStr, $method, $notes, $userId);
+    $ins->bind_param(
+        'iissssssssi',
+        $invoiceId, $customerId, $today, $amountStr,
+        $srcBank, $blank, $blank, $blank, $blank,
+        $notes, $userId
+    );
     $ins->execute();
     $paymentId = $lisani_conn->insert_id;
     $ins->close();

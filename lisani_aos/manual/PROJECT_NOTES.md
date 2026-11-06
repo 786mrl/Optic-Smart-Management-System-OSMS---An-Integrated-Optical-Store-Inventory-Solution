@@ -598,38 +598,49 @@ tetap `fmtIDR`; CSV tetap angka mentah + kolom Type). Belum ada: edit kategori t
 
 ## 8. Pekerjaan terbuka
 
-**Log terbaru (belum dites) — Refund & Settlement**: dua kelemahan yang diperbaiki sekalian, satu fitur baru.
+**Log terbaru (belum dites) — Refund & Settlement DIBATALKAN, diganti full credit_balance (4 Nov 2026)**: entri
+"Log terbaru" sebelumnya di sini (Cancel Booking overpaid, `credit_action`, tabel `customer_refund_queue`,
+activity code "00-A"/departemen "Refund & Settlement", pelunasan via Disbursement) **sudah tidak berlaku** — diganti
+total oleh keputusan user: opsi kedua (`refund_queue`) dihapus karena tombol "Refund" yang sudah ada di baris
+Credit Balance tab Customer sudah menjangkau kebutuhan yang sama.
 
-1. **Cancel Booking sekarang menghitung DP yang sudah dibayar** (`cancel_booking.php`, sebelumnya tidak dihandel
-   sama sekali): kalau invoice booking itu sudah dibayar lebih dari `total_amount` yang baru (lebih kecil) setelah
-   dicancel, selisihnya (`overpaid_amount`) tidak lagi diam saja — `invoices.paid_amount` di-cap turun ke
-   `total_amount` baru, dan selisihnya diserahkan ke customer lewat `credit_action` (poin 3 di bawah). Kalau tidak
-   overpaid (DP ≤ sisa total setelah cancel), perilaku persis seperti sebelumnya, tidak ada perubahan.
-2. **`create_return.php` & `create_price_adjustment.php`**: titik "tidak ada invoice open" (dulu otomatis masuk
-   `customers.credit_balance`) sekarang juga lewat `credit_action` yang sama (poin 3).
-3. **`credit_action` = `"credit_balance"` | `"refund_queue"`** — pola baru dipakai di ketiga endpoint di atas: pada
-   `dry_run=1` pertama (tanpa `credit_action`), kalau ternyata tidak ada invoice untuk dikurangi (atau, khusus
-   Cancel Booking, invoice jadi overpaid), server menolak dengan `code:"credit_action_required"` + `amount`; client
-   (fungsi `askCreditAction()` di `transaction_content.php`, overlay generik `creditChoiceOverlay`) menanyakan ke
-   user, lalu mengirim ulang `dry_run=1` dengan `credit_action` terisi, baru `dry_run=0`. `"credit_balance"` =
-   perilaku lama (masuk `customers.credit_balance`, dipakai lewat Apply Credit). `"refund_queue"` = BARU: insert ke
-   tabel baru `customer_refund_queue` (`migration_refund_queue.sql`) berstatus `pending` — uang yang sungguhan
-   harus dikembalikan, bukan dipakai menutup invoice lain. `source_type` (`return`/`price_adjustment`/
-   `cancel_booking`) + `source_ref` (batch_id untuk return/adjustment, `booking_id` untuk cancel booking) mencatat
-   asalnya.
-4. **Activity code permanen "00-A" / departemen baru "Refund & Settlement"** (`departments.json`, key
-   `refund_settlement`): dibuat SEKALI lewat `migration_refund_queue.sql` (bukan lewat tombol + Add Activity Code
-   biasa — formatnya "00-A" sengaja tidak numerik murni supaya tidak pernah ketiban auto-numbering
-   `create_activity_code.php`), `relative_path` TANPA segmen tahun (`input/refund_settlement/00-A/`) karena
-   dipakai permanen lintas tahun, bukan di-reset per tahun seperti activity code lain.
-5. **Pelunasan via Disbursement** (`create_disbursement.php`, POST baru `refund_queue_ids` JSON array,
-   `list_refund_queue.php` baru untuk GET): satu Disbursement transaction BOLEH melunasi 1 atau lebih baris
-   antrian sekaligus (makanya `transaction_id` ada di `customer_refund_queue`, bukan tabel jembatan terpisah) —
-   TAPI jumlahnya harus PAS sama dengan `final_amount_idr` (server tolak kalau beda, toleransi 0.01), dan Activity
-   Code yang dipakai harus "00-A" itu. Di UI (`transaction_content.php`, layar capture Disbursement), begitu
-   departemen "Refund & Settlement" dipilih, muncul daftar collapsible per customer (default collapse) berisi
-   checkbox tiap baris pending beserta total berjalan yang harus pas dengan Final Amount (IDR) sebelum Save boleh
-   diklik. Server tetap jadi otoritas akhir (re-check dengan `FOR UPDATE` di dalam transaksi DB yang sama).
+1. **`credit_action` dihapus total** dari `cancel_booking.php`, `create_return.php`, `create_price_adjustment.php`
+   — ketiganya sekarang SELALU masuk `customers.credit_balance`, tidak ada lagi pilihan/`code:"credit_action_required"`.
+2. **Gap ditemukan & diperbaiki**: `cancel_booking.php` & `create_price_adjustment.php` sebelumnya cuma
+   `UPDATE customers SET credit_balance = credit_balance + ?` TANPA insert ke `customer_credit_sources` (beda
+   dengan `create_return.php` yang sudah benar) — sekarang ketiganya insert konsisten, ditelusuri ke
+   `invoice_payments` asli lewat `trace_credit_to_real_payments()`.
+3. **`trace_credit_to_real_payments()` dipindah** dari `create_return.php` ke `credit_sources_helper.php`
+   (fungsi bersama, sejajar `ccs_lock_sources()`/`ccs_spend_fifo()` yang sudah ada di situ) supaya 3 endpoint
+   pakai logika yang sama persis.
+4. **Migration `migration_credit_sources_generic_origin.sql`**: kolom `customer_credit_sources.origin_return_invoice_id`
+   → `origin_ref_invoice_id` (RENAME COLUMN, tanpa migrasi data — user konfirmasi masih tahap testing). HARUS
+   dijalankan SEBELUM upload file PHP yang baru (semuanya sudah pakai nama kolom baru).
+5. **UI (`transaction_content.php`) dibersihkan**: dialog pilihan `creditChoiceOverlay`/`askCreditAction()`
+   dihapus total (HTML + JS); section "Refund Queue" di Disbursement Capture Payment (`capRefundQueueGroup`,
+   `loadCapRefundQueue()`, dll, dipicu departemen `refund_settlement`) dihapus — form Disbursement untuk
+   departemen itu sekarang jadi form biasa, tidak ada validasi checklist lagi. Baris "Queued for Refund" di layar
+   konfirmasi Cancel Booking & Return/Adjustment juga dihapus.
+6. **Update 4 Nov 2026 (lanjutan, user minta "hapus saja" semua yang tidak perlu)**: `customer_refund_queue`
+   AKHIRNYA di-DROP juga (sebelumnya sempat dibiarkan, lalu user putuskan drop — tabel ini TIDAK PERNAH
+   terisi data produksi, cuma rencana awal). Departemen `refund_settlement` dihapus dari `departments.json`.
+   Activity code "00-A" dihapus dari tabel `activities` (SELECT dulu baru DELETE manual, lihat
+   `cleanup_refund_settlement.sql`). `list_refund_queue.php` dihapus manual dari server (sudah tidak
+   dipanggil sejak UI-nya dihapus). `create_disbursement.php`: blok `refund_queue_ids` (validasi fail-fast,
+   `FOR UPDATE` + UPDATE status 'returned', field response) dihapus total — file ini kembali jadi
+   disbursement saver biasa, tidak ada lagi activity code yang diperlakukan khusus.
+7. **Perlu dites (urutan: migration dulu)**: (1) jalankan `migration_credit_sources_generic_origin.sql`, lalu
+   `cleanup_refund_settlement.sql` (SELECT → isi id manual → DELETE → DROP TABLE); (2) upload
+   `credit_sources_helper.php`, `create_return.php`, `cancel_booking.php`, `create_price_adjustment.php`,
+   `create_disbursement.php`, `transaction_content.php`, `departments.json` terbaru, dan hapus
+   `list_refund_queue.php` dari server; (3) ulangi skenario booking→DP→cancel→credit_balance→New Order (dari
+   entri sebelumnya, yang tadinya kena "Connection error." karena `credit_sources_helper.php` belum ada di
+   server sama sekali — itu sudah diperbaiki duluan); (4) coba Return & Price Adjustment tanpa invoice open →
+   harus langsung masuk credit_balance tanpa dialog pilihan apa pun; (5) cek `customer_credit_sources`
+   kebentuk untuk ketiga jalur (origin_type `return`/`booking_cancel`/`price_adjustment`),
+   `SUM(remaining_amount)` per customer = `customers.credit_balance`; (6) buka Disbursement — departemen
+   "Refund & Settlement" sudah tidak ada lagi di dropdown; (7) pastikan menu/form Disbursement lain berjalan
+   normal (tidak ada error gara-gara `departments.json` berubah).
 
 **Bugfix (ditemukan user sebelum sempat dites) — invoice overpaid tidak benar-benar ditutup**: di `cancel_booking.php`,
 titik yang nge-cap `invoices.paid_amount` turun supaya pas dengan `total_amount` baru TIDAK pernah ikut nge-update
@@ -638,9 +649,47 @@ tampilannya sudah kelihatan "lunas". Akibatnya order BERIKUTNYA untuk customer y
 invoice ini (karena logic reuse-open-invoice baca kolom `status` literal, bukan hitung ulang dari angka), padahal
 uangnya sudah dipindah ke credit_balance — bikin Total/Paid di invoice baru itu kacau (tercampur sisa booking yang
 sudah "dikosongkan"). Fix: begitu `paid_amount` di-cap (selalu persis sama dengan `total_amount` baru di titik itu),
-invoice itu SEKALIAN ditutup beneran — `status = 'paid'`, `paid_at = NOW()` (formula sama persis dengan yang dipakai
-`apply_customer_credit.php`). Response `cancel.invoice.will_close` ditambah buat UI kasih tau user invoice ini bakal
-ditutup begitu kelebihan DP-nya dipindah.
+invoice itu SEKALIAN ditutup beneran. Response `cancel.invoice.will_close` ditambah buat UI kasih tau user invoice
+ini bakal ditutup begitu kelebihan DP-nya dipindah.
+
+**Revisi fix di atas (31 Okt 2026, sama hari)** — statusnya BUKAN `'paid'`: user koreksi, invoice ini tidak benar-benar
+lunas (uangnya cuma pindah ke credit_balance/refund queue, bukan dibayar beneran), jadi `'paid'` menyesatkan di
+tempat lain yang baca status invoice sebagai "sudah benar-benar settled". Ditambah nilai enum baru **`'cancelled'`**
+khusus untuk kasus ini (`migration_invoice_cancelled_status.sql`, `ALTER TABLE invoices MODIFY COLUMN status
+ENUM('open','paid','cancelled')`) — efeknya sama seperti `'paid'` buat query manapun yang cuma cek
+`status = 'open'` (invoice ini otomatis tersingkir dari reuse), tapi labelnya jujur. `paid_at` TIDAK disentuh
+(tetap NULL/apa adanya — dia berarti "kapan benar-benar lunas", yang memang tidak pernah terjadi di sini).
+
+**Fitur baru (belum dites) — credit_balance otomatis "sudah termasuk paid" di invoice open** (`create_order.php`):
+diminta user 31 Okt 2026 setelah bug di atas — begitu order baru dibuat/invoice open dipakai, SEBELUM konfirmasi,
+sistem otomatis menyerap sebisa mungkin dari `customers.credit_balance` ke invoice itu, dibatasi oleh dua hal: tidak
+lebih dari yang masih outstanding di invoice itu (`total_after - paid_before`) dan tidak lebih dari credit yang
+tersedia. Jadi kalau credit_balance 100 dan invoice total 50 (belum ada paid lain) → `paid_amount` otomatis jadi 50
+(full, status ikut jadi `'paid'`, `paid_at=NOW()`). Kalau credit_balance 30, total 50 → `paid_amount` otomatis jadi
+30 saja (masih `'open'`, sisa 20 harus dibayar cash/Add Payment seperti biasa). Niatnya meniru persis
+`apply_customer_credit.php` (insert `invoice_payments`, kurangi `credit_balance`, TIDAK menyentuh
+`customers.total_paid` karena bukan uang baru masuk) — cuma dipicu otomatis di titik order dibuat/invoice di-reuse,
+bukan nunggu tombol Apply Credit diklik manual. Tombol Apply Credit manual tetap ada untuk kasus lain (credit
+datang setelah invoice itu sudah ada tanpa order baru). Response `order.invoice` nambah field
+`paid_before`/`credit_applied`/`paid_after`, plus `order.credit.balance_before`/`balance_after`; ditampilkan di
+layar Confirm New Order (`showStConfirm` di `transaction_content.php`) kalau `credit_applied > 0`.
+
+**Bugfix (ditemukan user saat tes fitur di atas, 1 Nov 2026) — skema `invoice_payments` sudah beda dari yang
+diasumsikan `apply_customer_credit.php`**: `DESCRIBE invoice_payments` ternyata TIDAK PUNYA kolom `payment_method`
+sama sekali (kolom yang ada: `source_bank`, `source_account_name`, `destination_bank`,
+`destination_account_number`, `destination_account_name` — semuanya `varchar NOT NULL` tanpa default). Kode baru
+saya di `create_order.php` saya tiru dari pola insert `apply_customer_credit.php`, jadi ikut gagal (`Failed to
+save the order`) persis karena kolom itu tidak ada. **Fix di `create_order.php` saja** (bukan di
+`apply_customer_credit.php`): insert sekarang pakai daftar kolom asli sesuai `DESCRIBE`, `source_bank` diisi
+string `"CREDIT BALANCE"` sebagai penanda (pengganti `payment_method` yang sudah tidak ada), field bank lain diisi
+string kosong `''` (bukan transfer sungguhan), `notes` diisi `"AUTO-APPLIED FROM CREDIT BALANCE"`.
+
+**Ikut diperbaiki (1 Nov 2026, sekalian, atas instruksi user) — `apply_customer_credit.php`**: punya bug identik
+(insert ke kolom `payment_method` yang tidak ada → tombol Apply Credit manual pasti selalu gagal kalau benar-benar
+diklik, belum pernah ketahuan karena belum pernah dites). Fix sama persis: `source_bank = "CREDIT BALANCE"` sebagai
+penanda, field bank lain kosong. Perlu dites: klik Apply Credit manual dari invoice open (kasus credit datang
+SETELAH invoice itu ada, bukan lewat auto-apply di New Order) → sekarang harus berhasil, baris payment baru muncul
+di riwayat invoice itu.
 
 Perlu dites: Return/Price Adjustment tanpa invoice open → pilih Credit Balance (perilaku lama, pastikan tidak
 berubah) dan pilih Refund Queue (row baru muncul di `customer_refund_queue` status pending, `source_ref` terisi
@@ -650,10 +699,17 @@ sama sekali (tidak ditanya apa-apa, seperti sebelumnya); Disbursement di departe
 beberapa baris dari beberapa customer sekaligus dalam satu disbursement (total harus pas), coba Save dengan total
 tidak pas (harus ditolak baik di client maupun kalau dipaksa di server), baris yang sudah `returned` tidak lagi
 muncul di picker; pastikan Activity Code lain (bukan 00-A) tetap bisa dipakai normal tanpa field `refund_queue_ids`
-sama sekali nyangkut. Khusus bugfix overpaid-tidak-ditutup di atas: Cancel Booking yang bikin overpaid → invoice itu
-beneran `status='paid'` setelahnya (cek lewat phpMyAdmin), lalu bikin New Order baru untuk customer yang sama →
-harus BUKA INVOICE BARU (bukan numpuk ke invoice booking yang tadi), credit_balance (kalau pilih opsi itu) baru
-kepake kalau user pilih Apply Credit secara eksplisit di invoice baru itu, bukan otomatis tercampur.
+sama sekali nyangkut. Khusus bugfix overpaid-tidak-ditutup di atas: jalankan `migration_invoice_cancelled_status.sql`
+dulu, lalu Cancel Booking yang bikin overpaid → invoice itu beneran `status='cancelled'` setelahnya (cek lewat
+phpMyAdmin, BUKAN `'paid'`), lalu bikin New Order baru untuk customer yang sama → harus BUKA INVOICE BARU (bukan
+numpuk ke invoice booking yang tadi). Khusus fitur auto-apply credit di atas: pilih Credit Balance saat Cancel
+Booking (bukan Refund Queue) supaya ada saldo credit_balance, lalu New Order baru untuk customer sama dengan total
+order LEBIH BESAR dari credit_balance → paid otomatis sebesar credit_balance saja (bukan lunas), status tetap
+`open`, `credit_balance` berkurang pas segitu; order lain dengan total LEBIH KECIL/SAMA dengan credit_balance →
+paid otomatis full (= total), status `paid`, `paid_at` terisi, sisa credit_balance (kalau ada) tetap tersedia untuk
+order berikutnya; cek baris baru muncul di riwayat pembayaran invoice itu dengan method "CREDIT BALANCE" dan notes
+"AUTO-APPLIED FROM CREDIT BALANCE"; `customers.total_paid` TIDAK ikut naik dari auto-apply ini (hanya dari uang
+cash asli).
 
 Selesai & sudah dites (30 Okt 2026) — Fitur Booking/DP lengkap: tab Booking (create), Active Bookings di tab
 Customers (Add Payment reuse, Release, Edit termasuk tambah produk baru, Cancel), kolom "Booking" & "Actual
@@ -688,6 +744,238 @@ Perlu konfirmasi keputusan:
   Profit Payment & Rolled Capital, delete investor) belum dikonfirmasi ditest terpisah.
 - Document Editor → Export as DOCX (OCR): belum pernah dites di LibreOffice/Google Docs (namespace `wps` murni
   ekstensi Microsoft 2010); belum ada pengujian batas performa untuk dokumen sangat panjang/padat teks per halaman.
+
+Selesai & sudah dites (1 Nov 2026) — Bugfix fly window `creditChoiceOverlay` (prompt "No Open
+Invoice" / Credit Balance vs Refund Queue, dipakai Cancel Booking & Returns/Price Adjustment via
+`askCreditAction()`) tidak center di layar. Penyebab: overlay ini tidak terdaftar di array
+`flexOverlays` (`transaction_content.php`), jadi `show()` memakai `display:'block'` alih-alih
+`'flex'` seperti modal lain (lihat §3 gotcha #4). Fix: tambahkan
+`document.getElementById('creditChoiceOverlay')` ke `flexOverlays`. Perlu dites: trigger fly
+window ini (mis. Cancel Booking yang overpaid tanpa invoice lain, atau Return/Price Adjustment
+tanpa invoice open) → pastikan sekarang tampil center di tengah layar.
+
+Dikerjakan (1 Nov 2026, belum dites) — Refund dari Credit Balance sekarang tanya Cash vs Transfer dulu.
+Tombol "Refund" di baris Credit Balance (Sales Transaction > Customers) dulu langsung buka
+`refundOverlay` (form manual), sekarang buka `refundMethodChoiceOverlay` (fly window baru, Cash/Transfer)
+via `openRefundMethodChoice()`. **Cash** → tetap `openRefundView()`/`refundOverlay` seperti sebelumnya,
+cuma sekarang defaultnya Method="CASH" dan Source Account otomatis terpilih akun "0000 0000 0000 ·
+UNSUPPORTED TRANSACTION" yang SUDAH ADA di Company Bank Accounts (`selectRefundDefaultAccount()`, match
+by nomor rekening atau nama ke opsi yang di-load dari `bank_accounts.json`, bukan opsi hardcoded) — tetap
+bisa diganti manual. **Transfer** →
+halaman baru full-page `viewRefundCapture` (pola sama persis dengan Disbursement/Invoice Payment: upload
+slip, `capViewerWrap`/`capCanvas`/Tesseract OCR per-field lewat tombol Scan), field: Refund Date, Amount,
+Source Bank/Account Number/Account Name (ini rekening PERUSAHAAN yang mengirim, di-OCR-match ke
+`bank_accounts.json` via `ACCT_LOOKUP.refund` — arahnya sama seperti Disbursement [uang KELUAR], bukan
+seperti Invoice Payment yang match Destination), Notes. **Sengaja tidak ada field rekening tujuan**
+(rekening customer penerima) karena tabel `invoice_refunds` tidak punya kolom `destination_*` sama sekali
+(beda dari `invoice_payments`) — rekening penerima cuma terekam di file bukti transfer (proof), tidak
+terstruktur. Kedua jalur (Cash & Transfer) kirim ke endpoint yang SAMA, `ajax/create_refund.php`
+(tidak diubah), Transfer kirim `method=TRANSFER` tetap `proof` wajib diupload (beda dari Cash yang opsional).
+Perlu dites: pilih Cash → pastikan Method & Source Account ke-prefill otomatis (masih bisa diubah); pilih
+Transfer → upload slip, scan tiap field (terutama Source Account Number) → pastikan match ke
+`bank_accounts.json` jalan (match tunggal auto-isi, match ganda munculkan `acctPickOverlay`, tidak match
+munculkan `acctRegisterOverlay`) sama persis seperti di Disbursement; Save Refund dari jalur Transfer →
+`invoice_refunds` baris baru dengan `method='TRANSFER'`, `credit_balance`/`total_paid` customer berkurang
+benar, proof tersimpan; tombol Back dari `viewRefundCapture` balik ke tab Customers (bukan ke halaman
+awal Transactions).
+
+Dikerjakan (1 Nov 2026, belum dites) — Bugfix OCR Amount & Date di Refund Transfer
+(`viewRefundCapture`) tidak terparsing. Penyebab: `applyOcrResult()` (dipakai semua grup OCR:
+disbursement/payment/refund) cuma punya case eksplisit untuk `capAmount`/`capExchangeRate` dan
+`payCapAmount` (lewat `parseOcrAmount()`) serta `capDate`/`payCapDate` (lewat `parseOcrDate()`);
+field grup refund (`refCapAmount`, `refCapDate`) tidak terdaftar sama sekali jadi jatuh ke
+cabang `else` generik (`.toUpperCase()` doang) — makanya hasil scan seperti `7.000.000,00` ke
+field Amount masuk mentah sebagai teks, bukan diparsing jadi angka bersih `7000000`. Fix:
+tambah cabang `refCapAmount` (pola sama persis dengan `payCapAmount`) dan `refCapDate` (pola
+sama persis dengan `capDate`/`payCapDate`, pakai `refCapError` yang sudah ada) di
+`applyOcrResult()`. Perlu dites: Refund > Transfer, upload slip dengan nominal format Indonesia
+(mis. "7.000.000,00") → Scan Amount → field Amount harus jadi `7,000,000` (format
+`.input-number-comma`), bukan string OCR mentah; Scan Refund Date dengan tanggal yang kebaca →
+field date terisi benar; tanggal yang gagal kebaca → `refCapError` tampil pesan "Could not read
+the date..." (jangan sampai field date malah ke-skip diam-diam).
+
+Dikerjakan (1 Nov 2026, belum dites) — Credit balance sekarang punya ledger per
+rekening asal (FIFO), bukan cuma satu angka total. Migration baru
+`migration_customer_credit_sources.sql`: tabel `customer_credit_sources`
+(customer_id, source_bank/account_number/account_name NULLABLE, amount,
+remaining_amount, origin_return_invoice_id, origin_invoice_payment_id,
+created_date) dan `customer_credit_applications` (invoice_payment_id,
+credit_source_id, amount_used) — **WAJIB dijalankan dulu** sebelum file PHP
+di bawah dipakai (semuanya guarded `aosTableExists`, jadi tidak fatal kalau
+belum dijalankan, cuma fitur ini diam-diam tidak aktif). customers.credit_balance
+TETAP ada dan tetap jadi source of truth jumlah total (dipakai create_refund.php
+dkk) — SUM(remaining_amount) per customer di tabel baru ini harus selalu sama
+dengan customers.credit_balance, diupdate bersamaan dalam transaction yang sama.
+- **Pembentukan** (`create_return.php`, path `toCredit && creditAction==='credit_balance'`):
+  precondition (user, 1 Nov 2026) — credit_balance HANYA terbentuk dari barang
+  yang invoice asalnya SUDAH PERNAH DIBAYAR (barang yang belum pernah dibayar
+  = sekadar pengurangan stok, bukan kredit). Tiap allocation return ditelusuri
+  ke `source_movement_id` \u2192 `invoice_id` asal \u2192 `invoice_payments` invoice itu
+  (FIFO by id ASC, SKIP baris `source_bank='CREDIT BALANCE'` karena itu bukan
+  rekening nyata) \u2192 nilai return dipecah ke rekening-rekening itu sampai habis.
+  Fungsi baru `trace_credit_to_real_payments()`. Sisa yang tidak tertelusuri
+  (invoice asal pernah dibayar pakai auto-apply credit juga, atau movement
+  sama sekali tanpa invoice_id \u2014 data lama pre-batch_id) dicatat sebagai baris
+  dengan source_bank/account = NULL ("asal tidak diketahui"), bukan error/drop.
+- **Pemakaian** (`create_order.php`, auto-apply \u2014 blok `if ($creditApplied > 0.0001)`):
+  setelah `UPDATE customers SET credit_balance = credit_balance - ?` seperti
+  biasa, SEKARANG juga menguras `customer_credit_sources` FIFO (`ORDER BY id
+  ASC FOR UPDATE`, baris customer itu dengan `remaining_amount > 0`) sampai
+  `$creditApplied` terpenuhi, catat tiap potongan ke `customer_credit_applications`
+  (invoice_payment_id = id baris "AUTO-APPLIED..." yang baru di-insert).
+- **Tampilan** (tab Customers \u2192 expand invoice \u2192 Payments): baris
+  "AUTO-APPLIED FROM CREDIT BALANCE" sekarang menampilkan "Originally received
+  via:" + list rekening & nominal masing-masing (bukan link "View proof of
+  payment" \u2014 baris ini memang tidak pernah punya proof file, proof_path NULL).
+  Data dari `list_customer_orders.php` (query baru setelah loop payments, join
+  `customer_credit_applications`+`customer_credit_sources`, hanya untuk payment
+  dengan `source_bank='CREDIT BALANCE'`) sebagai field baru `p.credit_sources`
+  (array `{amount_used, source_bank, source_account_number, source_account_name}`,
+  bank NULL \u2192 tampil "Unknown account"), dirender di `transaction_content.php`.
+- **Bug Report Ledger (user-reported, screenshot 1 Nov 2026)**: `get_finance_report.php`
+  sebelumnya menghitung SEMUA baris `invoice_payments` sebagai inflow baru,
+  termasuk baris "AUTO-APPLIED..." \u2014 padahal uang itu BUKAN uang baru masuk
+  (sudah dihitung inflow waktu pertama kali diterima rekening aslinya). Akibatnya
+  tiap kali auto-apply jalan, Total/Running Balance di Ledger nambah terus padahal
+  tidak ada uang baru. Fix: query inflow sekarang `WHERE p.source_bank <> 'CREDIT BALANCE'`.
+- Perlu dites (urutan penting, migration dulu): (1) jalankan migration di
+  phpMyAdmin, DESCRIBE kedua tabel baru untuk pastikan kolom sesuai; (2) Return
+  barang dari invoice yang SUDAH PAID, customer tidak punya invoice open lain
+  \u2192 pilih "Credit Balance" \u2192 cek baris baru di `customer_credit_sources`
+  (phpMyAdmin) dengan source_bank/account SESUAI invoice_payments invoice asal
+  itu, remaining_amount = amount; (3) invoice asal dibayar 2x beda rekening
+  (mis. Bank A 40rb lalu Bank B 60rb, lunas) \u2192 return senilai 15rb dari situ
+  \u2192 harus HANYA ada 1 baris baru di customer_credit_sources dengan source_bank
+  = Bank A (FIFO, bukan prorata); return lain lebih besar dari sisa Bank A \u2192
+  harus PECAH jadi 2 baris (sisa Bank A + sebagian Bank B); (4) New Order baru
+  untuk customer yang sama, total LEBIH BESAR dari credit_balance yang ada \u2192
+  auto-apply jalan \u2192 expand invoice itu di tab Customers \u2192 baris "AUTO-APPLIED
+  FROM CREDIT BALANCE" harus tampil "Originally received via: \u2014 Bank A \u00b7 ...: Rp...";
+  kalau sumbernya >1 rekening (dari langkah 3), harus tampil SEMUA rekening yang
+  kepakai dengan nominal masing-masing, total harus pas = amount payment itu; (5)
+  SUM(remaining_amount) customer itu di customer_credit_sources HARUS SAMA PERSIS
+  dengan customers.credit_balance setelah tiap langkah di atas (cek manual lewat
+  phpMyAdmin); (6) Return dari barang yang invoice asalnya BELUM PERNAH dibayar
+  (invoice_payments invoice itu kosong) \u2014 coba pilih "Credit Balance" ATAU
+  "Refund Queue" \u2192 HARUS ditolak dengan error "This return includes items whose
+  original invoice was never paid..." (code 'source_invoice_unpaid'), tidak boleh
+  membentuk credit_balance/refund_queue sama sekali (guard baru, user decision
+  1 Nov 2026 \u2014 lihat komentar "unpaid-source guard" di create_return.php); return
+  campuran (sebagian dari invoice sudah dibayar, sebagian belum) dalam SATU
+  request \u2192 juga harus DITOLAK total (sengaja all-or-nothing, bukan split
+  otomatis \u2014 user disuruh kirim 2 return terpisah); (7) Report \u2192 Ledger \u2192 total
+  akhir setelah beberapa auto-apply TIDAK boleh lebih besar dari total uang yang
+  benar-benar pernah masuk rekening (bandingkan manual dengan jumlah
+  invoice_payments asli, exclude CREDIT BALANCE); (8) refresh halaman (hard
+  reload) sebelum tiap tes supaya tidak ada cache JS lama.
+
+Dikerjakan (1 Nov 2026, lanjutan sesi credit_balance FIFO, belum dites) —
+User kirim `report_content_1.php` (versi lebih baru dari `report_content.php`
+lama, tanpa tabs) minta diperiksa apakah ada bug lain + tambah note sisa
+credit_balance per rekening di Ledger.
+- **Diperiksa, TIDAK ada bug baru di `report_content_1.php`**: summary card
+  "Customer Credit Balance", kedua chart (monthly, cumulative), chart
+  "Balance by Account", card "Bank Accounts", dan CSV export SEMUA sudah ikut
+  benar secara otomatis dari fix backend sebelumnya (`get_finance_report.php`
+  exclude `source_bank='CREDIT BALANCE'` SEBELUM `bump_monthly()`/`$accountsOut`
+  dihitung) \u2014 tidak perlu sentuh frontend untuk itu.
+- **Fitur baru**: card "Unused Credit Balance (by Account)" di atas Ledger.
+  `get_finance_report.php` \u2014 field baru `receivables.unused_credit_by_account`:
+  `SELECT ... SUM(remaining_amount) FROM customer_credit_sources WHERE
+  remaining_amount > 0 GROUP BY source_bank, source_account_number,
+  source_account_name`, guarded manual (query `information_schema.tables`,
+  file ini TIDAK punya helper `aosTableExists` seperti `list_customer_orders.php`)
+  supaya tidak fatal kalau `migration_customer_credit_sources.sql` belum
+  dijalankan. Baris `source_bank IS NULL` (asal tak diketahui) ikut
+  dikelompokkan, tidak di-drop dari total. `report_content_1.php` \u2014 card baru
+  `#rptCreditByAccount` + fungsi `renderCreditByAccount()`, dipanggil dari
+  `renderReport()` setelah `renderReceivables()`.
+- **PENTING, beda makna dengan `receivables.credit_balance_total`**: yang lama
+  itu total credit_balance SEMUA customer jadi satu angka (SUM customers.credit_balance,
+  tidak peduli rekening). Yang baru ini pecah PER REKENING PERUSAHAAN (lintas
+  semua customer) \u2014 jawab pertanyaan "rekening mana yang masih 'nyimpen' utang
+  credit berapa", bukan "customer mana yang punya credit berapa". Dua angka
+  beda tujuan, jangan dikira duplikat/redundan.
+- Perlu dites: (1) kalau migration belum dijalankan \u2014 card ini harus tampil
+  "No unused credit balance on record." (BUKAN error, BUKAN section report lain
+  ikut gagal load); (2) setelah migration + ada credit_balance terbentuk
+  (lihat skenario testing FIFO di entri sebelumnya) \u2014 card ini harus tampil
+  per rekening, nilainya match dengan `SUM(remaining_amount) GROUP BY source_bank...`
+  manual di phpMyAdmin; (3) setelah sebagian credit itu di-auto-apply (New
+  Order) \u2014 angka di card ini harus BERKURANG sesuai yang dipakai (karena
+  `remaining_amount` baris itu berkurang), TIDAK ikut berkurang untuk rekening
+  yang tidak kepakai; (4) total SEMUA card ini dijumlah manual harus <=
+  `receivables.credit_balance_total` (bisa lebih kecil kalau ada baris
+  "Unknown source" yang digabung, tapi tidak boleh lebih besar).
+
+Dikerjakan (1 Nov 2026, lanjutan sesi credit_balance FIFO, belum dites) —
+User kasih feedback atas card "Unused Credit Balance (by Account)" sesi
+sebelumnya: BUKAN itu yang dimau. Card itu DIHAPUS total (report_content_1.php
++ get_finance_report.php, field `unused_credit_by_account` dibuang). Yang
+benar-benar dimau user: kolom "Notes" baru di tabel Ledger + baris
+informasional yang menunjukkan pemecahan credit_balance saat dipakai, supaya
+kelihatan uang 60jt yang sama cuma "dipecah" jadi sisa+terpakai, BUKAN uang
+baru. Ganti nama file Report jadi `report_content_1.php` (user upload versi
+ini, lebih baru dari `report_content.php` lama yang sekarang SUDAH DIHAPUS
+dari outputs \u2014 jangan upload `report_content.php` lagi, pakai `report_content_1.php`).
+- **Prinsip inti (user, 1 Nov 2026)**: "running balance tetap 60, kan saya
+  cuman memecah yang credit 60 juta itu" \u2014 baris kredit terbentuk (60jt,
+  inflow asli) TETAP seperti biasa, TIDAK ada baris Ledger terpisah untuk
+  momen "kredit terbentuk" (user: "Tidak usah... baris pembentukan awal tidak
+  perlu muncul"). Baris baru HANYA muncul saat kredit itu DIPAKAI (auto-apply),
+  sebagai SEPASANG baris informasional (`amount=0` terhadap Running Balance,
+  Notes="Credit Balance"): (1) "Remaining credit balance" = sisa setelah
+  dipotong, (2) "Applied to {customer} ({invoice})" = bagian yang sekarang
+  "jadi milik perusahaan". User: "dia buat terpisah, namun kalau dari visual
+  seperti menyatu" \u2014 2 baris `<tr>` sungguhan, sama `group_id`, CSS
+  `.rpt-ledger-grouped*` (background sama, tanpa border antar baris) supaya
+  kelihatan satu transaksi yang terpecah, bukan dua hal lepas.
+- Migration BARU (tambahan, bukan ganti): `migration_customer_credit_applications_snapshot.sql`
+  \u2014 kolom `customer_credit_applications.remaining_after_amount` (snapshot sisa
+  SAAT potongan itu terjadi, bukan dihitung ulang dari state sekarang \u2014 supaya
+  histori Ledger tidak "berubah sendiri" kalau rekening yang sama dipakai lagi
+  nanti). `create_order.php` diupdate isi kolom ini (`$newRemaining` yang
+  sudah dihitung, tinggal diselipkan ke INSERT).
+- `get_finance_report.php`: blok baru "Credit-balance usage rows" (setelah
+  blok refund, sebelum "Finalize balances") \u2014 JOIN
+  `customer_credit_applications` + `customer_credit_sources` + `invoice_payments`
+  + `invoices` + `customers`, guarded manual (`information_schema`, sama pola
+  "Unused Credit Balance" kemarin). SEMUA baris ledger existing (disbursement/
+  invoice_payment/refund) ditambah field `ledger_note: null, group_id: null`
+  supaya struktur konsisten. PENTING \u2014 sort key `usort` diganti dari `<=>`
+  int murni jadi `strcmp((string)$a['ref_id'], (string)$b['ref_id'])` karena
+  baris baru pakai `ref_id` STRING ('credit_app_{id}_0_remaining' /
+  '_1_used'), beda tipe dari baris lama yang `ref_id` int \u2014 PHP 8 `<=>` antara
+  int dan non-numeric-string TIDAK bisa diandalkan urutannya. Suffix `_0_`/`_1_`
+  literal (bukan mengandalkan ejaan kata "remaining"<"used" yang kebetulan
+  benar secara alfabet) supaya "remaining" SELALU di atas "used" dalam 1 group.
+- `report_content_1.php`: kolom `<th>Notes</th>` baru (kolom ke-8, setelah
+  Running Balance), `colspan` loading/empty state diupdate 7\u21928.
+  `renderLedger()`: baris dengan `row.ledger_note` tampilkan `row.display_amount`
+  (bukan `row.amount` yang sengaja 0) di kolom Amount, TIDAK ikut `running +=`.
+  CSS grouping + CSV export juga diupdate (kolom Notes ditambahkan).
+- Perlu dites (urutan: migration dulu): (1) jalankan
+  `migration_customer_credit_applications_snapshot.sql` (migration SEBELUMNYA,
+  `migration_customer_credit_sources.sql`, harus sudah jalan duluan \u2014 kolom
+  baru ini nempel di tabel yang dibuat migration itu); (2) ulangi skenario
+  Return\u2192credit_balance\u2192New Order (auto-apply) dari entri sebelumnya; (3) buka
+  Report \u2192 Ledger \u2192 cari baris baru: harus ADA 2 baris berurutan dengan Notes
+  terisi ("Credit Balance" dan "Credit Balance \u2014 now company funds"), SECARA
+  VISUAL menyatu (background sama, tanpa garis pemisah di antara keduanya);
+  (4) angka Amount baris "Remaining..." HARUS = sisa credit_balance SETELAH
+  dipotong (bukan 60jt awal, bukan 0); baris "Applied to..." HARUS = nominal
+  yang dipakai; keduanya TIDAK BOLEH mengubah Running Balance (bandingkan
+  Running Balance sebelum & sesudah baris ini \u2014 harus SAMA PERSIS); (5) Total
+  akhir Ledger tetap sama seperti sebelum fitur baris kredit ini ada (cuma
+  dapat tampilan tambahan, bukan angka tambahan); (6) CSV export \u2014 buka file,
+  pastikan kolom Notes ada dan terisi untuk baris kredit; (7) pastikan card
+  "Unused Credit Balance (by Account)" SUDAH TIDAK ADA lagi di halaman Report;
+  (8) di tab Customers (yang sudah dikerjakan sesi sebelumnya, BELUM berubah
+  di sesi ini) \u2014 pastikan "Originally received via: ..." muncul di bawah baris
+  "AUTO-APPLIED FROM CREDIT BALANCE" setelah migration dijalankan (kalau belum
+  muncul walau migration sudah jalan, screenshot user sebelumnya menunjukkan
+  file lama \u2014 cek file `transaction_content.php` yang dipasang di server
+  adalah yang terbaru dari outputs, bukan versi sebelum sesi "customer_credit_sources").
 
 ## 9. Cara lanjut di sesi baru
 1. Upload PROJECT_NOTES.md ini + hanya file kode yang relevan (Sales: `transaction_content.php` + `ajax/` terkait;

@@ -15,10 +15,6 @@
         {
             "key": "selling",
             "label": "SELLING"
-        },
-        {
-            "key": "refund_settlement",
-            "label": "REFUND & SETTLEMENT"
         }
     ]
 }

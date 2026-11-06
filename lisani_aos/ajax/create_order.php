@@ -38,9 +38,23 @@
 // logistic_movements — logistics.defective_reference_price is no longer
 // used anywhere in this file.
 //
+// Revised 31 Okt 2026 (auto-apply credit_balance): whichever invoice this
+// order lands on (reused open one, or a freshly created one) now also
+// automatically draws down the customer's credit_balance to cover as much
+// of it as possible — capped at what's actually outstanding on THIS
+// invoice (never more than its total, never more than what's available).
+// Same accounting as the manual Apply Credit button
+// (apply_customer_credit.php: an invoice_payments row, method "CREDIT
+// BALANCE", customers.total_paid untouched since no new cash came in) —
+// this just triggers it automatically instead of waiting for someone to
+// click it, so an open invoice is never left understating how much of it
+// is already covered by credit the customer is sitting on.
+//
 // Response contract: { ok, message, ... }
 //   ok: true  -> order { customer, order_date, driver_name, police_number,
-//                        invoice{id,number,is_new,total_before,total_after},
+//                        invoice{id,number,is_new,total_before,total_after,
+//                                paid_before,credit_applied,paid_after},
+//                        credit{balance_before,balance_after},
 //                        items[], grand_total, dry_run, movement_ids? }
 //   ok: false -> message, and for a missing price also
 //                code: "missing_prices", missing: [ {logistic_id, product_name, unit_label} ]
@@ -54,6 +68,9 @@
 //   - customers.total_inflow (+ order value)
 //   - invoices: the customer's open invoice is reused, or a new one is created
 //     ([seq 3 digits]/inv/laj-[INITIALS]-[n]/[MONTH ROMAN]/[YEAR]); total_amount (+)
+//   - if credit_balance > 0: invoice_payments (+1 row, "CREDIT BALANCE"),
+//     invoices.paid_amount (+), invoices.status/paid_at recomputed,
+//     customers.credit_balance (-) — see "Revised 31 Okt 2026" above
 //     [n] = position of the customer among customers that share the same initials
 //     (starts at 1). It is fixed at the customer's first invoice and reused for all
 //     of that customer's invoices, so two customers with the same initials can never
@@ -108,6 +125,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 require_once dirname(__DIR__) . '/db_config.php'; // provides $lisani_conn (mysqli)
+require_once __DIR__ . '/credit_sources_helper.php'; // ccs_lock_sources() / ccs_spend_fifo()
 
 // ---------- Helpers ----------
 function post_str(string $key): string
@@ -276,7 +294,7 @@ try {
 
     // ---- Customer (locked: serializes orders of the same customer, which keeps
     //      invoice numbering and total_inflow consistent) ----
-    $st = $lisani_conn->prepare('SELECT id, customer_name FROM customers WHERE id = ? FOR UPDATE');
+    $st = $lisani_conn->prepare('SELECT id, customer_name, credit_balance FROM customers WHERE id = ? FOR UPDATE');
     $st->bind_param('i', $customerId);
     $st->execute();
     $customer = $st->get_result()->fetch_assoc();
@@ -461,7 +479,7 @@ try {
     $invoice = null;
     if (!$forceNewInvoice) {
         $st = $lisani_conn->prepare(
-            "SELECT id, invoice_number, total_amount
+            "SELECT id, invoice_number, total_amount, paid_amount
              FROM invoices
              WHERE customer_id = ? AND status = 'open'
              ORDER BY id DESC
@@ -479,11 +497,13 @@ try {
     $invoiceSeq    = 0;
     $invoiceIsNew  = false;
     $totalBefore   = 0.0;
+    $paidBefore    = 0.0;
 
     if ($invoice) {
         $invoiceId     = (int) $invoice['id'];
         $invoiceNumber = $invoice['invoice_number'];
         $totalBefore   = (float) $invoice['total_amount'];
+        $paidBefore    = (float) $invoice['paid_amount'];
     } else {
         $invoiceIsNew = true;
 
@@ -521,6 +541,22 @@ try {
         }
     }
 
+    // ---- Auto-apply available credit_balance toward this invoice, capped
+    //      at what's actually still outstanding (never more than
+    //      total_after, never more than what's available) — requested 31
+    //      Okt 2026: an open invoice is treated as already partly/fully paid
+    //      by whatever credit the customer is sitting on, same money,
+    //      same accounting as the manual Apply Credit button
+    //      (apply_customer_credit.php), just triggered automatically here
+    //      instead of waiting for someone to click it. Does NOT touch
+    //      customers.total_paid (no new cash came in, this only reallocates
+    //      credit that's already on the books). ----
+    $totalAfter    = round($totalBefore + $grand, 2);
+    $creditBefore  = (float) $customer['credit_balance'];
+    $outstanding   = round($totalAfter - $paidBefore, 2);
+    $creditApplied = max(0.0, min($creditBefore, $outstanding));
+    $paidAfter     = round($paidBefore + $creditApplied, 2);
+
     $order = [
         'dry_run'       => $dryRun,
         'customer'      => ['id' => $customerId, 'name' => $customer['customer_name']],
@@ -528,11 +564,18 @@ try {
         'driver_name'   => $driver !== '' ? $driver : null,
         'police_number' => $police !== '' ? $police : null,
         'invoice'       => [
-            'id'           => $invoiceId,
-            'number'       => $invoiceNumber,
-            'is_new'       => $invoiceIsNew,
-            'total_before' => $totalBefore,
-            'total_after'  => round($totalBefore + $grand, 2),
+            'id'              => $invoiceId,
+            'number'          => $invoiceNumber,
+            'is_new'          => $invoiceIsNew,
+            'total_before'    => $totalBefore,
+            'total_after'     => $totalAfter,
+            'paid_before'     => $paidBefore,
+            'credit_applied'  => $creditApplied,
+            'paid_after'      => $paidAfter,
+        ],
+        'credit'        => [
+            'balance_before' => $creditBefore,
+            'balance_after'  => round($creditBefore - $creditApplied, 2),
         ],
         'items'         => $lines,
         'grand_total'   => $grand,
@@ -654,6 +697,106 @@ try {
     $st->bind_param('si', $g, $invoiceId);
     $st->execute();
     $st->close();
+
+    // Auto-apply credit (see preview block above for the rationale/formula —
+    // $creditApplied was computed from the same $totalAfter/$paidBefore this
+    // WRITES section just made real).
+    if ($creditApplied > 0.0001) {
+        $ca = money($creditApplied);
+        $today = date('Y-m-d');
+        // invoice_payments has NO payment_method column (checked against a
+        // live DESCRIBE, 1 Nov 2026 — the column apply_customer_credit.php
+        // assumes doesn't actually exist; that file is apparently stale).
+        // source_bank/source_account_name/destination_* are all NOT NULL
+        // with no default, so every payment row must fill them even when,
+        // like this one, there's no real bank transfer — source_bank carries
+        // the "CREDIT BALANCE" marker (closest equivalent to the old
+        // payment_method intent), the rest are blank.
+        $blank = '';
+        $srcBank = 'CREDIT BALANCE';
+        $notes = 'AUTO-APPLIED FROM CREDIT BALANCE';
+        $ins = $lisani_conn->prepare(
+            'INSERT INTO invoice_payments
+               (invoice_id, customer_id, payment_date, amount,
+                source_bank, source_account_name, destination_bank,
+                destination_account_number, destination_account_name,
+                notes, proof_path, proof_original_name, created_by)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)'
+        );
+        $ins->bind_param(
+            'iissssssssi',
+            $invoiceId, $customerId, $today, $ca,
+            $srcBank, $blank, $blank, $blank, $blank,
+            $notes, $userId
+        );
+        $ins->execute();
+        $ins->close();
+        $autoApplyPaymentId = $lisani_conn->insert_id;
+
+        $newPaid   = $paidAfter; // already rounded in the preview block
+        $newStatus = ($newPaid >= $totalAfter - 0.01) ? 'paid' : 'open';
+        $paidAtSql = ($newStatus === 'paid') ? 'NOW()' : 'NULL';
+        $np = money($newPaid);
+        $st = $lisani_conn->prepare(
+            "UPDATE invoices SET paid_amount = ?, status = ?, paid_at = $paidAtSql WHERE id = ?"
+        );
+        $st->bind_param('ssi', $np, $newStatus, $invoiceId);
+        $st->execute();
+        $st->close();
+
+        $st = $lisani_conn->prepare('UPDATE customers SET credit_balance = credit_balance - ? WHERE id = ?');
+        $st->bind_param('si', $ca, $customerId);
+        $st->execute();
+        $st->close();
+
+        // ---- Spend customer_credit_sources FIFO (oldest id first) to cover
+        //      $creditApplied, recording which account(s) funded this
+        //      auto-apply in customer_credit_applications — see
+        //      migration_customer_credit_sources.sql and the "Revised 1 Nov
+        //      2026" note in create_return.php. SUM(remaining_amount) for
+        //      this customer must stay equal to customers.credit_balance;
+        //      both are updated here in the same transaction. Shared FIFO
+        //      logic (ccs_lock_sources/ccs_spend_fifo) lives in
+        //      credit_sources_helper.php — create_refund.php and
+        //      create_disbursement.php use the exact same functions, so
+        //      every way of spending a customer's credit draws from the
+        //      same locked rows (no double-spend across the three paths). ----
+        $lockedSources = ccs_lock_sources($lisani_conn, $customerId);
+        $slices = ccs_spend_fifo($lisani_conn, $lockedSources, $creditApplied);
+
+        // remaining_after_amount: a SNAPSHOT of this credit source's balance
+        // right after this slice is taken — not re-derived later from
+        // customer_credit_sources.remaining_amount, which keeps changing as
+        // this same source gets spent further by future auto-applies. The
+        // Ledger's "credit used" rows (get_finance_report.php) need the
+        // historical figure as it stood at this moment, so it doesn't appear
+        // to "change itself" every time the report is reopened — see
+        // migration_customer_credit_applications_snapshot.sql.
+        if ($slices) {
+            $appIns = $lisani_conn->prepare(
+                'INSERT INTO customer_credit_applications
+                   (invoice_payment_id, credit_source_id, amount_used, remaining_after_amount)
+                 VALUES (?, ?, ?, ?)'
+            );
+            foreach ($slices as $slice) {
+                $appIns->bind_param(
+                    'iiss',
+                    $autoApplyPaymentId, $slice['credit_source_id'],
+                    $slice['amount_used'], $slice['remaining_after_amount']
+                );
+                $appIns->execute();
+            }
+            $appIns->close();
+        }
+        // If array_sum of $slices' amount_used < $creditApplied,
+        // customer_credit_sources' total fell out of sync with
+        // customers.credit_balance (e.g. a credit source row created before
+        // this feature existed) — not fixed silently; the auto-apply itself
+        // already succeeded against customers.credit_balance above, which
+        // stays the source of truth for "how much credit is available", so
+        // this is a display-only gap (no account to show for that slice)
+        // rather than a failed order.
+    }
 
     $lisani_conn->commit();
 

@@ -397,19 +397,6 @@ $currentYear     = date('Y');
     <div class="empty-sub">Auto-calculated from Amount &times; Exchange Rate when Currency isn't IDR — still editable.</div>
   </div>
 
-  <!-- Only shown when Activity Code "00-A" (department Refund & Settlement)
-       is selected — see list_refund_queue.php / create_disbursement.php.
-       Ticked rows (1 or more, any customer) must sum to exactly Final
-       Amount (IDR) above; collapsible per customer, collapsed by default,
-       so a long pending list stays easy to scan. -->
-  <div class="form-group" id="capRefundQueueGroup" style="display:none;">
-    <div style="display:flex; align-items:center; justify-content:space-between;">
-      <div class="label">Which refund(s) is this paying out?</div>
-      <div class="empty-sub" id="capRefundQueueSum">Selected: IDR 0</div>
-    </div>
-    <div id="capRefundQueueBox"><div class="empty-sub">Loading pending refunds…</div></div>
-  </div>
-
   <div class="empty-sub" id="capError" style="display:none; color:var(--danger);"></div>
 
   <div style="display:flex; gap:var(--space-3); justify-content:flex-end; margin-top:var(--space-5);">
@@ -507,6 +494,91 @@ $currentYear     = date('Y');
 
   <div style="display:flex; gap:var(--space-3); justify-content:flex-end; margin-top:var(--space-5);">
     <button type="button" class="btn btn-primary" id="btnPayCapSave">Save Payment</button>
+  </div>
+</div>
+
+
+<!-- Refund — Transfer capture. Reuses the SAME upload/viewer/OCR engine as
+     Disbursement/Invoice Payment above (capViewerWrap, capCanvas,
+     capFieldPickerOverlay): only one wizard is ever open at a time, the
+     shared viewer is simply repointed by activeCapGroup. Matches the
+     SOURCE account number against Company Bank Accounts — same direction as
+     Disbursement (this is money LEAVING the business), see ACCT_LOOKUP.refund
+     below. No "Destination" fields: invoice_refunds has no destination_*
+     columns, so the customer's own receiving account isn't captured
+     structurally here, only on the proof image/PDF itself. Opened from the
+     "Refund" button on a customer's Credit Balance row (Sales Transaction >
+     Customers), after "Transfer" is picked in refundMethodChoiceOverlay.
+     Posts to the SAME ajax/create_refund.php as the Cash form (refundOverlay
+     above), with method fixed to "TRANSFER". -->
+<div class="card" id="viewRefundCapture" style="width:100%; display:none;">
+  <div class="panel-header">
+    <div class="panel-title">Refund (Transfer) — <span id="refCapCustomerLabel"></span></div>
+    <button type="button" class="btn btn-secondary" id="btnRefCapBack">Back</button>
+  </div>
+
+  <div class="empty-sub" id="refCapAvailable" style="margin-bottom:var(--space-3);"></div>
+
+  <div class="form-group">
+    <div class="label">Proof of Transfer (PDF or Image)</div>
+    <input type="file" class="input" id="refCapFileInput" accept="application/pdf,image/*">
+    <button type="button" class="btn btn-secondary" id="btnRefCapOpenViewer" style="display:none; margin-top:var(--space-2);">View Document</button>
+  </div>
+
+  <div class="form-group">
+    <div class="label">Refund Date</div>
+    <div style="display:flex; gap:var(--space-2);">
+      <input type="date" class="input" id="refCapDate" style="flex:1;">
+      <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="refCapDate" data-scan-label="Refund Date" data-cap-group="refund">Scan</button>
+    </div>
+  </div>
+
+  <div class="form-group">
+    <div class="label">Amount</div>
+    <div style="display:flex; gap:var(--space-2);">
+      <input type="text" inputmode="decimal" class="input input-number-comma" id="refCapAmount" style="flex:1;">
+      <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="refCapAmount" data-scan-label="Amount" data-cap-group="refund">Scan</button>
+    </div>
+  </div>
+
+  <div class="form-group">
+    <div class="label">Source Bank (your company account sending the refund)</div>
+    <div style="display:flex; gap:var(--space-2);">
+      <input type="text" class="input input-uppercase" id="refCapSourceBank" list="refCapSourceBankList" style="flex:1;">
+      <datalist id="refCapSourceBankList"></datalist>
+      <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="refCapSourceBank" data-scan-label="Source Bank" data-cap-group="refund">Scan</button>
+    </div>
+  </div>
+
+  <div class="form-group">
+    <div class="label">Source Account Number</div>
+    <div style="display:flex; gap:var(--space-2);">
+      <input type="text" class="input input-uppercase" id="refCapSourceAccountNumber" list="refCapSourceAccountNumberList" style="flex:1;">
+      <datalist id="refCapSourceAccountNumberList"></datalist>
+      <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="refCapSourceAccountNumber" data-scan-label="Source Account Number" data-cap-group="refund">Scan</button>
+    </div>
+  </div>
+
+  <div class="form-group">
+    <div class="label">Source Account Name</div>
+    <div style="display:flex; gap:var(--space-2);">
+      <input type="text" class="input input-uppercase" id="refCapSourceAccountName" style="flex:1;">
+      <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="refCapSourceAccountName" data-scan-label="Source Account Name" data-cap-group="refund">Scan</button>
+    </div>
+  </div>
+
+  <div class="form-group">
+    <div class="label">Notes</div>
+    <div style="display:flex; gap:var(--space-2);">
+      <input type="text" class="input input-uppercase" id="refCapNotes" style="flex:1;">
+      <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="refCapNotes" data-scan-label="Notes" data-cap-group="refund">Scan</button>
+    </div>
+  </div>
+
+  <div class="empty-sub" id="refCapError" style="display:none; color:var(--danger);"></div>
+
+  <div style="display:flex; gap:var(--space-3); justify-content:flex-end; margin-top:var(--space-5);">
+    <button type="button" class="btn btn-primary" id="btnRefCapSave">Save Refund</button>
   </div>
 </div>
 
@@ -1148,6 +1220,24 @@ $currentYear     = date('Y');
   </div>
 </div>
 
+<!-- Refund — Cash vs Transfer choice, shown first whenever the "Refund"
+     button on a customer's Credit Balance row is clicked. Cash goes to the
+     plain form above (refundOverlay); Transfer goes to the OCR capture
+     wizard (viewRefundCapture, further down). -->
+<div class="modal-overlay" id="refundMethodChoiceOverlay" style="display:none;">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-header"><div class="modal-title">Refund <span id="refundChoiceCustomerLabel"></span></div></div>
+    <div class="modal-body">
+      <div class="empty-sub" id="refundChoiceIntro" style="margin-bottom:var(--space-3);"></div>
+    </div>
+    <div class="modal-footer" style="flex-wrap:wrap; gap:var(--space-2);">
+      <button type="button" class="btn btn-ghost" id="btnRefundChoiceCancel">Cancel</button>
+      <button type="button" class="btn btn-secondary" id="btnRefundChoiceCash">Cash</button>
+      <button type="button" class="btn btn-primary" id="btnRefundChoiceTransfer">Transfer</button>
+    </div>
+  </div>
+</div>
+
 <!-- Apply Credit — move part/all of a customer's credit_balance onto one of
      their OPEN invoices (no file; nothing new was paid in, it's a
      reallocation). Appears as a payment in that invoice's history, method
@@ -1765,28 +1855,6 @@ $currentYear     = date('Y');
   </div>
 </div>
 
-<!-- Generic prompt reused by Returns/Price Adjustment (create_return.php /
-     create_price_adjustment.php) and Cancel Booking (cancel_booking.php)
-     whenever the server comes back with code "credit_action_required" — no
-     open invoice to reduce (or, for Cancel Booking, the invoice is now
-     overpaid). Resolved via the askCreditAction() JS helper below; this
-     overlay has no state of its own. -->
-<div class="modal-overlay" id="creditChoiceOverlay" style="display:none;">
-  <div class="modal" style="max-width:420px;">
-    <div class="modal-header">
-      <div class="modal-title">No Open Invoice</div>
-    </div>
-    <div class="modal-body">
-      <div class="empty-sub" id="creditChoiceIntro" style="margin-bottom:var(--space-3);"></div>
-    </div>
-    <div class="modal-footer" style="flex-wrap:wrap; gap:var(--space-2);">
-      <button type="button" class="btn btn-ghost" id="btnCreditChoiceCancel">Cancel</button>
-      <button type="button" class="btn btn-secondary" id="btnCreditChoiceBalance">Credit Balance</button>
-      <button type="button" class="btn btn-primary" id="btnCreditChoiceRefund">Refund (Settle Later)</button>
-    </div>
-  </div>
-</div>
-
 <!-- Sales Transaction — shown after Read Message ONLY when the selected
      customer already has other order(s) on the same order date. Lets the
      user say whether this message is a standalone New Order, or should be
@@ -2038,6 +2106,7 @@ $currentYear     = date('Y');
 
   var refundOverlay = document.getElementById('refundOverlay');
   var applyCreditOverlay = document.getElementById('applyCreditOverlay');
+  var viewRefundCapture = document.getElementById('viewRefundCapture');
 
   var flexOverlays = [entryOverlay, passwordOverlay, manageDeptOverlay, deleteCustomerOverlay,
     deleteActivityCodeOverlay, itemPriceAddOverlay, itemPriceReverifyOverlay,
@@ -2049,7 +2118,8 @@ $currentYear     = date('Y');
     bkEditOverlay, bkCancelOverlay,
     rtProductOverlay, rtConfirmOverlay, rtReverifyOverlay,
     refundOverlay, applyCreditOverlay, document.getElementById('invPrintOverlay'),
-    document.getElementById('acctPickOverlay'), document.getElementById('acctRegisterOverlay')];
+    document.getElementById('acctPickOverlay'), document.getElementById('acctRegisterOverlay'),
+    document.getElementById('refundMethodChoiceOverlay')];
 
   function show(el) {
     el.style.display = (flexOverlays.indexOf(el) !== -1) ? 'flex' : 'block';
@@ -2146,7 +2216,7 @@ $currentYear     = date('Y');
   });
 
   function showOnlyView(target) {
-    [viewEmpty, viewForm, viewResult, viewCustomerList, viewDisbursementCapture, viewSales, viewInvoicePaymentCapture].forEach(hide);
+    [viewEmpty, viewForm, viewResult, viewCustomerList, viewDisbursementCapture, viewSales, viewInvoicePaymentCapture, viewRefundCapture].forEach(hide);
     show(target);
   }
 
@@ -2657,104 +2727,6 @@ $currentYear     = date('Y');
     capFinalAmountIdr.value = '';
     capExchangeRateGroup.style.display = 'none';
     document.getElementById('capError').style.display = 'none';
-
-    // Refund & Settlement (Activity Code "00-A") — see create_disbursement.php.
-    capRefundQueueSelected = {};
-    var refundGroup = document.getElementById('capRefundQueueGroup');
-    if (disbState.department_key === 'refund_settlement') {
-      refundGroup.style.display = 'block';
-      loadCapRefundQueue();
-    } else {
-      refundGroup.style.display = 'none';
-      document.getElementById('capRefundQueueBox').innerHTML = '';
-    }
-  }
-
-  // id -> amount, for whichever customer_refund_queue rows are currently ticked.
-  var capRefundQueueSelected = {};
-
-  function updateCapRefundQueueSum() {
-    var sum = 0;
-    Object.keys(capRefundQueueSelected).forEach(function (id) { sum += capRefundQueueSelected[id]; });
-    document.getElementById('capRefundQueueSum').textContent = 'Selected: ' + formatIDR(sum);
-    return sum;
-  }
-
-  function loadCapRefundQueue() {
-    var box = document.getElementById('capRefundQueueBox');
-    box.innerHTML = '<div class="empty-sub">Loading pending refunds\u2026</div>';
-    fetch('ajax/list_refund_queue.php?status=pending', { cache: 'no-store' })
-      .then(function (r) { return r.json(); })
-      .then(function (res) {
-        if (!res.ok) { box.innerHTML = '<div class="empty-sub">Could not load the refund queue.</div>'; return; }
-        renderCapRefundQueue(res.data.customers || []);
-      })
-      .catch(function () {
-        box.innerHTML = '<div class="empty-sub">Connection error.</div>';
-      });
-  }
-
-  function renderCapRefundQueue(customers) {
-    var box = document.getElementById('capRefundQueueBox');
-    box.innerHTML = '';
-    if (!customers.length) {
-      box.innerHTML = '<div class="empty-sub">No pending refunds right now.</div>';
-      return;
-    }
-    customers.forEach(function (cust) {
-      var wrap = document.createElement('div');
-      wrap.className = 'st-mov';
-      wrap.style.cursor = 'pointer';
-
-      var head = document.createElement('div');
-      head.className = 'st-mov-top';
-      var nm = document.createElement('div');
-      nm.style.fontWeight = '600';
-      nm.textContent = cust.customer_name + ' (' + cust.items.length + ')';
-      var tot = document.createElement('div');
-      tot.textContent = formatIDR(cust.total_pending);
-      head.appendChild(nm);
-      head.appendChild(tot);
-      wrap.appendChild(head);
-
-      var body = document.createElement('div');
-      body.style.display = 'none'; // collapsed by default
-      body.style.marginTop = 'var(--space-2)';
-
-      cust.items.forEach(function (it) {
-        var row = document.createElement('label');
-        row.style.display = 'flex';
-        row.style.alignItems = 'center';
-        row.style.gap = '8px';
-        row.style.padding = '4px 0';
-        row.style.cursor = 'pointer';
-
-        var cb = document.createElement('input');
-        cb.type = 'checkbox';
-        cb.addEventListener('click', function (e) { e.stopPropagation(); });
-        cb.addEventListener('change', function () {
-          if (cb.checked) {
-            capRefundQueueSelected[it.id] = it.amount;
-          } else {
-            delete capRefundQueueSelected[it.id];
-          }
-          updateCapRefundQueueSum();
-        });
-
-        var lbl = document.createElement('span');
-        lbl.textContent = formatIDR(it.amount) + ' \u2014 ' + it.source_type.replace('_', ' ') + ' \u00b7 ' + formatPriceDate(it.queued_date);
-
-        row.appendChild(cb);
-        row.appendChild(lbl);
-        body.appendChild(row);
-      });
-
-      wrap.appendChild(body);
-      head.addEventListener('click', function () {
-        body.style.display = (body.style.display === 'none') ? 'block' : 'none';
-      });
-      box.appendChild(wrap);
-    });
   }
 
   // Shared by the Disbursement file input (capFileInput) AND the Invoice
@@ -3434,7 +3406,9 @@ $currentYear     = date('Y');
     disbursement: { numberId: 'capSourceAccountNumber', bankId: 'capSourceBank',
                     nameId: 'capSourceAccountName', currencyId: 'capCurrency', label: 'source' },
     payment:      { numberId: 'payCapDestAccountNumber', bankId: 'payCapDestBank',
-                    nameId: 'payCapDestAccountName', currencyId: null, label: 'destination' }
+                    nameId: 'payCapDestAccountName', currencyId: null, label: 'destination' },
+    refund:       { numberId: 'refCapSourceAccountNumber', bankId: 'refCapSourceBank',
+                    nameId: 'refCapSourceAccountName', currencyId: null, label: 'source' }
   };
   var acctPickOverlay     = document.getElementById('acctPickOverlay');
   var acctRegisterOverlay = document.getElementById('acctRegisterOverlay');
@@ -3823,6 +3797,22 @@ $currentYear     = date('Y');
       var payParsed = parseOcrAmount(rawText);
       el.value = isNaN(payParsed) ? '' : formatNumberInput(String(payParsed));
       recalcPayCapNotes(); // applyOcrResult sets .value directly, no 'input' event fires
+    } else if (fieldId === 'refCapAmount') {
+      var refParsed = parseOcrAmount(rawText);
+      el.value = isNaN(refParsed) ? '' : formatNumberInput(String(refParsed));
+    } else if (fieldId === 'refCapDate') {
+      var refIso = parseOcrDate(rawText);
+      var refErrEl = document.getElementById('refCapError');
+      if (refIso) {
+        el.value = refIso;
+        if (refErrEl && refErrEl.textContent.indexOf('Could not read the date') === 0) refErrEl.style.display = 'none';
+      } else {
+        el.value = '';
+        if (refErrEl) {
+          refErrEl.textContent = 'Could not read the date from "' + rawText.replace(/\s+/g, ' ').slice(0, 40) + '" — please pick it manually.';
+          refErrEl.style.display = 'block';
+        }
+      }
     } else {
       el.value = rawText.replace(/\s+/g, ' ').trim().toUpperCase();
     }
@@ -3922,24 +3912,6 @@ $currentYear     = date('Y');
       return;
     }
 
-    // Refund & Settlement (Activity Code "00-A") — the server re-checks this
-    // for real (FOR UPDATE), but catching a mismatch here first avoids an
-    // upload for nothing. See create_disbursement.php.
-    var refundQueueIds = Object.keys(capRefundQueueSelected).map(function (k) { return parseInt(k, 10); });
-    if (disbState.department_key === 'refund_settlement') {
-      if (!refundQueueIds.length) {
-        errBox.textContent = 'Tick at least one pending refund this disbursement is paying out.';
-        errBox.style.display = 'block';
-        return;
-      }
-      var selectedSum = updateCapRefundQueueSum();
-      if (Math.abs(selectedSum - finalAmount) > 0.01) {
-        errBox.textContent = 'The selected refunds total ' + formatIDR(selectedSum) + ', which must match Final Amount (IDR) exactly.';
-        errBox.style.display = 'block';
-        return;
-      }
-    }
-
     var payload = new FormData();
     payload.append('activity_id', disbState.activity_id);
     payload.append('cashflow_type', disbState.cashflow);
@@ -3959,9 +3931,6 @@ $currentYear     = date('Y');
     payload.append('exchange_rate', isNaN(rate) ? '' : String(rate));
     payload.append('final_amount_idr', String(finalAmount));
     payload.append('document', capUploadedFile);
-    if (refundQueueIds.length) {
-      payload.append('refund_queue_ids', JSON.stringify(refundQueueIds));
-    }
 
     var saveBtn = document.getElementById('btnCapSave');
     saveBtn.disabled = true;
@@ -4254,6 +4223,199 @@ $currentYear     = date('Y');
   });
 
   // ==========================================================
+  // Refund — Transfer capture (OCR), shares the same upload/viewer/Tesseract
+  // engine as Disbursement/Invoice Payment above. Matches the SOURCE account
+  // number against Company Bank Accounts (money leaving the business — same
+  // direction as Disbursement, see ACCT_LOOKUP.refund). Posts to the SAME
+  // ajax/create_refund.php as the Cash form (openRefundView above), with
+  // method fixed to "TRANSFER". Opened via openRefCaptureView(), called from
+  // btnRefundChoiceTransfer above.
+  // ==========================================================
+  var refCapFileInput     = document.getElementById('refCapFileInput');
+  var btnRefCapOpenViewer = document.getElementById('btnRefCapOpenViewer');
+  var refCapDate   = document.getElementById('refCapDate');
+  var refCapAmount = document.getElementById('refCapAmount');
+  var refCapSourceBank          = document.getElementById('refCapSourceBank');
+  var refCapSourceAccountNumber = document.getElementById('refCapSourceAccountNumber');
+  var refCapSourceAccountName   = document.getElementById('refCapSourceAccountName');
+  var refCapNotes  = document.getElementById('refCapNotes');
+  var refCapCustomerLabel = document.getElementById('refCapCustomerLabel');
+  var refCapAvailableEl   = document.getElementById('refCapAvailable');
+  var refCapError  = document.getElementById('refCapError');
+  var refCapCustomerId = null; // which customer card to refresh after a successful save
+
+  // Source bank/account datalist, same Company Bank Accounts source as
+  // loadRefundSourceAccounts() above, but kept as a separate plain-object
+  // list (not <option> elements) because this feeds <datalist>s instead of
+  // a <select>. Reloaded every time the form opens, and after a new account
+  // is registered from the OCR lookup, so the datalists never go stale.
+  var refSourceBankAccounts = [];
+  function loadRefCapSourceAccounts() {
+    fetch('ajax/list_bank_accounts.php')
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (!res || !res.success || !Array.isArray(res.accounts)) return;
+        refSourceBankAccounts = res.accounts.map(function (a) {
+          return {
+            bank: pickField(a, ['bank_name', 'bank', 'bankName']),
+            account_number: pickField(a, ['account_number', 'number', 'accountNumber']),
+            account_name: pickField(a, ['account_name', 'holder_name', 'name', 'accountName'])
+          };
+        }).filter(function (a) { return a.bank || a.account_number; });
+
+        var bankList = document.getElementById('refCapSourceBankList');
+        var numList = document.getElementById('refCapSourceAccountNumberList');
+        bankList.innerHTML = '';
+        numList.innerHTML = '';
+        var seenBanks = {};
+        refSourceBankAccounts.forEach(function (a) {
+          if (a.bank && !seenBanks[a.bank]) {
+            seenBanks[a.bank] = true;
+            var opt = document.createElement('option');
+            opt.value = a.bank;
+            bankList.appendChild(opt);
+          }
+          if (a.account_number) {
+            var opt2 = document.createElement('option');
+            opt2.value = a.account_number;
+            if (a.bank || a.account_name) {
+              opt2.label = [a.bank, a.account_name].filter(Boolean).join(' - ');
+            }
+            numList.appendChild(opt2);
+          }
+        });
+      })
+      .catch(function () { /* best-effort only — form stays plain editable text */ });
+  }
+  // Selecting an account number from the datalist also fills bank + name,
+  // since a datalist pick fires a normal 'input' event with the exact value.
+  refCapSourceAccountNumber.addEventListener('input', function () {
+    for (var i = 0; i < refSourceBankAccounts.length; i++) {
+      if (refSourceBankAccounts[i].account_number === refCapSourceAccountNumber.value) {
+        refCapSourceBank.value = refSourceBankAccounts[i].bank;
+        refCapSourceAccountName.value = refSourceBankAccounts[i].account_name;
+        break;
+      }
+    }
+  });
+
+  function resetRefCaptureForm() {
+    activeCapGroup = 'refund';
+    refCapFileInput.value = '';
+    capUploadedFile = null;
+    capDoc = null;
+    capNumPages = 1;
+    capCurrentPage = 1;
+    armedScanField = null;
+    scanTriggerSource = null;
+    blockModeArmed = false;
+    capCanvas.style.cursor = '';
+    tapCount = 0;
+    if (tapTimer) clearTimeout(tapTimer);
+    capViewerWrap.style.display = 'none';
+    capBlockHint.style.display = 'none';
+    capZoom = 1;
+    btnRefCapOpenViewer.style.display = 'none';
+    hide(capFieldPickerOverlay);
+    capCtx.clearRect(0, 0, capCanvas.width, capCanvas.height);
+    refCapDate.value = '';
+    refCapAmount.value = '';
+    refCapSourceBank.value = '';
+    refCapSourceAccountNumber.value = '';
+    refCapSourceAccountName.value = '';
+    refCapNotes.value = '';
+    refCapCustomerId = null;
+    capFields.forEach(function (f) { updateScanButtonVisibility(f.id); });
+    refCapError.style.display = 'none';
+  }
+
+  // customer = the same customer object openRefundMethodChoice() received
+  // (id, customer_name, credit_balance). Called from btnRefundChoiceTransfer.
+  function openRefCaptureView(customer) {
+    resetRefCaptureForm();
+    loadRefCapSourceAccounts();
+    refCapCustomerId = customer.id;
+    refCapCustomerLabel.textContent = customer.customer_name;
+    refCapAvailableEl.textContent = 'Available credit: ' + formatIDR(customer.credit_balance);
+    refCapDate.value = todayISO();
+    showOnlyView(viewRefundCapture);
+  }
+
+  function backFromRefCapture() {
+    resetRefCaptureForm();
+    showOnlyView(viewSales);
+    setActiveStTab('customers');
+  }
+  document.getElementById('btnRefCapBack').addEventListener('click', backFromRefCapture);
+
+  refCapFileInput.addEventListener('change', function () {
+    loadCapturedFile(refCapFileInput.files[0], btnRefCapOpenViewer, 'refCapError');
+  });
+  btnRefCapOpenViewer.addEventListener('click', function () { if (capUploadedFile) openCapViewer(); });
+
+  document.getElementById('btnRefCapSave').addEventListener('click', function () {
+    refCapError.style.display = 'none';
+
+    if (!refCapCustomerId) {
+      refCapError.textContent = 'No customer selected.';
+      refCapError.style.display = 'block';
+      return;
+    }
+    if (!capUploadedFile) {
+      refCapError.textContent = 'Upload the proof of transfer first.';
+      refCapError.style.display = 'block';
+      return;
+    }
+    if (!refCapDate.value) {
+      refCapError.textContent = 'Refund Date is required.';
+      refCapError.style.display = 'block';
+      return;
+    }
+    var amount = parseNumberInput(refCapAmount.value);
+    if (isNaN(amount) || amount <= 0) {
+      refCapError.textContent = 'Amount is not valid.';
+      refCapError.style.display = 'block';
+      return;
+    }
+
+    var payload = new FormData();
+    payload.append('customer_id', refCapCustomerId);
+    payload.append('refund_date', refCapDate.value);
+    payload.append('amount', String(amount));
+    payload.append('method', 'TRANSFER');
+    payload.append('source_bank', refCapSourceBank.value);
+    payload.append('source_account_number', refCapSourceAccountNumber.value);
+    payload.append('source_account_name', refCapSourceAccountName.value);
+    payload.append('notes', refCapNotes.value);
+    payload.append('proof', capUploadedFile);
+
+    var saveBtn = document.getElementById('btnRefCapSave');
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving…';
+
+    fetch('ajax/create_refund.php', { method: 'POST', body: payload })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save Refund';
+        if (!res.ok) {
+          refCapError.textContent = res.message || 'Failed to save the refund.';
+          refCapError.style.display = 'block';
+          return;
+        }
+        var savedCustomerId = refCapCustomerId;
+        backFromRefCapture();
+        if (savedCustomerId) refreshStCustomerCard(savedCustomerId);
+      })
+      .catch(function () {
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save Refund';
+        refCapError.textContent = 'Connection error while saving.';
+        refCapError.style.display = 'block';
+      });
+  });
+
+  // ==========================================================
   // Refund — cash given back from a customer's credit_balance. Plain small
   // form, proof optional (unlike Add Payment, no OCR/viewer engine here).
   // ==========================================================
@@ -4272,8 +4434,26 @@ $currentYear     = date('Y');
   // Lazy-loaded once per page load — reuses the same bank_accounts.json the
   // Settings > Company Bank Accounts card manages. Kept simple: no currency
   // grouping here, refunds are always settled in IDR terms like the slip.
+  // Default pick for the Cash path (see openRefundView): the "UNSUPPORTED
+  // TRANSACTION" / 0000 0000 0000 placeholder account the user already keeps
+  // in Company Bank Accounts, for refunds with no clear real account behind
+  // them (plain cash, or a management write-off). Matches by account number
+  // (digits only) OR by name, whichever is present, so it still finds the
+  // row if one of the two fields was left blank when it was registered.
+  function selectRefundDefaultAccount() {
+    var opts = refundSourceAccount.options;
+    for (var i = 0; i < opts.length; i++) {
+      var accNum = String(opts[i].dataset.accountNumber || '').replace(/\D/g, '');
+      var accName = String(opts[i].dataset.accountName || '').trim().toUpperCase();
+      if (accNum === '000000000000' || accName === 'UNSUPPORTED TRANSACTION') {
+        refundSourceAccount.value = opts[i].value;
+        return;
+      }
+    }
+  }
+
   function loadRefundSourceAccounts() {
-    if (refundAccountsLoaded) return;
+    if (refundAccountsLoaded) { selectRefundDefaultAccount(); return; }
     refundAccountsLoaded = true;
     fetch('ajax/list_bank_accounts.php')
       .then(function (r) { return r.json(); })
@@ -4288,21 +4468,27 @@ $currentYear     = date('Y');
           opt.dataset.accountName = acc.account_name;
           refundSourceAccount.appendChild(opt);
         });
+        selectRefundDefaultAccount();
       })
       .catch(function () { /* dropdown just stays at "No account" */ });
   }
 
+  // method/source account default to CASH / the "UNSUPPORTED TRANSACTION"
+  // account (0000 0000 0000, already registered under Company Bank Accounts
+  // — see selectRefundDefaultAccount above) — this is the Cash path (see
+  // refundMethodChoiceOverlay / openRefundMethodChoice below), both stay
+  // editable in case the real company account turns out to matter after all.
   function openRefundView(customer) {
     refundCustomerId = customer.id;
     refundCustomerLabel.textContent = customer.customer_name;
     refundAvailable.textContent = 'Available credit: ' + formatIDR(customer.credit_balance);
     refundDateEl.value = todayISO();
     refundAmountEl.value = '';
-    refundMethodEl.value = '';
+    refundMethodEl.value = 'CASH';
     refundNotesEl.value = '';
     refundProofFile.value = '';
     refundSourceAccount.value = '';
-    loadRefundSourceAccounts();
+    loadRefundSourceAccounts(); // also re-selects the default account, see above
     refundError.style.display = 'none';
     show(refundOverlay);
   }
@@ -4359,6 +4545,38 @@ $currentYear     = date('Y');
         refundError.textContent = 'Connection error while saving.';
         refundError.style.display = 'block';
       });
+  });
+
+  // ==========================================================
+  // Refund — Cash vs Transfer choice. The "Refund" button on a customer's
+  // Credit Balance row opens this first; Cash goes to openRefundView() above,
+  // Transfer goes to openRefCaptureView() (OCR wizard) further below.
+  // ==========================================================
+  var refundMethodChoiceOverlay = document.getElementById('refundMethodChoiceOverlay');
+  var refundChoiceCustomerLabel = document.getElementById('refundChoiceCustomerLabel');
+  var refundChoiceIntro = document.getElementById('refundChoiceIntro');
+  var refundChoiceCustomer = null;
+
+  function openRefundMethodChoice(customer) {
+    refundChoiceCustomer = customer;
+    refundChoiceCustomerLabel.textContent = customer.customer_name;
+    refundChoiceIntro.textContent = 'Available credit: ' + formatIDR(customer.credit_balance)
+      + '. How is this refund being paid out?';
+    show(refundMethodChoiceOverlay);
+  }
+  document.getElementById('btnRefundChoiceCancel').addEventListener('click', function () {
+    hide(refundMethodChoiceOverlay);
+    refundChoiceCustomer = null;
+  });
+  document.getElementById('btnRefundChoiceCash').addEventListener('click', function () {
+    hide(refundMethodChoiceOverlay);
+    if (refundChoiceCustomer) openRefundView(refundChoiceCustomer);
+    refundChoiceCustomer = null;
+  });
+  document.getElementById('btnRefundChoiceTransfer').addEventListener('click', function () {
+    hide(refundMethodChoiceOverlay);
+    if (refundChoiceCustomer) openRefCaptureView(refundChoiceCustomer);
+    refundChoiceCustomer = null;
   });
 
   // ==========================================================
@@ -5719,36 +5937,6 @@ $currentYear     = date('Y');
     });
   }
 
-  // ==========================================================
-  // Generic "no open invoice" prompt, shared by Returns/Price Adjustment
-  // and Cancel Booking (anywhere a server endpoint can come back with
-  // code:"credit_action_required", see create_return.php's header comment
-  // for the full rationale). Resolves to 'credit_balance', 'refund_queue',
-  // or null if the user clicked Cancel.
-  // ==========================================================
-  var creditChoiceOverlay = document.getElementById('creditChoiceOverlay');
-  var creditChoiceIntro   = document.getElementById('creditChoiceIntro');
-  var creditChoiceResolve = null;
-
-  function askCreditAction(amount) {
-    creditChoiceIntro.textContent = 'There is no open invoice to apply ' + formatIDR(amount) + ' against. '
-      + 'Put it toward this customer\u2019s credit balance (offsets a future invoice), or queue it to be '
-      + 'refunded for real later \u2014 settled through a Disbursement transaction under Refund & Settlement?';
-    show(creditChoiceOverlay);
-    return new Promise(function (resolve) { creditChoiceResolve = resolve; });
-  }
-
-  function resolveCreditChoice(value) {
-    hide(creditChoiceOverlay);
-    var r = creditChoiceResolve;
-    creditChoiceResolve = null;
-    if (r) r(value);
-  }
-
-  document.getElementById('btnCreditChoiceBalance').addEventListener('click', function () { resolveCreditChoice('credit_balance'); });
-  document.getElementById('btnCreditChoiceRefund').addEventListener('click', function () { resolveCreditChoice('refund_queue'); });
-  document.getElementById('btnCreditChoiceCancel').addEventListener('click', function () { resolveCreditChoice(null); });
-
   // Rounds to 2 decimals, avoiding float noise like 799999.9999999999.
   function round2(v) {
     var n = parseFloat(v);
@@ -7097,6 +7285,15 @@ $currentYear     = date('Y');
     stAddRow(stConfirmBody, order.mode === 'update' ? 'Net Change' : 'This Order', formatIDR(order.grand_total));
     stAddRow(stConfirmBody, 'Invoice After', formatIDR(order.invoice.total_after));
 
+    // Only present from create_order.php (not update_order.php) — credit the
+    // customer already has automatically covers as much of this invoice as
+    // possible, see create_order.php's header comment.
+    if (order.invoice.credit_applied > 0.0001) {
+      stAddRow(stConfirmBody, 'Covered by Credit Balance', '-' + formatIDR(order.invoice.credit_applied));
+      stAddRow(stConfirmBody, 'Paid After', formatIDR(order.invoice.paid_after)
+        + (order.invoice.paid_after >= order.invoice.total_after - 0.01 ? ' (fully paid)' : ''));
+    }
+
     show(stConfirmOverlay);
   }
 
@@ -7987,15 +8184,10 @@ $currentYear     = date('Y');
   var bkCancelBookingId = null;
   var bkCancelCustomerId = null;
   var bkCancelSaving = false;
-  // Only matters when the invoice is overpaid after cancelling (see
-  // cancel_booking.php's header comment) — reset per booking, same idea as
-  // rtCreditAction.
-  var bkCancelCreditAction = '';
 
   function openBkCancel(bk, customer) {
     bkCancelBookingId = bk.id;
     bkCancelCustomerId = customer.id;
-    bkCancelCreditAction = '';
     stHideError(bkCancelError);
     bkCancelBody.innerHTML = '<div class="empty-sub">Loading preview\u2026</div>';
     btnBkCancelConfirm.disabled = true;
@@ -8004,17 +8196,9 @@ $currentYear     = date('Y');
   }
 
   function loadBkCancelPreview() {
-    stPost('ajax/cancel_booking.php', { booking_id: bkCancelBookingId, dry_run: '1', credit_action: bkCancelCreditAction })
+    stPost('ajax/cancel_booking.php', { booking_id: bkCancelBookingId, dry_run: '1' })
       .then(function (res) {
         if (!res.ok) {
-          if (res.code === 'credit_action_required') {
-            askCreditAction(res.amount).then(function (choice) {
-              if (!choice) { hide(bkCancelOverlay); return; }
-              bkCancelCreditAction = choice;
-              loadBkCancelPreview();
-            });
-            return;
-          }
           bkCancelBody.innerHTML = '';
           stShowError(bkCancelError, res.message || 'Could not load the preview.');
           return;
@@ -8062,20 +8246,17 @@ $currentYear     = date('Y');
     stAddRow(bkCancelBody, 'Total After', formatIDR(c.invoice.total_after));
 
     // Only present when the already-paid DP now exceeds the new, smaller
-    // total (see cancel_booking.php) — the user already chose where it goes
-    // via askCreditAction() before this preview was shown.
+    // total (see cancel_booking.php) — always goes to Credit Balance now.
     if (c.invoice.overpaid_amount > 0.0001) {
       stAddRow(bkCancelBody, 'Already Paid', formatIDR(c.invoice.paid_amount));
       if (c.credit) {
         stAddRow(bkCancelBody, 'To Credit Balance', formatIDR(c.credit.balance_after - c.credit.balance_before));
-      } else if (c.refund_queue) {
-        stAddRow(bkCancelBody, 'Queued for Refund', formatIDR(c.refund_queue.amount));
       }
       if (c.invoice.will_close) {
         var closeNote = document.createElement('div');
         closeNote.className = 'empty-sub';
         closeNote.style.marginTop = 'var(--space-2)';
-        closeNote.textContent = 'This invoice will be closed (marked paid) once the extra DP above is moved out \u2014 a future order for this customer will open a new invoice instead of reusing it.';
+        closeNote.textContent = 'This invoice will be closed (status: cancelled, not paid \u2014 the money moved out, it wasn\u2019t settled) once the extra DP above is moved out. A future order for this customer will open a new invoice instead of reusing it.';
         bkCancelBody.appendChild(closeNote);
       }
     }
@@ -8090,7 +8271,7 @@ $currentYear     = date('Y');
     stHideError(bkCancelError);
     bkCancelSaving = true;
     btnBkCancelConfirm.disabled = true;
-    stPost('ajax/cancel_booking.php', { booking_id: bkCancelBookingId, dry_run: '0', credit_action: bkCancelCreditAction })
+    stPost('ajax/cancel_booking.php', { booking_id: bkCancelBookingId, dry_run: '0' })
       .then(function (res) {
         bkCancelSaving = false;
         if (!res.ok) {
@@ -8102,7 +8283,6 @@ $currentYear     = date('Y');
         var cid = bkCancelCustomerId;
         bkCancelBookingId = null;
         bkCancelCustomerId = null;
-        bkCancelCreditAction = '';
         if (cid) refreshStCustomerCard(cid);
       })
       .catch(function () {
@@ -8283,7 +8463,7 @@ $currentYear     = date('Y');
       refundBtn.textContent = 'Refund';
       refundBtn.addEventListener('click', function (e) {
         e.stopPropagation();
-        openRefundView(data.customer);
+        openRefundMethodChoice(data.customer);
       });
       creditRight.appendChild(creditVal);
       creditRight.appendChild(refundBtn);
@@ -8691,13 +8871,40 @@ $currentYear     = date('Y');
           pBox.appendChild(pNotes);
         }
 
-        var pLink = document.createElement('a');
-        pLink.className = 'st-mov-sub';
-        pLink.href = 'ajax/view_invoice_payment_proof.php?payment_id=' + encodeURIComponent(p.id);
-        pLink.target = '_blank';
-        pLink.rel = 'noopener';
-        pLink.textContent = 'View proof of payment';
-        pBox.appendChild(pLink);
+        // "AUTO-APPLIED FROM CREDIT BALANCE" rows (create_order.php) have no
+        // real transfer and no proof file (proof_path is NULL for these) —
+        // show where the credit itself originally came from instead, via
+        // p.credit_sources (list_customer_orders.php, from
+        // customer_credit_applications/customer_credit_sources; empty array
+        // if migration_customer_credit_sources.sql hasn't been run yet, or
+        // this payment predates it).
+        if (p.source_bank === 'CREDIT BALANCE') {
+          if (p.credit_sources && p.credit_sources.length) {
+            var csLabel = document.createElement('div');
+            csLabel.className = 'st-mov-sub';
+            csLabel.style.marginTop = 'var(--space-1)';
+            csLabel.textContent = 'Originally received via:';
+            pBox.appendChild(csLabel);
+
+            p.credit_sources.forEach(function (cs) {
+              var csRow = document.createElement('div');
+              csRow.className = 'st-mov-sub';
+              var csBankLabel = cs.source_bank
+                ? [cs.source_bank, cs.source_account_number, cs.source_account_name].filter(Boolean).join(' \u00b7 ')
+                : 'Unknown account';
+              csRow.textContent = '\u2014 ' + csBankLabel + ': ' + formatIDR(cs.amount_used);
+              pBox.appendChild(csRow);
+            });
+          }
+        } else {
+          var pLink = document.createElement('a');
+          pLink.className = 'st-mov-sub';
+          pLink.href = 'ajax/view_invoice_payment_proof.php?payment_id=' + encodeURIComponent(p.id);
+          pLink.target = '_blank';
+          pLink.rel = 'noopener';
+          pLink.textContent = 'View proof of payment';
+          pBox.appendChild(pLink);
+        }
 
         bi.appendChild(pBox);
       });
@@ -8906,11 +9113,6 @@ $currentYear     = date('Y');
   var rtPickerItem    = null;
   var rtSaving        = false;
   var rtPriceCache    = {}; // logistic_id -> pickups response, so re-rendering a row doesn't refetch
-  // Only matters when the server comes back with code "credit_action_required"
-  // (no open invoice for this customer) — see askCreditAction() / create_return.php.
-  // Reset whenever the customer or the whole screen changes so a stale
-  // choice from a previous return never silently applies to a new one.
-  var rtCreditAction  = '';
 
   function rtPost(url, data) {
     return fetch(url, {
@@ -8946,7 +9148,6 @@ $currentYear     = date('Y');
     stHideError(rtConfirmError);
     stHideError(rtProductError);
     rtSuccessBox.style.display = 'none';
-    rtCreditAction = '';
     hide(rtProductOverlay);
     hide(rtConfirmOverlay);
     hide(rtReverifyOverlay);
@@ -8957,7 +9158,6 @@ $currentYear     = date('Y');
   // be different from whichever customer was selected before.
   rtCustomer.addEventListener('change', function () {
     rtPriceCache = {};
-    rtCreditAction = '';
     rtInvoiceSelect.innerHTML = '<option value="">Auto (this customer\u2019s open invoice, or a new one)</option>';
     var cid = rtCustomer.value;
     if (!cid) return;
@@ -9695,7 +9895,6 @@ $currentYear     = date('Y');
         police_number: police,
         invoice_id: invoiceId,
         items: JSON.stringify(returnItems),
-        credit_action: rtCreditAction,
         dry_run: dryRun ? '1' : '0'
       } : null,
       adjustPayload: adjustItems.length ? {
@@ -9705,7 +9904,6 @@ $currentYear     = date('Y');
         police_number: police,
         invoice_id: invoiceId,
         items: JSON.stringify(adjustItems),
-        credit_action: rtCreditAction,
         dry_run: dryRun ? '1' : '0'
       } : null
     };
@@ -9732,21 +9930,6 @@ $currentYear     = date('Y');
       btnRtReview.disabled = false;
       var retRes = results[0];
       var adjRes = results[1];
-
-      // No open invoice on either side — same choice applies to both (same
-      // customer, same screen), see askCreditAction(). Amount shown is
-      // whichever side(s) actually need it, summed.
-      var needChoice = (retRes && retRes.code === 'credit_action_required') || (adjRes && adjRes.code === 'credit_action_required');
-      if (needChoice) {
-        var amt = (retRes && retRes.code === 'credit_action_required' ? retRes.amount : 0)
-          + (adjRes && adjRes.code === 'credit_action_required' ? adjRes.amount : 0);
-        askCreditAction(amt).then(function (choice) {
-          if (!choice) return;
-          rtCreditAction = choice;
-          rtReview();
-        });
-        return;
-      }
 
       if (retRes && !retRes.ok) {
         if (retRes.code === 'not_returnable') { stShowError(rtReviewError, rtNotReturnableMessage(retRes.items)); return; }
@@ -9790,14 +9973,11 @@ $currentYear     = date('Y');
     // only show one "Invoice"/"Credit" row for the pair, preferring ret's.
     var invoiceSide = ret && ret.invoice ? ret.invoice : (adj && adj.invoice ? adj.invoice : null);
     var creditSide  = ret && ret.credit ? ret.credit : (adj && adj.credit ? adj.credit : null);
-    var refundSide  = ret && ret.refund_queue ? ret.refund_queue : (adj && adj.refund_queue ? adj.refund_queue : null);
 
     if (invoiceSide) {
       stAddRow(rtConfirmBody, 'Invoice', invoiceSide.number + (invoiceSide.is_new ? ' (new)' : ''));
     } else if (creditSide) {
       stAddRow(rtConfirmBody, 'Invoice', 'None \u2014 goes to customer credit');
-    } else if (refundSide) {
-      stAddRow(rtConfirmBody, 'Invoice', 'None \u2014 queued for refund (' + formatIDR(refundSide.amount) + ')');
     }
 
     var totalBefore  = invoiceSide ? invoiceSide.total_before : 0;
@@ -9999,12 +10179,11 @@ $currentYear     = date('Y');
         var parts = [];
         if (retRes) parts.push('Return \u2212' + formatIDR(retRes.ret.grand_total));
         if (adjRes) parts.push('Price Adjustment \u2212' + formatIDR(adjRes.adj.grand_discount));
-        // invoice is null when this landed on the customer's credit balance,
-        // or was queued for a real refund instead (no open invoice to
-        // reduce) — see create_return.php's header comment.
+        // invoice is null when this landed on the customer's credit balance
+        // instead (no open invoice to reduce) — see create_return.php's
+        // header comment.
         var invoiceSide  = retRes && retRes.ret.invoice ? retRes.ret.invoice : (adjRes && adjRes.adj.invoice ? adjRes.adj.invoice : null);
-        var refundSide2  = retRes && retRes.ret.refund_queue ? retRes.ret.refund_queue : (adjRes && adjRes.adj.refund_queue ? adjRes.adj.refund_queue : null);
-        var invoiceLabel = invoiceSide ? ('Invoice ' + invoiceSide.number) : (refundSide2 ? 'Queued for refund' : 'Customer credit');
+        var invoiceLabel = invoiceSide ? ('Invoice ' + invoiceSide.number) : 'Customer credit';
         var customerName = retRes ? retRes.ret.customer.name : adjRes.adj.customer.name;
         var summary = 'Saved \u2014 ' + customerName + ' \u00b7 ' + invoiceLabel + ' \u00b7 ' + parts.join(' \u00b7 ');
 

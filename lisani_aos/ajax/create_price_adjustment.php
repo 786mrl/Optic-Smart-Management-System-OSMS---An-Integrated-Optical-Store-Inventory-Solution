@@ -26,14 +26,12 @@
 //                     "old_price": 170000, "new_price": 150000},
 //                    ...
 //                  ]}, ... ]
-//   credit_action  "credit_balance" | "refund_queue" — ONLY read/required
-//                  when there turns out to be no open invoice to reduce.
-//                  Omit it on the first dry_run; if the server comes back
-//                  with code "credit_action_required" ask the user which
-//                  they want and resend with this filled in. Same rule as
-//                  create_return.php — see that file's header for the
-//                  "refund_queue" rationale.
 //   dry_run    "1" | "0"
+//
+// No open invoice to reduce -> becomes customers.credit_balance, traced to
+// real accounts via customer_credit_sources, same as create_return.php (see
+// that file's header for the "refund_queue removed 4 Nov 2026" rationale —
+// applies here too).
 //
 // Each allocation is validated against remaining_adjustable of its source
 // pickup (see list_return_price_options.php) — qty - already returned -
@@ -125,6 +123,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 require_once dirname(__DIR__) . '/db_config.php'; // provides $lisani_conn (mysqli)
+require_once __DIR__ . '/credit_sources_helper.php'; // trace_credit_to_real_payments()
 
 // ---------- Helpers ----------
 function post_str(string $key): string
@@ -218,11 +217,6 @@ $dryRun          = post_str('dry_run') !== '0'; // anything except an explicit "
 // to post against — empty means "auto" (old behaviour, below). Same flag as
 // create_return.php (both sent from the same Returns tab screen).
 $requestedInvoiceId = (int) post_str('invoice_id');
-// Only matters when there is no open invoice at all — empty is fine otherwise.
-$creditAction = post_str('credit_action');
-if ($creditAction !== '' && $creditAction !== 'credit_balance' && $creditAction !== 'refund_queue') {
-    aos_fail('Invalid choice for how to handle the credit.');
-}
 
 if ($customerId <= 0) {
     aos_fail('Customer is missing.');
@@ -343,7 +337,7 @@ try {
     sort($smIds);
     $smMarks = implode(',', array_fill(0, count($smIds), '?'));
     $st = $lisani_conn->prepare(
-        "SELECT id, logistic_id, movement_date, qty_primary_package
+        "SELECT id, logistic_id, movement_date, qty_primary_package, invoice_id
          FROM logistic_movements
          WHERE id IN ($smMarks) AND customer_id = ? AND movement_type = 'out'
          FOR UPDATE"
@@ -501,15 +495,6 @@ try {
         $totalBefore   = (float) $invoice['total_amount'];
     }
 
-    // The choice only has to be made once we actually know there's no
-    // invoice to reduce — see create_return.php's header comment for why.
-    if ($toCredit && $creditAction === '') {
-        throw new AosPriceAdjustmentError(
-            'This customer has no open invoice — choose how to handle the amount.',
-            ['code' => 'credit_action_required', 'amount' => $grand]
-        );
-    }
-
     $creditBefore = (float) $customer['credit_balance'];
 
     $adj = [
@@ -525,13 +510,9 @@ try {
             'total_before' => $totalBefore,
             'total_after'  => round($totalBefore - $grand, 2),
         ],
-        'credit'          => ($toCredit && $creditAction === 'credit_balance') ? [
+        'credit'          => $toCredit ? [
             'balance_before' => $creditBefore,
             'balance_after'  => round($creditBefore + $grand, 2),
-        ] : null,
-        'refund_queue'    => ($toCredit && $creditAction === 'refund_queue') ? [
-            'amount' => $grand,
-            'status' => 'pending',
         ] : null,
         'items'           => $outLines,
         'grand_discount'  => $grand,
@@ -547,26 +528,69 @@ try {
     $driverDb = $driver !== '' ? $driver : null;
     $policeDb = $police !== '' ? $police : null;
 
-    $refundQueueId = null;
     if ($toCredit) {
         $g = money($grand);
-        if ($creditAction === 'refund_queue') {
-            // source_ref (batch_id) isn't known yet — filled in below, once
-            // the movement rows (and their lowest id) exist.
-            $qIns = $lisani_conn->prepare(
-                "INSERT INTO customer_refund_queue (customer_id, source_type, amount, queued_date, created_by)
-                 VALUES (?, 'price_adjustment', ?, ?, ?)"
-            );
-            $qIns->bind_param('issi', $customerId, $g, $adjustmentDate, $userId);
-            $qIns->execute();
-            $refundQueueId = $lisani_conn->insert_id;
-            $qIns->close();
-        } else {
-            $st = $lisani_conn->prepare('UPDATE customers SET credit_balance = credit_balance + ? WHERE id = ?');
-            $st->bind_param('si', $g, $customerId);
-            $st->execute();
-            $st->close();
+        $st = $lisani_conn->prepare('UPDATE customers SET credit_balance = credit_balance + ? WHERE id = ?');
+        $st->bind_param('si', $g, $customerId);
+        $st->execute();
+        $st->close();
+
+        // ---- customer_credit_sources: trace this credit back to the real
+        //      bank account(s) FIFO, per allocation — same pattern as
+        //      create_return.php (see credit_sources_helper.php). ----
+        $ccsCustomerId = $customerId;
+        $ccsBank = $ccsAccNo = $ccsAccName = null;
+        $ccsAmount = $ccsRemaining = '0.00';
+        $ccsOriginInvoiceId = $ccsOriginPaymentId = null;
+        $ccsDate = $adjustmentDate;
+        $ccsUserId = $userId;
+        $ccsIns = $lisani_conn->prepare(
+            'INSERT INTO customer_credit_sources
+               (customer_id, source_bank, source_account_number, source_account_name,
+                amount, remaining_amount, origin_type, origin_ref_invoice_id,
+                origin_invoice_payment_id, created_date, created_by)
+             VALUES (?, ?, ?, ?, ?, ?, \'price_adjustment\', ?, ?, ?, ?)'
+        );
+        $ccsIns->bind_param(
+            'isssssiisi',
+            $ccsCustomerId, $ccsBank, $ccsAccNo, $ccsAccName,
+            $ccsAmount, $ccsRemaining, $ccsOriginInvoiceId, $ccsOriginPaymentId,
+            $ccsDate, $ccsUserId
+        );
+
+        foreach ($allocations as $al) {
+            $smid = $al['source_movement_id'];
+            $sourceInvoiceId = isset($sourceMovements[$smid]['invoice_id']) && $sourceMovements[$smid]['invoice_id'] !== null
+                ? (int) $sourceMovements[$smid]['invoice_id']
+                : 0;
+            $slicesAmount = round(($al['old_price'] - $al['new_price']) * $al['qty'], 2);
+            $slices = $sourceInvoiceId > 0
+                ? trace_credit_to_real_payments($lisani_conn, $sourceInvoiceId, $slicesAmount)
+                : [[
+                    // No invoice at all behind this pickup (old pre-invoice
+                    // data) — asal tidak diketahui, recorded as such, same
+                    // as create_return.php.
+                    'source_bank' => null, 'source_account_number' => null,
+                    'source_account_name' => null,
+                    'amount' => $slicesAmount,
+                    'origin_invoice_payment_id' => null,
+                ]];
+
+            foreach ($slices as $slice) {
+                if ($slice['amount'] <= 0.0001) {
+                    continue;
+                }
+                $ccsBank = $slice['source_bank'];
+                $ccsAccNo = $slice['source_account_number'];
+                $ccsAccName = $slice['source_account_name'];
+                $ccsAmount = money($slice['amount']);
+                $ccsRemaining = $ccsAmount;
+                $ccsOriginInvoiceId = $sourceInvoiceId > 0 ? $sourceInvoiceId : null;
+                $ccsOriginPaymentId = $slice['origin_invoice_payment_id'];
+                $ccsIns->execute();
+            }
         }
+        $ccsIns->close();
         // $invoiceId stays null — same "(No invoice)" grouping as before.
     } else {
         $negGrand = money(0 - $grand);
@@ -614,13 +638,6 @@ try {
         $st->bind_param('i' . str_repeat('i', count($movementIds)), $batchId, ...$movementIds);
         $st->execute();
         $st->close();
-
-        if ($refundQueueId !== null) {
-            $st = $lisani_conn->prepare('UPDATE customer_refund_queue SET source_ref = ? WHERE id = ?');
-            $st->bind_param('ii', $batchId, $refundQueueId);
-            $st->execute();
-            $st->close();
-        }
     }
 
     $g = money($grand);

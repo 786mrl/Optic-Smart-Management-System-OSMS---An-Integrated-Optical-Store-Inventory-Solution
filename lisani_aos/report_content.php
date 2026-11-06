@@ -77,11 +77,11 @@
           <thead>
             <tr>
               <th>Date</th><th>Type</th><th>Account</th><th>Description</th><th>Category</th>
-              <th>Amount (IDR)</th><th>Running Balance</th>
+              <th>Amount (IDR)</th><th>Running Balance</th><th>Notes</th>
             </tr>
           </thead>
           <tbody id="rptLedgerBody">
-            <tr><td colspan="7" class="empty-sub">Loading...</td></tr>
+            <tr><td colspan="8" class="empty-sub">Loading...</td></tr>
           </tbody>
           <tfoot id="rptLedgerFoot"></tfoot>
         </table>
@@ -127,6 +127,13 @@
   #rptLedgerTable .rpt-amt-in  { color:var(--success,#2ecc71); }
   #rptLedgerTable .rpt-amt-out { color:var(--danger,#e74c3c); }
   #rptLedgerTable tfoot .rpt-ledger-total-row td { border-top:2px solid var(--border,#333); font-weight:600; }
+  /* Credit-balance row pairs (same group_id — "remaining" + "used" split of
+     one transaction) are tinted together with no border between them, so
+     they read as one connected block instead of two unrelated rows. */
+  #rptLedgerTable .rpt-ledger-grouped td { background:var(--surface-2,#1a1a1a); }
+  #rptLedgerTable .rpt-ledger-grouped-start td { border-top:1px dashed var(--border,#333); }
+  #rptLedgerTable .rpt-ledger-grouped-cont td { border-top:none; }
+  .rpt-ledger-note { font-size:12px; opacity:.8; font-style:italic; }
 
   /* Chart.js needs a position:relative parent with min-width:0, otherwise the
      canvas keeps its old (wide) size and drags the whole page wider. */
@@ -378,14 +385,23 @@
     var tbody = document.getElementById('rptLedgerBody');
     var tfoot = document.getElementById('rptLedgerFoot');
     if (!ledger.length) {
-      tbody.innerHTML = '<tr><td colspan="7" class="empty-sub">No transactions in this period.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" class="empty-sub">No transactions in this period.</td></tr>';
       tfoot.innerHTML = '';
       return;
     }
     // Ledger arrives oldest -> newest already (get_finance_report.php sorts
     // ASC per source + a final usort ASC), so running balance here just
     // accumulates in that same order — no re-sort needed.
+    //
+    // Credit-balance rows (row.ledger_note set, e.g. "credit_remaining" /
+    // "credit_used" sources) carry amount:0 on purpose — that money was
+    // already counted once as a real inflow when it first reached the
+    // account, so it must NOT move Running Balance again here (user, 1 Nov
+    // 2026: "running balance tetap 60, kan saya cuman memecah..."). The
+    // actual figure to print in the Amount column for these rows is
+    // row.display_amount instead.
     var running = 0;
+    var prevGroupId = null;
     tbody.innerHTML = ledger.map(function (row) {
       running += row.type === 'inflow' ? row.amount : -row.amount;
       var acctLabel = row.bank ? (row.bank + (row.account_no ? ' · ' + row.account_no : '')) : '—';
@@ -393,10 +409,25 @@
         ? '<span class="badge badge-success">INFLOW</span>'
         : '<span class="badge badge-danger">OUTFLOW</span>';
       var isIn = row.type === 'inflow';
+      var shownAmount = row.ledger_note ? (row.display_amount || 0) : row.amount;
       var amtCell = '<span class="' + (isIn ? 'rpt-amt-in' : 'rpt-amt-out') + '">' +
-        fmtIDRParen(isIn ? row.amount : -row.amount) + '</span>';
+        fmtIDRParen(isIn ? shownAmount : -shownAmount) + '</span>';
       var balCell = '<span class="' + (running < 0 ? 'rpt-amt-out' : '') + '">' + fmtIDRParen(running) + '</span>';
-      return '<tr>' +
+      var notesCell = row.ledger_note ? '<span class="rpt-ledger-note">' + escapeHtml(row.ledger_note) + '</span>' : '\u2014';
+
+      // Rows sharing one group_id (a credit application's "remaining" +
+      // "used" pair) are rendered as a visually joined block — same
+      // background tint, no border between them — so they read as one
+      // transaction split in two (user, 1 Nov 2026: "buat seolah-olah baris
+      // 1 dan 2 itu seperti satu baris, jadi terkesan dari transaksi yang
+      // sama"), while still being two real <tr> rows underneath.
+      var groupClass = '';
+      if (row.group_id) {
+        groupClass = ' rpt-ledger-grouped' + (row.group_id === prevGroupId ? ' rpt-ledger-grouped-cont' : ' rpt-ledger-grouped-start');
+      }
+      prevGroupId = row.group_id || null;
+
+      return '<tr class="' + groupClass.trim() + '">' +
         '<td>' + escapeHtml(row.date) + '</td>' +
         '<td>' + badge + '</td>' +
         '<td>' + escapeHtml(acctLabel) + '</td>' +
@@ -404,6 +435,7 @@
         '<td>' + escapeHtml(row.category || '\u2014') + '</td>' +
         '<td>' + amtCell + '</td>' +
         '<td>' + balCell + '</td>' +
+        '<td>' + notesCell + '</td>' +
         '</tr>';
     }).join('');
 
@@ -414,6 +446,7 @@
       '<td colspan="5" style="text-align:right; font-weight:600;">Total</td>' +
       '<td>' + totalCell + '</td>' +
       '<td>' + totalCell + '</td>' +
+      '<td></td>' +
       '</tr>';
   }
 
@@ -427,9 +460,10 @@
 
   document.getElementById('rptExportCsv').addEventListener('click', function () {
     var ledger = window._rptLastLedger || [];
-    var rows = [['Date', 'Type', 'Bank', 'Account Number', 'Description', 'Category', 'Amount IDR']];
+    var rows = [['Date', 'Type', 'Bank', 'Account Number', 'Description', 'Category', 'Amount IDR', 'Notes']];
     ledger.forEach(function (r) {
-      rows.push([r.date, r.type, r.bank || '', r.account_no || '', r.label, r.category || '', r.amount]);
+      var amt = r.ledger_note ? (r.display_amount || 0) : r.amount;
+      rows.push([r.date, r.type, r.bank || '', r.account_no || '', r.label, r.category || '', amt, r.ledger_note || '']);
     });
     var csv = rows.map(function (r) {
       return r.map(function (v) { return '"' + String(v).replace(/"/g, '""') + '"'; }).join(',');

@@ -78,6 +78,15 @@ $hasInvoicePayments = aosTableExists($lisani_conn, 'invoice_payments');
 $hasBankFields = $hasInvoicePayments
     && aosColumnExists($lisani_conn, 'invoice_payments', 'source_bank');
 
+// customer_credit_sources / customer_credit_applications are from
+// migration_customer_credit_sources.sql (1 Nov 2026), which may not have run
+// yet — same guard pattern. When present, every "AUTO-APPLIED FROM CREDIT
+// BALANCE" payment row (source_bank='CREDIT BALANCE') gets a 'credit_sources'
+// array naming the REAL account(s) that funded it (see create_order.php's
+// FIFO spend against customer_credit_sources).
+$hasCreditSources = aosTableExists($lisani_conn, 'customer_credit_sources')
+    && aosTableExists($lisani_conn, 'customer_credit_applications');
+
 try {
     // ---- Customer totals ----
     $st = $lisani_conn->prepare(
@@ -200,6 +209,7 @@ try {
                 'destination_account_name'    => $row['destination_account_name'],
                 'notes'                       => $row['notes'],
                 'created_at'                  => $row['created_at'],
+                'credit_sources'              => [], // filled below for 'CREDIT BALANCE' rows, if the migration has run
             ] : [
                 'id'                          => (int) $row['id'],
                 'payment_date'                => $row['payment_date'],
@@ -211,9 +221,69 @@ try {
                 'destination_account_name'    => '',
                 'notes'                       => $row['notes'],
                 'created_at'                  => $row['created_at'],
+                'credit_sources'              => [],
             ];
         }
         $st->close();
+    }
+
+    // ---- Credit sources behind each "AUTO-APPLIED FROM CREDIT BALANCE"
+    //      payment (customer_credit_applications -> customer_credit_sources),
+    //      so the Payments section can show the REAL account(s) that funded
+    //      it instead of just the "CREDIT BALANCE" marker. One extra query
+    //      for the whole customer (not per-payment), matched back in PHP —
+    //      same shape as the Movements/Refunds sections below. ----
+    if ($hasBankFields && $hasCreditSources) {
+        $autoApplyIds = [];
+        foreach ($invoices as $inv) {
+            foreach ($inv['payments'] as $p) {
+                if ($p['source_bank'] === 'CREDIT BALANCE') {
+                    $autoApplyIds[] = $p['id'];
+                }
+            }
+        }
+        if ($autoApplyIds) {
+            $marks = implode(',', array_fill(0, count($autoApplyIds), '?'));
+            $st = $lisani_conn->prepare(
+                "SELECT a.invoice_payment_id, a.amount_used,
+                        s.source_bank, s.source_account_number, s.source_account_name
+                 FROM customer_credit_applications a
+                 JOIN customer_credit_sources s ON s.id = a.credit_source_id
+                 WHERE a.invoice_payment_id IN ($marks)
+                 ORDER BY a.invoice_payment_id ASC, a.id ASC"
+            );
+            $st->bind_param(str_repeat('i', count($autoApplyIds)), ...$autoApplyIds);
+            $st->execute();
+            $res = $st->get_result();
+            $byPaymentId = [];
+            while ($row = $res->fetch_assoc()) {
+                $pid = (int) $row['invoice_payment_id'];
+                if (!isset($byPaymentId[$pid])) {
+                    $byPaymentId[$pid] = [];
+                }
+                $byPaymentId[$pid][] = [
+                    'amount_used'           => $row['amount_used'],
+                    // NULL here means that credit slice's own origin couldn't
+                    // be traced to a real account either (see
+                    // create_return.php's trace_credit_to_real_payments) —
+                    // shown as "Unknown account" by the frontend, not hidden.
+                    'source_bank'           => $row['source_bank'],
+                    'source_account_number' => $row['source_account_number'],
+                    'source_account_name'   => $row['source_account_name'],
+                ];
+            }
+            $st->close();
+
+            foreach ($invoices as &$invRef) {
+                foreach ($invRef['payments'] as &$pRef) {
+                    if ($pRef['source_bank'] === 'CREDIT BALANCE' && isset($byPaymentId[$pRef['id']])) {
+                        $pRef['credit_sources'] = $byPaymentId[$pRef['id']];
+                    }
+                }
+                unset($pRef);
+            }
+            unset($invRef);
+        }
     }
 
     // ---- Movements, dropped into their invoice ----
