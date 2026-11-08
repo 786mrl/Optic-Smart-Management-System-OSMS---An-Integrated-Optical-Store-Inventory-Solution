@@ -11,6 +11,10 @@
 //              Fix 1 Nov 2026 — user-reported: Ledger total kept growing past what any account
 //              actually received, because this money was being counted twice.)
 //   - outflow: invoice_refunds (source account OPTIONAL, see migration_invoice_refunds_bank_fields.sql)
+//   - outflow: refund_bank_fees, one row per invoice_refunds row that has one
+//             (migration_refund_bank_fees.sql, 8 Nov 2026 — guarded, optional
+//             table) -> same source_bank/source_account_number as its refund,
+//             since it's part of the same transfer out of the same account
 // "Rekening" here are company bank accounts (json_file/bank_accounts.json), matched
 // by bank_name + account_number text (free-text columns, no FK) — case-insensitive,
 // whitespace-insensitive, since the same account can be typed slightly differently.
@@ -334,6 +338,37 @@ if ($hasCreditRefunds) {
     $stmt->close();
 }
 
+// ---------- Refund bank fees, by invoice_refund_id ----------
+// refund_bank_fees (migration_refund_bank_fees.sql, 8 Nov 2026 — guarded,
+// may not exist yet). Unlike $sourcesByRefund above (a cross-reference
+// only, no money of its own), this fee is REAL cash that left the SAME
+// company account as the refund itself — create_refund.php already splits
+// the scanned slip's gross total into NET (invoice_refunds.amount) + this
+// fee at save time. So it becomes its own ledger outflow row below (not
+// just a label), or an account's outflow/balance would silently miss
+// money that genuinely left it (user request, 8 Nov 2026 — "untuk bank fee
+// itu dimasukkan juga").
+$bankFeesByRefund = [];
+$tableCheck = $lisani_conn->query(
+    "SELECT COUNT(*) c FROM information_schema.tables
+     WHERE table_schema = DATABASE() AND table_name = 'refund_bank_fees'"
+);
+$hasRefundBankFees = $tableCheck && (int)($tableCheck->fetch_assoc()['c'] ?? 0) > 0;
+if ($hasRefundBankFees) {
+    $sql = "SELECT bf.invoice_refund_id, bf.fee_amount
+            FROM refund_bank_fees bf
+            JOIN invoice_refunds r ON r.id = bf.invoice_refund_id
+            WHERE 1=1" . ($hasFrom ? ' AND r.refund_date >= ?' : '') . ($hasTo ? ' AND r.refund_date <= ?' : '');
+    $stmt = $lisani_conn->prepare($sql);
+    if ($params) { $stmt->bind_param($types, ...$params); }
+    $stmt->execute();
+    $res = $stmt->get_result();
+    while ($row = $res->fetch_assoc()) {
+        $bankFeesByRefund[(int) $row['invoice_refund_id']] = (float) $row['fee_amount'];
+    }
+    $stmt->close();
+}
+
 // ---------- Inflow: invoice payments ----------
 // Excludes source_bank='CREDIT BALANCE' rows (create_order.php auto-apply,
 // see "AUTO-APPLIED FROM CREDIT BALANCE"): that money isn't new cash in —
@@ -540,8 +575,56 @@ while ($row = $res->fetch_assoc()) {
         // won't generally sit next to each other by date (user, 8 Nov 2026).
         'credit_source_refs' => $sourcesByRefund[(int) $row['id']] ?? [],
         'group_id'   => null,
+        // Plain int here (refund row itself is unchanged by this feature) —
+        // the bank-fee row below is the one that gets a suffixed ref_id so
+        // IT sorts directly after THIS row, never the other way round.
         'ref_id'     => (int)$row['id'],
     ];
+
+    // ---------- Its bank fee (if any), directly below ----------
+    // Same account, same date as the refund row above (the fee was part of
+    // the SAME transfer out of the SAME source account) — pushed right
+    // after it, in this same loop iteration, so the two always sit
+    // adjacent regardless of what else is in the ledger that day.
+    $fee = $bankFeesByRefund[(int) $row['id']] ?? 0.0;
+    if ($fee > 0.0001) {
+        if ($accId !== null) {
+            $accountsOut[$accId]['outflow'] += $fee;
+        } else {
+            $unassigned['outflow'] += $fee;
+        }
+        bump_monthly($monthly, $row['refund_date'], 'outflow', $fee);
+        $ledger[] = [
+            'date'       => $row['refund_date'],
+            'type'       => 'outflow',
+            'source'     => 'refund_bank_fee',
+            'account_id' => $accId,
+            'bank'       => $row['source_bank'],
+            'account_no' => $row['source_account_number'],
+            'amount'     => $fee,
+            'display_amount' => $fee,
+            'original'   => null,
+            'label'      => 'Bank Fee — ' . $row['customer_name'] . ($row['method'] ? ' (' . $row['method'] . ')' : ''),
+            'category'   => null,
+            'notes'      => null,
+            'ledger_note' => 'Bank Fee',
+            // Points UP at its refund row (opposite direction of
+            // credit_source_refs above, which points DOWN at a Credit
+            // Balance row) — the frontend uses this to scroll to + flash
+            // that row when this row is clicked (user request, 8 Nov 2026).
+            'refund_ref_id' => (int) $row['id'],
+            'group_id'   => null,
+            // Same date as its refund row, ref_id suffixed so it string-sorts
+            // (usort below casts to string) directly after the refund row's
+            // own plain-int ref_id — guarantees "always below" regardless of
+            // what other rows share that date. Tiny theoretical collision
+            // risk only if another ref_id on the exact same date begins with
+            // this id followed by a smaller digit (e.g. refund id 123 vs
+            // another row id 1230) — accepted, same tolerance as the
+            // existing credit-split ordering elsewhere in this file.
+            'ref_id'     => (int) $row['id'] . '_fee',
+        ];
+    }
 }
 $stmt->close();
 

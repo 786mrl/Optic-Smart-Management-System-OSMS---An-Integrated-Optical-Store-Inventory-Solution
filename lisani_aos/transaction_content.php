@@ -510,7 +510,13 @@ $currentYear     = date('Y');
      "Refund" button on a customer's Credit Balance row (Sales Transaction >
      Customers), after "Transfer" is picked in refundMethodChoiceOverlay.
      Posts to the SAME ajax/create_refund.php as the Cash form (refundOverlay
-     above), with method fixed to "TRANSFER". -->
+     above), with method fixed to "TRANSFER". Has an optional Bank Fee picker
+     (0 / 2,500 / 6,500 / custom) — see the comment above that form-group —
+     because the OCR-scanned Amount is the slip's gross total, which can
+     include a transfer fee; the NET amount (gross minus fee) is what's sent
+     as `amount` to create_refund.php, and the fee itself is sent separately
+     as `bank_fee` to be stored in its own table (refund_bank_fees, 8 Nov
+     2026, see PROJECT_NOTES.md). -->
 <div class="card" id="viewRefundCapture" style="width:100%; display:none;">
   <div class="panel-header">
     <div class="panel-title">Refund (Transfer) — <span id="refCapCustomerLabel"></span></div>
@@ -534,11 +540,37 @@ $currentYear     = date('Y');
   </div>
 
   <div class="form-group">
-    <div class="label">Amount</div>
+    <div class="label">Amount (as shown on the transfer slip, incl. bank fee if any)</div>
     <div style="display:flex; gap:var(--space-2);">
       <input type="text" inputmode="decimal" class="input input-number-comma" id="refCapAmount" style="flex:1;">
       <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="refCapAmount" data-scan-label="Amount" data-cap-group="refund">Scan</button>
     </div>
+    <!-- Read-only preview, NOT an input (can't be typed into/touched directly):
+         plain gross amount when there's no fee, or "GROSS (NET)" when a fee
+         is picked — e.g. "10,002,500 (10,000,000)". The NET figure in
+         parentheses is what actually gets sent as `amount` to
+         create_refund.php / posts to the customer's credit_balance; see
+         recalcRefCapNet(). -->
+    <div class="empty-sub" id="refCapAmountPreview" style="margin-top:var(--space-1);"></div>
+  </div>
+
+  <!-- Bank Fee — the slip's total (refCapAmount, possibly OCR-scanned) is what
+       actually left the company account, which can include a transfer fee the
+       bank deducted (e.g. a slip reading 6,002,500 where only 6,000,000 is the
+       real refund and 2,500 is the fee). The fee is NOT part of what reduces
+       the customer's credit_balance — see the NET figure in
+       refCapAmountPreview above. Kept in a separate DB table
+       (refund_bank_fees) rather than a plain column so Report can
+       isolate/sum it independently later (user request, 8 Nov 2026). -->
+  <div class="form-group">
+    <div class="label">Bank Fee (transfer fee deducted by the bank, if any)</div>
+    <div style="display:flex; gap:var(--space-2); flex-wrap:wrap;">
+      <button type="button" class="btn btn-primary btn-ref-fee-opt" data-fee="0">None (Rp 0)</button>
+      <button type="button" class="btn btn-secondary btn-ref-fee-opt" data-fee="2500">Rp 2,500</button>
+      <button type="button" class="btn btn-secondary btn-ref-fee-opt" data-fee="6500">Rp 6,500</button>
+      <button type="button" class="btn btn-secondary btn-ref-fee-opt" data-fee="custom">Custom</button>
+    </div>
+    <input type="text" inputmode="decimal" class="input input-number-comma" id="refCapBankFeeCustom" placeholder="Custom fee amount" style="display:none; margin-top:var(--space-2);">
   </div>
 
   <div class="form-group">
@@ -4235,6 +4267,10 @@ $currentYear     = date('Y');
   var btnRefCapOpenViewer = document.getElementById('btnRefCapOpenViewer');
   var refCapDate   = document.getElementById('refCapDate');
   var refCapAmount = document.getElementById('refCapAmount');
+  var refCapFeeButtons     = Array.prototype.slice.call(document.querySelectorAll('.btn-ref-fee-opt'));
+  var refCapBankFeeCustom  = document.getElementById('refCapBankFeeCustom');
+  var refCapAmountPreview  = document.getElementById('refCapAmountPreview');
+  var refCapFeeSelected    = '0'; // '0' | '2500' | '6500' | 'custom'
   var refCapSourceBank          = document.getElementById('refCapSourceBank');
   var refCapSourceAccountNumber = document.getElementById('refCapSourceAccountNumber');
   var refCapSourceAccountName   = document.getElementById('refCapSourceAccountName');
@@ -4299,6 +4335,54 @@ $currentYear     = date('Y');
     }
   });
 
+  // Bank Fee — see the HTML comments above viewRefundCapture's Amount and
+  // Bank Fee form-groups. refCapAmount holds the slip's GROSS total (what
+  // left the company account, possibly OCR-scanned); the NET amount (gross
+  // minus the picked fee) is what actually gets sent to create_refund.php
+  // as `amount` (same field the server validates against credit_balance,
+  // unchanged from before this feature), so a bank fee never reduces the
+  // customer's refund. refCapAmountPreview is a plain read-only text line
+  // (not an input — can't be typed into), not a separate editable field.
+  function getRefCapBankFee() {
+    if (refCapFeeSelected === 'custom') {
+      var v = parseNumberInput(refCapBankFeeCustom.value);
+      return isNaN(v) || v < 0 ? 0 : v;
+    }
+    var n = parseFloat(refCapFeeSelected);
+    return isNaN(n) ? 0 : n;
+  }
+  // Comma-grouped number, no "IDR" prefix (unlike formatIDR) — matches the
+  // plain style of the Amount input itself, e.g. "10,002,500 (10,000,000)".
+  function fmtPlainAmount(n) {
+    var hasCents = Math.round(n * 100) % 100 !== 0;
+    return n.toLocaleString('en-US', { minimumFractionDigits: hasCents ? 2 : 0, maximumFractionDigits: 2 });
+  }
+  function recalcRefCapNet() {
+    var gross = parseNumberInput(refCapAmount.value);
+    if (isNaN(gross)) { refCapAmountPreview.textContent = ''; return; }
+    var fee = getRefCapBankFee();
+    if (fee > 0.0001) {
+      refCapAmountPreview.textContent = fmtPlainAmount(gross) + ' (' + fmtPlainAmount(gross - fee) + ')';
+    } else {
+      refCapAmountPreview.textContent = fmtPlainAmount(gross);
+    }
+  }
+  function setRefCapFeeSelected(fee) {
+    refCapFeeSelected = fee;
+    refCapFeeButtons.forEach(function (btn) {
+      var isActive = btn.getAttribute('data-fee') === fee;
+      btn.classList.toggle('btn-primary', isActive);
+      btn.classList.toggle('btn-secondary', !isActive);
+    });
+    refCapBankFeeCustom.style.display = (fee === 'custom') ? 'block' : 'none';
+    recalcRefCapNet();
+  }
+  refCapFeeButtons.forEach(function (btn) {
+    btn.addEventListener('click', function () { setRefCapFeeSelected(btn.getAttribute('data-fee')); });
+  });
+  refCapBankFeeCustom.addEventListener('input', recalcRefCapNet);
+  refCapAmount.addEventListener('input', recalcRefCapNet);
+
   function resetRefCaptureForm() {
     activeCapGroup = 'refund';
     refCapFileInput.value = '';
@@ -4320,6 +4404,9 @@ $currentYear     = date('Y');
     capCtx.clearRect(0, 0, capCanvas.width, capCanvas.height);
     refCapDate.value = '';
     refCapAmount.value = '';
+    refCapBankFeeCustom.value = '';
+    setRefCapFeeSelected('0');
+    refCapAmountPreview.textContent = '';
     refCapSourceBank.value = '';
     refCapSourceAccountNumber.value = '';
     refCapSourceAccountName.value = '';
@@ -4371,9 +4458,16 @@ $currentYear     = date('Y');
       refCapError.style.display = 'block';
       return;
     }
-    var amount = parseNumberInput(refCapAmount.value);
-    if (isNaN(amount) || amount <= 0) {
+    var grossAmount = parseNumberInput(refCapAmount.value);
+    if (isNaN(grossAmount) || grossAmount <= 0) {
       refCapError.textContent = 'Amount is not valid.';
+      refCapError.style.display = 'block';
+      return;
+    }
+    var bankFee = getRefCapBankFee();
+    var netAmount = grossAmount - bankFee;
+    if (netAmount <= 0) {
+      refCapError.textContent = 'Bank Fee cannot be greater than or equal to the Amount.';
       refCapError.style.display = 'block';
       return;
     }
@@ -4381,7 +4475,8 @@ $currentYear     = date('Y');
     var payload = new FormData();
     payload.append('customer_id', refCapCustomerId);
     payload.append('refund_date', refCapDate.value);
-    payload.append('amount', String(amount));
+    payload.append('amount', String(netAmount));
+    payload.append('bank_fee', String(bankFee));
     payload.append('method', 'TRANSFER');
     payload.append('source_bank', refCapSourceBank.value);
     payload.append('source_account_number', refCapSourceAccountNumber.value);

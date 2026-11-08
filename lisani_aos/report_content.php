@@ -161,6 +161,28 @@
     margin-top:2px;
   }
   .rpt-credit-ref-chip:hover { opacity:1; border-color:var(--success,#2ecc71); }
+  /* Bank Fee row (always rendered directly below its refund row, see
+     get_finance_report.php's ref_id suffix) — the whole row is clickable
+     to scroll to + flash its refund row above (user, 8 Nov 2026). Reuses
+     .rpt-ledger-clickable for the cursor; the chip inside it is purely a
+     visual label (click bubbles up to the row either way). */
+  .rpt-fee-ref-chip {
+    display:inline-block; font-size:11px; opacity:.85;
+    border:1px solid var(--border,#333); border-radius:4px; padding:1px 6px;
+    margin-top:2px;
+  }
+  #rptLedgerTable tr:hover .rpt-fee-ref-chip { opacity:1; border-color:var(--success,#2ecc71); }
+  /* Flash animation on the target refund row when its Bank Fee row is
+     clicked — a couple of soft pulses so it's unmistakable which row the
+     fee belongs to, then settles back to normal (user, 8 Nov 2026: "...buat
+     dia bisa diklik dan menunjukkan ke baris mana bank fee itu berhubungan
+     (dibuat ada animasi begitu)"). */
+  @keyframes rptLedgerFlash {
+    0%, 100% { background:transparent; }
+    25%, 75% { background:rgba(46,204,113,.28); }
+    50%      { background:rgba(46,204,113,.12); }
+  }
+  #rptLedgerTable .rpt-ledger-flash td { animation:rptLedgerFlash 1.4s ease-in-out; }
   #rptCreditDetailOverlay {
     position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:1000;
     display:flex; align-items:center; justify-content:center; padding:var(--space-3);
@@ -242,6 +264,9 @@
   // Looked up by credit_source_id when a "Customer Credit Balance" ledger
   // row is clicked — see renderLedger() and openCreditDetail() below.
   var ledgerCreditRows = {};
+  // Looked up by refund ref_id when a "Bank Fee" ledger row is clicked, to
+  // scroll to + flash its refund row — see renderLedger() below.
+  var ledgerRefundRows = {};
 
   // Accordion: opening one of the two summary cards (Totals / Bank Accounts)
   // closes the other, instead of both staying open independently.
@@ -465,9 +490,16 @@
     // reference chip can look up its originating credit row's date/label
     // regardless of which one happens to sort first in the ledger array.
     ledgerCreditRows = {}; // reassign the outer var — no re-declare, keeps one shared map
+    // Same idea, but keyed by refund ref_id, so a Bank Fee row's chip (below)
+    // can show which refund's date it's pointing at without a second lookup
+    // pass of its own (user, 8 Nov 2026).
+    ledgerRefundRows = {};
     ledger.forEach(function (r) {
       if (r.source === 'invoice_payment_credit' && r.credit_source_id != null) {
         ledgerCreditRows[r.credit_source_id] = r;
+      }
+      if (r.source === 'refund') {
+        ledgerRefundRows[r.ref_id] = r;
       }
     });
     var running = 0;
@@ -506,6 +538,17 @@
         descHtml += '<br>' + chips;
       }
 
+      // Bank Fee row — points back UP at its refund row (always directly
+      // above it, see get_finance_report.php's ref_id suffix). Shown as a
+      // chip-styled label for visual parity with the credit-source chip
+      // above, but the WHOLE row is clickable here (see clickAttr/groupClass
+      // below), not just this span (user, 8 Nov 2026).
+      if (row.source === 'refund_bank_fee' && row.refund_ref_id != null) {
+        var refundRow = ledgerRefundRows[row.refund_ref_id];
+        var feeChipLabel = refundRow ? ('Refund — ' + refundRow.date) : ('Refund #' + row.refund_ref_id);
+        descHtml += '<br><span class="rpt-fee-ref-chip">\u2191 ' + escapeHtml(feeChipLabel) + '</span>';
+      }
+
       // Rows sharing one group_id (a credit application's "remaining" +
       // "used" pair) are rendered as a visually joined block — same
       // background tint, no border between them — so they read as one
@@ -524,6 +567,18 @@
       if (row.source === 'invoice_payment_credit' && row.credit_source_id != null) {
         groupClass += ' rpt-ledger-clickable';
         clickAttr = ' data-credit-source-id="' + row.credit_source_id + '"';
+      }
+      // A refund row is a potential scroll/flash TARGET (from its Bank Fee
+      // row below, if any) — tagged with a stable id regardless of whether
+      // it actually has a fee, since that's cheap and future-proof.
+      if (row.source === 'refund') {
+        clickAttr += ' data-ledger-row-id="refund-' + row.ref_id + '"';
+      }
+      // A Bank Fee row is the clickable SOURCE — clicking anywhere on it
+      // scrolls to + flashes its refund row (user, 8 Nov 2026).
+      if (row.source === 'refund_bank_fee' && row.refund_ref_id != null) {
+        groupClass += ' rpt-ledger-clickable';
+        clickAttr += ' data-link-refund-id="' + row.refund_ref_id + '"';
       }
 
       return '<tr class="' + groupClass.trim() + '"' + clickAttr + '>' +
@@ -581,11 +636,37 @@
   // refund row's reference chip (data attr on a nested <span>) — whichever
   // is closer to where the click landed.
   document.getElementById('rptLedgerBody').addEventListener('click', function (e) {
+    // A Bank Fee row takes priority if BOTH attributes somehow matched the
+    // same click (they never actually overlap — a row is either a Credit
+    // Balance row or a Bank Fee row, never both — but checking this one
+    // first keeps the two features independent either way).
+    var feeEl = e.target.closest('[data-link-refund-id]');
+    if (feeEl) {
+      scrollToAndFlashRefundRow(feeEl.getAttribute('data-link-refund-id'));
+      return;
+    }
     var el = e.target.closest('[data-credit-source-id]');
     if (!el) return;
     var row = ledgerCreditRows[el.getAttribute('data-credit-source-id')];
     if (row) openCreditDetail(row);
   });
+  // Scrolls the clicked Bank Fee row's refund row into view and flashes it
+  // a couple of times (CSS animation, see .rpt-ledger-flash) so it's
+  // unmistakable which row the fee belongs to (user, 8 Nov 2026).
+  function scrollToAndFlashRefundRow(refundRefId) {
+    var target = document.querySelector('#rptLedgerBody [data-ledger-row-id="refund-' + refundRefId + '"]');
+    if (!target) return; // date-filtered out of the current view, etc. — nothing to flash
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    target.classList.remove('rpt-ledger-flash');
+    // Force a reflow so re-adding the class restarts the animation even if
+    // the same row was just flashed a moment ago.
+    void target.offsetWidth;
+    target.classList.add('rpt-ledger-flash');
+    target.addEventListener('animationend', function handler() {
+      target.classList.remove('rpt-ledger-flash');
+      target.removeEventListener('animationend', handler);
+    });
+  }
   document.getElementById('rptCreditDetailClose').addEventListener('click', function () {
     document.getElementById('rptCreditDetailOverlay').classList.add('hidden');
   });

@@ -1222,6 +1222,135 @@ sumber credit ini — tidak saling membatasi.
   "Remaining now" di modal berkurang pas sesuai amount refund, bukan jadi 0
   semua.
 
+Dikerjakan (8 Nov 2026, belum dites) — Refund (Transfer) form dapat opsi
+"Bank Fee" (biaya transfer bank), karena slip hasil OCR-scan Amount kadang
+berupa GROSS total termasuk fee (mis. scan = 6,002,500, padahal 6,000,000
+itu refund asli + 2,500 fee bank) — user request.
+- `transaction_content.php` (`viewRefundCapture`, hanya form Transfer, TIDAK
+  mengubah form Cash `refundOverlay`): form-group baru di bawah Amount —
+  4 tombol pilihan (`None (Rp 0)` default, `Rp 2,500`, `Rp 6,500`, `Custom`
+  dengan input angka tersembunyi sampai dipilih), pakai `.btn-primary`
+  (aktif) / `.btn-secondary` (tidak aktif) toggle, bukan style baru. **Tidak
+  ada field/row terpisah untuk Net Amount** (user ralat dari rencana
+  pertama) — malah ditaruh sebagai teks preview read-only
+  (`#refCapAmountPreview`, BUKAN `<input>`, tidak bisa disentuh/diketik) di
+  bawah input Amount: kalau fee = 0 cuma tampil gross apa adanya (mis.
+  `10,000,000`), kalau fee > 0 tampil `GROSS (NET)` (mis.
+  `10,002,500 (10,000,000)`). Saat Save: `amount` yang dikirim ke
+  `create_refund.php` DIGANTI jadi NET (gross − fee, bukan gross scan
+  mentah), field baru `bank_fee` dikirim terpisah. Validasi baru: net harus
+  > 0 (fee tidak boleh ≥ amount).
+- `create_refund.php`: terima `bank_fee` (opsional, default 0, validasi
+  `clean_decimal` sama seperti field lain). **TIDAK mengubah** arti `amount`
+  (tetap NET, tetap yang divalidasi vs `credit_balance` dan yang mengurangi
+  `customers.credit_balance`/`total_paid` — logic itu sama sekali tidak
+  disentuh). Kalau `bank_fee > 0`, insert 1 baris ke tabel baru
+  `refund_bank_fees` (invoice_refund_id, fee_amount) setelah insert
+  `invoice_refunds` dapat `$refundId`, sebelum blok alokasi FIFO credit
+  source — masih di dalam transaction yang sama.
+- **Migration baru** (`migration_refund_bank_fees.sql`, BELUM dijalankan
+  user, perlu di-run manual di phpMyAdmin dulu): tabel `refund_bank_fees`
+  (id, invoice_refund_id, fee_amount, created_at) — TANPA FK constraint,
+  index biasa di `invoice_refund_id` (konvensi sama seperti
+  `customer_credit_refunds`).
+- **Belum dikerjakan** (nunggu konfirmasi user): `report_content.php` /
+  `get_finance_report.php` BELUM diubah untuk menampilkan/menjumlahkan
+  `refund_bank_fees` di Ledger atau Finance Report — user minta supaya nanti
+  "mudah untuk menghubungkannya" di report, tapi report-side-nya sendiri
+  belum disentuh sesi ini, cuma pondasi datanya (tabel + endpoint simpan).
+- Perlu dites (URUTAN PENTING — migration dulu): (0) jalankan
+  `migration_refund_bank_fees.sql` di phpMyAdmin; (1) buka Refund (Transfer)
+  untuk customer yang punya credit_balance, scan/isi Amount mis. 6,002,500 →
+  preview di bawah Amount tampil `6,002,500` polos (fee masih default None);
+  (2) klik `Rp 2,500` → preview berubah jadi `6,002,500 (6,000,000)`; (3)
+  klik `Custom`, isi manual, cek preview ikut berubah live; (4) klik
+  `None (Rp 0)` lagi → preview balik ke gross polos tanpa kurung; (5) Save →
+  cek `customers.credit_balance` berkurang sebesar NET (angka dalam kurung,
+  bukan gross), dan tabel `refund_bank_fees` punya 1 baris baru dengan
+  `fee_amount` yang benar, `invoice_refund_id` cocok; (6) coba isi fee ≥
+  amount → harus muncul error "Bank Fee cannot be greater than or equal to
+  the Amount." dan TIDAK terkirim ke server; (7) refund Transfer TANPA pilih
+  fee apa pun (biarkan default None) → tetap tersimpan normal seperti
+  sebelum fitur ini ada, `refund_bank_fees` TIDAK dapat baris baru (karena
+  `bank_fee <= 0`); (8) buka form, ganti-ganti antar tombol fee beberapa kali
+  → pastikan cuma 1 tombol aktif (`.btn-primary`) di satu waktu, dan Custom
+  input hilang lagi kalau pindah ke opsi lain.
+
+Dikerjakan (8 Nov 2026, belum dites) — Bank Fee (dari fitur di atas) sekarang
+ikut masuk ke Report (Finance Report / Ledger), bukan cuma tersimpan di DB
+saja — user request: "untuk bank fee itu dimasukkan juga". Posisinya di
+Ledger SELALU persis di bawah baris refund yang bersangkutan, dan baris Bank
+Fee itu bisa diklik untuk scroll + highlight (animasi flash) ke baris refund
+terkait.
+- `get_finance_report.php`: blok lookup baru `$bankFeesByRefund` (guarded,
+  cek tabel `refund_bank_fees` ada dulu — aman kalau migration
+  `migration_refund_bank_fees.sql` belum di-run, sama pola seperti
+  `$refundsBySource`/`$sourcesByRefund`). Di loop "Outflow: refunds", persis
+  setelah push baris refund (`$ledger[] = [...]` yang sudah ada), kalau
+  refund itu punya fee (`$bankFeesByRefund[$row['id']]`), push 1 baris
+  ledger BARU `source: 'refund_bank_fee'` — rekening SAMA dengan refund-nya
+  (`$accId` yang sama, karena fee itu bagian dari transfer yang sama),
+  betul-betul **ikut menambah `accountsOut[...]['outflow']`/`unassigned`
+  dan `bump_monthly()`** (bukan cuma informasi/tag) — supaya Total
+  Outflow & balance per-rekening benar (sebelumnya uang fee itu "hilang"
+  dari Ledger walau benar-benar keluar dari rekening perusahaan). Field
+  baru di baris ini: `refund_ref_id` (int id refund-nya, dipakai frontend
+  buat link balik) dan `ledger_note: 'Bank Fee'`.
+- **Urutan baris TERJAMIN** lewat trik `ref_id`: baris refund tetap
+  `(int) $row['id']` seperti semula (TIDAK diubah), baris Bank Fee pakai
+  `ref_id` string `"<id>_fee"` — karena `usort()` di bawahnya sudah cast
+  kedua sisi ke string (`strcmp`), `"123_fee"` otomatis terurut persis
+  setelah `"123"` tapi sebelum `"124"`. Ada risiko tabrakan super kecil
+  kalau ADA baris lain di tanggal sama persis dengan id yang diawali id
+  refund ini + 1 digit lebih kecil (mis. refund id 123 vs baris lain id
+  1230) — diterima, toleransi yang sama seperti trik ordering credit-split
+  yang sudah ada di file ini sebelumnya.
+- `report_content.php` (`renderLedger()`): peta baru `ledgerRefundRows`
+  (keyed by `ref_id`, dibangun di pass pertama yang sama dengan
+  `ledgerCreditRows`) — dipakai chip teks "↑ Refund — <tanggal>" di bawah
+  Description baris Bank Fee (`.rpt-fee-ref-chip`, visual-only, BUKAN yang
+  diklik — lihat poin berikut). Baris refund dapat atribut baru
+  `data-ledger-row-id="refund-<ref_id>"` (selalu, baik punya fee atau
+  tidak — murah & future-proof). Baris Bank Fee dapat class
+  `.rpt-ledger-clickable` + atribut `data-link-refund-id="<refund_ref_id>"`
+  di **seluruh `<tr>`-nya** (bukan cuma chip-nya — user: "buat dia bisa
+  diklik"). Listener klik di `#rptLedgerBody` diperluas: cek
+  `[data-link-refund-id]` DULU (baris Bank Fee) sebelum cek
+  `[data-credit-source-id]` yang sudah ada (2 fitur independen, tidak
+  pernah tabrakan di baris yang sama). Fungsi baru
+  `scrollToAndFlashRefundRow()`: `scrollIntoView({behavior:'smooth',
+  block:'center'})` ke baris refund target lalu `classList.add` CSS class
+  `.rpt-ledger-flash` (animasi `@keyframes rptLedgerFlash`, 2x pulsa warna
+  hijau transparan lalu balik normal, 1.4s), dibersihkan otomatis lewat
+  event `animationend` (dan reflow paksa `void target.offsetWidth` supaya
+  animasi re-trigger kalau diklik 2x berturut-turut). Kalau baris refund
+  target tidak ada di DOM saat ini (ke-filter oleh date range) — klik tidak
+  melakukan apa-apa (tidak error).
+- CSV Export: TIDAK ada kode baru — baris Bank Fee otomatis ikut ter-export
+  karena loop CSV sudah generic per-baris ledger (field yang dipakai:
+  date/type/bank/account_no/label/category/amount/ledger_note, semua sudah
+  ada di baris Bank Fee ini).
+- Perlu dites (URUTAN PENTING — migration dulu): (0) migration
+  `migration_refund_bank_fees.sql` sudah di-run (dari sesi sebelumnya) dan
+  minimal 1 refund Transfer dengan Bank Fee > 0 sudah dibuat; (1) buka
+  Report → Ledger → cari baris refund itu (10 juta) → persis di bawahnya
+  HARUS ada baris Bank Fee (2,500 atau berapa pun dipilih), dengan chip
+  "↑ Refund — <tanggal>" di Description-nya; (2) klik baris Bank Fee itu
+  (di mana saja di barisnya, bukan cuma teks chip) → halaman scroll ke
+  baris refund-nya (kalau belum kelihatan) lalu baris itu berkedip hijau
+  sebentar lalu normal lagi; (3) klik lagi baris Bank Fee yang sama →
+  animasi berulang lagi (tidak macet di keadaan "sudah pernah diklik");
+  (4) cek Total Outflow & balance per-rekening bertambah sebesar fee
+  (bandingkan sebelum & sesudah fitur ini — sebelumnya cuma net refund yang
+  terhitung); (5) refund Transfer TANPA Bank Fee (None/Rp 0) → TIDAK ada
+  baris Bank Fee baru muncul, baris refund-nya sendiri tetap normal seperti
+  biasa; (6) coba filter date range yang MENGECUALIKAN baris refund tapi
+  MENCAKUP tanggal lain — pastikan tidak ada JS error walau baris Bank Fee
+  juga ikut ke-filter keluar (refund & fee sama-sama pakai `refund_date`
+  sama, jadi seharusnya selalu ikut ter-filter bareng, tapi tes jaga-jaga);
+  (7) Export CSV → baris Bank Fee ikut muncul sebagai baris outflow
+  terpisah dengan label "Bank Fee — ...".
+
 ## 9. Cara lanjut di sesi baru
 1. Upload PROJECT_NOTES.md ini + hanya file kode yang relevan (Sales: `transaction_content.php` + `ajax/` terkait;
    Logistic: `logistic_content.php` + `list_logistic_movements.php`/`list_logistics.php`; Investor:

@@ -8,6 +8,12 @@
 // actually leaving the business, so net cash received from this customer
 // goes down).
 //
+// Optional bank_fee (8 Nov 2026): transfer fee the bank deducted on top of
+// the refund itself. Tracked in its own table (refund_bank_fees) so it can
+// be isolated in reports; it is NOT subtracted from $amount here — the
+// client (Transfer capture form) already sends $amount as the NET refund,
+// having subtracted the fee from the OCR-scanned gross slip total itself.
+//
 // Response contract: { ok: true|false, message: "...", ... }
 
 ini_set('display_errors', '0');
@@ -101,6 +107,25 @@ if ($amountRaw === null || (float)$amountRaw <= 0) {
     aos_fail('Amount is not valid.');
 }
 $amount = (float) $amountRaw;
+
+// Bank Fee is OPTIONAL (defaults to 0). This is NOT part of $amount above —
+// $amount is already the NET refund (what reduces the customer's
+// credit_balance, unchanged contract from before this feature). The fee is
+// purely a record of what the bank additionally deducted from the company's
+// source account for this transfer, kept in its own table
+// (refund_bank_fees) so the Ledger/Finance Report can isolate it separately
+// from the refund itself (user request, 8 Nov 2026). Empty/missing ->
+// treated as 0, same as how Source Bank etc. are optional above.
+$bankFeeRaw = post_str('bank_fee');
+if ($bankFeeRaw === '') {
+    $bankFee = 0.0;
+} else {
+    $bankFeeClean = clean_decimal($bankFeeRaw);
+    if ($bankFeeClean === null || (float)$bankFeeClean < 0) {
+        aos_fail('Bank Fee is not valid.');
+    }
+    $bankFee = (float) $bankFeeClean;
+}
 
 // Source account is OPTIONAL: some refunds are approved by management with
 // no transfer at all (cash, or just a write-off), so these can all be NULL.
@@ -214,6 +239,20 @@ try {
     $ins->execute();
     $refundId = $lisani_conn->insert_id;
     $ins->close();
+
+    // ---------- Record the bank fee (if any), separate table ----------
+    // See the comment above $bankFeeRaw: this is purely informational / for
+    // reporting, does not touch customers.credit_balance or .total_paid
+    // (those are adjusted by $amount below, same as always).
+    if ($bankFee > 0.0001) {
+        $feeIns = $lisani_conn->prepare(
+            'INSERT INTO refund_bank_fees (invoice_refund_id, fee_amount) VALUES (?, ?)'
+        );
+        $bankFeeStr = (string) round($bankFee, 2);
+        $feeIns->bind_param('is', $refundId, $bankFeeStr);
+        $feeIns->execute();
+        $feeIns->close();
+    }
 
     // ---------- Trace this refund back to its credit_source(s), FIFO ----------
     // Mirrors how customer_credit_applications already attributes credit
