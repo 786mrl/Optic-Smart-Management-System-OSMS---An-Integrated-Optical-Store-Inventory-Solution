@@ -60,6 +60,18 @@ function ccs_lock_sources(mysqli $conn, int $customerId): array
 // comes back as one more slice with source_bank/account = NULL — asal tidak
 // diketahui, never silently dropped.
 //
+// Fixed 6 Nov 2026 (user-reported: account number missing on Credit Balance
+// ledger rows): this used to read invoice_payments.source_bank /
+// source_account_name — but "source" on invoice_payments means which bank
+// the CUSTOMER paid FROM (no account number is even captured for it, by
+// design). What this function actually needs is which of OUR OWN company
+// accounts the money landed in — that's invoice_payments.destination_bank /
+// destination_account_number / destination_account_name, the same fields
+// get_finance_report.php itself matches against bank_accounts.json for
+// every other inflow row. customer_credit_sources.source_bank/source_account_number
+// name the column from the CREDIT's point of view ("which of our accounts is
+// this credit sitting in"), which is the invoice's destination, not its source.
+//
 // Returns a list of {source_bank, source_account_number, source_account_name,
 // amount, origin_invoice_payment_id} rows that sum to $amount.
 function trace_credit_to_real_payments(mysqli $conn, int $sourceInvoiceId, float $amount): array
@@ -69,12 +81,8 @@ function trace_credit_to_real_payments(mysqli $conn, int $sourceInvoiceId, float
         return $out;
     }
 
-    // invoice_payments has no source_account_number column (only
-    // source_bank / source_account_name — the source account's NUMBER was
-    // never captured there, unlike destination_account_number). That slot
-    // always comes back null below; not a bug, the data just isn't there.
     $st = $conn->prepare(
-        "SELECT id, amount, source_bank, source_account_name
+        "SELECT id, amount, destination_bank, destination_account_number, destination_account_name
          FROM invoice_payments
          WHERE invoice_id = ? AND source_bank <> 'CREDIT BALANCE'
          ORDER BY id ASC"
@@ -98,9 +106,9 @@ function trace_credit_to_real_payments(mysqli $conn, int $sourceInvoiceId, float
             continue;
         }
         $out[] = [
-            'source_bank'               => $p['source_bank'] !== '' ? $p['source_bank'] : null,
-            'source_account_number'     => null, // not captured in invoice_payments — see query comment above
-            'source_account_name'       => $p['source_account_name'] !== '' ? $p['source_account_name'] : null,
+            'source_bank'               => $p['destination_bank'] !== '' ? $p['destination_bank'] : null,
+            'source_account_number'     => $p['destination_account_number'] !== '' ? $p['destination_account_number'] : null,
+            'source_account_name'       => $p['destination_account_name'] !== '' ? $p['destination_account_name'] : null,
             'amount'                    => round($take, 2),
             'origin_invoice_payment_id' => (int) $p['id'],
         ];

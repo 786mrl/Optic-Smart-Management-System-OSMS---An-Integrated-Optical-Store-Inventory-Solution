@@ -642,6 +642,76 @@ Credit Balance tab Customer sudah menjangkau kebutuhan yang sama.
    "Refund & Settlement" sudah tidak ada lagi di dropdown; (7) pastikan menu/form Disbursement lain berjalan
    normal (tidak ada error gara-gara `departments.json` berubah).
 
+**Bugfix 6 Nov 2026 — dua bug ditemukan saat testing poin 7 di atas, keduanya sudah diperbaiki**:
+
+1. **`bind_param` tipe data tertukar posisi** di insert `customer_credit_sources`, ada di LAMA `create_return.php`
+   (sudah ada SEBELUM sesi refund_queue-removal ini, ikut ter-copy ke `cancel_booking.php` &
+   `create_price_adjustment.php` saat saya tambahkan insert yang sama di situ): string tipe `'isssssiiis'`
+   seharusnya `'isssssiisi'` — posisi `$ccsDate` (harusnya `s`) dan `$ccsUserId` (harusnya `i`) ketukar.
+   Akibatnya `created_date` menerima data salah tipe → MySQL tolak (`Incorrect date value`) → transaksi
+   rollback → pesan generik "Failed to cancel the booking." Diperbaiki di ketiga file.
+2. **`trace_credit_to_real_payments()` (di `credit_sources_helper.php`) query kolom yang tidak ada**:
+   fungsi ini men-query `invoice_payments.source_account_number`, padahal kolom itu TIDAK ADA di tabel
+   `invoice_payments` (cuma ada `source_bank` & `source_account_name` — nomor rekening SUMBER memang tidak
+   pernah dicatat di tabel itu, beda dengan `destination_account_number` yang ada). Error: `Unknown column
+   'source_account_number' in 'field list'`. Diperbaiki: query tidak lagi minta kolom itu,
+   `source_account_number` pada slice hasil trace selalu `NULL` (bukan disembunyikan, datanya memang tidak
+   tersedia di sumbernya).
+
+**Bugfix 6 Nov 2026 (lanjutan, dari Report/Ledger) — 2 hal diperbaiki**:
+
+1. **`trace_credit_to_real_payments()` salah kolom (bug nyata, bukan cuma kosmetik)**: sebelumnya baca
+   `invoice_payments.source_bank`/`source_account_name` (= bank asal CUSTOMER bayar, makanya tidak ada nomor
+   rekeningnya sama sekali). Yang seharusnya dibaca untuk mengisi `customer_credit_sources.source_*` (="rekening
+   PERUSAHAAN mana yang sedang menyimpan kredit ini") adalah `destination_bank`/`destination_account_number`/
+   `destination_account_name` — rekening perusahaan yang MENERIMA uang. Diperbaiki di `credit_sources_helper.php`.
+   **Data lama yang sudah kepalang ter-insert pakai kolom salah (source_account_number selalu NULL) perlu
+   diperbaiki manual atau dihapus & diulang testingnya** — tidak di-backfill otomatis di sesi ini.
+2. **Baris Refund di Ledger (`get_finance_report.php`) sekarang punya `ledger_note`** ("Refund" / "Refund
+   (CASH)" dst, muncul di kolom Notes) — sebelumnya `ledger_note` selalu `null` untuk baris refund, dan
+   frontend (`report_content.php`) HANYA menampilkan sesuatu di kolom Notes kalau `ledger_note` terisi (field
+   `notes` bebas-teks tidak pernah dipakai sebagai fallback), jadi baris refund selalu tampil "—" di Notes.
+3. **#4 (card Bank Accounts) — DIPASTIKAN BUKAN BUG**, setelah dikonfirmasi ke user: refund metode TRANSFER
+   yang nomor rekening sumbernya sungguhan (misal Mandiri, diisi manual saat input refund) MEMANG seharusnya
+   mengurangi saldo rekening itu di card Bank Accounts — uangnya betul-betul keluar dari situ. Selisih Rp 60
+   yang sempat dikira bug itu matematis benar (persis sebesar refund TRANSFER-nya). Tidak ada perubahan kode
+   untuk poin ini.
+4. **#1 (Ledger: split baris payment awal) — SELESAI** di `get_finance_report.php`. Beda dengan pola
+   credit_remaining/credit_used (baris 5-6, `amount=0` karena uangnya sendiri tidak real/sudah dihitung
+   sekali) — split di sini adalah REAL money dua-duanya (uang invoice_payment itu memang benar-benar utuh
+   masuk), jadi dua baris hasil split SAMA-SAMA dihitung penuh ke accountsOut/total (jumlahnya tetap sama
+   seperti sebelum displit, tidak ada uang nambah/hilang). Mekanisme: query baru `customer_credit_sources
+   WHERE origin_invoice_payment_id IS NOT NULL` dikumpulkan per `invoice_payment.id` SEBELUM loop inflow
+   utama; kalau suatu invoice_payment punya credit yang menelusuri balik ke situ, baris inflow-nya dipecah:
+   (a) sisa yang TETAP jadi pembayaran asli (kalau masih ada sisa setelah credit) — label/kategori/notes
+   persis seperti sebelumnya, (b) satu baris per `customer_credit_sources` row dengan label "Customer Credit
+   Balance — ...", `ledger_note` "Credit Balance", `bank`/`account_no` diambil dari field `customer_credit_sources`
+   sendiri (bukan dari `invoice_payments` lagi — otomatis ikut benar karena fix #2 di atas). Kedua jenis baris
+   berbagi `group_id = 'invoice_payment_<id>'` supaya frontend (`report_content.php`, sudah generik, tidak
+   perlu diubah) mengelompokkannya visual sama seperti pola baris 5-6.
+
+**Bugfix 6 Nov 2026 (lanjutan #3) — 2 bug ditemukan user langsung setelah poin #1-#4 di atas dicoba**:
+
+1. **Amount (IDR) tampil Rp 0 di baris Refund & baris split baru**: `report_content.php` punya konvensi
+   `shownAmount = row.ledger_note ? (row.display_amount || 0) : row.amount` — `ledger_note` terisi dianggap
+   tanda "nilai aslinya ada di `display_amount`, bukan `amount`" (konvensi ini awalnya cuma untuk baris
+   Credit Balance remaining/used yang MEMANG sengaja `amount=0`). Begitu saya tambahkan `ledger_note` ke
+   baris Refund (buat #3) dan baris split credit baru (buat #1) tanpa ikut isi `display_amount`, keduanya
+   kebawa tampil Rp 0. Diperbaiki: `display_amount` diisi sama persis dengan `amount` untuk kedua jenis baris
+   itu (tidak ubah JS sama sekali, nilainya memang identik, bukan baris display-only).
+2. **Urutan baris split credit tidak kronologis** (muncul setelah refund pertama, bukan sebelum): `ref_id`
+   baru yang saya buat berupa string gabungan (misal `"1_1_credit_5"`) tidak sebanding langsung dengan
+   `ref_id` baris lain yang masih angka polos (`strcmp` membandingkan karakter demi karakter — `_` secara
+   ASCII lebih besar dari digit angka, jadi string gabungan ini bisa ter-urut SETELAH angka yang nilainya
+   lebih besar). Diperbaiki: baris "sisa real" dan baris "jadi credit" dari satu payment yang sama sekarang
+   pakai `ref_id` yang SAMA PERSIS (id payment aslinya, angka polos) — karena `usort()` di PHP 8+ itu stabil,
+   baris-baris dengan `ref_id` sama akan tetap berurutan sesuai urutan push ke array (sisa dulu baru credit),
+   sekaligus posisinya relatif ke baris lain tetap alami seperti sebelum dipecah.
+   **Catatan untuk nanti**: ini tidak menyelesaikan masalah sorting yang lebih umum di sistem (perbandingan
+   `ref_id` lewat `strcmp` string, bukan numerik — pola `credit_app_<id>_0_remaining`/`_1_used` yang sudah
+   ada dari sebelumnya juga punya keterbatasan serupa, selalu ter-urut setelah baris angka polos manapun di
+   hari yang sama). Di luar scope perbaikan kali ini.
+
 **Bugfix (ditemukan user sebelum sempat dites) — invoice overpaid tidak benar-benar ditutup**: di `cancel_booking.php`,
 titik yang nge-cap `invoices.paid_amount` turun supaya pas dengan `total_amount` baru TIDAK pernah ikut nge-update
 kolom `invoices.status` — jadi status di DB tetap stale `open`, padahal secara angka (`paid_amount == total_amount`)
@@ -976,6 +1046,181 @@ dari outputs \u2014 jangan upload `report_content.php` lagi, pakai `report_conte
   muncul walau migration sudah jalan, screenshot user sebelumnya menunjukkan
   file lama \u2014 cek file `transaction_content.php` yang dipasang di server
   adalah yang terbaru dari outputs, bukan versi sebelum sesi "customer_credit_sources").
+
+Dikerjakan (8 Nov 2026, belum dites) — Kolom "Description" di tabel Ledger
+Report, sebelumnya isinya cuma label generik (mis. "Payment — Budi
+(INV-001)", "Refund — Siti"). User minta diisi notes asli yang disimpan di
+tiap transaksi. Backend (`get_finance_report.php`) sudah mengirim field
+`notes` di tiap baris ledger sejak lama (disbursement/invoice_payment/refund
+pakai kolom `notes` masing-masing tabel; baris credit-balance split/remaining/
+used tidak punya notes sendiri, selalu `null`) — tidak ada perubahan backend.
+- **Keputusan user (revisi dari rencana awal "ganti total")**: Description
+  jadi DUA baris — baris atas tetap label lama (mis. "Payment — Budi
+  (INV-001)"), baris bawah notes asli transaksi itu, HANYA muncul kalau
+  `row.notes` non-kosong (setelah trim). Baris Credit Balance (notes selalu
+  null) jadi tetap satu baris (cuma label), tidak berubah tampilannya.
+- `report_content.php`: `renderLedger()` — variabel `descNotes` (notes
+  ter-trim atau string kosong) + `descHtml` (`escapeHtml(label)` + `<br>` +
+  `<span class="rpt-desc-note">...</span>` kalau `descNotes` tidak kosong),
+  dipakai di `<td>` kolom Description. CSS baru `.rpt-desc-note` (font lebih
+  kecil, opacity.7) ditaruh di blok `<style>` dekat `.rpt-ledger-note`. Export
+  CSV (`rptExportCsv` listener) — `desc` = `label + '\n' + notes` kalau notes
+  ada (newline di dalam field CSV terkuotasi, valid RFC4180, Excel/Sheets baca
+  sebagai 1 cell 2 baris), else tetap `label` saja.
+- Perlu dites: (1) transaksi yang `notes`-nya terisi di DB — Description di
+  Ledger tampil 2 baris: label (normal) lalu notes (lebih kecil/pudar) di
+  bawahnya; (2) transaksi `notes` kosong — Description tetap 1 baris (cuma
+  label), TIDAK ada baris kosong/`<br>` nganggur di bawahnya; (3) baris Credit
+  Balance (remaining/used/split) — tetap 1 baris label seperti sebelum
+  perubahan ini sama sekali; (4) Export CSV — buka file, cell Description
+  untuk transaksi ber-notes harus 2 baris dalam 1 cell (bukan row CSV
+  terpisah); (5) transaksi currency non-IDR — suffix "(CUR 1,234.56)" tetap
+  nempel di baris pertama (sebelah label), bukan ikut masuk ke baris notes.
+
+Dikerjakan (8 Nov 2026, belum dites) — Ledger Report: baris "Remaining
+credit balance" / "Applied to ..." dihapus dari tabel, dipindah ke detail
+panel yang dibuka dengan klik baris "Customer Credit Balance". User lapor
+(dengan screenshot) alur: booking → DP (baris 1, normal) → booking
+dibatalkan → DP jadi full credit balance (baris "Customer Credit Balance —
+Payment — ...", background gelap karena group_id, sesuai desain lama) →
+customer pakai sebagian credit buat ambil barang lain → sebelumnya muncul 2
+baris TAMBAHAN di bawahnya ("Remaining credit balance" Rp45jt, "Applied to
+..." Rp15jt) padahal baris pertama (Rp60jt) masih ada juga → bingung, kelihatan seperti
+3 transaksi padahal cuma 1 sumber uang yang dipecah penggunaannya. Keputusan user: baris remaining/applied TIDAK ditampilkan;
+baris "Customer Credit Balance" itu sendiri jadi bisa diklik → flyout
+("fly window") menampilkan rincian pemakaiannya. Indikator "bisa diklik"
+cukup pakai background gelap yang sudah ada (group_id), tidak perlu
+styling tambahan.
+- `get_finance_report.php`: blok "Credit-balance usage rows" (query
+  `customer_credit_applications`, dulu push 2 baris `$ledger[]` per
+  aplikasi, source `credit_remaining`/`credit_used`) DIHAPUS dan diganti
+  jadi lookup `$appsBySource[credit_source_id][]` yang dibangun LEBIH AWAL
+  (sebelum loop invoice_payments), karena harus siap dipakai saat baris
+  `invoice_payment_credit` dibentuk. Query join ke `customer_credit_sources
+  s` dibuang (tidak perlu lagi `source_bank`/`source_account_number` dari
+  situ — baris remaining/used sudah tidak dibuat). Baris
+  `invoice_payment_credit` (di dalam `foreach ($credit['rows'] as
+  $ccsRow)`) sekarang bawa field baru: `credit_source_id` (int, =
+  `customer_credit_sources.id`), `applications` (array dari
+  `$appsBySource`, tiap elemen: date, amount_used, remaining_after_amount,
+  customer_name, invoice_number), `remaining_amount` (snapshot
+  `remaining_after_amount` aplikasi terakhir, atau jumlah penuh kalau belum
+  pernah dipakai sama sekali). Baris `credit_remaining`/`credit_used` TIDAK
+  lagi pernah masuk `$ledger` — tidak ada perubahan pada total/running
+  balance (keduanya memang sudah `amount=0`, jadi aman).
+- `report_content.php`: modal baru `#rptCreditDetailOverlay` /
+  `#rptCreditDetailPanel` (markup + CSS, ditaruh setelah card Ledger). Var
+  `ledgerCreditRows` (map `credit_source_id -> row`) dideklarasikan di awal
+  IIFE, diisi ulang tiap `renderLedger()` dipanggil. Baris dengan
+  `row.source === 'invoice_payment_credit'` dapat class
+  `.rpt-ledger-clickable` (cuma `cursor:pointer`, TIDAK ubah background —
+  dark background dari `.rpt-ledger-grouped` yang sudah ada dianggap cukup
+  sebagai indikator) + atribut `data-credit-source-id`. Listener delegasi
+  di `#rptLedgerBody` (sekali attach, bukan per-row) baca atribut itu,
+  panggil `openCreditDetail(row)` yang isi `#rptCreditDetailBody` dengan:
+  jumlah asli, daftar aplikasi (tanggal + invoice tujuan + jumlah dipakai)
+  kalau ada, baris "Remaining now" (bold), dan catatan kecil soal refund
+  (lihat limitasi di bawah). Tombol Close + klik di luar panel (backdrop)
+  sama-sama menutup (`classList.add('hidden')`).
+- **Limitasi yang DISADARI, bukan terlewat**: panel ini TIDAK bisa
+  menampilkan "berapa yang sudah di-refund dari credit ini" karena
+  `invoice_refunds` di skema saat ini tidak punya kolom yang menghubungkan
+  ke `customer_credit_sources` tertentu (refund cuma terikat ke
+  `customer_id`, bukan ke sumber credit spesifik) — jadi tidak bisa
+  ditelusuri uang refund itu berasal dari credit source yang mana. Panel
+  cuma kasih catatan kecil soal ini. Kalau user mau breakdown refund
+  per-sumber, perlu tambah kolom FK (mis. `credit_source_id` nullable di
+  `invoice_refunds`, diisi saat refund dibuat dari halaman yang tahu
+  sumbernya) — belum dikerjakan, nunggu konfirmasi user perlu atau tidak.
+- Perlu dites: (1) baris "Customer Credit Balance" — klik barisnya, modal
+  muncul; (2) kalau credit itu belum pernah dipakai sama sekali — modal
+  tampil "Not used yet — full amount still available" + Remaining now =
+  jumlah penuh; (3) kalau sudah dipakai sebagian (skenario di screenshot:
+  60jt → sisa 45jt, 15jt dipakai ke invoice lain) — modal tampil 1 baris
+  aplikasi (tanggal, nama+invoice tujuan, Rp15jt) + Remaining now = Rp45jt,
+  DAN baris "Remaining credit balance"/"Applied to ..." yang dulu tampil di
+  tabel Ledger sekarang harus SUDAH TIDAK ADA lagi di tabel; (4) baris lain
+  di Ledger (payment biasa, remainder split, refund) tetap TIDAK bisa
+  diklik (cursor normal, tidak ada apa-apa saat diklik); (5) tombol Close
+  dan klik area gelap di luar panel sama-sama menutup modal; (6) Export CSV
+  tidak terpengaruh (field baru cuma dipakai di modal, bukan di CSV).
+
+Dikerjakan (8 Nov 2026, belum dites) — Refund sekarang tampil beneran di
+Ledger (bukan cuma di fly window seperti rencana sebelumnya — user ralat:
+"posisinya itu tidak bisa didalam fly window. justru harus di ledger
+betul"), tapi dengan penanda yang menghubungkannya ke baris "Customer
+Credit Balance" asalnya, karena tanggal refund belum tentu persis di bawah
+baris itu. User juga konfirmasi: rekening refund (source_bank dll di
+`invoice_refunds`, sudah ada & opsional) itu independen dari pelacakan
+sumber credit ini — tidak saling membatasi.
+- **Migration baru** (`migration_customer_credit_refunds.sql`, BELUM
+  dijalankan user, perlu di-run manual di phpMyAdmin dulu sebelum fitur ini
+  bisa jalan): tabel `customer_credit_refunds` (id, invoice_refund_id,
+  credit_source_id, amount_refunded, remaining_after_amount, created_at) —
+  mirror persis pola `customer_credit_applications` (index biasa, TANPA FK
+  constraint, konsisten sama konvensi project ini).
+- `create_refund.php`: setelah insert `invoice_refunds` dapat `$refundId`,
+  SEBELUM update `customers.credit_balance`, tambah blok alokasi FIFO:
+  `SELECT ... FROM customer_credit_sources WHERE customer_id=? AND
+  remaining_amount > 0 ORDER BY created_date ASC, id ASC FOR UPDATE`, lalu
+  loop ambil dari yang paling lama dulu (`min(available, sisa)`), tiap
+  slice: insert row `customer_credit_refunds` + UPDATE
+  `customer_credit_sources.remaining_amount`. Best-effort (TIDAK fail
+  seluruh refund kalau sources-nya kurang/tidak ada — credit lama dari
+  sebelum migration `customer_credit_sources` tetap boleh di-refund seperti
+  biasa, cuma tidak akan punya jejak sumbernya). Validasi amount <=
+  credit_balance TETAP seperti semula, tidak berubah.
+- `get_finance_report.php`: query `customer_credit_sources` sekarang ikut
+  SELECT `remaining_amount` (live, authoritative — dipakai langsung buat
+  field `remaining_amount` di baris `invoice_payment_credit`, GANTI cara
+  lama yang nebak dari snapshot aplikasi terakhir). Blok baru sebelum loop
+  invoice_payments: `$refundsBySource` (grouped by `credit_source_id`,
+  dipakai gabung ke `usage` baris credit) dan `$sourcesByRefund` (grouped
+  by `invoice_refund_id`, dipakai di baris refund sebagai
+  `credit_source_refs`), keduanya dari `customer_credit_refunds` JOIN
+  `invoice_refunds` (guarded, cek tabel ada dulu — aman kalau migration
+  belum di-run, cuma field-nya kosong). Field `applications` di baris
+  `invoice_payment_credit` DIGANTI NAMA jadi **`usage`** — gabungan
+  applications (`kind: 'applied'`) + refunds (`kind: 'refunded'`), di-sort
+  `usort` by `created_at` (bukan `date`, supaya urutan asli tetap benar
+  walau tanggalnya sama). Baris refund (`source: 'refund'`) dapat field
+  baru `credit_source_refs` (array `{credit_source_id, amount}`, kosong
+  kalau bukan dari credit atau dari sebelum migration ini).
+- `report_content.php`: `renderLedger()` sekarang 2 pass — pass pertama
+  cuma isi `ledgerCreditRows` (loop semua baris, tangkap yang
+  `source==='invoice_payment_credit'`) SEBELUM pass render, supaya chip di
+  baris refund bisa cari balik baris credit asalnya walau urutannya beda
+  di array. Baris refund yang punya `credit_source_refs` dapat chip kecil
+  (`.rpt-credit-ref-chip`, teks "↳ Credit Balance — <tanggal>", bisa
+  diklik) ditaruh di bawah Description-nya (pola sama kayak baris notes).
+  Listener klik di `#rptLedgerBody` diperluas: dulu cuma cari
+  `tr[data-credit-source-id]`, sekarang `[data-credit-source-id]` apa saja
+  (cocok untuk `<tr>` baris credit MAUPUN `<span>` chip di baris refund) —
+  keduanya buka modal yang sama. `openCreditDetail()` baca `row.usage`
+  (bukan `row.applications` lagi), tiap entri dibedakan tampilannya
+  berdasar `u.kind`: "Applied to ..." vs "Refunded (METODE)". Catatan di
+  bawah modal diganti jadi cuma soal refund SEBELUM migration ini
+  (sebelumnya bilang refund sama sekali tidak terlacak — sekarang sudah
+  bisa, kecuali data lama).
+- Perlu dites (URUTAN PENTING — migration dulu baru restart alur): (0)
+  jalankan `migration_customer_credit_refunds.sql` di phpMyAdmin dulu; (1)
+  ulangi skenario booking→DP→cancel (jadi full credit balance)→pakai
+  sebagian ke invoice lain (seperti sesi sebelumnya) → lalu Refund SISA
+  credit balance-nya (Cash atau Transfer, rekening sumber refund BEBAS beda
+  dari rekening DP asal) → cek baris refund baru muncul di Ledger DENGAN
+  chip "↳ Credit Balance — ..." di bawah Description-nya; (2) klik chip itu
+  → modal yang sama seperti klik baris Credit Balance langsung terbuka,
+  dan daftar usage-nya sekarang harus ikut tampilkan baris "Refunded
+  (METODE)" selain "Applied to ..." yang sudah ada, DAN "Remaining now" di
+  modal harus sudah Rp 0 (atau sisa yang benar) setelah refund; (3) refund
+  yang BUKAN dari credit balance (customer tidak punya credit sama sekali)
+  — tetap jalan normal seperti biasa, TIDAK ada chip yang muncul di baris
+  refund-nya; (4) kalau punya data refund LAMA (sebelum migration ini
+  dijalankan) — baris refund lama itu tetap tampil normal di Ledger, cuma
+  tanpa chip (tidak error); (5) refund sebagian (amount < sisa credit) —
+  pastikan `remaining_amount` di `customer_credit_sources` DAN angka
+  "Remaining now" di modal berkurang pas sesuai amount refund, bukan jadi 0
+  semua.
 
 ## 9. Cara lanjut di sesi baru
 1. Upload PROJECT_NOTES.md ini + hanya file kode yang relevan (Sales: `transaction_content.php` + `ajax/` terkait;

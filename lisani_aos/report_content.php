@@ -93,6 +93,18 @@
 </div>
 </div>
 
+<!-- Detail panel for a "Customer Credit Balance" ledger row — shows how
+     that credit source's money currently sits (still fully available, or
+     applied to one or more later invoices), instead of two extra visible
+     ledger rows per application (user, 8 Nov 2026). -->
+<div id="rptCreditDetailOverlay" class="hidden">
+  <div id="rptCreditDetailPanel">
+    <h3>Customer Credit Balance</h3>
+    <div id="rptCreditDetailBody"></div>
+    <button type="button" class="btn btn-secondary rpt-cd-close" id="rptCreditDetailClose">Close</button>
+  </div>
+</div>
+
 <style>
   /* ---- Containment: the report must never make the PAGE scroll sideways.
      Only .table-wrapper (tables) may scroll horizontally. ---- */
@@ -134,6 +146,48 @@
   #rptLedgerTable .rpt-ledger-grouped-start td { border-top:1px dashed var(--border,#333); }
   #rptLedgerTable .rpt-ledger-grouped-cont td { border-top:none; }
   .rpt-ledger-note { font-size:12px; opacity:.8; font-style:italic; }
+  /* Description column's second line — the transaction's own free-text note. */
+  .rpt-desc-note { font-size:12px; opacity:.7; }
+  /* A "Customer Credit Balance" row (source=invoice_payment_credit) opens a
+     detail panel on click — see renderLedger()/openCreditDetail(). The dark
+     group background already marks it visually (user, 8 Nov 2026: that's
+     enough, no extra styling needed); cursor:pointer is the only addition. */
+  #rptLedgerTable .rpt-ledger-clickable { cursor:pointer; }
+  /* Reference chip on a refund row, linking back to its originating
+     "Customer Credit Balance" row (user, 8 Nov 2026). */
+  .rpt-credit-ref-chip {
+    display:inline-block; font-size:11px; opacity:.85; cursor:pointer;
+    border:1px solid var(--border,#333); border-radius:4px; padding:1px 6px;
+    margin-top:2px;
+  }
+  .rpt-credit-ref-chip:hover { opacity:1; border-color:var(--success,#2ecc71); }
+  #rptCreditDetailOverlay {
+    position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:1000;
+    display:flex; align-items:center; justify-content:center; padding:var(--space-3);
+  }
+  #rptCreditDetailOverlay.hidden { display:none; }
+  #rptCreditDetailPanel {
+    background:var(--surface,#161616); border:1px solid var(--border,#333); border-radius:8px;
+    max-width:560px; width:100%; max-height:80vh; overflow-y:auto; padding:var(--space-3);
+  }
+  #rptCreditDetailPanel h3 { margin:0 0 var(--space-2); font-size:16px; }
+  #rptCreditDetailPanel .rpt-cd-row {
+    display:flex; justify-content:space-between; gap:var(--space-2);
+    padding:8px 0; border-bottom:1px solid var(--border,#2a2a2a);
+  }
+  #rptCreditDetailPanel .rpt-cd-row:last-child { border-bottom:none; }
+  #rptCreditDetailPanel .rpt-cd-sub { font-size:12px; opacity:.7; }
+  /* "Original amount" (context, muted) vs "Remaining now" (the figure that
+     matters — bold + the same green used for inflow amounts elsewhere in
+     this report) need to read as clearly different rows (user, 8 Nov 2026:
+     "biar nggak bingung lihatnya"). */
+  #rptCreditDetailPanel .rpt-cd-original { opacity:.65; font-size:13px; }
+  #rptCreditDetailPanel .rpt-cd-highlight { font-weight:700; }
+  #rptCreditDetailPanel .rpt-cd-highlight .rpt-cd-amount { color:var(--success,#2ecc71); font-size:17px; }
+  #rptCreditDetailPanel .rpt-cd-close {
+    display:block; margin:var(--space-3) auto 0; width:auto; min-width:120px;
+    text-align:center;
+  }
 
   /* Chart.js needs a position:relative parent with min-width:0, otherwise the
      canvas keeps its old (wide) size and drags the whole page wider. */
@@ -184,6 +238,10 @@
 <script>
 (function () {
   'use strict';
+
+  // Looked up by credit_source_id when a "Customer Credit Balance" ledger
+  // row is clicked — see renderLedger() and openCreditDetail() below.
+  var ledgerCreditRows = {};
 
   // Accordion: opening one of the two summary cards (Totals / Bank Accounts)
   // closes the other, instead of both staying open independently.
@@ -400,6 +458,18 @@
     // 2026: "running balance tetap 60, kan saya cuman memecah..."). The
     // actual figure to print in the Amount column for these rows is
     // row.display_amount instead.
+    // Rows whose source is 'invoice_payment_credit' open a detail panel on
+    // click instead of showing their applications/refunds as separate
+    // ledger rows (user, 8 Nov 2026). Keyed by credit_source_id, built in
+    // its own pass BEFORE the render pass below, so a refund row's
+    // reference chip can look up its originating credit row's date/label
+    // regardless of which one happens to sort first in the ledger array.
+    ledgerCreditRows = {}; // reassign the outer var — no re-declare, keeps one shared map
+    ledger.forEach(function (r) {
+      if (r.source === 'invoice_payment_credit' && r.credit_source_id != null) {
+        ledgerCreditRows[r.credit_source_id] = r;
+      }
+    });
     var running = 0;
     var prevGroupId = null;
     tbody.innerHTML = ledger.map(function (row) {
@@ -414,6 +484,27 @@
         fmtIDRParen(isIn ? shownAmount : -shownAmount) + '</span>';
       var balCell = '<span class="' + (running < 0 ? 'rpt-amt-out' : '') + '">' + fmtIDRParen(running) + '</span>';
       var notesCell = row.ledger_note ? '<span class="rpt-ledger-note">' + escapeHtml(row.ledger_note) + '</span>' : '\u2014';
+      // Description column: label on top, the transaction's own free-text
+      // note (row.notes) on a second line underneath when non-empty (user
+      // decision, 8 Nov 2026 — revised from the earlier "replace" approach).
+      var descNotes = (row.notes && String(row.notes).trim() !== '') ? String(row.notes).trim() : '';
+      var descHtml = escapeHtml(row.label) +
+        (descNotes ? '<br><span class="rpt-desc-note">' + escapeHtml(descNotes) + '</span>' : '');
+
+      // A refund row drawn from credit balance gets a small reference chip
+      // per source it was drawn from, so it's easy to tell which "Customer
+      // Credit Balance" row it belongs to even though the two won't
+      // generally sit next to each other by date (user, 8 Nov 2026). Click
+      // the chip to open that row's detail panel.
+      if (row.source === 'refund' && row.credit_source_refs && row.credit_source_refs.length) {
+        var chips = row.credit_source_refs.map(function (ref) {
+          var src = ledgerCreditRows[ref.credit_source_id];
+          var chipLabel = src ? ('Credit Balance — ' + src.date) : ('Credit source #' + ref.credit_source_id);
+          return '<span class="rpt-credit-ref-chip" data-credit-source-id="' + ref.credit_source_id + '">\u21b3 ' +
+            escapeHtml(chipLabel) + '</span>';
+        }).join('');
+        descHtml += '<br>' + chips;
+      }
 
       // Rows sharing one group_id (a credit application's "remaining" +
       // "used" pair) are rendered as a visually joined block — same
@@ -427,11 +518,19 @@
       }
       prevGroupId = row.group_id || null;
 
-      return '<tr class="' + groupClass.trim() + '">' +
+      // "Customer Credit Balance" rows open the detail panel on click (user,
+      // 8 Nov 2026) — ledgerCreditRows itself is already built above.
+      var clickAttr = '';
+      if (row.source === 'invoice_payment_credit' && row.credit_source_id != null) {
+        groupClass += ' rpt-ledger-clickable';
+        clickAttr = ' data-credit-source-id="' + row.credit_source_id + '"';
+      }
+
+      return '<tr class="' + groupClass.trim() + '"' + clickAttr + '>' +
         '<td>' + escapeHtml(row.date) + '</td>' +
         '<td>' + badge + '</td>' +
         '<td>' + escapeHtml(acctLabel) + '</td>' +
-        '<td>' + escapeHtml(row.label) + (row.original ? ' <span class="empty-sub">(' + escapeHtml(row.original) + ')</span>' : '') + '</td>' +
+        '<td>' + descHtml + (row.original ? ' <span class="empty-sub">(' + escapeHtml(row.original) + ')</span>' : '') + '</td>' +
         '<td>' + escapeHtml(row.category || '\u2014') + '</td>' +
         '<td>' + amtCell + '</td>' +
         '<td>' + balCell + '</td>' +
@@ -450,6 +549,50 @@
       '</tr>';
   }
 
+  // Detail panel for a "Customer Credit Balance" ledger row (user, 8 Nov
+  // 2026 — replaces the old "remaining"/"used" extra ledger rows). One
+  // delegated listener on the tbody, since rows are replaced wholesale on
+  // every renderLedger() call.
+  function openCreditDetail(row) {
+    var body = document.getElementById('rptCreditDetailBody');
+    var html = '<div class="rpt-cd-row rpt-cd-original"><div>Original amount</div><div>' + fmtIDR(row.amount) + '</div></div>';
+    if (!row.usage || !row.usage.length) {
+      html += '<div class="rpt-cd-row"><div>Status</div><div>Not used yet — full amount still available</div></div>';
+    } else {
+      row.usage.forEach(function (u) {
+        var line = u.kind === 'refunded'
+          ? ('Refunded' + (u.method ? ' (' + u.method + ')' : ''))
+          : ('Applied to ' + u.customer_name + ' (' + u.invoice_number + ')');
+        html += '<div class="rpt-cd-row"><div>' +
+          escapeHtml(u.date) + '<br><span class="rpt-cd-sub">' + escapeHtml(line) +
+          '</span></div><div>' + fmtIDR(u.amount) + '</div></div>';
+      });
+    }
+    html += '<div class="rpt-cd-row rpt-cd-highlight"><div>Remaining now</div><div class="rpt-cd-amount">' +
+      fmtIDR(row.remaining_amount) + '</div></div>';
+    // customer_credit_refunds only exists from 8 Nov 2026 onward — a refund
+    // made before that migration was run has no row there, so it can't show
+    // up above even though it really did draw from this credit.
+    html += '<div class="rpt-cd-sub" style="margin-top:8px;">Note: a refund made before refund-tracing was added (8 Nov 2026) won\'t show here.</div>';
+    body.innerHTML = html;
+    document.getElementById('rptCreditDetailOverlay').classList.remove('hidden');
+  }
+  // Matches both the credit row itself (data attr on the <tr>) and a
+  // refund row's reference chip (data attr on a nested <span>) — whichever
+  // is closer to where the click landed.
+  document.getElementById('rptLedgerBody').addEventListener('click', function (e) {
+    var el = e.target.closest('[data-credit-source-id]');
+    if (!el) return;
+    var row = ledgerCreditRows[el.getAttribute('data-credit-source-id')];
+    if (row) openCreditDetail(row);
+  });
+  document.getElementById('rptCreditDetailClose').addEventListener('click', function () {
+    document.getElementById('rptCreditDetailOverlay').classList.add('hidden');
+  });
+  document.getElementById('rptCreditDetailOverlay').addEventListener('click', function (e) {
+    if (e.target.id === 'rptCreditDetailOverlay') e.target.classList.add('hidden');
+  });
+
   document.getElementById('rptApplyFilter').addEventListener('click', loadFinanceReport);
   document.getElementById('rptClearFilter').addEventListener('click', function () {
     document.getElementById('rptDateFrom').value = '';
@@ -463,7 +606,9 @@
     var rows = [['Date', 'Type', 'Bank', 'Account Number', 'Description', 'Category', 'Amount IDR', 'Notes']];
     ledger.forEach(function (r) {
       var amt = r.ledger_note ? (r.display_amount || 0) : r.amount;
-      rows.push([r.date, r.type, r.bank || '', r.account_no || '', r.label, r.category || '', amt, r.ledger_note || '']);
+      var noteTxt = (r.notes && String(r.notes).trim() !== '') ? String(r.notes).trim() : '';
+      var desc = noteTxt ? (r.label + '\n' + noteTxt) : r.label;
+      rows.push([r.date, r.type, r.bank || '', r.account_no || '', desc, r.category || '', amt, r.ledger_note || '']);
     });
     var csv = rows.map(function (r) {
       return r.map(function (v) { return '"' + String(v).replace(/"/g, '""') + '"'; }).join(',');

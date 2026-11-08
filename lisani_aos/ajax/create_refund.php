@@ -215,6 +215,60 @@ try {
     $refundId = $lisani_conn->insert_id;
     $ins->close();
 
+    // ---------- Trace this refund back to its credit_source(s), FIFO ----------
+    // Mirrors how customer_credit_applications already attributes credit
+    // used toward an invoice (create_order.php) — this is the same idea for
+    // credit refunded as cash, so the Ledger Report can show which
+    // "Customer Credit Balance" row a refund belongs to (user request, 8
+    // Nov 2026). Oldest source first. Best-effort only: if this customer's
+    // credit_balance includes money from before customer_credit_sources
+    // existed (migration_customer_credit_sources.sql), or the sources'
+    // remaining_amount total is otherwise short, the untraceable portion is
+    // simply not recorded here — customers.credit_balance below stays the
+    // real source of truth for the refund amount regardless, same as it
+    // always was before this table existed.
+    $toAllocate = $amount;
+    $srcStmt = $lisani_conn->prepare(
+        'SELECT id, remaining_amount FROM customer_credit_sources
+         WHERE customer_id = ? AND remaining_amount > 0
+         ORDER BY created_date ASC, id ASC FOR UPDATE'
+    );
+    $srcStmt->bind_param('i', $customerId);
+    $srcStmt->execute();
+    $sources = $srcStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $srcStmt->close();
+
+    if ($sources) {
+        $refIns = $lisani_conn->prepare(
+            'INSERT INTO customer_credit_refunds
+               (invoice_refund_id, credit_source_id, amount_refunded, remaining_after_amount)
+             VALUES (?, ?, ?, ?)'
+        );
+        $updSrc = $lisani_conn->prepare(
+            'UPDATE customer_credit_sources SET remaining_amount = ? WHERE id = ?'
+        );
+        foreach ($sources as $src) {
+            if ($toAllocate <= 0.0001) {
+                break;
+            }
+            $available = (float) $src['remaining_amount'];
+            $take = min($available, $toAllocate);
+            $srcId = (int) $src['id'];
+            $takeStr = (string) round($take, 2);
+            $newRemainingStr = (string) round($available - $take, 2);
+
+            $refIns->bind_param('iiss', $refundId, $srcId, $takeStr, $newRemainingStr);
+            $refIns->execute();
+
+            $updSrc->bind_param('si', $newRemainingStr, $srcId);
+            $updSrc->execute();
+
+            $toAllocate = round($toAllocate - $take, 2);
+        }
+        $refIns->close();
+        $updSrc->close();
+    }
+
     $upd = $lisani_conn->prepare(
         'UPDATE customers SET credit_balance = credit_balance - ?, total_paid = total_paid - ? WHERE id = ?'
     );
