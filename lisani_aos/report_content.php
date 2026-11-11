@@ -615,12 +615,26 @@
       html += '<div class="rpt-cd-row"><div>Status</div><div>Not used yet — full amount still available</div></div>';
     } else {
       row.usage.forEach(function (u) {
+        // 'returned_to_source' (8 Nov 2026): goods bought using this credit
+        // were later returned, and the returned value flowed back into this
+        // SAME credit source rather than forming a new one — see
+        // get_finance_report.php header comment for the full rationale.
+        // Shown as a positive addition (+) to distinguish it from the
+        // amount-reducing 'applied'/'refunded' kinds above/below it.
         var line = u.kind === 'refunded'
           ? ('Refunded' + (u.method ? ' (' + u.method + ')' : ''))
+          : u.kind === 'returned_to_source'
+          ? 'Returned (added back to this credit)'
           : ('Applied to ' + u.customer_name + ' (' + u.invoice_number + ')');
+        // 'returned_to_source' ADDS back to the credit (plain, no sign —
+        // matches the 'Original amount' row above it). 'applied'/'refunded'
+        // SUBTRACT from it, shown in parentheses — same accounting-style
+        // convention as fmtIDRParen() elsewhere in this file (user
+        // revision, 8 Nov 2026: parentheses instead of a leading minus).
+        var amountText = u.kind === 'returned_to_source' ? fmtIDR(u.amount) : '(' + fmtIDR(u.amount) + ')';
         html += '<div class="rpt-cd-row"><div>' +
           escapeHtml(u.date) + '<br><span class="rpt-cd-sub">' + escapeHtml(line) +
-          '</span></div><div>' + fmtIDR(u.amount) + '</div></div>';
+          '</span></div><div>' + amountText + '</div></div>';
       });
     }
     html += '<div class="rpt-cd-row rpt-cd-highlight"><div>Remaining now</div><div class="rpt-cd-amount">' +

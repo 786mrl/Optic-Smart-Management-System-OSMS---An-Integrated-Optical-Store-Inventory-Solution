@@ -369,6 +369,211 @@ if ($hasRefundBankFees) {
     $stmt->close();
 }
 
+// ---------- Credit returned WITHOUT a traceable real payment ----------
+// customer_credit_sources rows with origin_invoice_payment_id IS NULL
+// (user-reported, 8 Nov 2026, with screenshots — see PROJECT_NOTES.md).
+// Typical cause: a return of goods from an order invoice that was paid IN
+// FULL via auto-apply credit (source_bank='CREDIT BALANCE') — trace_credit_
+// to_real_payments() deliberately skips that marker (not a real account),
+// finds nothing else to trace to, and records the slice with
+// origin_invoice_payment_id=null, origin_ref_invoice_id=<that order's
+// invoice id>. The money this represents is NOT new cash — it is the SAME
+// credit balance (an existing Credit Balance ledger row) flowing back in
+// after being spent, so (user correction, 8 Nov 2026) this must NEVER
+// become its own Ledger row: it folds into the ORIGINAL credit source's
+// 'usage' list instead (a 'returned_to_source' entry, alongside the
+// existing 'applied'/'refunded' ones), exactly like money applied to an
+// invoice or refunded already shows up there rather than as a separate row.
+// Built here, BEFORE the invoice_payments loop below, so $foldedIntoSource
+// is ready when that loop builds each credit row's 'usage' list.
+// Lookup path: this row's origin_ref_invoice_id (the order's invoice) ->
+// the invoice_payments row that paid it via auto-apply (source_bank=
+// 'CREDIT BALANCE') -> customer_credit_applications for THAT payment ->
+// credit_source_id = the original row to fold into. A row with no
+// resolvable path (very old pre-invoice data, or the order was paid by a
+// mix with no credit involved at all) falls back to its own standalone
+// Ledger row further below, since there's truly nothing to attach it to.
+$foldedIntoSource = []; // credit_source_id => [ {kind:'returned_to_source', amount, date, created_at}, ... ]
+$foldedRemainingBySource = []; // credit_source_id => float, summed on top of that source's own remaining_amount (see comment below)
+$unresolvedCreditSources = [];
+$tableCheck = $lisani_conn->query(
+    "SELECT COUNT(*) c FROM information_schema.tables
+     WHERE table_schema = DATABASE() AND table_name = 'customer_credit_sources'"
+);
+$hasCreditSources = $tableCheck && (int)($tableCheck->fetch_assoc()['c'] ?? 0) > 0;
+if ($hasCreditSources) {
+    // One customer_credit_sources row (the return) can resolve to SEVERAL
+    // original credit_source_id values when the order it paid for drew its
+    // auto-apply from more than one source (ccs_spend_fifo() in
+    // create_order.php can insert several customer_credit_applications rows
+    // for the very same invoice_payment_id, one per source it pulled from).
+    // So this is fetched as a plain list of (credit_source_id, amount_used)
+    // per resolving payment, NOT collapsed to one row per cs.id — the return
+    // amount is then split across those sources below, proportional to how
+    // much of the auto-apply payment each one funded.
+    $sql = "SELECT cs.id, cs.amount, cs.remaining_amount, cs.origin_type,
+                   cs.origin_ref_invoice_id, cs.created_date, cs.created_by,
+                   a.credit_source_id AS resolved_source_id,
+                   a.amount_used AS resolved_amount_used
+            FROM customer_credit_sources cs
+            LEFT JOIN invoice_payments p
+                   ON p.invoice_id = cs.origin_ref_invoice_id
+                  AND p.source_bank = 'CREDIT BALANCE'
+            LEFT JOIN customer_credit_applications a
+                   ON a.invoice_payment_id = p.id
+            WHERE cs.origin_invoice_payment_id IS NULL" .
+            ($hasFrom ? ' AND cs.created_date >= ?' : '') . ($hasTo ? ' AND cs.created_date <= ?' : '') . "
+            ORDER BY cs.created_date ASC, cs.id ASC, a.id ASC";
+    $stmt = $lisani_conn->prepare($sql);
+    if ($params) { $stmt->bind_param($types, ...$params); }
+    $stmt->execute();
+    $res = $stmt->get_result();
+    // Group rows by cs.id first (one return can join to several application
+    // rows — see comment above), so the split-by-proportion math below has
+    // the full set of resolving sources for that one return in hand at once.
+    $byCreditSourceRow = [];
+    while ($row = $res->fetch_assoc()) {
+        $csId = (int) $row['id'];
+        if (!isset($byCreditSourceRow[$csId])) {
+            $byCreditSourceRow[$csId] = ['row' => $row, 'resolutions' => []];
+        }
+        if ($row['resolved_source_id'] !== null) {
+            $byCreditSourceRow[$csId]['resolutions'][] = [
+                'credit_source_id' => (int) $row['resolved_source_id'],
+                'amount_used'      => (float) $row['resolved_amount_used'],
+            ];
+        }
+    }
+    $stmt->close();
+    foreach ($byCreditSourceRow as $csId => $entry) {
+        $row = $entry['row'];
+        $amt = round((float) $row['amount'], 2);
+        if ($amt <= 0.0001) {
+            continue;
+        }
+        // This return row (csId) can itself have been partly spent already
+        // — applied to a later order via auto-apply, or refunded in cash —
+        // same as any other credit source. Those entries are keyed by THIS
+        // row's own id in $appsBySource/$refundsBySource (built above, well
+        // before this block). Since this row never becomes its own Ledger
+        // row when it resolves (that's the whole point of folding), those
+        // usage entries must ALSO be folded into the original source(s)
+        // below, split the same way as the row's own amount/remaining —
+        // otherwise spending this return's credit would silently vanish
+        // from every fly-window history (found while fixing the "Remaining
+        // now" bug, 8 Nov 2026 — same root cause: this row's own activity
+        // was never being surfaced anywhere once it stopped being a
+        // standalone Ledger row).
+        $ownUsage = array_merge($appsBySource[$csId] ?? [], $refundsBySource[$csId] ?? []);
+        // This return's OWN remaining_amount (create_return.php always
+        // INSERTs it as a brand new customer_credit_sources row — amount
+        // and remaining_amount start out equal, since a just-created return
+        // credit hasn't been spent yet; see create_return.php's $ccsRemaining
+        // = $ccsAmount at insert time). Economically this money IS part of
+        // the original source's pool (that's the whole point of folding it
+        // into that source's usage list instead of giving it its own Ledger
+        // row) — but technically it still lives in the DB as this row's own
+        // separate remaining_amount, since create_return.php never merges
+        // the two rows together. So the original source's displayed
+        // "Remaining now" must ADD this row's remaining_amount on top of its
+        // own (bug found by user, 8 Nov 2026 — screenshot showed "Remaining
+        // now" stuck at the pre-return figure because this addition was
+        // missing: $foldedIntoSource only carried 'amount' for display in
+        // the usage list, nothing was fed back into the remaining total).
+        $remainingAmt2 = round((float) $row['remaining_amount'], 2);
+        $resolutions = $entry['resolutions'];
+        if ($resolutions) {
+            $totalUsed = array_sum(array_column($resolutions, 'amount_used'));
+            if ($totalUsed > 0.0001) {
+                // Split both the original amount AND this row's own
+                // remaining_amount across each resolved source,
+                // proportional to how much of the auto-apply payment it
+                // funded — keeps SUM of the split slices equal to the
+                // original totals exactly (last slice absorbs the
+                // rounding remainder, for each of the two sums
+                // independently).
+                $runningTotal = 0.0;
+                $runningRemaining = 0.0;
+                $n = count($resolutions);
+                foreach ($resolutions as $i => $res2) {
+                    $srcId2 = $res2['credit_source_id'];
+                    $slice = ($i === $n - 1)
+                        ? round($amt - $runningTotal, 2)
+                        : round($amt * ($res2['amount_used'] / $totalUsed), 2);
+                    $runningTotal = round($runningTotal + $slice, 2);
+                    $remSlice = ($i === $n - 1)
+                        ? round($remainingAmt2 - $runningRemaining, 2)
+                        : round($remainingAmt2 * ($res2['amount_used'] / $totalUsed), 2);
+                    $runningRemaining = round($runningRemaining + $remSlice, 2);
+                    if ($slice <= 0.0001 && $remSlice <= 0.0001) {
+                        continue;
+                    }
+                    if (!isset($foldedIntoSource[$srcId2])) {
+                        $foldedIntoSource[$srcId2] = [];
+                    }
+                    if (!isset($foldedRemainingBySource[$srcId2])) {
+                        $foldedRemainingBySource[$srcId2] = 0.0;
+                    }
+                    $foldedRemainingBySource[$srcId2] += $remSlice;
+                    $foldedIntoSource[$srcId2][] = [
+                        'kind'                   => 'returned_to_source',
+                        'date'                   => $row['created_date'],
+                        // customer_credit_sources has no created_at column,
+                        // only created_date (a plain date) — used as the
+                        // merge-sort key too, same granularity every other
+                        // usage entry would have on the same day; ties keep
+                        // insertion order (PHP 8 usort is stable).
+                        'created_at'             => $row['created_date'],
+                        'amount'                 => $slice,
+                        // Snapshot not available per-slice here (unlike
+                        // applications/refunds, which record it at write
+                        // time) — report_content.php's detail panel only
+                        // needs this for a running total, and the credit
+                        // source row's own 'remaining_amount' (always
+                        // shown first in that panel) is already the live,
+                        // authoritative figure, so this is left out rather
+                        // than computed from a stale/guessed baseline.
+                    ];
+                }
+                // $ownUsage (this return's own applied/refunded activity,
+                // if it was itself spent before being folded) is placed
+                // whole into the LARGEST resolved source rather than split
+                // entry-by-entry across sources — splitting individual
+                // application/refund rows would misrepresent each as a
+                // partial event that never happened. The multi-source case
+                // this matters for (a return whose originating payment was
+                // itself FIFO-split AND which was later partly spent again)
+                // is rare enough that this approximation is preferred over
+                // the complexity of tracking fractional usage provenance;
+                // the amount/remaining totals above are exact either way.
+                if ($ownUsage) {
+                    $biggestSrcId = $resolutions[0]['credit_source_id'];
+                    $biggestUsed = $resolutions[0]['amount_used'];
+                    foreach ($resolutions as $res3) {
+                        if ($res3['amount_used'] > $biggestUsed) {
+                            $biggestUsed = $res3['amount_used'];
+                            $biggestSrcId = $res3['credit_source_id'];
+                        }
+                    }
+                    if (!isset($foldedIntoSource[$biggestSrcId])) {
+                        $foldedIntoSource[$biggestSrcId] = [];
+                    }
+                    $foldedIntoSource[$biggestSrcId] = array_merge($foldedIntoSource[$biggestSrcId], $ownUsage);
+                }
+                continue;
+            }
+        }
+        // Nothing to fold into (no auto-apply payment found for that
+        // invoice, or no invoice at all — legacy pre-batch_id data).
+        // Genuinely has no originating Ledger row to attach to, so it
+        // keeps the standalone-row fallback (built further below, after
+        // the invoice_payments loop, same position as before). $ownUsage
+        // in this branch doesn't need special handling — the fallback row
+        // below reuses $appsBySource/$refundsBySource by its own id anyway.
+        $unresolvedCreditSources[] = $row;
+    }
+}
+
 // ---------- Inflow: invoice payments ----------
 // Excludes source_bank='CREDIT BALANCE' rows (create_order.php auto-apply,
 // see "AUTO-APPLIED FROM CREDIT BALANCE"): that money isn't new cash in —
@@ -479,12 +684,31 @@ while ($row = $res->fetch_assoc()) {
             // shows this in a click-through detail panel instead of
             // separate rows per application/refund (user, 8 Nov 2026).
             $srcId = (int) $ccsRow['id'];
-            $usage = array_merge($appsBySource[$srcId] ?? [], $refundsBySource[$srcId] ?? []);
+            // $foldedIntoSource (built above, before this loop) carries
+            // 'returned_to_source' entries — goods bought using THIS credit
+            // source and later returned, where the returned value came back
+            // into this same source rather than forming a new one (user
+            // correction, 8 Nov 2026 — see header comment up top). Merged
+            // into the same usage timeline as applications/refunds.
+            $usage = array_merge(
+                $appsBySource[$srcId] ?? [],
+                $refundsBySource[$srcId] ?? [],
+                $foldedIntoSource[$srcId] ?? []
+            );
             usort($usage, function ($a, $b) { return strcmp($a['created_at'], $b['created_at']); });
             // Authoritative, live figure straight from customer_credit_sources
             // — not inferred from the last usage row's snapshot, so it's
             // correct even if applications/refunds ever land out of order.
-            $remainingAmt = (float) $ccsRow['remaining_amount'];
+            // PLUS $foldedRemainingBySource: returns folded into this source
+            // (see block above, before the invoice_payments loop) live as
+            // their OWN separate remaining_amount in the DB — create_return.
+            // php always inserts them as a new customer_credit_sources row,
+            // it never merges into the original row. So this source's own
+            // remaining_amount alone understates what's actually left to
+            // spend; the folded rows' remaining_amount must be added on top
+            // (bug found by user, 8 Nov 2026 — "Remaining now" in the detail
+            // panel was stuck at the pre-return figure without this).
+            $remainingAmt = (float) $ccsRow['remaining_amount'] + ($foldedRemainingBySource[$srcId] ?? 0.0);
             $ledger[] = [
                 'date'       => $row['payment_date'],
                 'type'       => 'inflow',
@@ -627,6 +851,45 @@ while ($row = $res->fetch_assoc()) {
     }
 }
 $stmt->close();
+
+// ---------- Standalone fallback rows for unresolved credit sources ----------
+// $unresolvedCreditSources was built earlier (before the invoice_payments
+// loop) — rendered here, in the same position this fallback has always
+// been, as the loop's own ledger-row shape (usage/remaining_amount/
+// credit_source_id) so report_content.php's existing click-through keeps
+// working on these for free.
+if ($unresolvedCreditSources) {
+    foreach ($unresolvedCreditSources as $row) {
+        $srcId = (int) $row['id'];
+        $amt   = round((float) $row['amount'], 2);
+        $usage = array_merge($appsBySource[$srcId] ?? [], $refundsBySource[$srcId] ?? []);
+        usort($usage, function ($a, $b) { return strcmp($a['created_at'], $b['created_at']); });
+        $remainingAmt = (float) $row['remaining_amount'];
+        $originLabel = $row['origin_type'] === 'return' ? 'Return' : ($row['origin_type'] ?: 'Credit');
+        $ledger[] = [
+            'date'       => $row['created_date'],
+            'type'       => 'inflow',
+            'source'     => 'invoice_payment_credit',
+            'account_id' => null,
+            'bank'       => null,
+            'account_no' => null,
+            'amount'     => $amt,
+            'display_amount' => $amt,
+            'original'   => null,
+            'label'      => 'Customer Credit Balance — ' . $originLabel . ' (source account unknown)',
+            'category'   => null,
+            'notes'      => null,
+            'ledger_note' => 'Credit Balance',
+            'credit_source_id' => $srcId,
+            'usage'             => $usage,
+            'remaining_amount'  => round($remainingAmt, 2),
+            'group_id'   => null,
+            'ref_id'     => (int) $row['id'],
+        ];
+        // Deliberately NOT added to $accountsOut/$unassigned/$monthly — same
+        // reasoning as the invoice_payment_credit rows above.
+    }
+}
 
 // ---------- Finalize balances ----------
 foreach ($accountsOut as &$acc) {

@@ -15,6 +15,11 @@
 //                    same rules as create_order.php: one stock_source per
 //                    product, max 50 lines.
 //   new_prices JSON  { "10": 145000 }   optional, same semantics as create_order.php
+//   apply_credit_amount  optional, how much of the customer's credit_balance
+//                    to apply to this booking's invoice immediately (see
+//                    "Apply credit on Booking" below). Blank/"0"/absent =
+//                    apply none. Re-validated/clamped server-side regardless
+//                    of what the client sends.
 //   dry_run    "1" | "0"
 //
 // DP / payment is NOT handled here on purpose: the invoice this endpoint
@@ -24,11 +29,24 @@
 // is reused as-is, which already supports paying in several installments
 // (one invoice_payments row per upload).
 //
+// Apply credit on Booking (added 9 Nov 2026): if the customer has
+// credit_balance > 0, the frontend shows a fly window after the dry_run
+// review (before Confirm & Save) asking how much of it to apply to this
+// booking's invoice right away. Default/max = min(credit_balance,
+// grand_total) — never more than what's actually owed on this booking, and
+// never more than the customer actually has. The chosen amount is applied
+// in the same transaction as the booking itself (all-or-nothing), using the
+// exact same recording pattern as apply_customer_credit.php (plain
+// invoice_payments row, source_bank = "CREDIT BALANCE" marker, no proof
+// file, customers.total_paid untouched — see that file's header comment).
+//
 // Response contract: { ok, message, ... }
-//   ok: true  -> booking { customer, booking_date,
+//   ok: true  -> booking { customer{id,name,credit_balance}, booking_date,
 //                          invoice{id,number,is_new,total_before,total_after,
 //                                   paid_before,paid_after},
-//                          items[], grand_total, dry_run, booking_id? }
+//                          items[], grand_total, dry_run, booking_id?,
+//                          credit_applied{amount,max_applicable,
+//                                         balance_before,balance_after} }
 //   ok: false -> message, and for a missing price also
 //                code: "missing_prices", missing: [ {logistic_id, product_name, unit_label} ]
 //
@@ -42,6 +60,9 @@
 //     same numbering scheme as create_order.php; total_amount (+ grand_total)
 //   - customers.total_inflow is deliberately NOT touched here (it only moves
 //     when the goods actually leave, i.e. at release time)
+//   - if apply_credit_amount > 0: 1 invoice_payments row (source_bank =
+//     "CREDIT BALANCE"), invoices.paid_amount (+) / status (possibly 'paid'),
+//     customers.credit_balance (-) — see "Apply credit on Booking" above
 
 ini_set('display_errors', '0');
 ob_start();
@@ -186,6 +207,22 @@ if (!$dateObj || $dateObj->format('Y-m-d') !== $bookingDate) {
 $periodMonth = (int) $dateObj->format('n');
 $periodYear  = (int) $dateObj->format('Y');
 
+// Optional: how much of the customer's credit_balance to apply to this
+// booking's invoice right away (fly window in transaction_content.php,
+// shown only when the customer has credit_balance > 0 — see §8 PROJECT_NOTES
+// "Apply credit on Booking", 9 Nov 2026). Blank/"0"/absent = apply none.
+// Re-validated against the server's own numbers below (grand total,
+// customer's actual credit_balance) regardless of what the client sent —
+// same reasoning as apply_customer_credit.php's own checks.
+$applyCreditRaw = post_str('apply_credit_amount');
+$applyCreditAmount = 0.0;
+if ($applyCreditRaw !== '') {
+    $applyCreditAmount = clean_number($applyCreditRaw);
+    if ($applyCreditAmount === null || $applyCreditAmount < 0) {
+        aos_fail('Credit amount to apply is not valid.');
+    }
+}
+
 $rawItems = json_decode(post_str('items'), true);
 if (!is_array($rawItems) || count($rawItems) === 0) {
     aos_fail('The booking has no products.');
@@ -229,7 +266,7 @@ try {
     $lisani_conn->begin_transaction();
 
     // ---- Customer (locked, same reasoning as create_order.php) ----
-    $st = $lisani_conn->prepare('SELECT id, customer_name FROM customers WHERE id = ? FOR UPDATE');
+    $st = $lisani_conn->prepare('SELECT id, customer_name, credit_balance FROM customers WHERE id = ? FOR UPDATE');
     $st->bind_param('i', $customerId);
     $st->execute();
     $customer = $st->get_result()->fetch_assoc();
@@ -237,6 +274,7 @@ try {
     if (!$customer) {
         throw new AosBookingError('Customer was not found.');
     }
+    $customerCreditBalance = (float) $customer['credit_balance'];
 
     // ---- Products (locked, always in id order) ----
     $ids = array_keys($qtyByLogistic);
@@ -371,6 +409,17 @@ try {
         );
     }
 
+    // ---- Credit balance to apply: capped server-side to
+    //      min(customer's real credit_balance, this booking's own grand
+    //      total) — the fly window's own default/max follow the same rule,
+    //      but this is the authority; a stale or tampered client value is
+    //      silently clamped down rather than trusted or rejected. ----
+    $creditCap = min($customerCreditBalance, $grand);
+    if ($applyCreditAmount > $creditCap + 0.0001) {
+        $applyCreditAmount = $creditCap;
+    }
+    $applyCreditAmount = round($applyCreditAmount, 2);
+
     // ---- Invoice: a booking ALWAYS gets its own new invoice — unlike
     //      New Order/Returns, it never reuses the customer's open invoice
     //      (so a booking's bill never gets silently merged into whatever
@@ -413,21 +462,41 @@ try {
         }
     }
 
+    $invoiceTotalAfter = round($totalBefore + $grand, 2);
+    // paid_after only reflects applied credit when it's actually going to be
+    // written (dry_run preview shows it too, so the fly window + confirm
+    // screen can display the resulting invoice state before saving).
+    $paidAfter = round($paidBefore + $applyCreditAmount, 2);
+
     $booking = [
         'dry_run'      => $dryRun,
-        'customer'     => ['id' => $customerId, 'name' => $customer['customer_name']],
+        'customer'     => [
+            'id'             => $customerId,
+            'name'           => $customer['customer_name'],
+            'credit_balance' => $customerCreditBalance,
+        ],
         'booking_date' => $bookingDate,
         'invoice'      => [
             'id'           => $invoiceId,
             'number'       => $invoiceNumber,
             'is_new'       => $invoiceIsNew,
             'total_before' => $totalBefore,
-            'total_after'  => round($totalBefore + $grand, 2),
+            'total_after'  => $invoiceTotalAfter,
             'paid_before'  => $paidBefore,
-            'paid_after'   => $paidBefore, // unchanged here — DP goes through + Add Payment
+            'paid_after'   => $paidAfter,
         ],
         'items'        => $lines,
         'grand_total'  => $grand,
+        // How much of credit_balance this booking will apply (clamped to
+        // min(credit_balance, grand_total) — see above) and what's left
+        // over after. 0/0 when the customer has no credit_balance or chose
+        // not to apply any.
+        'credit_applied' => [
+            'amount'         => $applyCreditAmount,
+            'max_applicable' => $creditCap,
+            'balance_before' => $customerCreditBalance,
+            'balance_after'  => round($customerCreditBalance - $applyCreditAmount, 2),
+        ],
     ];
 
     // ---- Preview only ----
@@ -507,6 +576,57 @@ try {
     $st->bind_param('si', $g, $invoiceId);
     $st->execute();
     $st->close();
+
+    // ---- Apply credit_balance to this brand-new invoice, if requested
+    //      (fly window shown when the customer has credit_balance > 0 —
+    //      see PROJECT_NOTES.md §8, "Apply credit on Booking", 9 Nov 2026).
+    //      Same recording pattern as apply_customer_credit.php: a normal
+    //      invoice_payments row, source_bank = "CREDIT BALANCE" marker (no
+    //      proof file — nothing new was paid in), does NOT touch
+    //      customers.total_paid (existing credit, not new cash). Done here
+    //      in the same transaction as the booking itself so a booking with
+    //      credit applied is all-or-nothing, same as everything else above. ----
+    if ($applyCreditAmount > 0.0001) {
+        $todayStr = date('Y-m-d');
+        $amountStr = money($applyCreditAmount);
+        $blank = '';
+        $srcBank = 'CREDIT BALANCE';
+        $notes = 'APPLIED WHEN BOOKING WAS CREATED (' . $invoiceNumber . ')';
+        $ins = $lisani_conn->prepare(
+            'INSERT INTO invoice_payments
+               (invoice_id, customer_id, payment_date, amount,
+                source_bank, source_account_name, destination_bank,
+                destination_account_number, destination_account_name,
+                notes, proof_path, proof_original_name, created_by)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)'
+        );
+        $ins->bind_param(
+            'iissssssssi',
+            $invoiceId, $customerId, $todayStr, $amountStr,
+            $srcBank, $blank, $blank, $blank, $blank,
+            $notes, $userId
+        );
+        $ins->execute();
+        $ins->close();
+
+        $newPaid = money($paidAfter);
+        $newStatus = ($paidAfter >= $invoiceTotalAfter - 0.01) ? 'paid' : 'open';
+        $paidAtSql = ($newStatus === 'paid') ? 'NOW()' : 'NULL';
+        $upd = $lisani_conn->prepare(
+            "UPDATE invoices SET paid_amount = ?, status = ?, paid_at = $paidAtSql WHERE id = ?"
+        );
+        $upd->bind_param('ssi', $newPaid, $newStatus, $invoiceId);
+        $upd->execute();
+        $upd->close();
+
+        // NOT total_paid — no new cash came in, this just moves existing
+        // credit from the pool onto this booking's invoice.
+        $cAmt = money($applyCreditAmount);
+        $updCust = $lisani_conn->prepare('UPDATE customers SET credit_balance = credit_balance - ? WHERE id = ?');
+        $updCust->bind_param('si', $cAmt, $customerId);
+        $updCust->execute();
+        $updCust->close();
+    }
 
     $lisani_conn->commit();
 

@@ -29,6 +29,20 @@
 //     invoices.status becomes 'cancelled' (NOT 'paid' — see the inline
 //     comment where this happens) so this invoice is never silently reused
 //     by a later order.
+//   - Revised 9 Nov 2026: if cancelling leaves the invoice with NO real
+//     trace at all — paid_amount = 0 (nothing was ever paid) AND the new
+//     total_amount is 0 (every line just cancelled back out, none of it
+//     was ever released) — the invoice row is DELETED outright instead of
+//     being left behind as an empty 'open' invoice. A booking always gets
+//     its own brand-new invoice (never reuses an existing one — see
+//     create_booking.php's header comment), so at this point nothing else
+//     can be pointing at this invoice_id; deleting it is safe. This also
+//     makes its invoice_number/sequence_number available again for the
+//     next invoice, since invoice_initials_index() in create_booking.php
+//     only scans invoice_number values that still exist in the table — no
+//     separate "freed number" bookkeeping needed. This path bypasses the
+//     overpaid/credit_balance branch entirely (overpaid is 0 by definition
+//     here) and sets no status; the row simply stops existing.
 //   - Revised 4 Nov 2026: also inserts a customer_credit_sources row, traced
 //     back to this invoice's real payment(s) via trace_credit_to_real_payments()
 //     (credit_sources_helper.php) — same as create_return.php /
@@ -192,6 +206,11 @@ try {
     }
     $creditBefore = $customer ? (float) $customer['credit_balance'] : 0.0;
 
+    // No payment ever made AND nothing left owed after cancelling → this
+    // invoice has zero real trace, so it gets deleted outright instead of
+    // closed — see header comment, "Revised 9 Nov 2026".
+    $willDelete = $overpaid <= 0.0001 && $paidAmount <= 0.0001 && $totalAfter <= 0.0001;
+
     $cancel = [
         'dry_run'    => $dryRun,
         'booking_id' => $bookingId,
@@ -207,6 +226,9 @@ try {
             // in the UI) — included so the confirm screen can say plainly
             // that this invoice will be closed for good.
             'will_close'      => $overpaid > 0.0001,
+            // Same idea, for the other end of the spectrum: this invoice
+            // will be removed entirely, not just closed.
+            'will_delete'     => $willDelete,
         ],
         'items'                 => $lines,
         'total_cancelled_value' => $totalCancelled,
@@ -246,10 +268,22 @@ try {
     $logUpdDefective->close();
 
     $tc = money($totalCancelled);
-    $st = $lisani_conn->prepare('UPDATE invoices SET total_amount = total_amount - ? WHERE id = ?');
-    $st->bind_param('si', $tc, $invoiceId);
-    $st->execute();
-    $st->close();
+    if ($willDelete) {
+        // Nothing paid, nothing released, nothing left owed — delete the
+        // invoice outright rather than leave an empty 'open' row behind.
+        // Deliberately skips the total_amount UPDATE below (the row is
+        // going away) and the entire overpaid/credit_balance branch
+        // (overpaid is 0 by definition when $willDelete is true).
+        $st = $lisani_conn->prepare('DELETE FROM invoices WHERE id = ?');
+        $st->bind_param('i', $invoiceId);
+        $st->execute();
+        $st->close();
+    } else {
+        $st = $lisani_conn->prepare('UPDATE invoices SET total_amount = total_amount - ? WHERE id = ?');
+        $st->bind_param('si', $tc, $invoiceId);
+        $st->execute();
+        $st->close();
+    }
 
     // Overpaid DP: cap this invoice's own paid_amount down to its new,
     // smaller total_amount, and add the difference to customers.credit_balance
@@ -267,7 +301,7 @@ try {
     // app that reads invoice status as "really settled". paid_at stays
     // untouched (NULL or whatever it already was) — it means "when was this
     // paid off for real", which never happened here.
-    if ($overpaid > 0.0001) {
+    if (!$willDelete && $overpaid > 0.0001) {
         $ta = money($totalAfter);
         $st = $lisani_conn->prepare("UPDATE invoices SET paid_amount = ?, status = 'cancelled' WHERE id = ?");
         $st->bind_param('si', $ta, $invoiceId);

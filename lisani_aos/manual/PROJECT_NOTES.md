@@ -598,6 +598,92 @@ tetap `fmtIDR`; CSV tetap angka mentah + kolom Type). Belum ada: edit kategori t
 
 ## 8. Pekerjaan terbuka
 
+**Log terbaru (siap dites) — Apply Credit saat Create Booking (9 Nov 2026)**:
+fitur baru: kalau customer yang dipilih di tab Booking punya `credit_balance` > 0, setelah user klik "Review"
+(dry_run preview sukses) dan SEBELUM modal "Confirm Booking" muncul, ada fly window baru "Apply Credit Balance?"
+yang menanyakan berapa dari credit_balance itu mau langsung dipakai untuk invoice booking ini. Nilai default DAN
+batas maksimumnya sama-sama `min(credit_balance, grand_total booking ini)` — user boleh menurunkan nilainya
+(termasuk ke 0 / tombol "Skip" = tidak pakai sama sekali) tapi TIDAK BOLEH menaikkannya melebihi cap itu. Kalau
+customer tidak punya credit_balance sama sekali (atau 0), fly window ini dilewati, langsung ke Confirm Booking
+seperti biasa (tidak ada perubahan perilaku untuk kasus ini).
+- **Pola yang dipakai**: SAMA PERSIS dengan `apply_customer_credit.php` yang sudah ada (tombol "Apply Credit" di
+  Customers tab) — insert 1 row `invoice_payments` dengan `source_bank = 'CREDIT BALANCE'` sebagai penanda (bukan
+  kolom `payment_method` — tabel itu TIDAK PUNYA kolom itu, lihat "Bugfix 1 Nov 2026" di header
+  `apply_customer_credit.php`, pernah jadi bug nyata sebelumnya), `proof_path`/`proof_original_name` NULL (tidak
+  ada bukti transfer, bukan uang baru), lalu update `invoices.paid_amount`/`status` dan KURANGI
+  `customers.credit_balance` — BUKAN `customers.total_paid` (itu cuma untuk uang baru yang benar-benar masuk).
+  Dikerjakan pada TRANSAKSI YANG SAMA dengan pembuatan booking itu sendiri (`create_booking.php`, bukan
+  memanggil `apply_customer_credit.php` secara terpisah) — jadi booking + apply-credit itu all-or-nothing satu
+  paket, bukan dua langkah terpisah yang bisa nyangkut di tengah.
+- **`create_booking.php`**: (1) query customer sekarang ikut ambil `credit_balance`; (2) terima POST baru
+  `apply_credit_amount` (opsional, default kosong = 0, HANYA dipakai saat `dry_run=0` — dry_run preview tidak
+  pernah menyentuh DB sama sekali, termasuk soal credit); (3) nilai itu DI-CLAMP ULANG di server ke
+  `min(customer.credit_balance asli dari DB, grand_total booking ini)` — TIDAK PERNAH percaya nilai dari client
+  mentah-mentah, sama persis semangat validasi `apply_customer_credit.php`; (4) response (baik dry_run maupun
+  final save) sekarang punya `customer.credit_balance` dan objek baru `credit_applied{amount, max_applicable,
+  balance_before, balance_after}`; (5) di blok WRITES, SETELAH `invoices.total_amount` final (+grand_total)
+  ditulis, kalau `applyCreditAmount > 0` baru insert `invoice_payments` + update `invoices.paid_amount`/`status`
+  (jadi 'paid' kalau pas lunas) + kurangi `customers.credit_balance`, masih di dalam transaction yang sama.
+  Sudah dicek: kurung PHP seimbang (`{`:78/`}`:78, `(`:349/`)`:349), setiap `bind_param` sudah dicocokkan manual
+  jumlah placeholder `?` vs tipe-string vs jumlah variabel (terutama insert `invoice_payments` 11 kolom =
+  `'iissssssssi'` 11 karakter = 11 variabel, sama persis pola `apply_customer_credit.php`).
+- **`transaction_content.php`**: modal baru `#bkApplyCreditOverlay` (didaftarkan ke `flexOverlays` — kalau lupa,
+  modal akan nge-block tanpa flex layout, lihat gotcha lama soal ini), state baru `bkApplyCreditAmount` /
+  `bkApplyCreditCapValue` / `bkPendingBookingPreview`, semua di-reset di `resetBookingForm()`. Alur:
+  `bkReview()` dry_run sukses → kalau `b.customer.credit_balance > 0` panggil `openBkApplyCredit(b)` (bukan
+  langsung `showBkConfirm(b)` seperti sebelumnya) → tombol "Skip" (amount=0) atau "Continue" (validasi client-side:
+  tidak boleh negatif, tidak boleh lebih dari cap) → baru lanjut ke `showBkConfirm(b)`, yang sekarang juga
+  menampilkan baris "Credit Applied" / "Paid After" / "Remaining Credit Balance" kalau ada credit yang dipilih.
+  `bkBuildPayload()` mengirim `apply_credit_amount` HANYA saat save final (`dry_run=0`) — tidak pernah saat
+  preview. Pesan sukses setelah save juga menyebutkan jumlah credit yang terpakai kalau ada.
+  Sudah dicek: semua `<script>` block lolos `new Function()` parse (Node), `{}` dan `<div>`/`</div>` seimbang di
+  seluruh file.
+- **Dipakai apa adanya, TIDAK diubah**: `apply_customer_credit.php` sendiri masih seperti semula — dicatat
+  sebagai temuan sampingan bahwa file itu (beda dengan `cancel_booking.php`/`create_return.php`) BELUM mencatat
+  `customer_credit_sources` (FIFO asal-usul credit) — di luar scope permintaan ini, tidak disentuh.
+- **Belum dites**: (1) customer dengan credit_balance, booking lebih KECIL dari credit_balance → fly window
+  muncul, default = nilai booking itu sendiri (bukan seluruh credit_balance), tidak bisa diketik lebih besar dari
+  itu; (2) customer dengan credit_balance, booking lebih BESAR dari credit_balance → default = seluruh
+  credit_balance, tidak bisa diketik lebih besar dari itu; (3) klik "Skip" → booking tersimpan normal, TIDAK ada
+  `invoice_payments` baru, `credit_balance` customer TIDAK berkurang; (4) isi angka valid → "Continue" → Confirm
+  Booking menampilkan baris Credit Applied yang benar → Confirm & Save → cek di DB: `invoice_payments` baru ada
+  dengan `source_bank='CREDIT BALANCE'`, `invoices.paid_amount` bertambah (dan `status='paid'` kalau pas lunas),
+  `customers.credit_balance` berkurang PERSIS sejumlah itu, `customers.total_paid` TIDAK berubah; (5) customer
+  TANPA credit_balance (atau 0) → fly window ini sama sekali tidak muncul, alur lama (langsung Confirm Booking)
+  tidak berubah; (6) coba akali di client (misal via devtools ubah value lebih besar dari cap) → pastikan server
+  tetap clamp ke `min(credit_balance, grand_total)` yang sebenarnya, bukan percaya mentah-mentah.
+
+**Log terbaru (siap dites) — Cancel Booking: invoice kosong sekarang benar-benar DIHAPUS, bukan cuma "cancelled" (9 Nov 2026)**:
+bug: booking yang dibatalkan TANPA pembayaran sama sekali (`paid_amount` = 0) dan TANPA barang di-release sama
+sekali (`qty_released` = 0 semua `booking_items`) tetap meninggalkan invoice-nya nongkrong sebagai status "open"
+total 0 di Customers tab — `cancel_booking.php` lama cuma punya cabang untuk kasus overpaid (set `status='cancelled'`),
+tidak ada cabang untuk kasus "tidak ada jejak sama sekali". Akibatnya nomor invoice itu tidak pernah "bebas" lagi
+untuk dipakai booking/order berikutnya.
+- **Fix** (`cancel_booking.php`, `transaction_content.php` — keduanya sudah lengkap, siap pakai): tambah variabel
+  `$willDelete = $overpaid <= 0.0001 && $paidAmount <= 0.0001 && $totalAfter <= 0.0001` (dihitung dari data yang
+  sudah ada, sebelum writes). Kalau true → `DELETE FROM invoices WHERE id = ?` (bukan `UPDATE total_amount`, bukan
+  set status), dan skip total blok overpaid/credit_balance/`customer_credit_sources` (otomatis 0 di kasus ini).
+  Booking SELALU invoice baru sendiri (`create_booking.php`: "a booking ALWAYS gets its own new invoice"), jadi
+  pada titik ini dipastikan tidak ada row lain yang masih mereferensikan `invoice_id` tsb — aman dihapus. Nomor
+  invoice otomatis bisa dipakai ulang karena `invoice_initials_index()`/`MAX(sequence_number)` di `create_booking.php`
+  cuma men-scan `invoices` yang masih ADA di DB — tidak perlu logika "freed number" terpisah.
+  - Response `cancel.invoice` dapat field baru `will_delete` (preview, sejajar `will_close` yang sudah ada).
+  - `transaction_content.php` (`btnBkCancelConfirm`/preview `bkCancelBody`): blok baru sejajar `will_close` yang
+    menampilkan catatan "invoice ini akan dihapus total, nomornya akan dipakai ulang" kalau `will_delete` true.
+  - Sudah dicek: kurung PHP seimbang (`{`:39/`}`:39, `(`:199/`)`:199), 13 `bind_param` (jumlah placeholder vs
+    variabel belum di-cross-check manual per statement — **cek ulang saat testing**), JS baru lolos parse Node
+    (`new Function()` per `<script>`).
+- **Perlu dites**: (1) booking baru tanpa bayar sama sekali → cancel → row `invoices` HARUS hilang total dari DB
+  (cek phpMyAdmin), tidak muncul lagi di Invoices list manapun; (2) booking/order berikutnya untuk customer yang
+  sama HARUS dapat `sequence_number`/nomor invoice yang SAMA dengan yang baru dihapus (reuse, bukan skip ke nomor
+  berikutnya); (3) booking yang SUDAH ada pembayaran sebagian/lunas, atau SUDAH ada barang di-release sebagian →
+  cancel → invoice TETAP ada, perilaku lama (overpaid → credit_balance, status 'cancelled') tidak berubah sama
+  sekali — pastikan `$willDelete` memang false di kasus ini; (4) kasus campuran: beberapa line booking sudah
+  di-release sebagian (ada `qty_released` > 0) tapi TOTAL invoice tetap jadi 0 setelah cancel sisa qty — pastikan
+  ini TIDAK ke-delete kalau line itu masih tercatat (secara logika `totalAfter` di kasus ini seharusnya tetap > 0
+  karena baris yang sudah di-release tetap dihitung harganya di `total_amount`, tapi perlu dikonfirmasi lewat
+  testing nyata, bukan cuma baca kode).
+
 **Log terbaru (belum dites) — Refund & Settlement DIBATALKAN, diganti full credit_balance (4 Nov 2026)**: entri
 "Log terbaru" sebelumnya di sini (Cancel Booking overpaid, `credit_action`, tabel `customer_refund_queue`,
 activity code "00-A"/departemen "Refund & Settlement", pelunasan via Disbursement) **sudah tidak berlaku** — diganti
@@ -1350,6 +1436,189 @@ terkait.
   sama, jadi seharusnya selalu ikut ter-filter bareng, tapi tes jaga-jaga);
   (7) Export CSV → baris Bank Fee ikut muncul sebagai baris outflow
   terpisah dengan label "Bank Fee — ...".
+
+**Dikerjakan (8 Nov 2026, belum dites) — Return dari barang yang invoice-nya dibayar PENUH
+via auto-apply Credit Balance tidak muncul sama sekali di Ledger.**
+Skenario: (1) Booking+DP → payment real A; (2) Cancel booking →
+credit_balance terbentuk, `customer_credit_sources` row dgn
+`origin_invoice_payment_id = A`, tampil di Ledger (nempel ke payment A via
+`$creditByPayment`); (3) New Order baru, dibayar PENUH lewat auto-apply
+credit (`create_order.php` insert payment "AUTO-APPLIED..." dgn
+`source_bank='CREDIT BALANCE'`, invoice itu TIDAK punya payment real
+lain); (4) sebagian barang dari order itu di-**return** →
+`create_return.php` panggil `trace_credit_to_real_payments($conn,
+$sourceInvoiceId, $amount)` dgn `$sourceInvoiceId` = invoice order
+tersebut.
+- **Akar masalah (terkonfirmasi, bukan cuma dugaan)**: `trace_credit_to_
+  real_payments()` (di `credit_sources_helper.php`, belum diupload tapi
+  rasionalnya tertulis jelas di header `create_return.php` baris 50-60 &
+  §8 1 Nov 2026) FIFO-trace ke `invoice_payments` milik invoice tsb,
+  **SKIP baris `source_bank='CREDIT BALANCE'`** (bukan rekening nyata).
+  Karena satu-satunya payment invoice itu MEMANG `source_bank='CREDIT
+  BALANCE'`, tidak ada slice tertelusuri → jatuh ke cabang "sisa tidak
+  tertelusuri" (`create_return.php` baris ~671-680): slice dengan
+  `source_bank=null` DAN **`origin_invoice_payment_id=null`**. Row baru
+  di `customer_credit_sources` jadinya punya `origin_invoice_payment_id
+  = NULL`.
+- `get_finance_report.php` cuma mengambil row `customer_credit_sources`
+  dengan `origin_invoice_payment_id IS NOT NULL` ke `$creditByPayment`
+  (baris ~220: `WHERE origin_invoice_payment_id IS NOT NULL`). Row
+  dengan `origin_invoice_payment_id = NULL` **TIDAK DIJARING SAMA SEKALI**
+  oleh query manapun di file ini (sudah dicek — tidak ada lagi blok
+  "Unused Credit Balance by Account" atau sejenis yang menangani NULL ini
+  di versi file yang diupload). Jadi baris Ledger untuk kenaikan credit
+  balance ini memang TIDAK PERNAH dirender, bukan cuma gagal nempel ke
+  baris lain.
+- **Data tetap benar** — `customers.credit_balance` &
+  `customer_credit_sources.remaining_amount` sudah benar bertambah saat
+  return disimpan (`UPDATE customers SET credit_balance = credit_balance
+  + ?` tetap jalan terlepas dari hasil trace). Murni gap TAMPILAN Ledger.
+- Catatan tambahan: kasus "sisa tidak tertelusuri" yang SAMA juga bisa
+  kejadian untuk data lama pre-batch_id (movement tanpa invoice_id sama
+  sekali) — row situ juga `origin_invoice_payment_id=NULL` dan juga
+  hilang dari Ledger dengan sebab yang sama. Jadi fix di bawah menutup 2
+  kasus sekaligus: return dari order ber-invoice yang dibayar penuh pakai
+  credit, DAN data return lama tanpa invoice_id.
+- **Rencana fix**: tambah loop baru di `get_finance_report.php` yang
+  query `customer_credit_sources WHERE origin_invoice_payment_id IS NULL`
+  (SEMUA kolom, bukan cuma yang origin_type='return') dan push 1 baris
+  Ledger mandiri per row (tidak nempel ke payment lain — tidak ada payment
+  real untuk ditempel), `account_id=null`/unassigned (source_bank-nya
+  sendiri sudah NULL), label kira-kira "Customer Credit Balance — Return
+  (sumber dana tidak diketahui)" biar user paham ini bukan dari rekening
+  manapun. Field `usage`/`remaining_amount`/`credit_source_id` tetap
+  diisi sama seperti row credit lainnya (biar fly window klik tetap
+  jalan, `ledgerCreditRows` di `report_content.php` otomatis ikut
+  menjaring row baru ini asal `source==='invoice_payment_credit'` tetap
+  dipakai sbg source value-nya).
+- **Koreksi user (8 Nov 2026, dengan screenshot)**: rencana awal (baris
+  Ledger MANDIRI) SALAH KONSEP — user jelaskan uang return ini bukan uang
+  baru, ini uang yang SAMA dari credit balance asal (baris 1 contoh user)
+  yang "kembali" setelah dipakai. Seharusnya TIDAK ada baris Ledger baru
+  sama sekali — cukup jadi entri tambahan di `usage` (fly window) baris
+  credit ASAL, persis seperti entri "Applied to .../Refunded (...)" yang
+  sudah ada di situ, BUKAN baris berdiri sendiri dengan bank/account
+  kosong seperti rencana sebelumnya.
+- **Fix v2 (sudah ditulis ulang)**: blok baru di `get_finance_report.php`,
+  dipindah ke SEBELUM loop "Inflow: invoice payments" (bukan lagi setelah
+  loop refund — supaya hasil resolusinya, `$foldedIntoSource`, sudah siap
+  dipakai saat loop payment membentuk `usage` baris kredit asal).
+  Query: `customer_credit_sources cs` (WHERE `origin_invoice_payment_id
+  IS NULL`) LEFT JOIN `invoice_payments p` (ON `p.invoice_id =
+  cs.origin_ref_invoice_id AND p.source_bank='CREDIT BALANCE'`) LEFT JOIN
+  `customer_credit_applications a` (ON `a.invoice_payment_id = p.id`) —
+  jalur traceback: invoice order (origin_ref_invoice_id) → payment
+  AUTO-APPLIED invoice itu → baris `customer_credit_applications` payment
+  itu → `credit_source_id` ASLI (baris 1).
+  - **Kasus multi-sumber ditangani**: satu payment AUTO-APPLIED bisa
+    FIFO-split ke BEBERAPA `credit_source_id` (`ccs_spend_fifo()` di
+    `create_order.php` insert banyak baris `customer_credit_applications`
+    untuk SATU `invoice_payment_id`). Jadi row digroup per `cs.id` dulu
+    (`$byCreditSourceRow`), lalu kalau resolusinya >1, nilai return
+    DIPECAH proporsional sesuai porsi `amount_used` masing-masing sumber
+    (slice terakhir menyerap sisa rounding supaya total pas).
+  - Hasil fold masuk ke `$foldedIntoSource[$credit_source_id][]` sebagai
+    entri `{kind: 'returned_to_source', date, created_at, amount}` — di
+    loop payment (baris ~565), digabung ke `usage` lewat
+    `array_merge($appsBySource[$srcId] ?? [], $refundsBySource[$srcId] ??
+    [], $foldedIntoSource[$srcId] ?? [])`, ikut di-`usort` by
+    `created_at` sama seperti applied/refunded. **TIDAK ada baris Ledger
+    baru untuk kasus yang resolve** — murni nambah entri di `usage` baris
+    yang SUDAH ADA.
+  - Fallback **tetap ada** (`$unresolvedCreditSources`, dirender di posisi
+    lama setelah loop refund) HANYA untuk kasus yang benar-benar tidak
+    bisa ditelusuri (data lama pre-batch_id tanpa invoice_id sama sekali,
+    atau order yang auto-apply-nya tidak match apa pun) — ini baris
+    Ledger mandiri label "... (source account unknown)", TETAP tidak
+    masuk hitungan akun manapun (sama seperti rencana v1).
+  - `report_content.php`: `openCreditDetail()` ditambah 1 cabang baru
+    untuk `u.kind === 'returned_to_source'` → teks "Returned (added back
+    to this credit)". Tidak ada perubahan lain di frontend — deteksi
+    row/klik/chip semua tetap lewat `source==='invoice_payment_credit'`
+    yang sudah ada.
+  - **Revisi tanda nilai (user, 8 Nov 2026, sesi sama, 2x revisi)**:
+    (v1) awalnya `returned_to_source` dikasih prefix `+`, applied/refunded
+    polos. (v2) dibalik: `returned_to_source` polos (sama seperti
+    "Original amount" di atasnya), applied/refunded (yang MENGURANGI)
+    dikasih prefix `-`. (v3, FINAL) user minta bukan minus tapi dalam
+    kurung — konsisten dengan `fmtIDRParen()` yang sudah dipakai di
+    tabel Ledger utama file ini. Sekarang: `amountText = u.kind ===
+    'returned_to_source' ? fmtIDR(u.amount) : '(' + fmtIDR(u.amount) +
+    ')'` — returned polos `Rp 6.000.000`, applied/refunded `(Rp
+    15.000.000)`.
+- File relevan SUDAH lengkap untuk fix v2 ini (`create_order.php`,
+  `create_return.php`, `get_finance_report.php`, `report_content.php`
+  semua sudah diupload) — `credit_sources_helper.php` TETAP tidak perlu,
+  fix ini murni query baca tambahan + 1 cabang label di frontend.
+- **Bug lanjutan ditemukan & diperbaiki (user-reported via screenshot,
+  sesi sama 8 Nov 2026) — "Remaining now" di fly window baris asal TIDAK
+  ikut naik setelah fold.** Akar masalah: `create_return.php` SELALU
+  INSERT row return sebagai `customer_credit_sources` BARU (baris 650-662)
+  — `remaining_amount`-nya sendiri, terpisah dari baris asal, BUKAN
+  menambah `remaining_amount` baris asal secara langsung di DB. Fix v2
+  sebelumnya cuma menambah entri tampilan di `usage` (benar), tapi
+  `remaining_amount` yang ditampilkan modal tetap ambil
+  `$ccsRow['remaining_amount']` murni dari DB (tidak berubah, karena
+  secara DB row asal memang tidak disentuh) — "Remaining now" jadi salah
+  (contoh: harusnya 20jt+6jt=26jt, tampil tetap 20jt).
+  - **Fix v3**: ditambahkan `$foldedRemainingBySource[credit_source_id] =
+    float` (akumulasi), dihitung PARALEL dengan `$foldedIntoSource`
+    (pemecahan proporsional yang SAMA untuk kasus multi-sumber, pakai
+    rumus `remaining_amount` row return bukan `amount`-nya). Lalu di loop
+    payment pembentuk baris Ledger: `$remainingAmt =
+    $ccsRow['remaining_amount'] + ($foldedRemainingBySource[$srcId] ??
+    0.0)`. Jadi "Remaining now" sekarang = remaining asli baris itu DI DB
+    + seluruh remaining dari semua row return yang ter-fold ke situ.
+  - **Bug turunan yang SEKALIAN dicek & ditangani**: kalau row return itu
+    SENDIRI sudah sempat dipakai sebagian (via order lain, auto-apply
+    lagi dari row return itu) atau di-refund sebelum pernah tertangkap di
+    sini — entri `applied`/`refunded` miliknya (`$appsBySource[$csId]`,
+    `$refundsBySource[$csId]`, di-key by row return itu sendiri) juga
+    TIDAK PERNAH muncul di manapun kalau tidak ditangani, karena row
+    return ini tidak pernah jadi baris Ledger sendiri. Ditangani: `
+    $ownUsage = array_merge($appsBySource[$csId] ?? [],
+    $refundsBySource[$csId] ?? [])`, digabung UTUH (tidak dipecah
+    per-entri) ke sumber dengan `amount_used` terbesar kalau multi-sumber
+    (pendekatan approksimasi disengaja — memecah entri usage individual
+    lintas sumber akan salah merepresentasikan event yang sebenarnya utuh;
+    kasus ini jarang & approksimasinya tidak memengaruhi total
+    amount/remaining yang sudah exact).
+- Perlu dites ULANG (menggantikan rencana tes v2 di atas, poin 2 & 3
+  sekarang HARUS pakai angka ini): (1) ulangi skenario user — booking+DP → cancel (jadi
+  credit, baris 1 Ledger) → new order BARU dibayar PENUH pakai credit itu
+  (auto-apply) → return sebagian/semua barang dari order itu → buka
+  Report → Ledger → **TIDAK BOLEH ada baris baru** dibanding sebelum
+  return (jumlah baris Ledger tetap sama); (2) klik baris 1 (Customer
+  Credit Balance asal) → fly window HARUS sekarang menampilkan entri baru
+  "Returned (added back to this credit)" dengan nilai `+Rp ...` sebesar
+  nilai return, DAN **"Remaining now" di modal HARUS = remaining lama +
+  nilai return persis** (contoh kasus user: 20jt + 6jt = 26jt — SEBELUM
+  fix v3 ini salah tampil tetap 20jt, screenshot 8 Nov 2026); (3)
+  `customers.credit_balance` (phpMyAdmin) = SUM(remaining_amount) semua
+  `customer_credit_sources` customer itu (TERMASUK row return yang
+  remaining_amount-nya sendiri di DB belum berubah — totalnya harus match
+  dengan "Remaining now" + sisa "Remaining now" row kredit lain customer
+  itu, karena secara DB uang ini tetap ada di row return terpisah,
+  cuma "dipinjam tampil" di modal baris asal); (3b) TAMBAHAN: kalau
+  row return itu sendiri lalu dipakai sebagian (order baru auto-apply dari
+  credit yang baru nambah ini) atau di-refund → cek entri "Applied
+  to.../Refunded (...)" untuk pemakaian itu MUNCUL di fly window baris
+  ASAL (bukan hilang, bukan juga di baris return yang tidak pernah ada); (4) Total Inflow & balance per-rekening TIDAK berubah sama sekali
+  dibanding sebelum return (harus identik — uang ini tidak pernah
+  dihitung sebagai kas baru); (5) kasus MULTI-SUMBER: pastikan order yang
+  auto-apply-nya FIFO-split dari 2+ credit_source_id berbeda, lalu
+  di-return → return itu harus FOLD proporsional ke SEMUA sumber yang
+  terlibat (cek tiap baris 1 yang terlibat, fly window masing-masing
+  dapat entri "Returned..." dengan nilai sesuai porsinya, total gabungan
+  = nilai return); (6) kasus fallback (data lama tanpa invoice_id) —
+  kalau ada, pastikan TETAP muncul sebagai baris mandiri "... (source
+  account unknown)" seperti sebelumnya (fallback tidak boleh rusak); (7)
+  filter date range yang MENGECUALIKAN tanggal return — pastikan tidak
+  ada error JS, dan entri "Returned..." di fly window baris 1 ikut hilang
+  dari daftar usage (karena query credit baru ikut filter tanggal `cs.
+  created_date`) tanpa bikin "Remaining now" di modal jadi salah (modal
+  tetap pakai `remaining_amount` LIVE dari DB, bukan dihitung dari usage
+  yang ditampilkan — jadi ini harusnya aman, tapi perlu dicek visual).
 
 ## 9. Cara lanjut di sesi baru
 1. Upload PROJECT_NOTES.md ini + hanya file kode yang relevan (Sales: `transaction_content.php` + `ajax/` terkait;

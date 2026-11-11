@@ -1756,6 +1756,33 @@ $currentYear     = date('Y');
   </div>
 </div>
 
+<!-- Booking — Apply Credit prompt. Shown after the dry_run review, before
+     Confirm Booking, only when the customer has credit_balance > 0. Default
+     and max both follow min(credit_balance, grand_total) — the user can
+     lower it (or set it to 0 to skip) but never raise it past that cap.
+     Chosen amount is carried through to Confirm Booking and applied in the
+     same save as the booking itself (ajax/create_booking.php). -->
+<div class="modal-overlay" id="bkApplyCreditOverlay" style="display:none;">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-header">
+      <div class="modal-title">Apply Credit Balance?</div>
+    </div>
+    <div class="modal-body">
+      <div class="empty-sub" id="bkApplyCreditIntro" style="margin-bottom:var(--space-2);"></div>
+      <div class="form-group">
+        <div class="label">Amount to apply</div>
+        <input type="text" inputmode="decimal" class="input input-number-comma" id="bkApplyCreditAmount">
+        <div class="empty-sub" id="bkApplyCreditCap" style="margin-top:var(--space-1);"></div>
+      </div>
+      <div class="empty-sub" id="bkApplyCreditError" style="display:none; color:var(--danger);"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" id="btnBkApplyCreditSkip">Skip</button>
+      <button type="button" class="btn btn-primary" id="btnBkApplyCreditContinue">Continue</button>
+    </div>
+  </div>
+</div>
+
 <!-- Booking — details to confirm before Confirm & Save (preview from
      create_booking.php with dry_run=1). Stock is already shown as reserved
      (remaining_before -> remaining_after) even though nothing has left the
@@ -2117,6 +2144,7 @@ $currentYear     = date('Y');
 
   // Booking tab fly windows.
   var bkPriceOverlay   = document.getElementById('bkPriceOverlay');
+  var bkApplyCreditOverlay = document.getElementById('bkApplyCreditOverlay');
   var bkConfirmOverlay = document.getElementById('bkConfirmOverlay');
   var bkReleaseOverlay        = document.getElementById('bkReleaseOverlay');
   var bkReleaseConfirmOverlay = document.getElementById('bkReleaseConfirmOverlay');
@@ -2146,7 +2174,7 @@ $currentYear     = date('Y');
     txnCategoryOverlay, disbDepartmentOverlay, disbActivityOverlay, disbDetailsOverlay, disbManageCategoryOverlay,
     capFieldPickerOverlay, stProductOverlay, stPriceOverlay, stStockSourceOverlay, stConfirmOverlay,
     stOrderModeOverlay, stOrderPickOverlay, stDriverWarnOverlay,
-    bkPriceOverlay, bkConfirmOverlay, bkReleaseOverlay, bkReleaseConfirmOverlay,
+    bkPriceOverlay, bkApplyCreditOverlay, bkConfirmOverlay, bkReleaseOverlay, bkReleaseConfirmOverlay,
     bkEditOverlay, bkCancelOverlay,
     rtProductOverlay, rtConfirmOverlay, rtReverifyOverlay,
     refundOverlay, applyCreditOverlay, document.getElementById('invPrintOverlay'),
@@ -7463,12 +7491,26 @@ $currentYear     = date('Y');
   var bkConfirmError   = document.getElementById('bkConfirmError');
   var btnBkConfirmSave = document.getElementById('btnBkConfirmSave');
 
+  var bkApplyCreditIntro    = document.getElementById('bkApplyCreditIntro');
+  var bkApplyCreditAmountEl = document.getElementById('bkApplyCreditAmount');
+  var bkApplyCreditCap      = document.getElementById('bkApplyCreditCap');
+  var bkApplyCreditError    = document.getElementById('bkApplyCreditError');
+  var btnBkApplyCreditSkip     = document.getElementById('btnBkApplyCreditSkip');
+  var btnBkApplyCreditContinue = document.getElementById('btnBkApplyCreditContinue');
+  initNumberCommaInput(bkApplyCreditAmountEl);
+
   initNumberCommaInput(bkQtyInput);
 
   var bkItems      = []; // [{logistic_id, product_name, unit_label, qty}]
   var bkNewPrices  = {}; // logistic_id -> price typed in the Set Price window
   var bkPriceMissing = [];
   var bkSaving = false;
+  // How much credit_balance to apply, chosen in the Apply Credit fly window
+  // (0 = none / customer has no credit_balance / user chose Skip). Carried
+  // from bkReview()'s preview through to the final create_booking.php save.
+  var bkApplyCreditAmount = 0;
+  var bkApplyCreditCapValue = 0; // max the user is allowed to type, this review
+  var bkPendingBookingPreview = null; // the booking{} from the dry_run that triggered the Apply Credit prompt
 
   function resetBookingForm() {
     bkCustomer.value = '';
@@ -7477,6 +7519,9 @@ $currentYear     = date('Y');
     bkNewPrices = {};
     bkPriceMissing = [];
     bkSaving = false;
+    bkApplyCreditAmount = 0;
+    bkApplyCreditCapValue = 0;
+    bkPendingBookingPreview = null;
     bkProductSelect.value = '';
     bkQtyInput.value = '';
     btnBkReview.disabled = false;
@@ -7486,8 +7531,10 @@ $currentYear     = date('Y');
     stHideError(bkReviewError);
     stHideError(bkConfirmError);
     stHideError(bkPriceError);
+    stHideError(bkApplyCreditError);
     bkSuccessBox.style.display = 'none';
     hide(bkPriceOverlay);
+    hide(bkApplyCreditOverlay);
     hide(bkConfirmOverlay);
   }
 
@@ -7584,6 +7631,11 @@ $currentYear     = date('Y');
       booking_date: bkDate.value,
       items: JSON.stringify(items),
       new_prices: JSON.stringify(bkNewPrices),
+      // Only sent on the real save — the dry_run preview that drives the
+      // Apply Credit prompt itself doesn't need it (and mustn't apply
+      // anything before the user confirms). bkApplyCreditAmount is 0 unless
+      // the user actually chose an amount in that fly window.
+      apply_credit_amount: dryRun ? '0' : String(bkApplyCreditAmount || 0),
       dry_run: dryRun ? '1' : '0'
     };
   }
@@ -7596,7 +7648,19 @@ $currentYear     = date('Y');
     stPost('ajax/create_booking.php', payload)
       .then(function (res) {
         btnBkReview.disabled = false;
-        if (res.ok) { showBkConfirm(res.booking); return; }
+        if (res.ok) {
+          var b = res.booking;
+          // Reset any previously chosen amount every time a fresh preview
+          // comes back (items/prices may have changed since) — re-decide
+          // whether to show the prompt from this preview's own numbers.
+          bkApplyCreditAmount = 0;
+          if (b.customer && b.customer.credit_balance > 0.0001) {
+            openBkApplyCredit(b);
+          } else {
+            showBkConfirm(b);
+          }
+          return;
+        }
         if (res.code === 'missing_prices') { openBkPrice(res.missing || []); return; }
         stShowError(bkReviewError, res.message || 'Could not review the booking.');
       })
@@ -7606,6 +7670,60 @@ $currentYear     = date('Y');
       });
   }
   btnBkReview.addEventListener('click', bkReview);
+
+  // --- Apply Credit prompt (only shown when the customer has
+  //     credit_balance > 0) --------------------------------------------
+  function openBkApplyCredit(b) {
+    bkPendingBookingPreview = b;
+    stHideError(bkApplyCreditError);
+    // Never more than what's actually owed on this booking, never more than
+    // the customer actually has \u2014 same cap the server re-applies on save.
+    bkApplyCreditCapValue = Math.min(b.customer.credit_balance, b.grand_total);
+    bkApplyCreditIntro.textContent = b.customer.name + ' has ' + formatIDR(b.customer.credit_balance)
+      + ' in credit balance. Apply some of it to this booking\u2019s invoice now?';
+    bkApplyCreditCap.textContent = 'Maximum for this booking: ' + formatIDR(bkApplyCreditCapValue);
+    // Default = the full cap (user can lower it, or Skip for none).
+    bkApplyCreditAmountEl.value = formatNumberInput(String(bkApplyCreditCapValue));
+    show(bkApplyCreditOverlay);
+  }
+
+  btnBkApplyCreditSkip.addEventListener('click', function () {
+    bkApplyCreditAmount = 0;
+    hide(bkApplyCreditOverlay);
+    if (bkPendingBookingPreview) { showBkConfirm(bkPendingBookingPreview); }
+  });
+
+  btnBkApplyCreditContinue.addEventListener('click', function () {
+    stHideError(bkApplyCreditError);
+    var n = parseNumberInput(bkApplyCreditAmountEl.value);
+    if (bkApplyCreditAmountEl.value.trim() === '' || isNaN(n)) { n = 0; }
+    if (n < 0) {
+      stShowError(bkApplyCreditError, 'Amount cannot be negative.');
+      return;
+    }
+    if (n > bkApplyCreditCapValue + 0.01) {
+      stShowError(bkApplyCreditError, 'Amount cannot exceed ' + formatIDR(bkApplyCreditCapValue) + '.');
+      return;
+    }
+    bkApplyCreditAmount = n;
+    hide(bkApplyCreditOverlay);
+    if (bkPendingBookingPreview) {
+      // Re-derive what Confirm Booking should show with this amount applied
+      // \u2014 the preview came from the server with apply_credit_amount=0 (see
+      // bkBuildPayload), so paid_after/invoice status there don't yet
+      // reflect this choice. Patch them locally for display; the real,
+      // authoritative numbers come back from the server on the actual save.
+      var b = bkPendingBookingPreview;
+      b.invoice.paid_after = Math.round((b.invoice.paid_before + bkApplyCreditAmount) * 100) / 100;
+      b.credit_applied = {
+        amount: bkApplyCreditAmount,
+        max_applicable: bkApplyCreditCapValue,
+        balance_before: b.customer.credit_balance,
+        balance_after: Math.round((b.customer.credit_balance - bkApplyCreditAmount) * 100) / 100
+      };
+      showBkConfirm(b);
+    }
+  });
 
   // --- Set Price (same pattern as New Order's stPriceOverlay) ---
   function openBkPrice(missing) {
@@ -7709,6 +7827,14 @@ $currentYear     = date('Y');
     stAddRow(bkConfirmBody, 'Booking Total', formatIDR(b.grand_total));
     stAddRow(bkConfirmBody, 'Invoice After', formatIDR(b.invoice.total_after));
 
+    // Only present when the Apply Credit prompt was shown and the user
+    // chose an amount above 0 (see openBkApplyCredit / btnBkApplyCreditContinue).
+    if (b.credit_applied && b.credit_applied.amount > 0.0001) {
+      stAddRow(bkConfirmBody, 'Credit Applied', '-' + formatIDR(b.credit_applied.amount));
+      stAddRow(bkConfirmBody, 'Paid After', formatIDR(b.invoice.paid_after));
+      stAddRow(bkConfirmBody, 'Remaining Credit Balance', formatIDR(b.credit_applied.balance_after));
+    }
+
     show(bkConfirmOverlay);
   }
 
@@ -7737,6 +7863,9 @@ $currentYear     = date('Y');
         var summary = 'Booking saved \u2014 ' + b.customer.name
           + ' \u00b7 Invoice ' + b.invoice.number
           + ' \u00b7 total ' + formatIDR(b.grand_total)
+          + (b.credit_applied && b.credit_applied.amount > 0.0001
+              ? ' \u00b7 ' + formatIDR(b.credit_applied.amount) + ' credit applied'
+              : '')
           + '. Open the Customers tab to add a DP payment on this invoice.';
         resetBookingForm(); // also closes the fly windows
         bkSuccessBox.textContent = summary;
@@ -8354,6 +8483,18 @@ $currentYear     = date('Y');
         closeNote.textContent = 'This invoice will be closed (status: cancelled, not paid \u2014 the money moved out, it wasn\u2019t settled) once the extra DP above is moved out. A future order for this customer will open a new invoice instead of reusing it.';
         bkCancelBody.appendChild(closeNote);
       }
+    }
+
+    // Never paid, nothing released \u2014 this invoice has no real trace left
+    // once this cancel goes through, so it will be deleted outright instead
+    // of staying behind as an empty open invoice (see cancel_booking.php,
+    // "Revised 9 Nov 2026").
+    if (c.invoice.will_delete) {
+      var deleteNote = document.createElement('div');
+      deleteNote.className = 'empty-sub';
+      deleteNote.style.marginTop = 'var(--space-2)';
+      deleteNote.textContent = 'Nothing was ever paid or released on this invoice, so it will be deleted entirely \u2014 invoice ' + c.invoice.number + ' will no longer appear anywhere, and its number will be reused by this customer\u2019s next invoice.';
+      bkCancelBody.appendChild(deleteNote);
     }
   }
 
