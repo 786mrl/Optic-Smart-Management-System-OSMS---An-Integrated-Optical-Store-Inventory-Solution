@@ -76,15 +76,7 @@ include 'partials/header.php';
     <div class="content">
 
       <!-- Dashboard -->
-      <div class="menu-section" data-section="dashboard" style="display:flex;">
-        <div class="card" style="width:100%;">
-          <div class="empty-state">
-            <i class="ti ti-layout-dashboard"></i>
-            <div class="empty-title">Dashboard</div>
-            <div class="empty-sub">No content yet.</div>
-          </div>
-        </div>
-      </div>
+      <?php include 'dashboard_content.php'; ?>
 
       <!-- Transactions -->
       <?php include 'transaction_content.php'; ?>
@@ -94,9 +86,6 @@ include 'partials/header.php';
 
       <!-- Document Tools -->
       <?php include 'document_tools_content.php'; ?>
-
-      <!-- Report -->
-      <?php include 'report_content.php'; ?>
 
       <!-- Investor -->
       <?php include 'investor_content.php'; ?>

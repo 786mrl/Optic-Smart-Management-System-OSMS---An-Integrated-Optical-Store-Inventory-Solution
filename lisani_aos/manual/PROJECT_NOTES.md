@@ -209,7 +209,23 @@ optic_pos/
     diberi harga persis seperti booking baru, lihat §6 Sales Transaction); Cancel (`cancel_booking.php`) membatalkan
     SEMUA sisa yang belum dirilis sekaligus, mengembalikan stok & mengurangi invoice. `remaining_primary_qty`/
     `defective_qty` TIDAK disentuh lagi saat Release (sudah dipotong saat booking) atau saat Cancel di luar
-    pengembalian itu.
+    pengembalian itu. Cancel yang membuat invoice benar-benar kosong (`paid_amount`=0 dan total jadi 0 — belum
+    pernah dibayar & belum pernah ada release sama sekali) **menghapus baris `invoices`-nya** (bukan sekadar ubah
+    status), supaya nomor invoice-nya otomatis bebas dipakai booking/order berikutnya (lihat §7, `cancel_booking.php`).
+17. **Apply Credit saat Booking dibuat**: kalau customer punya `credit_balance` > 0, fly window di Create Booking
+    menawarkan menerapkan sebagian/semua ke invoice booking ini — default & batas maksimum = `min(credit_balance,
+    grand_total booking)`, tidak bisa diketik lebih (server re-clamp, tidak percaya client). Pola pencatatannya SAMA
+    PERSIS dengan auto-apply-credit di `create_order.php` (bukan pola `apply_customer_credit.php` yang lebih
+    sederhana): insert `invoice_payments` (`source_bank='CREDIT BALANCE'`) **ditambah** spend FIFO
+    `customer_credit_sources` via `ccs_lock_sources()`/`ccs_spend_fifo()` + insert `customer_credit_applications`
+    (`credit_sources_helper.php`) — kalau cuma kurangi `customers.credit_balance` tanpa bagian FIFO ini, pemakaiannya
+    TIDAK muncul di Report Ledger → panel detail "Customer Credit Balance". Kalau booking yang sudah Apply Credit ini
+    di-cancel dan jadi overpaid lagi, overpaid itu **dikembalikan ke source asal** via
+    `ccs_reverse_applications_for_invoice()` (kebalikan `ccs_spend_fifo()`, newest-first) — BUKAN di-trace lewat
+    `trace_credit_to_real_payments()` (fungsi itu sengaja skip row `source_bank='CREDIT BALANCE'`, jadi kalau dipaksa
+    dipakai di sini hasilnya selalu "untraced" dan bikin `customer_credit_sources` baru yang salah/duplikat di
+    Ledger). Trace lama tetap dipakai HANYA untuk sisa overpaid yang benar dari transfer bank asli (credit baru
+    beneran, bukan reversal).
 
 ## 6. Kondisi tiap modul
 **Transactions, Activity Code**: tab Preview (accordion, satu terbuka sekaligus; Edit/Delete pola a) + tab Create (nomor
@@ -296,7 +312,9 @@ bank/nama, duplikat per bank, share WA). Edit/Delete/Share pola (b).
   ada toggle normal/defective). Selalu bikin invoice baru sendiri (§5.16), **tidak** reuse invoice open customer.
   DP/pembayaran booking sengaja tidak ditangani endpoint khusus — invoice hasil booking adalah row `invoices` biasa,
   jadi otomatis bisa dibayar lewat tombol + Add Payment yang sudah ada di tab Customers (murni reuse, bisa dicicil).
-  `ajax/create_booking.php`, pola dry_run sama seperti `create_order.php`.
+  `ajax/create_booking.php`, pola dry_run sama seperti `create_order.php`. Kalau customer punya `credit_balance` > 0,
+  setelah Review muncul fly window **Apply Credit Balance?** sebelum Confirm Booking (lihat §5.17 untuk aturan &
+  pola pencatatannya) — dilewati otomatis kalau customer tidak punya credit_balance.
 - *Customers*: kartu customer (Total Ordered/Returned/Discounts/Actual, Total Paid, Total Balance = Total Actual − Total
   Paid; bisa negatif kalau overpaid, kelebihannya di Credit Balance), riwayat per invoice → kartu per batch. Badge RETURN
   (+NORMAL/DEFECTIVE) dan DISCOUNT (nilai bertanda minus), "from pickup on …". Tombol + Add Payment hanya untuk invoice
@@ -582,13 +600,18 @@ tetap `fmtIDR`; CSV tetap angka mentah + kolom Type). Belum ada: edit kategori t
   - `manage_defective_stock.php`: GET `action=history` (Taken Out) & `action=return_history` (Returned In) + `logistic_id`
     → `{data:{product_name, unit_label, defective_qty, defective_taken_qty, history:[…]}}`. POST `action=repair`
     `logistic_id, qty` (≤ defective_qty).
-  - **Booking** (§5.16 & §6 Sales Transaction untuk detail UI): `create_booking.php` (dry_run, selalu invoice baru),
+  - **Booking** (§5.16-17 & §6 Sales Transaction untuk detail UI): `create_booking.php` (dry_run, selalu invoice baru;
+    `apply_credit_amount` optional — re-clamp server-side ke `min(credit_balance, grand_total)`, lihat §5.17),
     `list_customer_bookings.php` (GET customer_id → booking `active` + `qty_released_net`/`qty_returned`,
     `invoice_payment_count`), `release_booking.php` (dry_run, POST qty per booking_item → movement `out` + naikkan
     `qty_released` & `total_taken_qty`/`customers.total_inflow`, tulis `booking_item_releases`), `edit_booking.php`
     (dry_run, POST `items` campur `{booking_item_id,qty}` existing dan `{logistic_id,qty,stock_source}` baru +
     `new_prices` optional — lihat header comment file untuk kontrak lengkap), `cancel_booking.php` (dry_run, batalkan
-    semua sisa belum dirilis sekaligus).
+    semua sisa belum dirilis sekaligus; invoice yang jadi benar-benar kosong di-DELETE, lihat §5.16; overpaid dari
+    credit yang pernah di-apply di-reverse ke source asal via `ccs_reverse_applications_for_invoice()`, lihat §5.17).
+    `credit_sources_helper.php` (shared, bukan endpoint sendiri): `ccs_lock_sources()`/`ccs_spend_fifo()` (spend FIFO),
+    `ccs_reverse_applications_for_invoice()` (kebalikannya, per invoice), `trace_credit_to_real_payments()` (hanya
+    untuk credit yang BENAR baru terbentuk dari transfer bank asli, bukan untuk reversal).
 - **Investor**: `investor_api.php`, satu endpoint untuk semua aksi (lihat §6 Investor untuk detail UI tiap action).
   Action relevan: `save_deposit`/`update_deposit`/`delete_deposit`, `save_support_expense`/`delete_support_expense`,
   `save_fund_shares` (batch alloc per activity, lihat §5.13 & §6), `save_pdp`, `save_profit_payment`,
@@ -597,92 +620,6 @@ tetap `fmtIDR`; CSV tetap angka mentah + kolom Type). Belum ada: edit kategori t
   (pernah jadi bug diam-diam).
 
 ## 8. Pekerjaan terbuka
-
-**Log terbaru (siap dites) — Apply Credit saat Create Booking (9 Nov 2026)**:
-fitur baru: kalau customer yang dipilih di tab Booking punya `credit_balance` > 0, setelah user klik "Review"
-(dry_run preview sukses) dan SEBELUM modal "Confirm Booking" muncul, ada fly window baru "Apply Credit Balance?"
-yang menanyakan berapa dari credit_balance itu mau langsung dipakai untuk invoice booking ini. Nilai default DAN
-batas maksimumnya sama-sama `min(credit_balance, grand_total booking ini)` — user boleh menurunkan nilainya
-(termasuk ke 0 / tombol "Skip" = tidak pakai sama sekali) tapi TIDAK BOLEH menaikkannya melebihi cap itu. Kalau
-customer tidak punya credit_balance sama sekali (atau 0), fly window ini dilewati, langsung ke Confirm Booking
-seperti biasa (tidak ada perubahan perilaku untuk kasus ini).
-- **Pola yang dipakai**: SAMA PERSIS dengan `apply_customer_credit.php` yang sudah ada (tombol "Apply Credit" di
-  Customers tab) — insert 1 row `invoice_payments` dengan `source_bank = 'CREDIT BALANCE'` sebagai penanda (bukan
-  kolom `payment_method` — tabel itu TIDAK PUNYA kolom itu, lihat "Bugfix 1 Nov 2026" di header
-  `apply_customer_credit.php`, pernah jadi bug nyata sebelumnya), `proof_path`/`proof_original_name` NULL (tidak
-  ada bukti transfer, bukan uang baru), lalu update `invoices.paid_amount`/`status` dan KURANGI
-  `customers.credit_balance` — BUKAN `customers.total_paid` (itu cuma untuk uang baru yang benar-benar masuk).
-  Dikerjakan pada TRANSAKSI YANG SAMA dengan pembuatan booking itu sendiri (`create_booking.php`, bukan
-  memanggil `apply_customer_credit.php` secara terpisah) — jadi booking + apply-credit itu all-or-nothing satu
-  paket, bukan dua langkah terpisah yang bisa nyangkut di tengah.
-- **`create_booking.php`**: (1) query customer sekarang ikut ambil `credit_balance`; (2) terima POST baru
-  `apply_credit_amount` (opsional, default kosong = 0, HANYA dipakai saat `dry_run=0` — dry_run preview tidak
-  pernah menyentuh DB sama sekali, termasuk soal credit); (3) nilai itu DI-CLAMP ULANG di server ke
-  `min(customer.credit_balance asli dari DB, grand_total booking ini)` — TIDAK PERNAH percaya nilai dari client
-  mentah-mentah, sama persis semangat validasi `apply_customer_credit.php`; (4) response (baik dry_run maupun
-  final save) sekarang punya `customer.credit_balance` dan objek baru `credit_applied{amount, max_applicable,
-  balance_before, balance_after}`; (5) di blok WRITES, SETELAH `invoices.total_amount` final (+grand_total)
-  ditulis, kalau `applyCreditAmount > 0` baru insert `invoice_payments` + update `invoices.paid_amount`/`status`
-  (jadi 'paid' kalau pas lunas) + kurangi `customers.credit_balance`, masih di dalam transaction yang sama.
-  Sudah dicek: kurung PHP seimbang (`{`:78/`}`:78, `(`:349/`)`:349), setiap `bind_param` sudah dicocokkan manual
-  jumlah placeholder `?` vs tipe-string vs jumlah variabel (terutama insert `invoice_payments` 11 kolom =
-  `'iissssssssi'` 11 karakter = 11 variabel, sama persis pola `apply_customer_credit.php`).
-- **`transaction_content.php`**: modal baru `#bkApplyCreditOverlay` (didaftarkan ke `flexOverlays` — kalau lupa,
-  modal akan nge-block tanpa flex layout, lihat gotcha lama soal ini), state baru `bkApplyCreditAmount` /
-  `bkApplyCreditCapValue` / `bkPendingBookingPreview`, semua di-reset di `resetBookingForm()`. Alur:
-  `bkReview()` dry_run sukses → kalau `b.customer.credit_balance > 0` panggil `openBkApplyCredit(b)` (bukan
-  langsung `showBkConfirm(b)` seperti sebelumnya) → tombol "Skip" (amount=0) atau "Continue" (validasi client-side:
-  tidak boleh negatif, tidak boleh lebih dari cap) → baru lanjut ke `showBkConfirm(b)`, yang sekarang juga
-  menampilkan baris "Credit Applied" / "Paid After" / "Remaining Credit Balance" kalau ada credit yang dipilih.
-  `bkBuildPayload()` mengirim `apply_credit_amount` HANYA saat save final (`dry_run=0`) — tidak pernah saat
-  preview. Pesan sukses setelah save juga menyebutkan jumlah credit yang terpakai kalau ada.
-  Sudah dicek: semua `<script>` block lolos `new Function()` parse (Node), `{}` dan `<div>`/`</div>` seimbang di
-  seluruh file.
-- **Dipakai apa adanya, TIDAK diubah**: `apply_customer_credit.php` sendiri masih seperti semula — dicatat
-  sebagai temuan sampingan bahwa file itu (beda dengan `cancel_booking.php`/`create_return.php`) BELUM mencatat
-  `customer_credit_sources` (FIFO asal-usul credit) — di luar scope permintaan ini, tidak disentuh.
-- **Belum dites**: (1) customer dengan credit_balance, booking lebih KECIL dari credit_balance → fly window
-  muncul, default = nilai booking itu sendiri (bukan seluruh credit_balance), tidak bisa diketik lebih besar dari
-  itu; (2) customer dengan credit_balance, booking lebih BESAR dari credit_balance → default = seluruh
-  credit_balance, tidak bisa diketik lebih besar dari itu; (3) klik "Skip" → booking tersimpan normal, TIDAK ada
-  `invoice_payments` baru, `credit_balance` customer TIDAK berkurang; (4) isi angka valid → "Continue" → Confirm
-  Booking menampilkan baris Credit Applied yang benar → Confirm & Save → cek di DB: `invoice_payments` baru ada
-  dengan `source_bank='CREDIT BALANCE'`, `invoices.paid_amount` bertambah (dan `status='paid'` kalau pas lunas),
-  `customers.credit_balance` berkurang PERSIS sejumlah itu, `customers.total_paid` TIDAK berubah; (5) customer
-  TANPA credit_balance (atau 0) → fly window ini sama sekali tidak muncul, alur lama (langsung Confirm Booking)
-  tidak berubah; (6) coba akali di client (misal via devtools ubah value lebih besar dari cap) → pastikan server
-  tetap clamp ke `min(credit_balance, grand_total)` yang sebenarnya, bukan percaya mentah-mentah.
-
-**Log terbaru (siap dites) — Cancel Booking: invoice kosong sekarang benar-benar DIHAPUS, bukan cuma "cancelled" (9 Nov 2026)**:
-bug: booking yang dibatalkan TANPA pembayaran sama sekali (`paid_amount` = 0) dan TANPA barang di-release sama
-sekali (`qty_released` = 0 semua `booking_items`) tetap meninggalkan invoice-nya nongkrong sebagai status "open"
-total 0 di Customers tab — `cancel_booking.php` lama cuma punya cabang untuk kasus overpaid (set `status='cancelled'`),
-tidak ada cabang untuk kasus "tidak ada jejak sama sekali". Akibatnya nomor invoice itu tidak pernah "bebas" lagi
-untuk dipakai booking/order berikutnya.
-- **Fix** (`cancel_booking.php`, `transaction_content.php` — keduanya sudah lengkap, siap pakai): tambah variabel
-  `$willDelete = $overpaid <= 0.0001 && $paidAmount <= 0.0001 && $totalAfter <= 0.0001` (dihitung dari data yang
-  sudah ada, sebelum writes). Kalau true → `DELETE FROM invoices WHERE id = ?` (bukan `UPDATE total_amount`, bukan
-  set status), dan skip total blok overpaid/credit_balance/`customer_credit_sources` (otomatis 0 di kasus ini).
-  Booking SELALU invoice baru sendiri (`create_booking.php`: "a booking ALWAYS gets its own new invoice"), jadi
-  pada titik ini dipastikan tidak ada row lain yang masih mereferensikan `invoice_id` tsb — aman dihapus. Nomor
-  invoice otomatis bisa dipakai ulang karena `invoice_initials_index()`/`MAX(sequence_number)` di `create_booking.php`
-  cuma men-scan `invoices` yang masih ADA di DB — tidak perlu logika "freed number" terpisah.
-  - Response `cancel.invoice` dapat field baru `will_delete` (preview, sejajar `will_close` yang sudah ada).
-  - `transaction_content.php` (`btnBkCancelConfirm`/preview `bkCancelBody`): blok baru sejajar `will_close` yang
-    menampilkan catatan "invoice ini akan dihapus total, nomornya akan dipakai ulang" kalau `will_delete` true.
-  - Sudah dicek: kurung PHP seimbang (`{`:39/`}`:39, `(`:199/`)`:199), 13 `bind_param` (jumlah placeholder vs
-    variabel belum di-cross-check manual per statement — **cek ulang saat testing**), JS baru lolos parse Node
-    (`new Function()` per `<script>`).
-- **Perlu dites**: (1) booking baru tanpa bayar sama sekali → cancel → row `invoices` HARUS hilang total dari DB
-  (cek phpMyAdmin), tidak muncul lagi di Invoices list manapun; (2) booking/order berikutnya untuk customer yang
-  sama HARUS dapat `sequence_number`/nomor invoice yang SAMA dengan yang baru dihapus (reuse, bukan skip ke nomor
-  berikutnya); (3) booking yang SUDAH ada pembayaran sebagian/lunas, atau SUDAH ada barang di-release sebagian →
-  cancel → invoice TETAP ada, perilaku lama (overpaid → credit_balance, status 'cancelled') tidak berubah sama
-  sekali — pastikan `$willDelete` memang false di kasus ini; (4) kasus campuran: beberapa line booking sudah
-  di-release sebagian (ada `qty_released` > 0) tapi TOTAL invoice tetap jadi 0 setelah cancel sisa qty — pastikan
-  ini TIDAK ke-delete kalau line itu masih tercatat (secara logika `totalAfter` di kasus ini seharusnya tetap > 0
-  karena baris yang sudah di-release tetap dihitung harganya di `total_amount`, tapi perlu dikonfirmasi lewat
-  testing nyata, bukan cuma baca kode).
 
 **Log terbaru (belum dites) — Refund & Settlement DIBATALKAN, diganti full credit_balance (4 Nov 2026)**: entri
 "Log terbaru" sebelumnya di sini (Cancel Booking overpaid, `credit_action`, tabel `customer_refund_queue`,

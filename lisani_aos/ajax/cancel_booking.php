@@ -98,7 +98,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 require_once dirname(__DIR__) . '/db_config.php'; // provides $lisani_conn (mysqli)
-require_once __DIR__ . '/credit_sources_helper.php'; // trace_credit_to_real_payments()
+require_once __DIR__ . '/credit_sources_helper.php'; // trace_credit_to_real_payments() / ccs_reverse_applications_for_invoice()
 
 function post_str(string $key): string
 {
@@ -315,13 +315,31 @@ try {
         $st->execute();
         $st->close();
 
-        // ---- customer_credit_sources: trace this overpaid DP back to the
-        //      real bank account(s) that paid THIS invoice (the booking's
-        //      own invoice_payments — there's only one source invoice here,
-        //      unlike create_return.php which can mix several), FIFO oldest
-        //      first. See trace_credit_to_real_payments() in
-        //      credit_sources_helper.php. ----
-        $slices = trace_credit_to_real_payments($lisani_conn, $invoiceId, $overpaid);
+        // ---- customer_credit_sources: Revised 9 Nov 2026. User-reported:
+        //      cancelling a booking that had credit_balance applied to it —
+        //      see create_booking.php's "Apply credit on Booking" — created
+        //      a brand-new, untraceable customer_credit_sources row for the
+        //      whole overpaid amount, which showed up as a spurious extra
+        //      "Customer Credit Balance" row on the Report Ledger. That
+        //      money isn't new or unknown — it is exactly the credit this
+        //      same invoice drew from customer_credit_sources when the
+        //      booking was created, or any other time credit was applied to
+        //      it — so it needs to go back to those same source(s) instead
+        //      of becoming a fresh one. ccs_reverse_applications_for_invoice()
+        //      undoes this invoice's own "CREDIT BALANCE" invoice_payments
+        //      application(s) first, newest first, capped at $overpaid.
+        //      Only whatever is left over after that — money that really
+        //      did come from a real bank transfer on this invoice, now
+        //      overpaid — still goes through trace_credit_to_real_payments()
+        //      as before, since that part genuinely is new credit being
+        //      formed for the first time. ----
+        $reversed = ccs_reverse_applications_for_invoice($lisani_conn, $invoiceId, $overpaid);
+        $reversedTotal = round(array_sum(array_column($reversed, 'amount_reversed')), 2);
+        $overpaidRemainder = round($overpaid - $reversedTotal, 2);
+
+        $slices = $overpaidRemainder > 0.0001
+            ? trace_credit_to_real_payments($lisani_conn, $invoiceId, $overpaidRemainder)
+            : [];
         if ($slices) {
             $ccsCustomerId = $customerId;
             $ccsBank = $ccsAccNo = $ccsAccName = null;

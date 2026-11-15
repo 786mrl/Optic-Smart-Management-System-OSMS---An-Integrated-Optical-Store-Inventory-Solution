@@ -128,6 +128,119 @@ function trace_credit_to_real_payments(mysqli $conn, int $sourceInvoiceId, float
     return $out;
 }
 
+// ---- ccs_reverse_applications_for_invoice ----
+// Reverses credit_balance applications that were made FOR this invoice via
+// the "CREDIT BALANCE" auto-apply/apply-on-booking marker — i.e. undoes
+// exactly the slices ccs_spend_fifo() created against customer_credit_sources,
+// instead of treating the money as a fresh, untraceable inflow (which is what
+// trace_credit_to_real_payments() does, and is the wrong tool here — see
+// cancel_booking.php, "Revised 9 Nov 2026 (credit reversal, not re-trace)").
+//
+// Added 9 Nov 2026 (user-reported: cancelling a booking that had credit
+// applied to it created a brand-new customer_credit_sources row instead of
+// giving the money back to the source(s) it actually came from — showed up
+// as a spurious extra "Customer Credit Balance" row on the Report Ledger).
+//
+// Walks this invoice's own invoice_payments rows with source_bank =
+// 'CREDIT BALANCE' (newest payment first — if more than one credit-apply
+// payment exists on the same invoice, the most recently applied one is the
+// most natural to unwind first), and for each one's customer_credit_applications
+// rows (also newest first), adds amount_used back onto that same
+// customer_credit_sources.remaining_amount row — capped at $amount total
+// reversed across all of them. A partial reversal (amount smaller than one
+// application) splits that one application's amount_used itself: the
+// portion being reversed is subtracted from amount_used (zeroed rows are
+// left as 0.00, not deleted, so the audit trail of "this invoice_payment
+// drew from this source" still exists) and the matching remaining_amount is
+// increased by the same portion.
+//
+// Returns the slices actually reversed: [{credit_source_id, amount_reversed}],
+// summing to at most $amount (less if this invoice's applications don't
+// cover that much — same "display-only gap" caveat as ccs_spend_fifo()).
+function ccs_reverse_applications_for_invoice(mysqli $conn, int $invoiceId, float $amount): array
+{
+    $reversed = [];
+    $left = round($amount, 2);
+    if ($left <= 0.0001 || $invoiceId <= 0) {
+        return $reversed;
+    }
+
+    $st = $conn->prepare(
+        "SELECT a.id, a.credit_source_id, a.amount_used
+           FROM customer_credit_applications a
+           JOIN invoice_payments p ON p.id = a.invoice_payment_id
+          WHERE p.invoice_id = ? AND p.source_bank = 'CREDIT BALANCE'
+          ORDER BY p.id DESC, a.id DESC
+          FOR UPDATE"
+    );
+    $st->bind_param('i', $invoiceId);
+    $st->execute();
+    $res = $st->get_result();
+    $apps = [];
+    while ($row = $res->fetch_assoc()) {
+        $apps[] = $row;
+    }
+    $st->close();
+
+    if (!$apps) {
+        return $reversed;
+    }
+
+    $srcIds = array_unique(array_map(function ($a) { return (int) $a['credit_source_id']; }, $apps));
+    $marks = implode(',', array_fill(0, count($srcIds), '?'));
+    $st = $conn->prepare(
+        "SELECT id, remaining_amount FROM customer_credit_sources WHERE id IN ($marks) FOR UPDATE"
+    );
+    $st->bind_param(str_repeat('i', count($srcIds)), ...$srcIds);
+    $st->execute();
+    $res = $st->get_result();
+    $sourceRemaining = [];
+    while ($row = $res->fetch_assoc()) {
+        $sourceRemaining[(int) $row['id']] = (float) $row['remaining_amount'];
+    }
+    $st->close();
+
+    $updApp = $conn->prepare('UPDATE customer_credit_applications SET amount_used = ? WHERE id = ?');
+    $updSrc = $conn->prepare('UPDATE customer_credit_sources SET remaining_amount = ? WHERE id = ?');
+    $takenBySource = [];
+
+    foreach ($apps as $app) {
+        if ($left <= 0.0001) {
+            break;
+        }
+        $appId   = (int) $app['id'];
+        $srcId   = (int) $app['credit_source_id'];
+        $usedNow = (float) $app['amount_used'];
+        if ($usedNow <= 0.0001) {
+            continue;
+        }
+        $take = min($usedNow, $left);
+
+        $newUsed = round($usedNow - $take, 2);
+        $newUsedStr = number_format($newUsed, 2, '.', '');
+        $updApp->bind_param('si', $newUsedStr, $appId);
+        $updApp->execute();
+
+        $newRemaining = round(($sourceRemaining[$srcId] ?? 0.0) + $take, 2);
+        $newRemainingStr = number_format($newRemaining, 2, '.', '');
+        $updSrc->bind_param('si', $newRemainingStr, $srcId);
+        $updSrc->execute();
+        $sourceRemaining[$srcId] = $newRemaining;
+
+        $takenBySource[$srcId] = round(($takenBySource[$srcId] ?? 0.0) + $take, 2);
+        $left = round($left - $take, 2);
+    }
+
+    $updApp->close();
+    $updSrc->close();
+
+    foreach ($takenBySource as $srcId => $amt) {
+        $reversed[] = ['credit_source_id' => $srcId, 'amount_reversed' => $amt];
+    }
+
+    return $reversed;
+}
+
 // ---- ccs_spend_fifo ----
 // Spends $amountToSpend across $lockedSources (as returned by
 // ccs_lock_sources(), already FIFO-ordered), oldest source first. Writes the

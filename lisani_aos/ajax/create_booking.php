@@ -29,16 +29,24 @@
 // is reused as-is, which already supports paying in several installments
 // (one invoice_payments row per upload).
 //
-// Apply credit on Booking (added 9 Nov 2026): if the customer has
-// credit_balance > 0, the frontend shows a fly window after the dry_run
-// review (before Confirm & Save) asking how much of it to apply to this
-// booking's invoice right away. Default/max = min(credit_balance,
+// Apply credit on Booking (added 9 Nov 2026, revised 9 Nov 2026): if the
+// customer has credit_balance > 0, the frontend shows a fly window after
+// the dry_run review (before Confirm & Save) asking how much of it to
+// apply to this booking's invoice right away. Default/max = min(credit_balance,
 // grand_total) — never more than what's actually owed on this booking, and
 // never more than the customer actually has. The chosen amount is applied
-// in the same transaction as the booking itself (all-or-nothing), using the
-// exact same recording pattern as apply_customer_credit.php (plain
-// invoice_payments row, source_bank = "CREDIT BALANCE" marker, no proof
-// file, customers.total_paid untouched — see that file's header comment).
+// in the same transaction as the booking itself (all-or-nothing), following
+// the exact same pattern as create_order.php's own auto-apply-credit block:
+// a plain invoice_payments row (source_bank = "CREDIT BALANCE" marker, no
+// proof file, customers.total_paid untouched) PLUS the matching FIFO spend
+// against customer_credit_sources (ccs_lock_sources()/ccs_spend_fifo(),
+// credit_sources_helper.php) recorded as customer_credit_applications rows
+// — without this second part the application never shows up on the
+// Report's Ledger "Customer Credit Balance" detail panel, which is built
+// from customer_credit_sources/customer_credit_applications, not from
+// customers.credit_balance directly (see get_finance_report.php). The
+// first version of this feature (9 Nov 2026, same day) only did the first
+// part and was missing from the Ledger — this is the fix.
 //
 // Response contract: { ok, message, ... }
 //   ok: true  -> booking { customer{id,name,credit_balance}, booking_date,
@@ -111,6 +119,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 require_once dirname(__DIR__) . '/db_config.php'; // provides $lisani_conn (mysqli)
+require_once __DIR__ . '/credit_sources_helper.php'; // ccs_lock_sources() / ccs_spend_fifo()
 
 // ---------- Helpers (duplicated from create_order.php on purpose — see
 // PROJECT_NOTES.md §3 on per-file helper duplication) ----------
@@ -580,12 +589,23 @@ try {
     // ---- Apply credit_balance to this brand-new invoice, if requested
     //      (fly window shown when the customer has credit_balance > 0 —
     //      see PROJECT_NOTES.md §8, "Apply credit on Booking", 9 Nov 2026).
-    //      Same recording pattern as apply_customer_credit.php: a normal
-    //      invoice_payments row, source_bank = "CREDIT BALANCE" marker (no
-    //      proof file — nothing new was paid in), does NOT touch
-    //      customers.total_paid (existing credit, not new cash). Done here
-    //      in the same transaction as the booking itself so a booking with
-    //      credit applied is all-or-nothing, same as everything else above. ----
+    //      Revised 9 Nov 2026: now follows the EXACT same pattern as
+    //      create_order.php's own auto-apply-credit block (the first
+    //      version here only moved customers.credit_balance, which never
+    //      showed up on the Report's Ledger / "Customer Credit Balance"
+    //      detail panel — those are built from customer_credit_sources /
+    //      customer_credit_applications, not from customers.credit_balance
+    //      directly; see get_finance_report.php). A normal invoice_payments
+    //      row (source_bank = "CREDIT BALANCE" marker, no proof file —
+    //      nothing new was paid in, customers.total_paid untouched), then
+    //      customers.credit_balance is decremented AND the exact same
+    //      amount is spent FIFO out of customer_credit_sources via
+    //      ccs_lock_sources()/ccs_spend_fifo() (credit_sources_helper.php),
+    //      recorded as customer_credit_applications rows against this new
+    //      invoice_payments row — so this application now appears in the
+    //      "Customer Credit Balance" ledger row's detail panel exactly like
+    //      create_order.php's auto-apply does. All inside the same
+    //      transaction as the booking itself (all-or-nothing). ----
     if ($applyCreditAmount > 0.0001) {
         $todayStr = date('Y-m-d');
         $amountStr = money($applyCreditAmount);
@@ -608,6 +628,7 @@ try {
         );
         $ins->execute();
         $ins->close();
+        $creditApplyPaymentId = $lisani_conn->insert_id;
 
         $newPaid = money($paidAfter);
         $newStatus = ($paidAfter >= $invoiceTotalAfter - 0.01) ? 'paid' : 'open';
@@ -626,6 +647,44 @@ try {
         $updCust->bind_param('si', $cAmt, $customerId);
         $updCust->execute();
         $updCust->close();
+
+        // ---- Spend customer_credit_sources FIFO (oldest id first) to cover
+        //      $applyCreditAmount, recording which account(s) funded this
+        //      application in customer_credit_applications — same shared
+        //      helper every other credit-spending path uses (create_order.php
+        //      auto-apply, create_refund.php, create_disbursement.php), so
+        //      this draws from the same locked rows and can never double-spend
+        //      against them. SUM(remaining_amount) for this customer must
+        //      stay equal to customers.credit_balance; both are updated here
+        //      in the same transaction. ----
+        $lockedSources = ccs_lock_sources($lisani_conn, $customerId);
+        $slices = ccs_spend_fifo($lisani_conn, $lockedSources, $applyCreditAmount);
+
+        // remaining_after_amount: a snapshot of this credit source's balance
+        // right after this slice is taken — see create_order.php's identical
+        // comment / migration_customer_credit_applications_snapshot.sql.
+        if ($slices) {
+            $appIns = $lisani_conn->prepare(
+                'INSERT INTO customer_credit_applications
+                   (invoice_payment_id, credit_source_id, amount_used, remaining_after_amount)
+                 VALUES (?, ?, ?, ?)'
+            );
+            foreach ($slices as $slice) {
+                $appIns->bind_param(
+                    'iiss',
+                    $creditApplyPaymentId, $slice['credit_source_id'],
+                    $slice['amount_used'], $slice['remaining_after_amount']
+                );
+                $appIns->execute();
+            }
+            $appIns->close();
+        }
+        // If array_sum of $slices' amount_used < $applyCreditAmount,
+        // customer_credit_sources fell out of sync with customers.credit_balance
+        // (e.g. a credit source row predating this tracking) — same
+        // display-only gap noted in create_order.php, not fixed silently
+        // here; customers.credit_balance (already updated above) stays the
+        // source of truth for how much credit is actually available.
     }
 
     $lisani_conn->commit();

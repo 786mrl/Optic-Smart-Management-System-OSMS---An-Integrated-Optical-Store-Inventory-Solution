@@ -1,10 +1,10 @@
 <?php
-// This file is included by index.php, REPLACING the static "Report" placeholder
-// <div class="menu-section" data-section="report" ...> entirely — same pattern as
+// This file is included by index.php, REPLACING the static "Dashboard" placeholder
+// <div class="menu-section" data-section="dashboard" ...> entirely — same pattern as
 // transaction_content.php / logistic_content.php. Own IIFE, own scope.
 // No tabs (removed 12 Okt 2026) — this is just the Finance Report, full stop.
 ?>
-<div class="menu-section" data-section="report" style="display:none;">
+<div class="menu-section" data-section="dashboard" style="display:flex;">
 <div class="card" style="width:100%;">
 
   <!-- ===================== Finance Report ===================== -->
@@ -108,8 +108,8 @@
 <style>
   /* ---- Containment: the report must never make the PAGE scroll sideways.
      Only .table-wrapper (tables) may scroll horizontally. ---- */
-  .menu-section[data-section="report"] { min-width:0; max-width:100%; }
-  .menu-section[data-section="report"] > .card {
+  .menu-section[data-section="dashboard"] { min-width:0; max-width:100%; }
+  .menu-section[data-section="dashboard"] > .card {
     box-sizing:border-box; max-width:100%; min-width:0;
     overflow-x:clip; /* safety net: anything that still leaks is clipped, never widens the page */
   }
