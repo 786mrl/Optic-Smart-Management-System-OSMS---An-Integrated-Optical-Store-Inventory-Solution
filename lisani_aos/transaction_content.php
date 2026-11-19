@@ -376,10 +376,40 @@ $currentYear     = date('Y');
   </div>
 
   <div class="form-group">
-    <div class="label">Transaction Amount</div>
+    <div class="label">Transaction Amount (as shown on the bank slip, incl. bank fee if any)</div>
     <div style="display:flex; gap:var(--space-2);">
       <input type="text" inputmode="decimal" class="input input-number-comma" id="capAmount" style="flex:1;">
       <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="capAmount" data-scan-label="Transaction Amount" data-cap-group="disbursement">Scan</button>
+    </div>
+    <!-- Read-only preview, NOT an input: plain gross amount when there's no
+         fee, or "GROSS (NET)" when a fee is picked — e.g. "6,002,500
+         (6,000,000)". The NET figure in parentheses is what's actually sent
+         as `amount` (and used for Final Amount (IDR)) — see recalcCapAmountPreview(). -->
+    <div class="empty-sub" id="capAmountPreview" style="margin-top:var(--space-1);"></div>
+  </div>
+
+  <!-- Bank Fee — the slip's total (capAmount, possibly OCR-scanned) is what
+       actually left the company account, which can include a transfer fee
+       the bank deducted (e.g. a slip reading 6,002,500 where only 6,000,000
+       is the real disbursement and 2,500 is the fee). The fee is NOT part of
+       what's saved as the transaction's amount — see the NET figure in
+       capAmountPreview above. Kept in a separate DB table
+       (disbursement_bank_fees) rather than a plain column, same pattern as
+       refund_bank_fees (see PROJECT_NOTES.md), so Report can isolate/sum it
+       independently later. Unlike the Refund version, Custom here also has a
+       Scan button (user request) since the bank fee itself may be printed on
+       the slip. -->
+  <div class="form-group">
+    <div class="label">Bank Fee (transfer fee deducted by the bank, if any)</div>
+    <div style="display:flex; gap:var(--space-2); flex-wrap:wrap;">
+      <button type="button" class="btn btn-primary btn-cap-fee-opt" data-fee="0">None (Rp 0)</button>
+      <button type="button" class="btn btn-secondary btn-cap-fee-opt" data-fee="2500">Rp 2,500</button>
+      <button type="button" class="btn btn-secondary btn-cap-fee-opt" data-fee="6500">Rp 6,500</button>
+      <button type="button" class="btn btn-secondary btn-cap-fee-opt" data-fee="custom">Custom</button>
+    </div>
+    <div id="capBankFeeCustomRow" style="display:none; gap:var(--space-2); margin-top:var(--space-2);">
+      <input type="text" inputmode="decimal" class="input input-number-comma" id="capBankFeeCustom" placeholder="Custom fee amount" style="flex:1;">
+      <button type="button" class="btn btn-secondary btn-cap-scan" data-scan-field="capBankFeeCustom" data-scan-label="Bank Fee" data-cap-group="disbursement">Scan</button>
     </div>
   </div>
 
@@ -395,6 +425,12 @@ $currentYear     = date('Y');
     <div class="label">Final Amount (IDR)</div>
     <input type="text" inputmode="decimal" class="input input-number-comma" id="capFinalAmountIdr">
     <div class="empty-sub">Auto-calculated from Amount &times; Exchange Rate when Currency isn't IDR — still editable.</div>
+    <!-- Same "gross (net)" pattern as capAmountPreview above the Transaction
+         Amount field — shows the IDR total WITH the bank fee folded back in,
+         next to the net figure the input itself holds. Only populated when
+         there IS a bank fee (user request, 16 Nov 2026); otherwise left
+         empty, since the input already shows the one number that matters. -->
+    <div class="empty-sub" id="capFinalAmountPreview"></div>
   </div>
 
   <div class="empty-sub" id="capError" style="display:none; color:var(--danger);"></div>
@@ -1576,6 +1612,29 @@ $currentYear     = date('Y');
   </div>
 </div>
 
+<!-- OCR rescan of an Amount-type field (capAmount/capBankFeeCustom,
+     payCapAmount, refCapAmount) that ALREADY has a value. Asks whether the
+     newly-scanned number replaces it or is added to it — e.g. field already
+     shows 5,000, new scan reads 1,000 -> "Add" makes it 6,000 (user
+     request, 16 Nov 2026). Shared across all three wizards (only one is
+     ever open at a time), same way capFieldPickerOverlay/capViewerWrap are
+     shared. Skipped entirely when the field is empty (straight overwrite,
+     same as every other OCR field). -->
+<div class="modal-overlay" id="capScanAddOverlay" style="display:none;">
+  <div class="modal" style="max-width:380px;">
+    <div class="modal-header">
+      <div class="modal-title">Add to existing value?</div>
+    </div>
+    <div class="modal-body">
+      <div class="empty-sub" id="capScanAddIntro"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" id="btnCapScanAddReplace">Replace</button>
+      <button type="button" class="btn btn-primary" id="btnCapScanAddSum">Add</button>
+    </div>
+  </div>
+</div>
+
 <!-- OCR account lookup — more than one company account matches the scanned
      number (e.g. same last 4 digits at different banks): pick the right one. -->
 <div class="modal-overlay" id="acctPickOverlay" style="display:none;">
@@ -2179,7 +2238,7 @@ $currentYear     = date('Y');
     rtProductOverlay, rtConfirmOverlay, rtReverifyOverlay,
     refundOverlay, applyCreditOverlay, document.getElementById('invPrintOverlay'),
     document.getElementById('acctPickOverlay'), document.getElementById('acctRegisterOverlay'),
-    document.getElementById('refundMethodChoiceOverlay')];
+    document.getElementById('refundMethodChoiceOverlay'), document.getElementById('capScanAddOverlay')];
 
   function show(el) {
     el.style.display = (flexOverlays.indexOf(el) !== -1) ? 'flex' : 'block';
@@ -2735,8 +2794,14 @@ $currentYear     = date('Y');
   var capExchangeRateGroup = document.getElementById('capExchangeRateGroup');
   var capCurrency    = document.getElementById('capCurrency');
   var capAmount      = document.getElementById('capAmount');
+  var capAmountPreview = document.getElementById('capAmountPreview');
+  var capBankFeeButtons   = Array.prototype.slice.call(document.querySelectorAll('.btn-cap-fee-opt'));
+  var capBankFeeCustomRow = document.getElementById('capBankFeeCustomRow');
+  var capBankFeeCustom    = document.getElementById('capBankFeeCustom');
+  var capBankFeeSelected  = '0'; // '0' | '2500' | '6500' | 'custom'
   var capExchangeRate = document.getElementById('capExchangeRate');
   var capFinalAmountIdr = document.getElementById('capFinalAmountIdr');
+  var capFinalAmountPreview = document.getElementById('capFinalAmountPreview');
 
   var capDoc = null;       // pdf.js document instance, null if a plain image
   var capNumPages = 1;
@@ -2779,12 +2844,15 @@ $currentYear     = date('Y');
     capCtx.clearRect(0, 0, capCanvas.width, capCanvas.height);
     ['capDate', 'capSourceBank', 'capDestBank', 'capSourceAccountNumber',
      'capSourceAccountName', 'capDestAccountNumber', 'capDestAccountName',
-     'capNotes', 'capAmount', 'capExchangeRate'].forEach(function (id) {
+     'capNotes', 'capAmount', 'capExchangeRate', 'capBankFeeCustom'].forEach(function (id) {
       document.getElementById(id).value = '';
     });
     capFields.forEach(function (f) { updateScanButtonVisibility(f.id); });
     capCurrency.value = 'IDR';
     capFinalAmountIdr.value = '';
+    capFinalAmountPreview.textContent = '';
+    capAmountPreview.textContent = '';
+    setCapFeeSelected('0');
     capExchangeRateGroup.style.display = 'none';
     document.getElementById('capError').style.display = 'none';
   }
@@ -3361,7 +3429,22 @@ $currentYear     = date('Y');
   // Picker flow -> reopen the picker so the user can continue through the
   // rest of the list. Manual re-scan flow -> just close the document back
   // up, nothing else changes.
+  //
+  // BUG FIX (16 Nov 2026 test): when the scanned field already had a value,
+  // applyOcrResult() -> handleAmountOcrScan() opens capScanAddOverlay ("Add
+  // to existing value?") and is still WAITING for the user to pick
+  // Replace/Add. This function used to run right after that anyway and,
+  // for the picker flow, immediately reopened capFieldPickerOverlay — which
+  // sits on top of capScanAddOverlay and hid it, so the confirmation looked
+  // like it never appeared (it only showed up once the picker was closed
+  // via Done). Now: if a scan-add confirmation is pending, don't reopen the
+  // picker (or close the viewer) yet — just remember which one to resume,
+  // and let resolvePendingScanAdd() call this again once the user answers.
   function afterScanCompleted(source) {
+    if (pendingScanAdd) {
+      pendingScanAdd.resumeSource = source;
+      return;
+    }
     if (source === 'picker') {
       openFieldPicker();
     } else {
@@ -3817,6 +3900,112 @@ $currentYear     = date('Y');
     if (e.key === 'Enter') { e.preventDefault(); submitAcctRegister(); }
   });
 
+  // ---------- Amount-field OCR rescan: Replace vs Add ----------
+  // Shared by every Amount-type field across all three wizards (capAmount,
+  // capBankFeeCustom, payCapAmount, refCapAmount) — NOT capExchangeRate,
+  // which is a rate, not money to sum. If the field is still empty (or
+  // holds something unparseable), the scan just fills it in as before. If
+  // it already holds a valid number, capScanAddOverlay asks whether the new
+  // reading replaces it or is added to it (user request, 16 Nov 2026 —
+  // "scan dua kali untuk menyatakan itu dijumlahkan", e.g. 5,000 then 1,000
+  // scanned again -> 6,000 on Add). `afterSet` is whatever field-specific
+  // follow-up (preview/recalc) the caller needs run once the final value is in.
+  var pendingScanAdd = null;
+  function handleAmountOcrScan(fieldId, rawText, afterSet) {
+    var el = document.getElementById(fieldId);
+    var parsed = parseOcrAmount(rawText);
+    if (isNaN(parsed)) {
+      el.value = '';
+      afterSet();
+      return;
+    }
+    var existing = parseNumberInput(el.value);
+    if (isNaN(existing)) {
+      el.value = formatNumberInput(String(parsed));
+      afterSet();
+      return;
+    }
+    pendingScanAdd = { fieldId: fieldId, existing: existing, parsed: parsed, afterSet: afterSet };
+    document.getElementById('capScanAddIntro').textContent =
+      'This field already shows ' + fmtPlainAmount(existing) + '. The new scan read ' +
+      fmtPlainAmount(parsed) + '. Add them together to get ' +
+      fmtPlainAmount(existing + parsed) + ', or replace the old value with the new reading?';
+    // capViewerWrap is moved to <body> with a z-index above every
+    // .modal-overlay (so it can never be clipped by an ancestor), which
+    // means it also sits visually on top of THIS modal while still open —
+    // show() alone wasn't enough, the confirmation was hidden behind the
+    // still-open document until the user closed it manually (16 Nov 2026
+    // test). Close the document viewer first so the confirmation is
+    // actually visible; resolvePendingScanAdd() reopens it afterwards.
+    capViewerWrap.style.display = 'none';
+    show(document.getElementById('capScanAddOverlay'));
+  }
+  function resolvePendingScanAdd(sum) {
+    if (!pendingScanAdd) return;
+    var el = document.getElementById(pendingScanAdd.fieldId);
+    var finalVal = sum ? (pendingScanAdd.existing + pendingScanAdd.parsed) : pendingScanAdd.parsed;
+    el.value = formatNumberInput(String(finalVal));
+    var after = pendingScanAdd.afterSet;
+    var resumeSource = pendingScanAdd.resumeSource;
+    pendingScanAdd = null;
+    hide(document.getElementById('capScanAddOverlay'));
+    // Bring the document viewer back before handing off to afterScanCompleted:
+    // for the picker flow it needs to be visible again (same as every other
+    // field) before the picker reopens on top of it; for a manual re-scan,
+    // afterScanCompleted's else-branch below will close it right back down
+    // anyway, so reopening it here first is harmless.
+    capViewerWrap.style.display = 'flex';
+    after();
+    // Now that the Add/Replace choice is settled, continue whatever
+    // afterScanCompleted() had deferred (reopen the field picker, or close
+    // the viewer for a manual re-scan) — see the bug-fix note above it.
+    afterScanCompleted(resumeSource);
+  }
+  document.getElementById('btnCapScanAddSum').addEventListener('click', function () { resolvePendingScanAdd(true); });
+  document.getElementById('btnCapScanAddReplace').addEventListener('click', function () { resolvePendingScanAdd(false); });
+
+  // Scanning the Bank Fee (Disbursement only — the only wizard with a
+  // scannable fee field right now) also bumps Transaction Amount by the
+  // SAME reading, one-way only (user request, 16 Nov 2026): the slip's
+  // printed Amount is read first, then its separate Bank Fee line is read,
+  // and the fee needs folding into the gross Transaction Amount so
+  // recalcCapAmountPreview's Net (= Amount − Bank Fee) still lands on the
+  // ORIGINAL amount, with the fee tracked separately rather than coming out
+  // of it. No Add/Replace confirmation here — unlike re-scanning the SAME
+  // field (handleAmountOcrScan above), this always just adds, silently.
+  // Only runs if Transaction Amount already holds a number; if it's still
+  // empty, the fee is left to apply to Bank Fee's own field only (see the
+  // handleAmountOcrScan call for capBankFeeCustom above) and nothing is
+  // bumped here. Uses the freshly-read OCR number itself, not whatever
+  // capBankFeeCustom ends up storing (which may itself have gone through
+  // an Add/Replace choice for ITS OWN value) — those are independent.
+  // After a Bank Fee OCR scan settles (direct fill, or the Add/Replace
+  // choice if it already had a value), auto-pick the matching preset
+  // button — 2,500 -> "Rp 2,500", 6,500 -> "Rp 6,500", anything else ->
+  // "Custom" (so the scanned amount stays visible/editable). Only runs once
+  // a number was actually read; if OCR failed (field left empty), the fee
+  // selection is left exactly as it was — it only ever starts at "None" on
+  // its own (resetDisbursementCapture / setCapFeeSelected('0')), never
+  // forced back there by a scan (user request, 16 Nov 2026).
+  function autoSelectCapFeeOption() {
+    var v = parseNumberInput(capBankFeeCustom.value);
+    if (isNaN(v)) return;
+    if (v === 2500 || v === 6500) {
+      setCapFeeSelected(String(v));
+    } else {
+      setCapFeeSelected('custom');
+    }
+  }
+
+  function bumpCapAmountByScannedFee(rawText) {
+    var feeParsed = parseOcrAmount(rawText);
+    if (isNaN(feeParsed)) return;
+    var amountExisting = parseNumberInput(capAmount.value);
+    if (isNaN(amountExisting)) return;
+    capAmount.value = formatNumberInput(String(amountExisting + feeParsed));
+    recalcCapAmountPreview();
+  }
+
   // Best-effort cleanup per field type. The result is ALWAYS left editable
   // afterwards — this just saves typing when OCR reads cleanly.
   function applyOcrResult(fieldId, rawText) {
@@ -3835,7 +4024,15 @@ $currentYear     = date('Y');
         errEl.textContent = 'Could not read the date from "' + rawText.replace(/\s+/g, ' ').slice(0, 40) + '" — please pick it manually.';
         errEl.style.display = 'block';
       }
-    } else if (fieldId === 'capAmount' || fieldId === 'capExchangeRate') {
+    } else if (fieldId === 'capAmount') {
+      handleAmountOcrScan(fieldId, rawText, recalcCapAmountPreview);
+    } else if (fieldId === 'capBankFeeCustom') {
+      handleAmountOcrScan(fieldId, rawText, function () {
+        autoSelectCapFeeOption();
+        recalcCapAmountPreview();
+      });
+      bumpCapAmountByScannedFee(rawText);
+    } else if (fieldId === 'capExchangeRate') {
       var parsed = parseOcrAmount(rawText);
       el.value = isNaN(parsed) ? '' : formatNumberInput(String(parsed));
       recalcFinalAmount();
@@ -3854,12 +4051,11 @@ $currentYear     = date('Y');
         payErrEl.style.display = 'block';
       }
     } else if (fieldId === 'payCapAmount') {
-      var payParsed = parseOcrAmount(rawText);
-      el.value = isNaN(payParsed) ? '' : formatNumberInput(String(payParsed));
-      recalcPayCapNotes(); // applyOcrResult sets .value directly, no 'input' event fires
+      // recalcPayCapNotes() is handleAmountOcrScan's afterSet here — same
+      // reason as before, applyOcrResult sets .value directly so no 'input' event fires.
+      handleAmountOcrScan(fieldId, rawText, recalcPayCapNotes);
     } else if (fieldId === 'refCapAmount') {
-      var refParsed = parseOcrAmount(rawText);
-      el.value = isNaN(refParsed) ? '' : formatNumberInput(String(refParsed));
+      handleAmountOcrScan(fieldId, rawText, recalcRefCapNet);
     } else if (fieldId === 'refCapDate') {
       var refIso = parseOcrDate(rawText);
       var refErrEl = document.getElementById('refCapError');
@@ -3920,17 +4116,76 @@ $currentYear     = date('Y');
     recalcFinalAmount();
   }
 
+  // Bank Fee — see the HTML comments above capAmount/Bank Fee form-groups.
+  // capAmount holds the slip's GROSS total (what left the company account,
+  // possibly OCR-scanned); the NET amount (gross minus the picked fee) is
+  // what actually gets saved as the transaction's amount/final_amount_idr,
+  // so a bank fee never inflates what Disbursement records as spent.
+  function getCapBankFee() {
+    if (capBankFeeSelected === 'custom') {
+      var v = parseNumberInput(capBankFeeCustom.value);
+      return isNaN(v) || v < 0 ? 0 : v;
+    }
+    var n = parseFloat(capBankFeeSelected);
+    return isNaN(n) ? 0 : n;
+  }
+  function setCapFeeSelected(fee) {
+    capBankFeeSelected = fee;
+    capBankFeeButtons.forEach(function (btn) {
+      var isActive = btn.getAttribute('data-fee') === fee;
+      btn.classList.toggle('btn-primary', isActive);
+      btn.classList.toggle('btn-secondary', !isActive);
+    });
+    capBankFeeCustomRow.style.display = (fee === 'custom') ? 'flex' : 'none';
+    recalcCapAmountPreview();
+  }
+  capBankFeeButtons.forEach(function (btn) {
+    btn.addEventListener('click', function () { setCapFeeSelected(btn.getAttribute('data-fee')); });
+  });
+  capBankFeeCustom.addEventListener('input', recalcCapAmountPreview);
+  // Reuses fmtPlainAmount(), defined further below alongside the Refund
+  // wizard's own Bank Fee preview (hoisted function declaration, same scope).
+  function recalcCapAmountPreview() {
+    var gross = parseNumberInput(capAmount.value);
+    if (isNaN(gross)) { capAmountPreview.textContent = ''; recalcFinalAmount(); return; }
+    var fee = getCapBankFee();
+    if (fee > 0.0001) {
+      capAmountPreview.textContent = fmtPlainAmount(gross) + ' (' + fmtPlainAmount(gross - fee) + ')';
+    } else {
+      capAmountPreview.textContent = fmtPlainAmount(gross);
+    }
+    recalcFinalAmount();
+  }
+
   function recalcFinalAmount() {
-    var amount = parseNumberInput(capAmount.value);
-    if (isNaN(amount)) return;
+    var gross = parseNumberInput(capAmount.value);
+    if (isNaN(gross)) { capFinalAmountPreview.textContent = ''; return; }
+    var fee = getCapBankFee();
+    var net = gross - fee;
     var isIdr = normalizeCurrency(capCurrency.value) === 'IDR';
+    // netIdr/grossIdr stay undefined if we're waiting on Exchange Rate below
+    // (non-IDR, not filled in yet) — the preview is cleared in that case too,
+    // same reasoning as recalcCapAmountPreview's own isNaN(gross) bail-out.
+    var netIdr, grossIdr;
     if (isIdr) {
-      capFinalAmountIdr.value = formatNumberInput(String(amount));
+      netIdr = net;
+      grossIdr = gross;
+      capFinalAmountIdr.value = formatNumberInput(String(net));
     } else {
       var rate = parseNumberInput(capExchangeRate.value);
       if (!isNaN(rate)) {
-        capFinalAmountIdr.value = formatNumberInput(String(amount * rate));
+        netIdr = net * rate;
+        grossIdr = gross * rate;
+        capFinalAmountIdr.value = formatNumberInput(String(netIdr));
       }
+    }
+    // Same "gross (net)" pattern as capAmountPreview — only shown when
+    // there's actually a bank fee (user request, 16 Nov 2026); otherwise
+    // the input's own value is the only number that matters here.
+    if (fee > 0.0001 && netIdr !== undefined && grossIdr !== undefined) {
+      capFinalAmountPreview.textContent = fmtPlainAmount(grossIdr) + ' (' + fmtPlainAmount(netIdr) + ')';
+    } else {
+      capFinalAmountPreview.textContent = '';
     }
   }
 
@@ -3941,7 +4196,7 @@ $currentYear     = date('Y');
     capCurrency.value = normalizeCurrency(capCurrency.value);
     toggleExchangeRateVisibility();
   });
-  capAmount.addEventListener('input', recalcFinalAmount);
+  capAmount.addEventListener('input', recalcCapAmountPreview);
   capExchangeRate.addEventListener('input', recalcFinalAmount);
 
   // --- Save ---
@@ -3959,9 +4214,16 @@ $currentYear     = date('Y');
       errBox.style.display = 'block';
       return;
     }
-    var amount = parseNumberInput(capAmount.value);
-    if (isNaN(amount) || amount <= 0) {
+    var grossAmount = parseNumberInput(capAmount.value);
+    if (isNaN(grossAmount) || grossAmount <= 0) {
       errBox.textContent = 'Transaction Amount is not valid.';
+      errBox.style.display = 'block';
+      return;
+    }
+    var bankFee = getCapBankFee();
+    var amount = grossAmount - bankFee;
+    if (amount <= 0) {
+      errBox.textContent = 'Bank Fee cannot be greater than or equal to the Transaction Amount.';
       errBox.style.display = 'block';
       return;
     }
@@ -3986,7 +4248,11 @@ $currentYear     = date('Y');
     payload.append('destination_account_name', document.getElementById('capDestAccountName').value);
     payload.append('notes', document.getElementById('capNotes').value);
     payload.append('currency', normalizeCurrency(capCurrency.value) || 'IDR');
+    // `amount` is NET (gross minus bank fee) — the fee itself is sent
+    // separately and stored in its own table (disbursement_bank_fees), same
+    // pattern as refund_bank_fees; see PROJECT_NOTES.md (bank fee feature).
     payload.append('amount', String(amount));
+    payload.append('bank_fee', String(bankFee));
     var rate = parseNumberInput(capExchangeRate.value);
     payload.append('exchange_rate', isNaN(rate) ? '' : String(rate));
     payload.append('final_amount_idr', String(finalAmount));

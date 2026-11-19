@@ -84,6 +84,18 @@ function get_str(string $key): string
     return isset($_GET[$key]) ? trim((string)$_GET[$key]) : '';
 }
 
+// `activities` has no activity_code column (confirmed via DESCRIBE, 16 Nov
+// 2026) — the code is derived from relative_path, e.g.
+// "input/2026/finance/001/" -> "001". Same regex as
+// ajax/list_activity_codes.php; keep the two in sync if that file changes.
+function activity_code_from_path(string $relativePath): string
+{
+    if (preg_match('#^input/\d{4}/([^/]+)/(\d+)/$#', $relativePath, $m)) {
+        return $m[2];
+    }
+    return '-';
+}
+
 $dateFrom = get_str('date_from');
 $dateTo   = get_str('date_to');
 $hasFrom  = (bool)DateTime::createFromFormat('Y-m-d', $dateFrom);
@@ -157,12 +169,74 @@ $types = '';
 if ($hasFrom) { $whereDate .= ' AND transaction_date >= ?'; $params[] = $dateFrom; $types .= 's'; }
 if ($hasTo)   { $whereDate .= ' AND transaction_date <= ?'; $params[] = $dateTo;   $types .= 's'; }
 
+// ---------- Disbursement bank fees, by transaction_id ----------
+// disbursement_bank_fees (migration_disbursement_bank_fees.sql, 16 Nov 2026
+// — guarded, may not exist yet). Same reasoning as $bankFeesByRefund further
+// below: create_disbursement.php already splits the scanned slip's gross
+// total into NET (transactions.amount/final_amount_idr) + this fee at save
+// time, and the fee is REAL cash that left the SAME source account as the
+// disbursement itself — so it becomes its own ledger outflow row (not just
+// a label), built here (before the disbursement loop, unlike
+// $bankFeesByRefund which is built later — this file's own disbursement
+// loop needs it immediately below) and looked up by transaction id while
+// looping. Only date-filtered (not by activity_id): the activity filter
+// already narrows which transaction ids appear in the loop below, so a
+// fee row is only ever used when its transaction is already in the result.
+$bankFeesByDisbursement = [];
+$tableCheckDisb = $lisani_conn->query(
+    "SELECT COUNT(*) c FROM information_schema.tables
+     WHERE table_schema = DATABASE() AND table_name = 'disbursement_bank_fees'"
+);
+$hasDisbursementBankFees = $tableCheckDisb && (int)($tableCheckDisb->fetch_assoc()['c'] ?? 0) > 0;
+// fee_currency/fee_exchange_rate (migration_disbursement_bank_fee_currency.sql,
+// 16 Nov 2026 — guarded separately, may not be run yet even once the table
+// itself exists). When absent, every fee is treated as already-IDR (the
+// only thing the table could hold before this migration), same as today.
+$hasDisbursementBankFeeCurrency = false;
+if ($hasDisbursementBankFees) {
+    $colCheck = $lisani_conn->query(
+        "SELECT COUNT(*) c FROM information_schema.columns
+         WHERE table_schema = DATABASE() AND table_name = 'disbursement_bank_fees'
+           AND column_name = 'fee_currency'"
+    );
+    $hasDisbursementBankFeeCurrency = $colCheck && (int)($colCheck->fetch_assoc()['c'] ?? 0) > 0;
+}
+if ($hasDisbursementBankFees) {
+    $feeCols = $hasDisbursementBankFeeCurrency ? 'bf.fee_amount, bf.fee_currency, bf.fee_exchange_rate' : 'bf.fee_amount';
+    $sql = "SELECT bf.transaction_id, $feeCols
+            FROM disbursement_bank_fees bf
+            JOIN transactions t ON t.id = bf.transaction_id
+            WHERE t.category = 'disbursement'" . ($hasFrom ? ' AND t.transaction_date >= ?' : '') . ($hasTo ? ' AND t.transaction_date <= ?' : '');
+    $stmt = $lisani_conn->prepare($sql);
+    if ($params) { $stmt->bind_param($types, ...$params); }
+    $stmt->execute();
+    $res = $stmt->get_result();
+    while ($row = $res->fetch_assoc()) {
+        $feeAmount = (float) $row['fee_amount'];
+        // The fee isn't always IDR (same Currency/Exchange Rate the user
+        // picked for the Disbursement's own Transaction Amount — user
+        // request, 16 Nov 2026) — convert to IDR here so every downstream
+        // use (accountsOut, monthly totals, the ledger row below) is
+        // already in IDR, same as every other amount in this file.
+        if ($hasDisbursementBankFeeCurrency
+            && $row['fee_currency'] !== null
+            && $row['fee_currency'] !== 'IDR'
+            && $row['fee_exchange_rate'] !== null) {
+            $feeAmount *= (float) $row['fee_exchange_rate'];
+        }
+        $bankFeesByDisbursement[(int) $row['transaction_id']] = $feeAmount;
+    }
+    $stmt->close();
+}
+
 $sql = "SELECT t.id, t.transaction_date, t.source_bank, t.source_account_number,
-               t.final_amount_idr, t.currency, t.amount, t.notes,
-               d.transaction_purpose, d.cashflow_type, dc.category_name
+               t.final_amount_idr, t.currency, t.amount, t.exchange_rate, t.notes,
+               d.transaction_purpose, d.cashflow_type, dc.category_name,
+               a.relative_path, a.activity_name
         FROM transactions t
         JOIN transaction_disbursements d ON d.transaction_id = t.id
         LEFT JOIN disbursement_categories dc ON dc.id = d.category_id
+        JOIN activities a ON a.id = d.activity_id
         WHERE t.category = 'disbursement' AND $whereDate" .
         ($hasActivity ? " AND d.activity_id = ?" : "") . "
         ORDER BY t.transaction_date ASC, t.id ASC";
@@ -174,6 +248,10 @@ if ($outflowParams) { $stmt->bind_param($outflowTypes, ...$outflowParams); }
 $stmt->execute();
 $res = $stmt->get_result();
 while ($row = $res->fetch_assoc()) {
+    // "001 — Nama Activity", same "code — name" shape as the Activity Code
+    // dropdown in transaction_content.php (user request, 16 Nov 2026 —
+    // the bare code alone wasn't enough).
+    $activityCode = activity_code_from_path((string) $row['relative_path']) . ' — ' . $row['activity_name'];
     $amt = (float)$row['final_amount_idr'];
     $accId = resolve_account_id($accountsByKey, (string)$row['source_bank'], (string)$row['source_account_number']);
     if ($accId !== null) {
@@ -190,14 +268,86 @@ while ($row = $res->fetch_assoc()) {
         'bank'       => $row['source_bank'],
         'account_no' => $row['source_account_number'],
         'amount'     => $amt,
+        // dashboard_content.php's shownAmount reads display_amount INSTEAD
+        // of amount whenever ledger_note is truthy (same switch the
+        // Credit Balance / Bank Fee rows rely on) — now that this row's
+        // ledger_note is always set (the Activity Code, see below), it must
+        // carry its own display_amount too, or the Amount (IDR) column
+        // shows 0 (16 Nov 2026 regression, caught by user testing).
+        'display_amount' => $amt,
         'original'   => $row['currency'] !== 'IDR' ? ($row['currency'] . ' ' . number_format((float)$row['amount'], 2)) : null,
+        // Lets dashboard_content.php make the Amount cell clickable to show
+        // the rate/date behind the conversion (user request, 16 Nov 2026) —
+        // only set when there WAS one, same condition as 'original' above.
+        'exchange_rate' => $row['currency'] !== 'IDR' ? (float) $row['exchange_rate'] : null,
         'label'      => $row['transaction_purpose'],
         'category'   => $row['category_name'], // disbursement category (null for inflow/refund rows)
+        // The Ledger table's "Notes" column is driven by `ledger_note`, NOT
+        // `notes` (dashboard_content.php's notesCell — `notes` only ever
+        // shows as a secondary line under Description). Set ledger_note to
+        // the Activity Code here (user request, 16 Nov 2026) — same thing
+        // shown on the bank-fee row right below, so both halves of one slip
+        // read the same in that column. `notes` keeps the free-text
+        // transactions.notes field, unrelated to this.
         'notes'      => $row['notes'],
-        'ledger_note' => null,
+        'ledger_note' => $activityCode,
         'group_id'   => null,
+        // Plain int here (disbursement row itself is unchanged by the bank
+        // fee feature) — the fee row below gets a suffixed ref_id so IT
+        // sorts directly after THIS row, same trick as refund/refund_bank_fee.
         'ref_id'     => (int)$row['id'],
     ];
+
+    // ---------- Its bank fee (if any), directly below ----------
+    // Same account, same date as the disbursement row above (the fee was
+    // part of the SAME bank transfer out of the SAME source account) —
+    // pushed right after it, in this same loop iteration, so the two
+    // always sit adjacent regardless of what else is in the ledger that day.
+    $disbFee = $bankFeesByDisbursement[(int) $row['id']] ?? 0.0;
+    if ($disbFee > 0.0001) {
+        if ($accId !== null) {
+            $accountsOut[$accId]['outflow'] += $disbFee;
+        } else {
+            $unassigned['outflow'] += $disbFee;
+        }
+        bump_monthly($monthly, $row['transaction_date'], 'outflow', $disbFee);
+        $ledger[] = [
+            'date'       => $row['transaction_date'],
+            'type'       => 'outflow',
+            'source'     => 'disbursement_bank_fee',
+            'account_id' => $accId,
+            'bank'       => $row['source_bank'],
+            'account_no' => $row['source_account_number'],
+            'amount'     => $disbFee,
+            // See the comment on the refund_bank_fee row below for why this
+            // is needed: the frontend's Amount column reads display_amount
+            // instead of amount whenever ledger_note is set.
+            'display_amount' => $disbFee,
+            'original'   => null,
+            'label'      => 'Bank Fee — ' . $row['transaction_purpose'],
+            'category'   => $row['category_name'],
+            // Same fix as the disbursement row above: the Ledger table's
+            // "Notes" column reads `ledger_note`, so THAT'S what needs to be
+            // the Activity Code, not the literal word "Bank Fee" (user
+            // request, 16 Nov 2026) — the label column already says
+            // "Bank Fee — ..." so this column doesn't need to repeat it.
+            // Still truthy, so shownAmount's `row.ledger_note ? display_amount
+            // : amount` check above still picks display_amount correctly.
+            'notes'      => null,
+            'ledger_note' => $activityCode,
+            // Points UP at its disbursement row — frontend
+            // (dashboard_content.php, renamed from report_content.php) can
+            // use this to scroll to + flash that row when this row is
+            // clicked, same pattern as refund_ref_id for refund_bank_fee
+            // (not yet wired up on the frontend — ask if you want that too).
+            'disbursement_ref_id' => (int) $row['id'],
+            'group_id'   => null,
+            // Same date as its disbursement row, ref_id suffixed so it
+            // string-sorts (usort below casts to string) directly after the
+            // disbursement row's own plain-int ref_id.
+            'ref_id'     => (int) $row['id'] . '_fee',
+        ];
+    }
 }
 $stmt->close();
 
@@ -527,7 +677,7 @@ if ($hasCreditSources) {
                         'amount'                 => $slice,
                         // Snapshot not available per-slice here (unlike
                         // applications/refunds, which record it at write
-                        // time) — report_content.php's detail panel only
+                        // time) — dashboard_content.php (renamed from report_content.php)'s detail panel only
                         // needs this for a running total, and the credit
                         // source row's own 'remaining_amount' (always
                         // shown first in that panel) is already the live,
@@ -856,7 +1006,7 @@ $stmt->close();
 // $unresolvedCreditSources was built earlier (before the invoice_payments
 // loop) — rendered here, in the same position this fallback has always
 // been, as the loop's own ledger-row shape (usage/remaining_amount/
-// credit_source_id) so report_content.php's existing click-through keeps
+// credit_source_id) so dashboard_content.php (renamed from report_content.php)'s existing click-through keeps
 // working on these for free.
 if ($unresolvedCreditSources) {
     foreach ($unresolvedCreditSources as $row) {

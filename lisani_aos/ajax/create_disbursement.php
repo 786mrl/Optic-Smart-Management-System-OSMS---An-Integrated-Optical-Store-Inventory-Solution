@@ -4,6 +4,23 @@
 // + row in `transaction_disbursements` (incl. category_id -> disbursement_categories).
 // Called from transaction_content.php (btnCapSave) with multipart FormData.
 //
+// Bank Fee (16 Nov 2026, user request, same pattern as Refund's
+// refund_bank_fees — see PROJECT_NOTES.md): `amount` is always NET (the
+// slip's gross total minus any bank fee picked in the UI — 0 / 2,500 /
+// 6,500 / custom). The fee itself arrives separately as POST field
+// `bank_fee` (optional, default 0) and, when > 0, is stored in its own
+// table `disbursement_bank_fees` keyed by transaction_id — never as a
+// column on `transactions`, so Report can isolate/sum it independently
+// later without touching the amount this file has always validated/saved.
+//
+// Bank Fee currency (16 Nov 2026, user request): a fee isn't always IDR, so
+// `disbursement_bank_fees` now also carries `fee_currency`/`fee_exchange_rate`
+// (migration_disbursement_bank_fee_currency.sql — run it first). These are
+// NOT a separate UI selection: the fee always follows the SAME
+// Currency/Exchange Rate the user picked for the Transaction Amount, so this
+// file just mirrors the already-validated $currency/$exchangeRate below —
+// no new POST fields needed for this.
+//
 // Had a "Refund & Settlement" feature (activity code "00-A") from 31 Okt
 // 2026 — a disbursement could settle pending customer_refund_queue rows via
 // POST field refund_queue_ids. Removed 4 Nov 2026 (user decision, see
@@ -162,6 +179,19 @@ if ($finalAmount === null || (float)$finalAmount <= 0) {
     aos_fail('Final Amount (IDR) is not valid.');
 }
 
+// Bank Fee — optional, defaults to 0 (same validation as the other decimal
+// fields). `amount`/`final_amount_idr` above are already NET (the client
+// sends gross minus fee); this is only the fee itself, stored separately.
+$bankFeeRaw = post_str('bank_fee');
+$bankFee = 0.0;
+if ($bankFeeRaw !== '') {
+    $bankFeeClean = clean_decimal($bankFeeRaw);
+    if ($bankFeeClean === null || (float)$bankFeeClean < 0) {
+        aos_fail('Bank Fee is not valid.');
+    }
+    $bankFee = (float)$bankFeeClean;
+}
+
 // ---------- Activity must exist (also gives us the storage folder) ----------
 $stmt = $lisani_conn->prepare('SELECT id, relative_path FROM activities WHERE id = ?');
 $stmt->bind_param('i', $activityId);
@@ -283,6 +313,19 @@ try {
     $ins2->execute();
     $ins2->close();
 
+    if ($bankFee > 0) {
+        // Same Currency/Exchange Rate as the Transaction Amount above —
+        // $currency/$exchangeRate are already validated (exchange rate is
+        // NULL whenever currency is IDR, same convention as `transactions`).
+        $ins3 = $lisani_conn->prepare(
+            'INSERT INTO disbursement_bank_fees (transaction_id, fee_amount, fee_currency, fee_exchange_rate)
+             VALUES (?, ?, ?, ?)'
+        );
+        $ins3->bind_param('idsd', $transactionId, $bankFee, $currency, $exchangeRate);
+        $ins3->execute();
+        $ins3->close();
+    }
+
     $lisani_conn->commit();
 } catch (Throwable $e) {
     $lisani_conn->rollback();
@@ -296,4 +339,5 @@ aos_json([
     'message'       => 'Disbursement saved.',
     'id'            => $transactionId,
     'document_path' => $documentPath,
+    'bank_fee'      => $bankFee,
 ]);

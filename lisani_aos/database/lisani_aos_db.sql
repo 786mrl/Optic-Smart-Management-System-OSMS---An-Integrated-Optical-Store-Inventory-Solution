@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Oct 27, 2026 at 11:53 AM
+-- Generation Time: Nov 16, 2026 at 12:37 PM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -36,6 +36,13 @@ CREATE TABLE `activities` (
   `created_at` datetime DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+--
+-- Dumping data for table `activities`
+--
+
+INSERT INTO `activities` (`id`, `activity_name`, `cashflow`, `relative_path`, `created_by`, `created_at`) VALUES
+(1, 'SAYYER', 'in-out', 'input/2026/dates/001/', 1, '2026-11-16 17:09:01');
+
 -- --------------------------------------------------------
 
 --
@@ -67,6 +74,20 @@ CREATE TABLE `booking_items` (
   `qty_booked` decimal(12,2) NOT NULL,
   `qty_released` decimal(12,2) NOT NULL DEFAULT 0.00,
   `price` decimal(15,2) NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `booking_item_releases`
+--
+
+CREATE TABLE `booking_item_releases` (
+  `id` int(11) NOT NULL,
+  `booking_item_id` int(11) NOT NULL,
+  `movement_id` int(11) NOT NULL,
+  `qty` decimal(10,2) NOT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
@@ -113,6 +134,58 @@ CREATE TABLE `customers` (
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `customer_credit_applications`
+--
+
+CREATE TABLE `customer_credit_applications` (
+  `id` int(10) UNSIGNED NOT NULL,
+  `invoice_payment_id` int(10) UNSIGNED NOT NULL,
+  `credit_source_id` int(10) UNSIGNED NOT NULL,
+  `amount_used` decimal(18,2) NOT NULL,
+  `remaining_after_amount` decimal(18,2) NOT NULL DEFAULT 0.00,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `customer_credit_refunds`
+--
+
+CREATE TABLE `customer_credit_refunds` (
+  `id` int(10) UNSIGNED NOT NULL,
+  `invoice_refund_id` int(10) UNSIGNED NOT NULL,
+  `credit_source_id` int(10) UNSIGNED NOT NULL,
+  `amount_refunded` decimal(18,2) NOT NULL,
+  `remaining_after_amount` decimal(18,2) NOT NULL DEFAULT 0.00,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `customer_credit_sources`
+--
+
+CREATE TABLE `customer_credit_sources` (
+  `id` int(10) UNSIGNED NOT NULL,
+  `customer_id` int(10) UNSIGNED NOT NULL,
+  `source_bank` varchar(100) DEFAULT NULL,
+  `source_account_number` varchar(100) DEFAULT NULL,
+  `source_account_name` varchar(150) DEFAULT NULL,
+  `amount` decimal(18,2) NOT NULL,
+  `remaining_amount` decimal(18,2) NOT NULL,
+  `origin_type` varchar(30) NOT NULL DEFAULT 'return',
+  `origin_ref_invoice_id` int(10) UNSIGNED DEFAULT NULL,
+  `origin_invoice_payment_id` int(10) UNSIGNED DEFAULT NULL,
+  `created_date` date NOT NULL,
+  `created_by` int(10) UNSIGNED NOT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `customer_item_prices`
 --
 
@@ -144,6 +217,21 @@ CREATE TABLE `defective_stock_events` (
   `created_by` int(10) UNSIGNED DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `disbursement_bank_fees`
+--
+
+CREATE TABLE `disbursement_bank_fees` (
+  `id` int(10) UNSIGNED NOT NULL,
+  `transaction_id` int(10) UNSIGNED NOT NULL,
+  `fee_amount` decimal(15,2) NOT NULL,
+  `fee_currency` varchar(10) NOT NULL DEFAULT 'IDR',
+  `fee_exchange_rate` decimal(18,6) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
 
@@ -189,17 +277,6 @@ CREATE TABLE `edited_documents` (
   `uploaded_by` int(11) NOT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
---
--- Dumping data for table `edited_documents`
---
-
-INSERT INTO `edited_documents` (`id`, `document_name`, `document_date`, `activity_title`, `source_filename`, `signature_ids`, `letterhead_ids`, `page_count`, `stored_filename`, `file_path`, `file_ext`, `file_size`, `uploaded_by`, `created_at`) VALUES
-(1, 'spks - try', '2026-10-21', 'try', 'Surat Perjanjian Kerja Sama.pdf', '1', NULL, 2, 'spks_-_try.pdf', 'company_activity/2026/10/try/edited_documents/spks_-_try.pdf', 'pdf', 162332, 1, '2026-10-21 10:24:34'),
-(2, 'try 3', '2026-10-27', 'try', 'Surat Perjanjian Kerja Sama.pdf', NULL, NULL, 2, 'try_3.pdf', 'company_activity/2026/10/try/edited_documents/try_3.pdf', 'pdf', 116907, 1, '2026-10-27 02:17:14'),
-(3, 'try 4', '2026-10-27', 'try', 'Surat Perjanjian Kerja Sama.pdf', NULL, '2', 2, 'try_4.pdf', 'company_activity/2026/10/try/edited_documents/try_4.pdf', 'pdf', 274309, 1, '2026-10-27 03:44:24'),
-(4, 'try 5', '2026-10-27', 'try', 'Surat Perjanjian Kerja Sama.pdf', NULL, '2', 2, 'try_5.pdf', 'company_activity/2026/10/try/edited_documents/try_5.pdf', 'pdf', 333000, 1, '2026-10-27 04:07:01'),
-(5, 'try 6', '2026-10-27', 'try', 'Surat Perjanjian Kerja Sama.pdf', NULL, '2', 2, 'try_6.pdf', 'company_activity/2026/10/try/edited_documents/try_6.pdf', 'pdf', 277018, 1, '2026-10-27 04:08:54');
 
 -- --------------------------------------------------------
 
@@ -312,7 +389,7 @@ CREATE TABLE `invoices` (
   `sequence_number` smallint(5) UNSIGNED NOT NULL,
   `period_month` tinyint(3) UNSIGNED NOT NULL,
   `period_year` smallint(5) UNSIGNED NOT NULL,
-  `status` enum('open','paid') NOT NULL DEFAULT 'open',
+  `status` enum('open','paid','cancelled') NOT NULL DEFAULT 'open',
   `total_amount` decimal(18,2) NOT NULL DEFAULT 0.00,
   `paid_amount` decimal(18,2) NOT NULL DEFAULT 0.00,
   `paid_at` datetime DEFAULT NULL,
@@ -394,13 +471,6 @@ CREATE TABLE `letterhead_library` (
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
---
--- Dumping data for table `letterhead_library`
---
-
-INSERT INTO `letterhead_library` (`id`, `letterhead_name`, `company_name`, `origin`, `is_main`, `header_original_filename`, `header_stored_filename`, `header_file_path`, `header_file_ext`, `header_file_size`, `has_footer`, `footer_original_filename`, `footer_stored_filename`, `footer_file_path`, `footer_file_ext`, `footer_file_size`, `uploaded_by`, `created_at`, `updated_at`) VALUES
-(2, 'LISANI LETTERHEAD', 'PT. LISANI ALAF JAYA', 'MEDAN', 1, 'Picture1.png', 'header_lisani_letterhead.png', 'letterhead/pt_lisani_alaf_jaya/medan/header_lisani_letterhead.png', 'png', 48733, 1, 'Picture2.png', 'footer_lisani_letterhead.png', 'letterhead/pt_lisani_alaf_jaya/medan/footer_lisani_letterhead.png', 'png', 29503, 1, '2026-10-25 17:28:55', '2026-10-25 17:28:55');
-
 -- --------------------------------------------------------
 
 --
@@ -474,6 +544,19 @@ CREATE TABLE `logistic_movements` (
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `refund_bank_fees`
+--
+
+CREATE TABLE `refund_bank_fees` (
+  `id` int(11) NOT NULL,
+  `invoice_refund_id` int(11) NOT NULL,
+  `fee_amount` decimal(15,2) NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `signature_library`
 --
 
@@ -493,14 +576,6 @@ CREATE TABLE `signature_library` (
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
---
--- Dumping data for table `signature_library`
---
-
-INSERT INTO `signature_library` (`id`, `signature_name`, `signature_date`, `company_name`, `origin`, `is_main`, `original_filename`, `stored_filename`, `file_path`, `file_ext`, `file_size`, `uploaded_by`, `created_at`, `updated_at`) VALUES
-(1, 'lisani with stamp_2026', '2026-10-21', 'PT. LISANI ALAF JAYA', 'medan', 1, 'signature.png', 'lisani_with_stamp_2026.png', 'signature/pt_lisani_alaf_jaya/medan/lisani_with_stamp_2026.png', 'png', 63009, 1, '2026-10-21 17:21:41', '2026-10-21 17:21:41'),
-(2, 'lisani with duty stamp_2026', '2026-10-21', 'PT. LISANI ALAF JAYA', 'medan', 1, 'signature.png', 'lisani_with_duty_stamp_2026.png', 'signature/pt_lisani_alaf_jaya/medan/lisani_with_duty_stamp_2026.png', 'png', 121189, 1, '2026-10-21 17:22:51', '2026-10-21 17:22:51');
 
 -- --------------------------------------------------------
 
@@ -569,7 +644,7 @@ CREATE TABLE `users` (
 --
 
 INSERT INTO `users` (`user_id`, `username`, `password_hash`, `role`, `is_approved`, `created_at`, `last_login`, `session_token`, `session_expires`) VALUES
-(1, 'Rais786', '$2y$10$QciWVGPK9aGHjy05rBoXgOWfCAesfocowc0vt4QCMHVeVzsVuGDS6', 'admin', 1, '2026-09-10 21:34:57', '2026-10-27 11:26:34', '543f1c3288a9fc08c8836de4715bb517b4d03ee23f5885a7ad7dff3efc0d63d3', '2026-10-27 19:26:34');
+(1, 'Rais786', '$2y$10$QciWVGPK9aGHjy05rBoXgOWfCAesfocowc0vt4QCMHVeVzsVuGDS6', 'admin', 1, '2026-09-10 21:34:57', '2026-11-16 10:27:13', '1a81cd7f0feddcadc179ebc7ff51c687a3f7af499d5b8b78af9983fef2ce5506', '2026-11-16 18:27:13');
 
 --
 -- Indexes for dumped tables
@@ -601,6 +676,14 @@ ALTER TABLE `booking_items`
   ADD KEY `idx_booking_items_logistic` (`logistic_id`);
 
 --
+-- Indexes for table `booking_item_releases`
+--
+ALTER TABLE `booking_item_releases`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_booking_item_releases_item` (`booking_item_id`),
+  ADD KEY `idx_booking_item_releases_movement` (`movement_id`);
+
+--
 -- Indexes for table `company_documents`
 --
 ALTER TABLE `company_documents`
@@ -613,6 +696,32 @@ ALTER TABLE `company_documents`
 ALTER TABLE `customers`
   ADD PRIMARY KEY (`id`),
   ADD UNIQUE KEY `uniq_year_customer` (`year`,`customer_name`);
+
+--
+-- Indexes for table `customer_credit_applications`
+--
+ALTER TABLE `customer_credit_applications`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_cca_payment` (`invoice_payment_id`),
+  ADD KEY `idx_cca_source` (`credit_source_id`);
+
+--
+-- Indexes for table `customer_credit_refunds`
+--
+ALTER TABLE `customer_credit_refunds`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_invoice_refund_id` (`invoice_refund_id`),
+  ADD KEY `idx_credit_source_id` (`credit_source_id`);
+
+--
+-- Indexes for table `customer_credit_sources`
+--
+ALTER TABLE `customer_credit_sources`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_ccs_customer` (`customer_id`),
+  ADD KEY `idx_ccs_customer_remaining` (`customer_id`,`remaining_amount`),
+  ADD KEY `idx_ccs_origin_invoice` (`origin_ref_invoice_id`),
+  ADD KEY `idx_ccs_origin_payment` (`origin_invoice_payment_id`);
 
 --
 -- Indexes for table `customer_item_prices`
@@ -628,6 +737,13 @@ ALTER TABLE `customer_item_prices`
 ALTER TABLE `defective_stock_events`
   ADD PRIMARY KEY (`id`),
   ADD KEY `idx_defective_stock_events_logistic` (`logistic_id`);
+
+--
+-- Indexes for table `disbursement_bank_fees`
+--
+ALTER TABLE `disbursement_bank_fees`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_disbursement_bank_fees_transaction_id` (`transaction_id`);
 
 --
 -- Indexes for table `disbursement_categories`
@@ -747,6 +863,13 @@ ALTER TABLE `logistic_movements`
   ADD KEY `idx_lm_source_movement` (`source_movement_id`);
 
 --
+-- Indexes for table `refund_bank_fees`
+--
+ALTER TABLE `refund_bank_fees`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_refund_bank_fees_refund` (`invoice_refund_id`);
+
+--
 -- Indexes for table `signature_library`
 --
 ALTER TABLE `signature_library`
@@ -787,7 +910,7 @@ ALTER TABLE `users`
 -- AUTO_INCREMENT for table `activities`
 --
 ALTER TABLE `activities`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `bookings`
@@ -802,6 +925,12 @@ ALTER TABLE `booking_items`
   MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
+-- AUTO_INCREMENT for table `booking_item_releases`
+--
+ALTER TABLE `booking_item_releases`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
 -- AUTO_INCREMENT for table `company_documents`
 --
 ALTER TABLE `company_documents`
@@ -811,6 +940,24 @@ ALTER TABLE `company_documents`
 -- AUTO_INCREMENT for table `customers`
 --
 ALTER TABLE `customers`
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `customer_credit_applications`
+--
+ALTER TABLE `customer_credit_applications`
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `customer_credit_refunds`
+--
+ALTER TABLE `customer_credit_refunds`
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `customer_credit_sources`
+--
+ALTER TABLE `customer_credit_sources`
   MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
@@ -826,6 +973,12 @@ ALTER TABLE `defective_stock_events`
   MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
+-- AUTO_INCREMENT for table `disbursement_bank_fees`
+--
+ALTER TABLE `disbursement_bank_fees`
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
 -- AUTO_INCREMENT for table `disbursement_categories`
 --
 ALTER TABLE `disbursement_categories`
@@ -835,7 +988,7 @@ ALTER TABLE `disbursement_categories`
 -- AUTO_INCREMENT for table `edited_documents`
 --
 ALTER TABLE `edited_documents`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT for table `investors`
@@ -889,7 +1042,7 @@ ALTER TABLE `invoice_refunds`
 -- AUTO_INCREMENT for table `letterhead_library`
 --
 ALTER TABLE `letterhead_library`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT for table `logistics`
@@ -910,10 +1063,16 @@ ALTER TABLE `logistic_movements`
   MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
+-- AUTO_INCREMENT for table `refund_bank_fees`
+--
+ALTER TABLE `refund_bank_fees`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
 -- AUTO_INCREMENT for table `signature_library`
 --
 ALTER TABLE `signature_library`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT for table `transactions`

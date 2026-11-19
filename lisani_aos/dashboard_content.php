@@ -99,7 +99,7 @@
      ledger rows per application (user, 8 Nov 2026). -->
 <div id="rptCreditDetailOverlay" class="hidden">
   <div id="rptCreditDetailPanel">
-    <h3>Customer Credit Balance</h3>
+    <h3 id="rptCreditDetailTitle">Customer Credit Balance</h3>
     <div id="rptCreditDetailBody"></div>
     <button type="button" class="btn btn-secondary rpt-cd-close" id="rptCreditDetailClose">Close</button>
   </div>
@@ -267,6 +267,9 @@
   // Looked up by refund ref_id when a "Bank Fee" ledger row is clicked, to
   // scroll to + flash its refund row — see renderLedger() below.
   var ledgerRefundRows = {};
+  // Looked up by ref_id when a converted-currency Amount cell is clicked
+  // (16 Nov 2026) — see renderLedger() and openFxDetail() below.
+  var ledgerFxRows = {};
 
   // Accordion: opening one of the two summary cards (Totals / Bank Accounts)
   // closes the other, instead of both staying open independently.
@@ -283,10 +286,14 @@
   // 2 Okt 2026 — see "Each *_content.php is its own IIFE..." comment there),
   // so any section left stale after a show/hide can refresh itself live.
   document.addEventListener('aos:section-shown', function (e) {
-    if (e.detail && e.detail.target === 'report') {
+    if (e.detail && e.detail.target === 'dashboard') {
       loadFinanceReport();
     }
   });
+
+  // Dashboard is the default section shown on page load (no sidebar click,
+  // so no 'aos:section-shown' switch event fires for it) — load immediately.
+  loadFinanceReport();
 
   // Activity Code filter dropdown — loaded once, reuses the same endpoint as
   // Transactions > Activity Code > Preview (list_activity_codes.php), so we
@@ -494,12 +501,20 @@
     // can show which refund's date it's pointing at without a second lookup
     // pass of its own (user, 8 Nov 2026).
     ledgerRefundRows = {};
+    // Rows whose Amount was converted from a foreign currency (row.original
+    // + row.exchange_rate both set — currently only Disbursement) open a
+    // detail panel on click showing the rate and date behind it (user
+    // request, 16 Nov 2026), reusing the same overlay as Credit Balance.
+    ledgerFxRows = {};
     ledger.forEach(function (r) {
       if (r.source === 'invoice_payment_credit' && r.credit_source_id != null) {
         ledgerCreditRows[r.credit_source_id] = r;
       }
       if (r.source === 'refund') {
         ledgerRefundRows[r.ref_id] = r;
+      }
+      if (r.original && r.exchange_rate) {
+        ledgerFxRows[r.ref_id] = r;
       }
     });
     var running = 0;
@@ -512,7 +527,13 @@
         : '<span class="badge badge-danger">OUTFLOW</span>';
       var isIn = row.type === 'inflow';
       var shownAmount = row.ledger_note ? (row.display_amount || 0) : row.amount;
-      var amtCell = '<span class="' + (isIn ? 'rpt-amt-in' : 'rpt-amt-out') + '">' +
+      // Converted-currency rows (row.original + row.exchange_rate both set)
+      // get a clickable Amount cell opening the rate/date behind the
+      // conversion (user request, 16 Nov 2026) — see openFxDetail() below.
+      var isFx = !!(row.original && row.exchange_rate);
+      var amtCell = '<span class="' + (isIn ? 'rpt-amt-in' : 'rpt-amt-out') +
+        (isFx ? ' rpt-ledger-clickable' : '') + '"' +
+        (isFx ? ' data-fx-ref-id="' + row.ref_id + '"' : '') + '>' +
         fmtIDRParen(isIn ? shownAmount : -shownAmount) + '</span>';
       var balCell = '<span class="' + (running < 0 ? 'rpt-amt-out' : '') + '">' + fmtIDRParen(running) + '</span>';
       var notesCell = row.ledger_note ? '<span class="rpt-ledger-note">' + escapeHtml(row.ledger_note) + '</span>' : '\u2014';
@@ -609,6 +630,10 @@
   // delegated listener on the tbody, since rows are replaced wholesale on
   // every renderLedger() call.
   function openCreditDetail(row) {
+    // Overlay/panel/title are now shared with openFxDetail() below (16 Nov
+    // 2026) — set the title explicitly each time rather than leaving it as
+    // whatever the static HTML default happened to be.
+    document.getElementById('rptCreditDetailTitle').textContent = 'Customer Credit Balance';
     var body = document.getElementById('rptCreditDetailBody');
     var html = '<div class="rpt-cd-row rpt-cd-original"><div>Original amount</div><div>' + fmtIDR(row.amount) + '</div></div>';
     if (!row.usage || !row.usage.length) {
@@ -659,11 +684,32 @@
       scrollToAndFlashRefundRow(feeEl.getAttribute('data-link-refund-id'));
       return;
     }
+    var fxEl = e.target.closest('[data-fx-ref-id]');
+    if (fxEl) {
+      var fxRow = ledgerFxRows[fxEl.getAttribute('data-fx-ref-id')];
+      if (fxRow) openFxDetail(fxRow);
+      return;
+    }
     var el = e.target.closest('[data-credit-source-id]');
     if (!el) return;
     var row = ledgerCreditRows[el.getAttribute('data-credit-source-id')];
     if (row) openCreditDetail(row);
   });
+  // Detail panel for a converted-currency Amount cell (user request, 16 Nov
+  // 2026) — reuses the same overlay as openCreditDetail() above, just with
+  // different content and title.
+  function openFxDetail(row) {
+    document.getElementById('rptCreditDetailTitle').textContent = 'Exchange Rate';
+    var body = document.getElementById('rptCreditDetailBody');
+    var html =
+      '<div class="rpt-cd-row"><div>Original amount</div><div>' + escapeHtml(row.original) + '</div></div>' +
+      '<div class="rpt-cd-row"><div>Exchange Rate</div><div>' + fmtIDR(row.exchange_rate) + '</div></div>' +
+      '<div class="rpt-cd-row"><div>Date</div><div>' + escapeHtml(row.date) + '</div></div>' +
+      '<div class="rpt-cd-row rpt-cd-highlight"><div>Final (IDR)</div><div class="rpt-cd-amount">' +
+      fmtIDR(row.amount) + '</div></div>';
+    body.innerHTML = html;
+    document.getElementById('rptCreditDetailOverlay').classList.remove('hidden');
+  }
   // Scrolls the clicked Bank Fee row's refund row into view and flashes it
   // a couple of times (CSS animation, see .rpt-ledger-flash) so it's
   // unmistakable which row the fee belongs to (user, 8 Nov 2026).

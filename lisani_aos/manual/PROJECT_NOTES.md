@@ -1557,6 +1557,116 @@ tersebut.
   tetap pakai `remaining_amount` LIVE dari DB, bukan dihitung dari usage
   yang ditampilkan — jadi ini harusnya aman, tapi perlu dicek visual).
 
+**Dikerjakan (16 Nov 2026, belum dites) — Disbursement form dapat opsi "Bank
+Fee", pola sama persis seperti Refund (Transfer)'s Bank Fee (8 Nov 2026,
+lihat log di atas), bedanya Custom di sini JUGA punya tombol Scan (user
+request — fee kadang tercetak di slip juga).**
+- `transaction_content.php` (`viewDisbursementCapture`): form-group baru
+  "Bank Fee" di bawah Transaction Amount (4 tombol: `None (Rp 0)` default,
+  `Rp 2,500`, `Rp 6,500`, `Custom` + Scan). Preview read-only
+  `#capAmountPreview` di bawah Amount: polos kalau fee=0, `GROSS (NET)`
+  kalau fee>0. `amount`/`final_amount_idr` yang dikirim ke server SELALU
+  NET (gross dari slip dikurangi fee); fee dikirim terpisah sebagai
+  `bank_fee`. Validasi: fee tidak boleh ≥ gross.
+- `create_disbursement.php`: terima `bank_fee` (opsional, default 0).
+  Kalau `bank_fee > 0`, insert 1 baris ke tabel baru `disbursement_bank_fees`
+  (transaction_id, fee_amount) setelah insert `transaction_disbursements`,
+  masih dalam DB transaction yang sama.
+- **Migration baru** (`migration_disbursement_bank_fees.sql`, BELUM
+  dijalankan, perlu di-run manual di phpMyAdmin dulu): tabel
+  `disbursement_bank_fees` (id, transaction_id, fee_amount, created_at),
+  TANPA FK, index biasa di `transaction_id` — sama pola seperti
+  `refund_bank_fees`.
+- **Belum dikerjakan**: Report/Finance Report BELUM diubah untuk
+  menampilkan `disbursement_bank_fees` (sama seperti refund_bank_fees
+  sebelum "ikut masuk ke Report" dikerjakan 8 Nov 2026) — kalau user mau
+  pola yang sama (baris Bank Fee terpisah, clickable, scroll+flash ke baris
+  disbursement-nya), perlu request eksplisit dulu.
+- Perlu dites (URUTAN PENTING — migration dulu): (0) jalankan
+  `migration_disbursement_bank_fees.sql` di phpMyAdmin (cek dulu tipe
+  kolom `transactions.id` via DESCRIBE, sesuaikan kalau beda); (1) buka
+  Disbursement, scan/isi Transaction Amount mis. 6,002,500 → preview
+  tampil polos (fee masih None); (2) klik `Rp 2,500` → preview jadi
+  `6,002,500 (6,000,000)`, Final Amount (IDR) ikut update ke NET; (3) klik
+  `Custom`, scan atau isi manual, cek preview & Final Amount ikut berubah
+  live; (4) klik `None (Rp 0)` lagi → preview balik ke gross polos; (5)
+  Save → cek `transactions.amount`/`final_amount_idr` = NET, dan
+  `disbursement_bank_fees` punya 1 baris baru dengan `fee_amount` benar;
+  (6) coba isi fee ≥ amount → harus muncul error dan TIDAK terkirim; (7)
+  Disbursement TANPA pilih fee (default None) → tersimpan normal seperti
+  sebelum fitur ini, `disbursement_bank_fees` TIDAK dapat baris baru; (8)
+  ganti-ganti tombol fee beberapa kali → cuma 1 tombol aktif, Custom row
+  (input+Scan) hilang lagi kalau pindah ke opsi lain; (9) field Bank Fee
+  ikut muncul di Field Picker (tombol "Fields" di viewer) saat wizard
+  Disbursement aktif.
+
+**Dikerjakan (16 Nov 2026, belum dites) — Disbursement Bank Fee (dari fitur
+di atas) sekarang ikut masuk ke Report (Finance Report / Ledger), pola sama
+persis seperti refund_bank_fee (8 Nov 2026).**
+- `get_finance_report.php`: blok lookup baru `$bankFeesByDisbursement`
+  (guarded, cek tabel `disbursement_bank_fees` dulu — dibangun SEBELUM loop
+  "Outflow: disbursements", bukan sesudah seperti `$bankFeesByRefund`,
+  karena loop disbursement butuh lookup-nya langsung). Di loop itu, persis
+  setelah push baris disbursement, kalau ada fee → push 1 baris ledger baru
+  `source: 'disbursement_bank_fee'` (rekening SAMA, betul-betul menambah
+  `accountsOut[...]['outflow']`/`unassigned` + `bump_monthly()`). Field baru:
+  `disbursement_ref_id` (buat link balik, pola sama `refund_ref_id`) dan
+  `ledger_note: 'Bank Fee'`. Urutan baris terjamin lewat `ref_id` string
+  `"<id>_fee"` (trik yang sama seperti refund_bank_fee).
+- **Belum dikerjakan** (frontend `report_content.php` TIDAK disentuh sesi
+  ini — file itu tidak diupload): belum ada chip "↑ Disbursement — ..." atau
+  klik scroll+flash ke baris disbursement-nya seperti yang dipunya
+  refund_bank_fee. Kalau user mau itu juga, upload `report_content.php`
+  dulu, lalu minta eksplisit (pola: `ledgerRefundRows` →
+  `ledgerDisbursementRows`, `data-link-refund-id` →
+  `data-link-disbursement-id`, dst).
+- Perlu dites (sama urutan seperti refund_bank_fee 8 Nov 2026, ganti
+  "refund"→"disbursement"): (1) migration sudah di-run + minimal 1
+  disbursement dengan Bank Fee > 0; (2) Report → Ledger → persis di bawah
+  baris disbursement itu HARUS ada baris "Bank Fee — <purpose>"; (3) Total
+  Outflow & balance per-rekening bertambah sebesar fee; (4) disbursement
+  TANPA fee → tidak ada baris baru; (5) filter date range konsisten (fee
+  pakai `transactions.transaction_date` yang sama, jadi ikut ter-filter
+  bareng).
+
+**Dikerjakan (16 Nov 2026, belum dites) — Scan berulang pada field Amount
+sekarang bisa DIJUMLAHKAN ke nilai yang sudah ada, bukan cuma menimpa (user
+request: "scan dua kali untuk menyatakan itu dijumlahkan", contoh scan A =
+5,000 lalu scan lagi = 1,000 → jadi 6,000). Berlaku di SEMUA wizard:
+Disbursement (`capAmount`, `capBankFeeCustom`), Invoice Payment
+(`payCapAmount`), Refund (`refCapAmount`). TIDAK berlaku ke `capExchangeRate`
+(rate, bukan uang yang dijumlahkan) atau `refCapBankFeeCustom` (tidak
+scannable sejak awal, tetap begitu).**
+- Modal baru `capScanAddOverlay` (shared, 1 instance untuk ke-3 wizard, pola
+  sama seperti `capFieldPickerOverlay`/viewer) — 2 tombol: `Replace` /
+  `Add`. Cuma muncul kalau field YANG MAU DISCAN ULANG sudah berisi angka
+  valid; kalau masih kosong (atau isinya tidak kebaca sebagai angka), scan
+  langsung mengisi seperti biasa (tidak ada perubahan perilaku untuk kasus
+  field kosong).
+- `applyOcrResult()`: 4 field amount di atas sekarang lewat helper baru
+  `handleAmountOcrScan(fieldId, rawText, afterSet)` — parse OCR, cek nilai
+  lama di field, kalau ada & valid → tampilkan modal (teks: nilai lama,
+  hasil scan baru, hasil penjumlahan) dan TUNGGU user pilih
+  `Replace`/`Add` sebelum nilai final ditulis ke field + `afterSet()`
+  dipanggil (recalc preview/notes masing-masing wizard: `recalcCapAmountPreview`
+  untuk capAmount & capBankFeeCustom, `recalcPayCapNotes` untuk payCapAmount,
+  `recalcRefCapNet` untuk refCapAmount).
+- **Efek samping (perbaikan, bukan disengaja diminta)**: `refCapAmount`
+  sebelumnya TIDAK pernah memanggil `recalcRefCapNet()` setelah hasil OCR
+  (cuma lewat event `input` manual, yang tidak fire saat `.value` diisi
+  programatically) — preview GROSS(NET) Refund jadi basi setelah scan.
+  Sekarang terpanggil lewat `afterSet`, jadi preview-nya ikut update juga
+  setelah scan (bukan cuma setelah ketik manual).
+- Perlu dites: (1) field amount kosong → scan sekali → langsung terisi
+  seperti biasa, TIDAK ada modal; (2) field sudah ada isi → scan lagi →
+  modal muncul dengan angka lama/baru/jumlah yang benar; (3) klik `Add` →
+  field jadi hasil penjumlahan, preview/recalc terkait ikut update; (4)
+  klik `Replace` → field jadi nilai scan baru saja (lama dibuang), bukan
+  dijumlahkan; (5) ulangi di ketiga wizard (Disbursement Transaction
+  Amount & Bank Fee Custom, Invoice Payment Amount, Refund Amount); (6)
+  `capExchangeRate` TIDAK kena modal ini sama sekali (selalu replace,
+  seperti sebelumnya).
+
 ## 9. Cara lanjut di sesi baru
 1. Upload PROJECT_NOTES.md ini + hanya file kode yang relevan (Sales: `transaction_content.php` + `ajax/` terkait;
    Logistic: `logistic_content.php` + `list_logistic_movements.php`/`list_logistics.php`; Investor:

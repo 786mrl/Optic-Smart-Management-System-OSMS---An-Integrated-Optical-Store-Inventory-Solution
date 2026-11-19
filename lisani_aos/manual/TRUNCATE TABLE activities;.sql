@@ -9,6 +9,7 @@ TRUNCATE customer_credit_applications;
 TRUNCATE customer_credit_refunds;
 TRUNCATE customers;
 TRUNCATE defective_stock_events;
+TRUNCATE disbursement_bank_fees;
 TRUNCATE edited_documents;
 TRUNCATE investor_activity_allocations;
 TRUNCATE investor_activity_settings;
