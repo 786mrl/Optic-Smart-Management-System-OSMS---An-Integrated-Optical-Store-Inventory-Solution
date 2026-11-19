@@ -63,6 +63,12 @@ function sync_default_config() {
         'pc_port'      => '80',
         'android_ip'   => '192.168.18.20',
         'android_port' => '8080',
+        // Which device the user said they used last, answered via the
+        // "Which device did you use last?" fly window on page load. Used as
+        // the source-of-truth side when a table exists on only one device
+        // (see the delete-vs-keep decision in Verify Full Sync / Custom
+        // Update Data): 'pc', 'android', or '' if never answered yet.
+        'last_used_device' => '',
     ];
 }
 
@@ -756,8 +762,13 @@ function sync_build_data_custom_zip($appDir, $conn, $selectedPaths, $zipFile, $d
     // Delete-list is validated only against the allowed SCOPE prefix (folder
     // names) — not against $allowedFiles, since these are paths that are
     // EXPECTED not to exist at the source (that's the whole point: the user
-    // confirmed via Verify Full Sync that the source deleted them).
-    $allowedTopFolders = sync_data_literal_folders();
+    // confirmed via Verify Full Sync that the source deleted them). The
+    // virtual table folders (optic_pos_db/lisani_aos_db) are included here
+    // too — a table delete candidate (a table missing on the OTHER device
+    // because the last-used device had already dropped it there) is scoped
+    // to Custom Update Data exactly like a missing data file is, it just
+    // isn't a literal on-disk folder.
+    $allowedTopFolders = array_merge(sync_data_literal_folders(), ['optic_pos_db', 'lisani_aos_db']);
     $deleteFilePaths = array_values(array_filter($deleteFilePaths, function ($p) use ($allowedTopFolders) {
         return in_array(explode('/', $p)[0], $allowedTopFolders, true);
     }));
@@ -1156,7 +1167,35 @@ function sync_fetch_and_apply_code_zip($sourceUrl, $appDir, $htdocsDir, $conn = 
         }));
         if (is_array($deleteList)) {
             $deletedCount = 0;
+            // Virtual table paths ("optic_pos_db/<table>" or
+            // "lisani_aos_db/<table>") don't exist on disk, so realpath()
+            // below would never match them — a table delete candidate
+            // offered by the checklist (see renderVerifyDiffs' "last used
+            // device" logic) must be DROP TABLE'd against the right
+            // connection instead of being silently skipped as "not a file".
+            $tablePrefix = 'optic_pos_db/';
+            $lisaniTablePrefix = 'lisani_aos_db/';
             foreach ($deleteList as $relPath) {
+                if (strpos($relPath, $tablePrefix) === 0) {
+                    $table = substr($relPath, strlen($tablePrefix));
+                    if ($conn !== null && preg_match('/^[A-Za-z0-9_]+$/', $table)) {
+                        $existsCheck = $conn->query("SHOW TABLES LIKE '" . $conn->real_escape_string($table) . "'");
+                        if ($existsCheck && $existsCheck->num_rows > 0 && $conn->query("DROP TABLE `$table`")) {
+                            $deletedCount++;
+                        }
+                    }
+                    continue;
+                }
+                if (strpos($relPath, $lisaniTablePrefix) === 0) {
+                    $table = substr($relPath, strlen($lisaniTablePrefix));
+                    if ($lisaniConn !== null && preg_match('/^[A-Za-z0-9_]+$/', $table)) {
+                        $existsCheck = $lisaniConn->query("SHOW TABLES LIKE '" . $lisaniConn->real_escape_string($table) . "'");
+                        if ($existsCheck && $existsCheck->num_rows > 0 && $lisaniConn->query("DROP TABLE `$table`")) {
+                            $deletedCount++;
+                        }
+                    }
+                    continue;
+                }
                 // Safety: only ever delete within $appDir (htdocs/optic_pos/),
                 // never allow a path to escape via "..". $relPath is relative
                 // to the app folder itself (e.g. "try.php",
@@ -1730,7 +1769,12 @@ function sync_build_file_crc_manifest($appDir, $excludeDirNames = ['.git', '.svn
     // Create Local Zip / Pull). They're excluded here too, by their fixed
     // relative paths, so Verify Full Sync never flags them as a mismatch —
     // a difference there is expected, not a real sync problem.
-    $excludedRelPaths = ['database/optic_pos_db.sql', 'lisani_aos/database/lisani_aos_db.sql'];
+    // data_json/sync_config.json stores THIS device's own PC/Android IP +
+    // port settings (see the "Save updated PC/Android IP & port" write
+    // further down in this file) — it is expected to hold different values
+    // on each device (that's the whole point of the IP Settings card), so
+    // it must never be treated as a sync mismatch.
+    $excludedRelPaths = ['database/optic_pos_db.sql', 'lisani_aos/database/lisani_aos_db.sql', 'data_json/sync_config.json'];
     $dirIterator = new RecursiveDirectoryIterator($appDir, FilesystemIterator::SKIP_DOTS);
     $filtered = new RecursiveCallbackFilterIterator($dirIterator, function ($current) use ($excludeDirNames) {
         if ($current->isDir() && in_array($current->getFilename(), $excludeDirNames, true)) return false;
@@ -2458,14 +2502,26 @@ if (isset($_POST['action'])) {
         }
 
         $tableDiffs = [];
+        // Per-table presence for each diffing table ('own_only' = this device
+        // has the table but $otherLabel doesn't, 'other_only' = the reverse,
+        // 'content' = both have it but with different data/schema). Kept as
+        // a SEPARATE map (not folded into $tableDiffs' plain-string format,
+        // to avoid touching anything already parsing that) so the client can
+        // decide delete-vs-keep for a table that exists on only one side —
+        // see the "last used device" logic below.
+        $tableDiffPresence = [];
         if (!$dbMatch) {
             $ownTables = $ownState['tables'] ?? [];
             $otherTables = $otherState['tables'] ?? [];
             $allTables = array_unique(array_merge(array_keys($ownTables), array_keys($otherTables)));
             foreach ($allTables as $table) {
-                if (($ownTables[$table] ?? null) !== ($otherTables[$table] ?? null)) {
-                    $tableDiffs[] = $table;
-                }
+                $a = $ownTables[$table] ?? null;
+                $b = $otherTables[$table] ?? null;
+                if ($a === $b) continue;
+                $tableDiffs[] = $table;
+                if ($a === null) $tableDiffPresence[$table] = 'other_only'; // present on $otherLabel, missing on this device
+                elseif ($b === null) $tableDiffPresence[$table] = 'own_only'; // present on this device, missing on $otherLabel
+                else $tableDiffPresence[$table] = 'content';
             }
             sort($tableDiffs);
         }
@@ -2495,6 +2551,9 @@ if (isset($_POST['action'])) {
             'other_label' => $otherLabel,
             'file_diffs' => $fileDiffs,
             'table_diffs' => $tableDiffs,
+            'table_diff_presence' => $tableDiffPresence,
+            'own_role' => $syncOwnRole,
+            'last_used_device' => $syncConfig['last_used_device'] ?? '',
             'activity_log_has_rows' => $activityLogHasRows,
             'activity_log_row_count' => $activityLogRowCount,
         ]);
@@ -2677,6 +2736,28 @@ if (isset($_POST['action'])) {
         }
         if (ob_get_level() > 0) { ob_clean(); }
         echo json_encode(['ok' => true, 'message' => 'Config saved.', 'config' => $saved]);
+        exit();
+    }
+
+    // ---- Save the answer to "Which device did you use last?" to
+    // data_json/sync_config.json, so Verify Full Sync / Custom Update Data
+    // can use it to decide which side is the source of truth for a table
+    // that currently exists on only one device. ----
+    if ($action === 'save_last_used_device') {
+        $device = trim($_POST['device'] ?? '');
+        if (!in_array($device, ['pc', 'android'], true)) {
+            if (ob_get_level() > 0) { ob_clean(); }
+            echo json_encode(['ok' => false, 'message' => 'Invalid device value.']);
+            exit();
+        }
+        $saved = sync_save_config($syncJsonFile, $syncJsonDir, ['last_used_device' => $device]);
+        if ($saved === false) {
+            if (ob_get_level() > 0) { ob_clean(); }
+            echo json_encode(['ok' => false, 'message' => 'Could not write data_json/sync_config.json — check folder permissions.']);
+            exit();
+        }
+        if (ob_get_level() > 0) { ob_clean(); }
+        echo json_encode(['ok' => true, 'message' => 'Last used device saved.']);
         exit();
     }
 
@@ -4393,9 +4474,15 @@ if (isset($_POST['action'])) {
             var syncLastVerifyDiffPaths = []; // populated by renderVerifyDiffs, used to pre-check Custom Update (code) and Custom Update Data (files + virtual table paths)
             var syncLastVerifyMissingOnOther = []; // paths present here but confirmed missing at the other device — candidates for local deletion, not pulling
             var SYNC_DATA_FOLDER_NAMES = ['qrcodes', 'main_qrcodes', 'pdf_file', 'data_json', 'database'];
+            // Virtual table folders (not real files on disk) belong to Custom
+            // Update Data too — same reasoning as the real data folders above:
+            // their content legitimately differs per device, so a table-level
+            // diff (or a confirmed-missing-on-other table delete candidate)
+            // must route to the Data checklist, not the Source Code one.
+            var SYNC_VIRTUAL_TABLE_FOLDER_NAMES = ['optic_pos_db', 'lisani_aos_db'];
             function syncIsDataPath(path) {
                 const topFolder = path.split('/')[0];
-                return SYNC_DATA_FOLDER_NAMES.includes(topFolder);
+                return SYNC_DATA_FOLDER_NAMES.includes(topFolder) || SYNC_VIRTUAL_TABLE_FOLDER_NAMES.includes(topFolder);
             }
 
             // Adds/removes the pulsing "push me" glow on a Custom Update card.
@@ -4411,6 +4498,10 @@ if (isset($_POST['action'])) {
 
                 const fileDiffs = Array.isArray(data.file_diffs) ? data.file_diffs : [];
                 const tableDiffs = Array.isArray(data.table_diffs) ? data.table_diffs : [];
+                const tableDiffPresence = (data.table_diff_presence && typeof data.table_diff_presence === 'object') ? data.table_diff_presence : {};
+                const ownRole = data.own_role || syncOwnRoleJs; // 'pc' | 'android' | 'unknown'
+                const otherRole = ownRole === 'pc' ? 'android' : (ownRole === 'android' ? 'pc' : null);
+                const lastUsedDevice = data.last_used_device || ''; // 'pc' | 'android' | ''
 
                 // "present on this device" but NOT "missing on THIS device" means
                 // the OTHER device is the one missing it — a deletion candidate,
@@ -4420,12 +4511,48 @@ if (isset($_POST['action'])) {
                     .filter(d => missingOnOtherRegex.test(d))
                     .map(d => d.replace(/\s*\(.*\)$/, '').replace(/^optic_pos\//, ''));
 
+                // A table that exists on only ONE device is NOT automatically a
+                // deletion candidate like a missing-on-other FILE is — unlike
+                // files, we don't know yet whether the lone side should keep it
+                // (not created on the other side yet) or the other side should
+                // drop it (deliberately deleted on the lone side's last known
+                // state). "Which device did you use last?" answers that: the
+                // device that was used LAST is treated as the source of truth,
+                // so a table missing there means it was deliberately removed —
+                // the side that still has it must delete it to match. If we
+                // don't know ownRole/otherRole or lastUsedDevice yet, the table
+                // is left out of both lists (neither forced-delete nor pull) so
+                // nothing destructive happens on an ambiguous case.
+                const tableDeleteCandidates = [];
+                if (otherRole && (lastUsedDevice === 'pc' || lastUsedDevice === 'android')) {
+                    tableDiffs.forEach(t => {
+                        const presence = tableDiffPresence[t];
+                        if (presence !== 'own_only' && presence !== 'other_only') return; // 'content' diffs stay as normal pulls
+                        const path = t.startsWith('lisani:') ? 'lisani_aos_db/' + t.slice('lisani:'.length) : 'optic_pos_db/' + t;
+                        // own_only: present HERE, missing on the other device.
+                        // That's a delete candidate (here) only if the OTHER
+                        // device is the one that was used last (it deliberately
+                        // dropped it there).
+                        if (presence === 'own_only' && lastUsedDevice === otherRole) {
+                            tableDeleteCandidates.push(path);
+                        }
+                        // other_only: present on the OTHER device, missing here.
+                        // That's a delete candidate on the OTHER device (not
+                        // here) only if THIS device was used last — nothing to
+                        // add to our own delete checklist for that case, the
+                        // other device's own Verify Full Sync run will offer it
+                        // there instead.
+                    });
+                }
+                syncLastVerifyMissingOnOther = syncLastVerifyMissingOnOther.concat(tableDeleteCandidates);
+
                 // Strip the " (...)" suffix and the "optic_pos/" prefix so these
                 // match the plain relative paths used by the checklists. Table
                 // diffs are captured too, as virtual "optic_pos_db/<table>" paths,
                 // so Custom Update Data can auto-check them. Files that are only
-                // missing-on-other are excluded here — they belong in the deletion
-                // list above instead, since there's nothing to pull for them.
+                // missing-on-other, and tables that are delete candidates, are
+                // excluded here — they belong in the deletion list above instead,
+                // since there's nothing to pull for them.
                 const cleanedFilePaths = fileDiffs
                     .map(d => d.replace(/\s*\(.*\)$/, '').replace(/^optic_pos\//, ''))
                     .filter(p => !syncLastVerifyMissingOnOther.includes(p));
@@ -4439,7 +4566,7 @@ if (isset($_POST['action'])) {
                     return t.startsWith('lisani:')
                         ? 'lisani_aos_db/' + t.slice('lisani:'.length)
                         : 'optic_pos_db/' + t;
-                });
+                }).filter(p => !tableDeleteCandidates.includes(p));
                 syncLastVerifyDiffPaths = cleanedFilePaths.concat(tableDiffPaths);
 
                 if (fileDiffs.length === 0 && tableDiffs.length === 0) {
@@ -5213,6 +5340,12 @@ if (isset($_POST['action'])) {
                     if (fullSection) fullSection.classList.add('needs-sync-glow');
                     syncRefreshGating();
                 }
+                // Persisted so Verify Full Sync / Custom Update Data can use it as
+                // the source-of-truth side for a table that exists on only one
+                // device (a table missing on the last-used device means it was
+                // deliberately deleted there, and should be deleted on the other
+                // device too — not pulled back).
+                fetch('sync.php', { method: 'POST', body: new URLSearchParams({ action: 'save_last_used_device', device: device }) }).catch(() => {});
                 // Only after the user has answered this prompt do we start the
                 // automatic Connection Test & IP Settings -> Test PC -> Test
                 // Android sequence (buttons are left in place, just auto-triggered).
