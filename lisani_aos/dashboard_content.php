@@ -270,6 +270,10 @@
   // Looked up by ref_id when a converted-currency Amount cell is clicked
   // (16 Nov 2026) — see renderLedger() and openFxDetail() below.
   var ledgerFxRows = {};
+  // Looked up by ref_id when a "disbursement_bank_fee" row's chip/row is
+  // clicked, to scroll to + flash its disbursement row — same pattern as
+  // ledgerRefundRows/refund_bank_fee (16 Nov 2026).
+  var ledgerDisbursementRows = {};
 
   // Accordion: opening one of the two summary cards (Totals / Bank Accounts)
   // closes the other, instead of both staying open independently.
@@ -506,6 +510,7 @@
     // detail panel on click showing the rate and date behind it (user
     // request, 16 Nov 2026), reusing the same overlay as Credit Balance.
     ledgerFxRows = {};
+    ledgerDisbursementRows = {};
     ledger.forEach(function (r) {
       if (r.source === 'invoice_payment_credit' && r.credit_source_id != null) {
         ledgerCreditRows[r.credit_source_id] = r;
@@ -515,6 +520,9 @@
       }
       if (r.original && r.exchange_rate) {
         ledgerFxRows[r.ref_id] = r;
+      }
+      if (r.source === 'disbursement') {
+        ledgerDisbursementRows[r.ref_id] = r;
       }
     });
     var running = 0;
@@ -570,6 +578,16 @@
         descHtml += '<br><span class="rpt-fee-ref-chip">\u2191 ' + escapeHtml(feeChipLabel) + '</span>';
       }
 
+      // Same idea as the Refund Bank Fee chip above, but for Disbursement's
+      // own Bank Fee row (user request, 16 Nov 2026) — points back UP at
+      // the disbursement row it belongs to (always directly above it, see
+      // get_finance_report.php's ref_id suffix).
+      if (row.source === 'disbursement_bank_fee' && row.disbursement_ref_id != null) {
+        var disbRow = ledgerDisbursementRows[row.disbursement_ref_id];
+        var disbChipLabel = disbRow ? ('Disbursement — ' + disbRow.date) : ('Disbursement #' + row.disbursement_ref_id);
+        descHtml += '<br><span class="rpt-fee-ref-chip">\u2191 ' + escapeHtml(disbChipLabel) + '</span>';
+      }
+
       // Rows sharing one group_id (a credit application's "remaining" +
       // "used" pair) are rendered as a visually joined block — same
       // background tint, no border between them — so they read as one
@@ -600,6 +618,18 @@
       if (row.source === 'refund_bank_fee' && row.refund_ref_id != null) {
         groupClass += ' rpt-ledger-clickable';
         clickAttr += ' data-link-refund-id="' + row.refund_ref_id + '"';
+      }
+      // Disbursement row is a potential scroll/flash TARGET (from its Bank
+      // Fee row below, if any) — same reasoning as the refund tag above.
+      if (row.source === 'disbursement') {
+        clickAttr += ' data-ledger-row-id="disbursement-' + row.ref_id + '"';
+      }
+      // Disbursement's own Bank Fee row is the clickable SOURCE (user
+      // request, 16 Nov 2026) — clicking anywhere on it scrolls to + flashes
+      // its disbursement row, same as refund_bank_fee above.
+      if (row.source === 'disbursement_bank_fee' && row.disbursement_ref_id != null) {
+        groupClass += ' rpt-ledger-clickable';
+        clickAttr += ' data-link-disbursement-id="' + row.disbursement_ref_id + '"';
       }
 
       return '<tr class="' + groupClass.trim() + '"' + clickAttr + '>' +
@@ -679,15 +709,25 @@
     // same click (they never actually overlap — a row is either a Credit
     // Balance row or a Bank Fee row, never both — but checking this one
     // first keeps the two features independent either way).
+    // Checked FIRST (most specific): a disbursement_bank_fee row can be
+    // BOTH a scroll/flash source (data-link-disbursement-id, on the <tr>)
+    // AND have its own clickable Amount (data-fx-ref-id, on the inner
+    // <span>) when the fee itself wasn't IDR — clicking the amount number
+    // itself should open the Exchange Rate detail, not scroll away.
+    var fxEl = e.target.closest('[data-fx-ref-id]');
+    if (fxEl) {
+      var fxRow = ledgerFxRows[fxEl.getAttribute('data-fx-ref-id')];
+      if (fxRow) openFxDetail(fxRow);
+      return;
+    }
     var feeEl = e.target.closest('[data-link-refund-id]');
     if (feeEl) {
       scrollToAndFlashRefundRow(feeEl.getAttribute('data-link-refund-id'));
       return;
     }
-    var fxEl = e.target.closest('[data-fx-ref-id]');
-    if (fxEl) {
-      var fxRow = ledgerFxRows[fxEl.getAttribute('data-fx-ref-id')];
-      if (fxRow) openFxDetail(fxRow);
+    var disbFeeEl = e.target.closest('[data-link-disbursement-id]');
+    if (disbFeeEl) {
+      scrollToAndFlashDisbursementRow(disbFeeEl.getAttribute('data-link-disbursement-id'));
       return;
     }
     var el = e.target.closest('[data-credit-source-id]');
@@ -713,6 +753,20 @@
   // Scrolls the clicked Bank Fee row's refund row into view and flashes it
   // a couple of times (CSS animation, see .rpt-ledger-flash) so it's
   // unmistakable which row the fee belongs to (user, 8 Nov 2026).
+  // Same as scrollToAndFlashRefundRow above, but for Disbursement's own
+  // Bank Fee row (user request, 16 Nov 2026).
+  function scrollToAndFlashDisbursementRow(disbursementRefId) {
+    var target = document.querySelector('#rptLedgerBody [data-ledger-row-id="disbursement-' + disbursementRefId + '"]');
+    if (!target) return; // date-filtered out of the current view, etc. — nothing to flash
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    target.classList.remove('rpt-ledger-flash');
+    void target.offsetWidth;
+    target.classList.add('rpt-ledger-flash');
+    target.addEventListener('animationend', function handler() {
+      target.classList.remove('rpt-ledger-flash');
+      target.removeEventListener('animationend', handler);
+    });
+  }
   function scrollToAndFlashRefundRow(refundRefId) {
     var target = document.querySelector('#rptLedgerBody [data-ledger-row-id="refund-' + refundRefId + '"]');
     if (!target) return; // date-filtered out of the current view, etc. — nothing to flash

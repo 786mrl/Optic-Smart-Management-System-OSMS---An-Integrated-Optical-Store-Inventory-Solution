@@ -23,7 +23,8 @@ optic_pos/
     ├── logistic_content.php       Logistic: List, Movements, Create New Logistic
     ├── document_tools_content.php Document Tools: Signature Library, Letterhead Library, Document Editor (lihat §6)
     ├── settings_content.php       Company Documents & Company Bank Accounts
-    ├── report_content.php         Report: Finance Report
+    ├── dashboard_content.php      Report: Finance Report (RENAMED dari report_content.php, 16 Nov 2026 —
+    │                              referensi "report_content.php" di log §8 lama masih pakai nama lama, itu historis)
     ├── investor_content.php       Investor: Investors, Investment, Report, Profit Payment & Rolled Capital
     ├── ajax/                      semua endpoint (§7); _invoice_pdf.php, _require_reverify.php, _order_patterns.php;
     │                              investor_api.php (endpoint tunggal modul Investor)
@@ -1666,6 +1667,113 @@ scannable sejak awal, tetap begitu).**
   Amount & Bank Fee Custom, Invoice Payment Amount, Refund Amount); (6)
   `capExchangeRate` TIDAK kena modal ini sama sekali (selalu replace,
   seperti sebelumnya).
+
+**Dikerjakan (16 Nov 2026, lanjutan, belum dites) — Perbaikan race condition di
+fitur "Scan berulang" (bagian atas): modal `capScanAddOverlay` sempat ketutup
+oleh dua hal lain yang buka lebih duluan.**
+- `afterScanCompleted(source)` dulu langsung buka ulang `capFieldPickerOverlay`
+  tanpa nunggu `capScanAddOverlay` dijawab dulu. Sekarang kalau `pendingScanAdd`
+  masih ada, ditunda (`pendingScanAdd.resumeSource = source`) dan baru
+  dilanjutkan dari `resolvePendingScanAdd()` setelah user klik Replace/Add.
+- `capViewerWrap` (dokumen full-screen, ditaruh di `<body>`, z-index di atas
+  semua `.modal-overlay`) juga nutupin modal ini secara visual walau
+  `display:flex` — sekarang `handleAmountOcrScan()` menutup `capViewerWrap`
+  dulu sebelum nampilin modal, dan `resolvePendingScanAdd()` membuka lagi
+  setelah dijawab.
+- Perlu dites: scan field yang sudah ada isi → dokumen **otomatis** tertutup →
+  modal Add/Replace langsung kelihatan (tanpa klik Close manual) → pilih →
+  dokumen kebuka lagi → field picker muncul.
+
+**Dikerjakan (16 Nov 2026, belum dites) — Bank Fee Disbursement: bump otomatis
+ke Transaction Amount, auto-pilih tombol preset, currency+exchange rate
+sendiri, preview Final Amount.**
+- `bumpCapAmountByScannedFee()`: scan Bank Fee (`capBankFeeCustom`) otomatis
+  MENAMBAHKAN hasil scan ke `capAmount` (SATU ARAH saja, TANPA modal
+  konfirmasi), tapi HANYA kalau `capAmount` sudah ada isinya. `recalcCapAmountPreview()`
+  (Net = Amount − Fee) tetap balik ke angka asli sebelum bump, jadi Fee tetap
+  tercatat terpisah, tidak mengurangi Net.
+- `autoSelectCapFeeOption()`: setelah scan Bank Fee settle, kalau hasilnya
+  persis `2,500`/`6,500` → tombol preset itu otomatis aktif; angka lain →
+  `Custom` yang aktif; OCR gagal baca → pilihan dibiarkan apa adanya (default
+  `None` cuma di awal sebelum ada scan sama sekali).
+- `capFinalAmountPreview` (elemen baru, di bawah `capFinalAmountIdr`): kalau
+  ada Bank Fee, tampil `gross_idr (net_idr)` — pola sama persis `capAmountPreview`;
+  kalau tidak ada fee, kosong. Input `capFinalAmountIdr` sendiri TETAP nilai NET
+  (dikirim ke backend), tidak berubah.
+- **DB**: migration baru `migration_disbursement_bank_fee_currency.sql` (BELUM
+  dijalankan) menambah `fee_currency` (default `'IDR'`) + `fee_exchange_rate`
+  (nullable) ke `disbursement_bank_fees`. Bank Fee **ikut** Currency/Exchange
+  Rate yang SAMA dengan Transaction Amount (bukan selector sendiri) —
+  `create_disbursement.php` insert pakai `$currency`/`$exchangeRate` yang
+  sudah tervalidasi di file itu, TIDAK ada field POST baru.
+- Perlu dites: lihat pesan terakhir soal fitur ini untuk urutan lengkap
+  (Amount kosong vs ada isi, ganti-ganti tombol fee, currency USD vs IDR).
+
+**Dikerjakan (16 Nov 2026, belum dites) — Disbursement Bank Fee ikut tampil
+benar di Finance Report (`get_finance_report.php` + `dashboard_content.php`,
+file BARU nama-nya, dulu `report_content.php`).**
+- Kolom **Notes** di tabel Ledger ternyata dibaca dari field `ledger_note`
+  (BUKAN `notes` — `notes` cuma baris kecil tambahan di bawah Description,
+  beda tempat; sempat salah taruh di situ dulu, sudah dibetulkan).
+- Baris disbursement & baris Bank Fee-nya sekarang `ledger_note` diisi
+  `"{activity_code} — {activity_name}"` (activity_code di-generate dari
+  `activities.relative_path` pakai regex yang SAMA dengan
+  `ajax/list_activity_codes.php` — tabel `activities` TIDAK punya kolom
+  `activity_code` beneran, sempat salah asumsi).
+- **Efek samping yang sempat ke-pecahin**: `dashboard_content.php`'s
+  `shownAmount` baca `display_amount` (bukan `amount`) setiap kali
+  `ledger_note` terisi (konvensi lama buat baris Credit Balance/Bank Fee) —
+  karena baris disbursement sekarang SELALU punya `ledger_note`, baris itu
+  jadi ikut kena switch ini dan Amount (IDR)-nya sempat tampil `Rp 0`. Sudah
+  ditambal: baris disbursement sekarang juga set `display_amount` = `amount`.
+- Fee bukan IDR sekarang dikonversi ke IDR dulu (pakai `fee_exchange_rate`,
+  guarded kalau migration belum jalan) sebelum masuk ledger/`accountsOut`/`monthly`.
+- **Fitur baru**: Amount (IDR) baris yang hasil konversi currency (`row.original`
+  + `row.exchange_rate` set — baru ada di Disbursement) sekarang BISA DIKLIK →
+  buka panel detail (reuse overlay `rptCreditDetailOverlay`, judul jadi dinamis
+  lewat `#rptCreditDetailTitle`) isinya Original amount, Exchange Rate, Date,
+  Final (IDR). Peta baru `ledgerFxRows` (keyed `ref_id`), fungsi baru
+  `openFxDetail()`.
+- Perlu dites: lihat pesan-pesan sebelumnya di sesi ini (Notes = activity code
+  benar, Amount (IDR) baris pertama balik normal, klik Amount buka detail
+  exchange rate, klik Credit Balance lama masih normal judulnya).
+
+**Dikerjakan (16 Nov 2026, lanjutan #2, belum dites) — 3 perbaikan kecil di
+atas fitur Disbursement Bank Fee di Finance Report.**
+- `$bankFeesByDisbursement` sekarang isinya array (`['idr'=>…, 'original'=>…,
+  'exchange_rate'=>…]`), bukan cuma float — biar baris `disbursement_bank_fee`
+  juga bisa bawa `original`/`exchange_rate` mentahnya (sebelum dikonversi).
+- **Notes** baris disbursement & bank fee-nya: dulu sempat jadi `"{kode} —
+  {nama}"`, user minta **nama activity-nya saja** (tanpa kode) → `$activityCode`
+  sekarang cuma `$row['activity_name']`. Fungsi `activity_code_from_path()` dan
+  kolom `a.relative_path` di SELECT jadi tidak dipakai lagi, sudah dihapus.
+- **Amount (IDR) baris Bank Fee sekarang BISA DIKLIK juga** kalau fee-nya
+  bukan IDR (pakai `isFx`/`openFxDetail()` yang sama, generik — tidak perlu
+  kode baru di frontend, cukup backend isi `original`/`exchange_rate` di baris
+  fee-nya).
+- **Chip "↑ Disbursement — {tanggal}" + klik scroll+flash** ke baris
+  disbursement-nya — pola **disalin persis** dari `refund_bank_fee` (8 Nov
+  2026): `ledgerDisbursementRows` (peta baru), `data-ledger-row-id=
+  "disbursement-<ref_id>"` (tag di baris disbursement sebagai target),
+  `data-link-disbursement-id` (di baris fee sebagai sumber klik),
+  `scrollToAndFlashDisbursementRow()` (fungsi baru, duplikat
+  `scrollToAndFlashRefundRow()`). Urutan baris (fee tepat di bawah
+  disbursement-nya) sebenarnya SUDAH BENAR sejak awal lewat trik suffix
+  `ref_id` `"<id>_fee"` (sama persis pola refund_bank_fee) — bagian yang
+  baru cuma fitur klik-nya.
+- **Prioritas klik di baris Bank Fee** (kalau fee-nya non-IDR, baris itu
+  punya DUA area clickable sekaligus): klik tepat di angka Amount → buka
+  detail Exchange Rate; klik di bagian lain baris (chip, dll.) → scroll+flash
+  ke baris disbursement-nya. Dicek `data-fx-ref-id` LEBIH DULU di handler
+  klik (lebih spesifik) sebelum cek `data-link-refund-id`/
+  `data-link-disbursement-id`.
+- Perlu dites: (1) Disbursement Bank Fee currency USD → baris Bank Fee-nya
+  Amount (IDR) bisa diklik, buka detail Exchange Rate yang benar (rate fee,
+  BUKAN rate transaction amount-nya kalau beda — tapi kan sama persis, ikut
+  field yang sama); (2) klik di luar angka (misal chip "↑ Disbursement — ...")
+  → scroll+flash ke baris disbursement di atasnya; (3) Notes kedua baris
+  cuma nama activity, tanpa kode; (4) disbursement tanpa Bank Fee → tidak ada
+  baris fee, tidak ada regresi di baris disbursement-nya sendiri.
 
 ## 9. Cara lanjut di sesi baru
 1. Upload PROJECT_NOTES.md ini + hanya file kode yang relevan (Sales: `transaction_content.php` + `ajax/` terkait;

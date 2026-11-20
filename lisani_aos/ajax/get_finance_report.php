@@ -84,17 +84,7 @@ function get_str(string $key): string
     return isset($_GET[$key]) ? trim((string)$_GET[$key]) : '';
 }
 
-// `activities` has no activity_code column (confirmed via DESCRIBE, 16 Nov
-// 2026) — the code is derived from relative_path, e.g.
-// "input/2026/finance/001/" -> "001". Same regex as
-// ajax/list_activity_codes.php; keep the two in sync if that file changes.
-function activity_code_from_path(string $relativePath): string
-{
-    if (preg_match('#^input/\d{4}/([^/]+)/(\d+)/$#', $relativePath, $m)) {
-        return $m[2];
-    }
-    return '-';
-}
+
 
 $dateFrom = get_str('date_from');
 $dateTo   = get_str('date_to');
@@ -213,18 +203,27 @@ if ($hasDisbursementBankFees) {
     $res = $stmt->get_result();
     while ($row = $res->fetch_assoc()) {
         $feeAmount = (float) $row['fee_amount'];
-        // The fee isn't always IDR (same Currency/Exchange Rate the user
-        // picked for the Disbursement's own Transaction Amount — user
-        // request, 16 Nov 2026) — convert to IDR here so every downstream
-        // use (accountsOut, monthly totals, the ledger row below) is
-        // already in IDR, same as every other amount in this file.
-        if ($hasDisbursementBankFeeCurrency
+        $feeIsForeign = $hasDisbursementBankFeeCurrency
             && $row['fee_currency'] !== null
             && $row['fee_currency'] !== 'IDR'
-            && $row['fee_exchange_rate'] !== null) {
-            $feeAmount *= (float) $row['fee_exchange_rate'];
+            && $row['fee_exchange_rate'] !== null;
+        // Keep the raw (pre-conversion) amount/currency/rate too — needed so
+        // the ledger row below can show them (clickable Amount, same as the
+        // disbursement row itself — user request, 16 Nov 2026), on top of
+        // the IDR figure every OTHER use in this file needs (accountsOut,
+        // monthly totals).
+        $feeOriginal = $feeIsForeign
+            ? ($row['fee_currency'] . ' ' . number_format($feeAmount, 2))
+            : null;
+        $feeRate = $feeIsForeign ? (float) $row['fee_exchange_rate'] : null;
+        if ($feeIsForeign) {
+            $feeAmount *= $feeRate;
         }
-        $bankFeesByDisbursement[(int) $row['transaction_id']] = $feeAmount;
+        $bankFeesByDisbursement[(int) $row['transaction_id']] = [
+            'idr' => $feeAmount,
+            'original' => $feeOriginal,
+            'exchange_rate' => $feeRate,
+        ];
     }
     $stmt->close();
 }
@@ -232,7 +231,7 @@ if ($hasDisbursementBankFees) {
 $sql = "SELECT t.id, t.transaction_date, t.source_bank, t.source_account_number,
                t.final_amount_idr, t.currency, t.amount, t.exchange_rate, t.notes,
                d.transaction_purpose, d.cashflow_type, dc.category_name,
-               a.relative_path, a.activity_name
+               a.activity_name
         FROM transactions t
         JOIN transaction_disbursements d ON d.transaction_id = t.id
         LEFT JOIN disbursement_categories dc ON dc.id = d.category_id
@@ -248,10 +247,9 @@ if ($outflowParams) { $stmt->bind_param($outflowTypes, ...$outflowParams); }
 $stmt->execute();
 $res = $stmt->get_result();
 while ($row = $res->fetch_assoc()) {
-    // "001 — Nama Activity", same "code — name" shape as the Activity Code
-    // dropdown in transaction_content.php (user request, 16 Nov 2026 —
-    // the bare code alone wasn't enough).
-    $activityCode = activity_code_from_path((string) $row['relative_path']) . ' — ' . $row['activity_name'];
+    // Just the Activity Name (user request, 16 Nov 2026 — had the numeric
+    // code prefixed at first, turned out not wanted after all).
+    $activityCode = $row['activity_name'];
     $amt = (float)$row['final_amount_idr'];
     $accId = resolve_account_id($accountsByKey, (string)$row['source_bank'], (string)$row['source_account_number']);
     if ($accId !== null) {
@@ -303,7 +301,8 @@ while ($row = $res->fetch_assoc()) {
     // part of the SAME bank transfer out of the SAME source account) —
     // pushed right after it, in this same loop iteration, so the two
     // always sit adjacent regardless of what else is in the ledger that day.
-    $disbFee = $bankFeesByDisbursement[(int) $row['id']] ?? 0.0;
+    $disbFeeInfo = $bankFeesByDisbursement[(int) $row['id']] ?? null;
+    $disbFee = $disbFeeInfo['idr'] ?? 0.0;
     if ($disbFee > 0.0001) {
         if ($accId !== null) {
             $accountsOut[$accId]['outflow'] += $disbFee;
@@ -323,7 +322,11 @@ while ($row = $res->fetch_assoc()) {
             // is needed: the frontend's Amount column reads display_amount
             // instead of amount whenever ledger_note is set.
             'display_amount' => $disbFee,
-            'original'   => null,
+            // Same clickable-Amount feature as the disbursement row itself
+            // (user request, 16 Nov 2026) — both null when the fee's own
+            // currency was IDR, same condition the disbursement row uses.
+            'original'      => $disbFeeInfo['original'] ?? null,
+            'exchange_rate' => $disbFeeInfo['exchange_rate'] ?? null,
             'label'      => 'Bank Fee — ' . $row['transaction_purpose'],
             'category'   => $row['category_name'],
             // Same fix as the disbursement row above: the Ledger table's
