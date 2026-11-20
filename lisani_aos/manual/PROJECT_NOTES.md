@@ -1775,6 +1775,71 @@ atas fitur Disbursement Bank Fee di Finance Report.**
   cuma nama activity, tanpa kode; (4) disbursement tanpa Bank Fee → tidak ada
   baris fee, tidak ada regresi di baris disbursement-nya sendiri.
 
+**Dikerjakan (20 Nov 2026, belum dites) — Finance Report (`dashboard_content.php`):
+reorganisasi card Filter & Ledger.**
+- Toolbar From/To/Activity Code + tombol Apply/Clear/Export CSV dibungkus jadi
+  satu `<details class="card rpt-collapsible">` baru, summary "Filter", default
+  collapsed (sama pola dengan card Totals/Bank Accounts, tapi TIDAK pakai
+  `data-rpt-accordion` — jadi tidak exclusive dengan Totals/Bank Accounts).
+- Card Ledger dipindah ke posisi paling atas (tepat di bawah card Filter),
+  dibungkus `<details class="card rpt-collapsible">` juga, default collapsed.
+  Markup tabel (`rptLedgerTable`, dsb.) tidak diubah sama sekali, cuma posisi +
+  wrapper-nya. Urutan baru: Filter → Ledger → Totals → Bank Accounts → Charts →
+  Receivables.
+- Perlu dites: kedua card default tertutup saat load; buka Filter lalu Ledger
+  bersamaan (tidak saling menutup, beda dari Totals/Bank Accounts); fungsi
+  filter (Apply/Clear/Export CSV) & render ledger tetap jalan normal setelah
+  dipindah.
+
+**Dikerjakan (20 Nov 2026, belum dites) — Klik kolom Description di Ledger
+buka bukti file transaksi di tab baru.**
+- **Kolom bukti file per sumber** (dikonfirmasi lewat `DESCRIBE`, 20 Nov 2026):
+  `transactions.document_path`/`document_original_name` (disbursement),
+  `invoice_refunds.proof_path`/`proof_original_name` (refund),
+  `invoice_payments.proof_path`/`proof_original_name` (invoice_payment &
+  invoice_payment_credit — baris credit-balance pakai `ref_id` payment yang
+  sama, jadi bukti-nya ikut yang sama). Baris Bank Fee (disbursement &
+  refund) TIDAK punya kolom bukti sendiri → tidak clickable.
+- Semua `*_path` adalah **path relatif ke `AOS_STORAGE_BASE`** (dikonfirmasi
+  user, bukan tebakan).
+- `get_finance_report.php`: tiap SELECT terkait nambah kolom path-nya, lalu
+  `$ledger[]` dapat field baru `has_proof` (boolean, dari path kosong/tidak) —
+  path aslinya SENGAJA TIDAK dikirim ke frontend, biar tidak expose struktur
+  storage lewat response JSON. Query SELECT/placeholder yang sudah ada tidak
+  diubah.
+- **Endpoint baru**: `ajax/view_proof.php` (BELUM ADA sebelumnya, dibuat dari
+  nol, pola boilerplate disalin dari `get_finance_report.php` — session guard,
+  `require db_config.php`). Beda dari endpoint lain: BUKAN endpoint JSON (ini
+  dipakai langsung sebagai href, dibuka di tab baru), jadi errornya
+  `http_response_code()` + plain text, bukan `aos_json()`/`{ok:false}`.
+  Terima `source` (whitelist: disbursement/refund/invoice_payment/
+  invoice_payment_credit) + `ref_id` (int), query ulang ke tabel+kolom yang
+  sesuai (map tetap di kode, bukan dari input), resolve path penuh via
+  `AOS_STORAGE_BASE`, cek `realpath()` masih di dalam base (jaga-jaga path
+  traversal), lalu stream file (`Content-Disposition: inline`, mime dari
+  `finfo`).
+- **`AOS_STORAGE_BASE`**: dikonfirmasi (20 Nov 2026, baca `db_config.php` +
+  `create_invoice_payment.php`) BUKAN konstanta di `db_config.php` — tiap file
+  yang butuh men-define sendiri, di-guard `defined()`:
+  `define('AOS_STORAGE_BASE', dirname(__DIR__) . '/storage')` (= `lisani_aos/storage`).
+  `view_proof.php` sudah ikut pola yang sama persis (define sebelum
+  `require db_config.php`, sama urutan dengan `create_invoice_payment.php`).
+- `dashboard_content.php`: label Description (`row.label`) dibungkus
+  `<span class="rpt-desc-link" data-proof-source data-proof-ref>` kalau
+  `row.has_proof`, klik → `window.open('ajax/view_proof.php?source=...&ref_id=...', '_blank')`.
+  Dicek PALING AWAL di delegated click handler `#rptLedgerBody` (sebelum fx/
+  fee/credit) supaya baris Customer Credit Balance (yang satu `<tr>`-nya juga
+  clickable buka detail panel) tetap bisa dibedakan: klik tepat di label →
+  buka bukti file; klik di bagian lain baris → tetap buka detail panel.
+- Perlu dites: (1) baris disbursement/refund/invoice_payment yang punya bukti
+  → label Description bergaris bawah titik-titik, klik → tab baru kebuka
+  isinya file yang benar; (2) baris yang TIDAK punya bukti → label plain,
+  tidak ada apa-apa; (3) baris Customer Credit Balance → klik label buka
+  bukti punya payment induknya, klik bagian lain baris tetap buka detail
+  panel seperti biasa; (4) baris Bank Fee → tidak ada link proof sama sekali;
+  (5) PDF vs gambar (jpg/png/webp) sama-sama kebuka benar di tab baru (mime
+  dari `finfo`, bukan ditebak dari ekstensi).
+
 ## 9. Cara lanjut di sesi baru
 1. Upload PROJECT_NOTES.md ini + hanya file kode yang relevan (Sales: `transaction_content.php` + `ajax/` terkait;
    Logistic: `logistic_content.php` + `list_logistic_movements.php`/`list_logistics.php`; Investor:

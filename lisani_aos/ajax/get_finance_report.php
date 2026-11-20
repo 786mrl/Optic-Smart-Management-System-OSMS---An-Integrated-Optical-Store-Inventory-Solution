@@ -230,6 +230,7 @@ if ($hasDisbursementBankFees) {
 
 $sql = "SELECT t.id, t.transaction_date, t.source_bank, t.source_account_number,
                t.final_amount_idr, t.currency, t.amount, t.exchange_rate, t.notes,
+               t.document_path,
                d.transaction_purpose, d.cashflow_type, dc.category_name,
                a.activity_name
         FROM transactions t
@@ -289,6 +290,11 @@ while ($row = $res->fetch_assoc()) {
         // transactions.notes field, unrelated to this.
         'notes'      => $row['notes'],
         'ledger_note' => $activityCode,
+        // Description column opens its proof file in a new tab when set
+        // (user request, 20 Nov 2026) — transactions.document_path, resolved
+        // + streamed server-side by ajax/view_proof.php (source+ref_id), not
+        // exposed here.
+        'has_proof'  => trim((string) $row['document_path']) !== '',
         'group_id'   => null,
         // Plain int here (disbursement row itself is unchanged by the bank
         // fee feature) — the fee row below gets a suffixed ref_id so IT
@@ -736,7 +742,7 @@ if ($hasCreditSources) {
 // auto-applied invoice, inflating the ledger total and running balance past
 // what any account actually received (user-reported bug, 1 Nov 2026).
 $sql = "SELECT p.id, p.payment_date, p.destination_bank, p.destination_account_number,
-               p.amount, p.notes, c.customer_name, i.invoice_number
+               p.amount, p.notes, p.proof_path, c.customer_name, i.invoice_number
         FROM invoice_payments p
         JOIN customers c ON c.id = p.customer_id
         JOIN invoices i ON i.id = p.invoice_id
@@ -783,6 +789,10 @@ while ($row = $res->fetch_assoc()) {
             'category'   => 'SALES PAYMENT', // fixed label: every invoice payment is a sales payment
             'notes'      => $row['notes'],
             'ledger_note' => null, // semantic tag shown in the dedicated "Notes" column (distinct from the free-text 'notes' above); see "Credit Balance" rows below
+            // Description column opens its proof file in a new tab when set
+            // (user request, 20 Nov 2026) — invoice_payments.proof_path, resolved
+            // + streamed server-side by ajax/view_proof.php (source+ref_id).
+            'has_proof'  => trim((string) $row['proof_path']) !== '',
             'group_id'   => null,  // visually clusters related rows; null = stands alone
             'ref_id'     => (int)$row['id'],
         ];
@@ -807,6 +817,7 @@ while ($row = $res->fetch_assoc()) {
                 'category'   => 'SALES PAYMENT',
                 'notes'      => $row['notes'],
                 'ledger_note' => null,
+                'has_proof'  => trim((string) $row['proof_path']) !== '',
                 'group_id'   => $groupId,
                 // Plain int, same value this row's ref_id always had before
                 // any split existed — keeps its sort position exactly where
@@ -879,6 +890,10 @@ while ($row = $res->fetch_assoc()) {
                 'category'   => null,
                 'notes'      => null,
                 'ledger_note' => 'Credit Balance',
+                // Same underlying invoice_payments row as the payment this
+                // credit was sliced from, so its proof (if any) opens the
+                // same file (user request, 20 Nov 2026).
+                'has_proof'  => trim((string) $row['proof_path']) !== '',
                 'credit_source_id' => $srcId,
                 'usage'             => $usage,
                 'remaining_amount'  => round($remainingAmt, 2),
@@ -904,7 +919,7 @@ $stmt->close();
 // Intentionally NOT filtered by activity_id — see header comment: invoice_refunds
 // has no invoice_id/activity_id, so it cannot be traced to one activity code.
 $sql = "SELECT r.id, r.refund_date, r.source_bank, r.source_account_number,
-               r.amount, r.method, r.notes, c.customer_name
+               r.amount, r.method, r.notes, r.proof_path, c.customer_name
         FROM invoice_refunds r
         JOIN customers c ON c.id = r.customer_id
         WHERE 1=1" . ($hasFrom ? ' AND r.refund_date >= ?' : '') . ($hasTo ? ' AND r.refund_date <= ?' : '') . "
@@ -951,6 +966,10 @@ while ($row = $res->fetch_assoc()) {
         // the originating "Customer Credit Balance" row, since the two
         // won't generally sit next to each other by date (user, 8 Nov 2026).
         'credit_source_refs' => $sourcesByRefund[(int) $row['id']] ?? [],
+        // Description column opens its proof file in a new tab when set
+        // (user request, 20 Nov 2026) — invoice_refunds.proof_path, resolved
+        // + streamed server-side by ajax/view_proof.php (source+ref_id).
+        'has_proof'  => trim((string) $row['proof_path']) !== '',
         'group_id'   => null,
         // Plain int here (refund row itself is unchanged by this feature) —
         // the bank-fee row below is the one that gets a suffixed ref_id so

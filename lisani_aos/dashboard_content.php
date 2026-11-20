@@ -10,29 +10,50 @@
   <!-- ===================== Finance Report ===================== -->
   <div id="reportFinancePane">
 
-    <div class="rpt-toolbar">
-      <div class="rpt-toolbar-fields">
-        <div class="form-group">
-          <div class="label">From</div>
-          <input type="date" class="input" id="rptDateFrom">
+    <details class="card rpt-collapsible">
+      <summary class="empty-title" style="text-align:left; cursor:pointer;">Filter</summary>
+      <div class="rpt-toolbar">
+        <div class="rpt-toolbar-fields">
+          <div class="form-group">
+            <div class="label">From</div>
+            <input type="date" class="input" id="rptDateFrom">
+          </div>
+          <div class="form-group">
+            <div class="label">To</div>
+            <input type="date" class="input" id="rptDateTo">
+          </div>
+          <div class="form-group">
+            <div class="label">Activity Code</div>
+            <select class="select" id="rptActivityFilter">
+              <option value="">All Activity Codes</option>
+            </select>
+          </div>
         </div>
-        <div class="form-group">
-          <div class="label">To</div>
-          <input type="date" class="input" id="rptDateTo">
-        </div>
-        <div class="form-group">
-          <div class="label">Activity Code</div>
-          <select class="select" id="rptActivityFilter">
-            <option value="">All Activity Codes</option>
-          </select>
+        <div class="rpt-toolbar-actions">
+          <button type="button" class="btn btn-secondary" id="rptApplyFilter">Apply</button>
+          <button type="button" class="btn btn-secondary" id="rptClearFilter">Clear</button>
+          <button type="button" class="btn btn-secondary" id="rptExportCsv">Export CSV</button>
         </div>
       </div>
-      <div class="rpt-toolbar-actions">
-        <button type="button" class="btn btn-secondary" id="rptApplyFilter">Apply</button>
-        <button type="button" class="btn btn-secondary" id="rptClearFilter">Clear</button>
-        <button type="button" class="btn btn-secondary" id="rptExportCsv">Export CSV</button>
+    </details>
+
+    <details class="card rpt-collapsible">
+      <summary class="empty-title" style="text-align:left; cursor:pointer;">Ledger</summary>
+      <div class="table-wrapper">
+        <table class="table" id="rptLedgerTable">
+          <thead>
+            <tr>
+              <th>Date</th><th>Type</th><th>Account</th><th>Description</th><th>Category</th>
+              <th>Amount (IDR)</th><th>Running Balance</th><th>Notes</th>
+            </tr>
+          </thead>
+          <tbody id="rptLedgerBody">
+            <tr><td colspan="8" class="empty-sub">Loading...</td></tr>
+          </tbody>
+          <tfoot id="rptLedgerFoot"></tfoot>
+        </table>
       </div>
-    </div>
+    </details>
 
     <details class="card rpt-collapsible" data-rpt-accordion>
       <summary class="empty-title" style="text-align:left; cursor:pointer;">Totals</summary>
@@ -67,24 +88,6 @@
       <div class="empty-title" style="text-align:left;">Accounts Payable / Receivable Snapshot</div>
       <div id="rptReceivables" class="rpt-receivables">
         <div class="empty-sub">Loading...</div>
-      </div>
-    </div>
-
-    <div class="card" style="margin-top:var(--space-3);">
-      <div class="empty-title" style="text-align:left;">Ledger</div>
-      <div class="table-wrapper">
-        <table class="table" id="rptLedgerTable">
-          <thead>
-            <tr>
-              <th>Date</th><th>Type</th><th>Account</th><th>Description</th><th>Category</th>
-              <th>Amount (IDR)</th><th>Running Balance</th><th>Notes</th>
-            </tr>
-          </thead>
-          <tbody id="rptLedgerBody">
-            <tr><td colspan="8" class="empty-sub">Loading...</td></tr>
-          </tbody>
-          <tfoot id="rptLedgerFoot"></tfoot>
-        </table>
       </div>
     </div>
 
@@ -148,6 +151,10 @@
   .rpt-ledger-note { font-size:12px; opacity:.8; font-style:italic; }
   /* Description column's second line — the transaction's own free-text note. */
   .rpt-desc-note { font-size:12px; opacity:.7; }
+  /* Description label opens its proof file in a new tab when the row has one
+     (user request, 20 Nov 2026) — see renderLedger()'s descHtml. */
+  .rpt-desc-link { cursor:pointer; text-decoration:underline; text-decoration-style:dotted; text-underline-offset:2px; }
+  .rpt-desc-link:hover { opacity:.85; }
   /* A "Customer Credit Balance" row (source=invoice_payment_credit) opens a
      detail panel on click — see renderLedger()/openCreditDetail(). The dark
      group background already marks it visually (user, 8 Nov 2026: that's
@@ -549,7 +556,15 @@
       // note (row.notes) on a second line underneath when non-empty (user
       // decision, 8 Nov 2026 — revised from the earlier "replace" approach).
       var descNotes = (row.notes && String(row.notes).trim() !== '') ? String(row.notes).trim() : '';
-      var descHtml = escapeHtml(row.label) +
+      // Opens the transaction's proof file in a new tab when the row has one
+      // (row.has_proof, from get_finance_report.php — ajax/view_proof.php
+      // resolves source+ref_id to the actual file server-side; user request,
+      // 20 Nov 2026). Only the label itself is wrapped, not the whole cell,
+      // so the free-text note/chips below it stay plain text.
+      var descLabel = row.has_proof
+        ? '<span class="rpt-desc-link" data-proof-source="' + escapeHtml(row.source) + '" data-proof-ref="' + escapeHtml(String(row.ref_id)) + '">' + escapeHtml(row.label) + '</span>'
+        : escapeHtml(row.label);
+      var descHtml = descLabel +
         (descNotes ? '<br><span class="rpt-desc-note">' + escapeHtml(descNotes) + '</span>' : '');
 
       // A refund row drawn from credit balance gets a small reference chip
@@ -705,6 +720,18 @@
   // refund row's reference chip (data attr on a nested <span>) — whichever
   // is closer to where the click landed.
   document.getElementById('rptLedgerBody').addEventListener('click', function (e) {
+    // Checked FIRST of all (most specific, innermost element): the
+    // Description label's proof-file link. A credit-balance row's whole <tr>
+    // is also clickable (data-credit-source-id, opens the detail panel) —
+    // clicking the label itself should open the proof file instead, not the
+    // detail panel (user request, 20 Nov 2026).
+    var proofEl = e.target.closest('[data-proof-source]');
+    if (proofEl) {
+      var proofUrl = 'ajax/view_proof.php?source=' + encodeURIComponent(proofEl.getAttribute('data-proof-source')) +
+        '&ref_id=' + encodeURIComponent(proofEl.getAttribute('data-proof-ref'));
+      window.open(proofUrl, '_blank');
+      return;
+    }
     // A Bank Fee row takes priority if BOTH attributes somehow matched the
     // same click (they never actually overlap — a row is either a Credit
     // Balance row or a Bank Fee row, never both — but checking this one
