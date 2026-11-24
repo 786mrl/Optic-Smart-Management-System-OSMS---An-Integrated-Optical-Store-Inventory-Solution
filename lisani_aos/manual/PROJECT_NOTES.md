@@ -649,17 +649,19 @@ Belum dibangun (disengaja, bukan bug):
   `customer_id`, tidak ke sumber credit spesifik).
 - Chip "↑ Disbursement — {tanggal}" + klik scroll+flash untuk baris Disbursement Bank Fee di Ledger (pola refund
   Bank Fee sudah ada, tinggal disalin — lihat §6 Report).
-- **Document Archive** (24 Nov 2026, user request, BELUM DITES): card ke-4 baru di Document Tools, sejajar
-  Signature/Letterhead Library/Document Editor — "Document Editor minus editing": upload file JPG/PNG/PDF langsung
-  disimpan apa adanya (TANPA kanvas Fabric.js, blocks, deskew, atau recombine FPDF). Field sama seperti Document
-  Editor (Document Name, Date, Activity Title — pakai datalist `sigActivityOptions` yang sama). Tabel baru
-  `archived_documents` (`migration_archived_documents.sql`, **jalankan dulu**), storage
+- **Document Archive** (24 Nov 2026, user request, SUDAH DITES load/list; upload/delete masih BELUM DITES): card
+  ke-4 baru di Document Tools, sejajar Signature/Letterhead Library/Document Editor — "Document Editor minus
+  editing": upload **file jenis APAPUN** (direvisi 24 Nov 2026 dari JPG/PNG/PDF saja → user minta "support semuanya,
+  seperti docx dan lain-lain") langsung disimpan apa adanya (TANPA kanvas Fabric.js, blocks, deskew, atau recombine
+  FPDF), tanpa whitelist ekstensi, maks 50 MB. Field sama seperti Document Editor (Document Name, Date, Activity
+  Title — pakai datalist `sigActivityOptions` yang sama). Tabel baru `archived_documents`
+  (`migration_archived_documents.sql`, **jalankan dulu**), storage
   `storage/company_activity/{y}/{m}/{slug}/archived_documents/{file}`. List+Delete saja (pola sama Letterhead v1) +
-  Download (stream file asli). File baru: `ajax/upload_archived_document.php`, `ajax/list_archived_documents.php`,
+  Download (stream file asli, Content-Type fallback `application/octet-stream` utk ekstensi yang tidak dikenal).
+  File baru: `ajax/upload_archived_document.php`, `ajax/list_archived_documents.php`,
   `ajax/delete_archived_document.php`, `ajax/download_archived_document.php`. Delete pakai `_require_reverify.php`
-  (`aos_require_recent_reverify()`, dikonfirmasi cocok persis setelah file diupload 24 Nov 2026). Delete pindahkan
-  file ke `storage/recycle/archived_documents/` lalu bersihkan folder asli yang jadi kosong (pola sama
-  Signature/Letterhead).
+  (`aos_require_recent_reverify()`, dikonfirmasi cocok persis). Delete pindahkan file ke
+  `storage/recycle/archived_documents/` lalu bersihkan folder asli yang jadi kosong (pola sama Signature/Letterhead).
 
 - **Disbursement — Additional Documents** (24 Nov 2026, user request, BELUM DITES): form Disbursement sekarang bisa
   attach dokumen tambahan (invoice, PO, dll) selain slip transfer — 0 atau lebih file, beda dari slip (yang tetap

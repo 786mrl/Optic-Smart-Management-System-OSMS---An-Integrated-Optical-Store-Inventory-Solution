@@ -536,18 +536,20 @@
     </div>
   </div>
 
-  <!-- Document Archive (24 Nov 2026) - "Document Editor minus the editing
-       step": upload a ready-made file (JPG/PNG/PDF) straight into storage,
-       no Fabric.js canvas, no blocks/deskew/signature-insert, no FPDF
-       recombination - the original file is stored as-is. Same metadata
-       fields as Document Editor's save form (name/date/activity title) and
-       the same shared sigActivityOptions datalist. List+Delete only, same
-       pattern as Letterhead Library v1. -->
+  <!-- Document Archive (24 Nov 2026, revised same day to accept ANY file
+       type, not just JPG/PNG/PDF - e.g. DOCX, XLSX, ZIP, etc.) -
+       "Document Editor minus the editing step": upload a ready-made file
+       straight into storage, no Fabric.js canvas, no
+       blocks/deskew/signature-insert, no FPDF recombination - the original
+       file is stored as-is, whatever its type. Same metadata fields as
+       Document Editor's save form (name/date/activity title) and the same
+       shared sigActivityOptions datalist. List+Delete only, same pattern
+       as Letterhead Library v1. -->
   <div class="card doctools-collapsible" id="cardDocArchive">
     <button type="button" class="doctools-collapsible-header" id="cardDocArchiveHeader">
       <div>
         <div class="empty-title" style="text-align:left;">Document Archive</div>
-        <div class="header-sub">Upload a ready-made document (JPG/PNG/PDF) straight into storage - no editing</div>
+        <div class="header-sub">Upload a ready-made document (any file type) straight into storage - no editing</div>
       </div>
       <i class="ti ti-chevron-down doctools-collapsible-chevron"></i>
     </button>
@@ -573,8 +575,8 @@
           </div>
 
           <div class="form-group" style="max-width:320px;margin-top:10px;">
-            <label class="label">File (JPG/PNG/PDF)</label>
-            <input type="file" class="input" id="daFileInput" accept="image/*,application/pdf" required>
+            <label class="label">File (any type)</label>
+            <input type="file" class="input" id="daFileInput" required>
           </div>
 
           <div id="daSaveMessage" class="settings-message"></div>
@@ -4867,9 +4869,10 @@
   })();
 
   /* =====================================================================
-     DOCUMENT ARCHIVE (24 Nov 2026) - "Document Editor minus the editing
-     step": upload a ready-made file (JPG/PNG/PDF) straight into storage,
-     no canvas/blocks/convert, the original file is stored as-is. Same
+     DOCUMENT ARCHIVE (24 Nov 2026, revised same day to accept ANY file
+     type) - "Document Editor minus the editing step": upload a ready-made
+     file straight into storage, no canvas/blocks/convert, the original
+     file is stored as-is whatever its type. Same
      shared helpers (openCollapsible/closeCollapsible/refreshOpenHeight,
      openConfirmModal/confirmOverlay/confirmModalError, showModal/hideModal,
      loadActivities/sigActivityOptions, todayDateInputValue) as the cards

@@ -2,14 +2,20 @@
 // lisani_aos/ajax/upload_archived_document.php
 // Document Tools > Document Archive (upload-only, no canvas/editing - see
 // PROJECT_NOTES.md §6/§8). Unlike save_edited_document.php, this endpoint
-// stores the ORIGINAL uploaded file as-is (JPG/PNG/PDF, single file, no
-// per-page re-render, no FPDF recombination) - "Document Editor minus the
-// editing step". Same metadata shape as Document Editor's save form
-// (document_name, document_date, activity_title) and the same shared
-// document_activities.json datalist, so a title typed here also shows up
-// there and vice versa.
+// stores the ORIGINAL uploaded file as-is, WHATEVER ITS TYPE (DOCX, XLSX,
+// ZIP, JPG, PNG, PDF, etc. - single file, no per-page re-render, no FPDF
+// recombination) - "Document Editor minus the editing step". Same metadata
+// shape as Document Editor's save form (document_name, document_date,
+// activity_title) and the same shared document_activities.json datalist,
+// so a title typed here also shows up there and vice versa.
 //
 // Storage pattern: storage/company_activity/{year}/{month}/{judul_kegiatan_slug}/archived_documents/{file}
+//
+// No file-extension whitelist (revised 24 Nov 2026, user request: "support
+// semuanya, seperti docx dan lain-lain") - any extension is accepted as-is.
+// An empty extension is kept too (e.g. a file with no dot in its name), so
+// $storedFilename can end up without one; this is intentional, since there
+// is no fixed format to enforce here.
 session_start();
 header('Content-Type: application/json');
 
@@ -78,19 +84,19 @@ if (!isset($_FILES['document_file']) || $_FILES['document_file']['error'] !== UP
 
 $tmpPath = $_FILES['document_file']['tmp_name'];
 $originalName = $_FILES['document_file']['name'];
+// Sanitize the extension itself (keep only safe characters) so it can't be
+// used to inject a path or an unexpected server-executed extension into
+// $storedFilename below - but no whitelist of WHICH extensions are allowed,
+// since this archive is meant to take any file type.
 $fileExt = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
+$fileExt = preg_replace('/[^a-z0-9]/', '', $fileExt);
 
-$allowedExt = ['jpg', 'jpeg', 'png', 'pdf'];
-if (!in_array($fileExt, $allowedExt, true)) {
-    echo json_encode(['success' => false, 'message' => 'Only JPG, PNG or PDF files are allowed.']);
-    exit;
-}
-
-// 20 MB max per file - same ceiling used elsewhere in this project for
-// single-file uploads (e.g. Disbursement slip, PROJECT_NOTES.md §8).
-$maxBytes = 20 * 1024 * 1024;
+// 50 MB max per file - raised from the 20 MB used for single-image uploads
+// elsewhere (PROJECT_NOTES.md §8), since this archive now also takes
+// heavier file types (DOCX, XLSX, ZIP, etc.).
+$maxBytes = 50 * 1024 * 1024;
 if (($_FILES['document_file']['size'] ?? 0) > $maxBytes) {
-    echo json_encode(['success' => false, 'message' => 'File is too large (max 20 MB).']);
+    echo json_encode(['success' => false, 'message' => 'File is too large (max 50 MB).']);
     exit;
 }
 
@@ -111,12 +117,13 @@ if ($baseName === '') {
     $baseName = 'document';
 }
 
-$storedFilename = $baseName . '.' . $fileExt;
+$extSuffix = $fileExt !== '' ? '.' . $fileExt : '';
+$storedFilename = $baseName . $extSuffix;
 $targetPath = $targetDir . '/' . $storedFilename;
 
 $suffix = 1;
 while (file_exists($targetPath)) {
-    $storedFilename = $baseName . '-' . $suffix . '.' . $fileExt;
+    $storedFilename = $baseName . '-' . $suffix . $extSuffix;
     $targetPath = $targetDir . '/' . $storedFilename;
     $suffix++;
 }
