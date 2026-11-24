@@ -277,6 +277,17 @@ $currentYear     = date('Y');
     <button type="button" class="btn btn-secondary" id="btnCapOpenViewer" style="display:none; margin-top:var(--space-2);">View Document</button>
   </div>
 
+  <!-- Additional Documents (24 Nov 2026, user request) — optional, 0 or more
+       supporting files (invoice, PO, receipt, etc.), separate from the one
+       bank transfer slip above. Stored server-side in a NEW subfolder named
+       after the slip's own stored filename (see create_disbursement.php).
+       No OCR/viewer engine for these — just attach-and-save. -->
+  <div class="form-group">
+    <div class="label">Additional Documents (Invoice, etc. — optional, you can add more than one)</div>
+    <input type="file" class="input" id="capAdditionalDocsInput" accept="application/pdf,image/*" multiple>
+    <div class="empty-sub" id="capAdditionalDocsList" style="margin-top:var(--space-2);"></div>
+  </div>
+
   <!-- Fullscreen document viewer (moved to <body> by JS so no ancestor can
        clip it). Shown after upload, when re-scanning a field, or via "View Document". -->
   <div id="capViewerWrap" class="cap-viewer" style="display:none;">
@@ -2779,6 +2790,11 @@ $currentYear     = date('Y');
   }
 
   var capFileInput   = document.getElementById('capFileInput');
+  // Additional Documents (Disbursement only) — optional, 0+ files, no
+  // OCR/viewer engine involved; just held in memory until Save.
+  var capAdditionalDocsInput = document.getElementById('capAdditionalDocsInput');
+  var capAdditionalDocsList  = document.getElementById('capAdditionalDocsList');
+  var capAdditionalFiles = []; // File[] currently selected
   var capViewerWrap  = document.getElementById('capViewerWrap');
   document.body.appendChild(capViewerWrap); // fullscreen: keep it out of any clipped/transformed ancestor
   var capStage       = document.getElementById('capStage');
@@ -2823,10 +2839,23 @@ $currentYear     = date('Y');
     return 'Field: "' + label + '". Now drag a box around the value.';
   }
 
+  function renderCapAdditionalDocsList() {
+    if (!capAdditionalDocsList) return;
+    if (!capAdditionalFiles.length) {
+      capAdditionalDocsList.textContent = '';
+      return;
+    }
+    capAdditionalDocsList.textContent = capAdditionalFiles.length + ' file(s) selected: ' +
+      capAdditionalFiles.map(function (f) { return f.name; }).join(', ');
+  }
+
   function resetCaptureForm() {
     activeCapGroup = 'disbursement';
     capFileInput.value = '';
     capUploadedFile = null;
+    if (capAdditionalDocsInput) capAdditionalDocsInput.value = '';
+    capAdditionalFiles = [];
+    renderCapAdditionalDocsList();
     capDoc = null;
     capNumPages = 1;
     capCurrentPage = 1;
@@ -2910,6 +2939,19 @@ $currentYear     = date('Y');
   capFileInput.addEventListener('change', function () {
     loadCapturedFile(capFileInput.files[0], btnCapOpenViewer, 'capError');
   });
+
+  // Additional Documents — plain multi-file attach, appended to whatever
+  // was already picked (so the user can add more across several clicks
+  // instead of the selection being replaced each time).
+  if (capAdditionalDocsInput) {
+    capAdditionalDocsInput.addEventListener('change', function () {
+      Array.prototype.slice.call(capAdditionalDocsInput.files).forEach(function (f) {
+        capAdditionalFiles.push(f);
+      });
+      capAdditionalDocsInput.value = ''; // allow picking the same file name again later
+      renderCapAdditionalDocsList();
+    });
+  }
 
   // ---- Fullscreen viewer: open / zoom / close ----
   var capZoom = 1; // 1 = fit to viewer width
@@ -4257,6 +4299,9 @@ $currentYear     = date('Y');
     payload.append('exchange_rate', isNaN(rate) ? '' : String(rate));
     payload.append('final_amount_idr', String(finalAmount));
     payload.append('document', capUploadedFile);
+    capAdditionalFiles.forEach(function (f) {
+      payload.append('additional_documents[]', f);
+    });
 
     var saveBtn = document.getElementById('btnCapSave');
     saveBtn.disabled = true;

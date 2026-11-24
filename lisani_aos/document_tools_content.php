@@ -536,6 +536,62 @@
     </div>
   </div>
 
+  <!-- Document Archive (24 Nov 2026) - "Document Editor minus the editing
+       step": upload a ready-made file (JPG/PNG/PDF) straight into storage,
+       no Fabric.js canvas, no blocks/deskew/signature-insert, no FPDF
+       recombination - the original file is stored as-is. Same metadata
+       fields as Document Editor's save form (name/date/activity title) and
+       the same shared sigActivityOptions datalist. List+Delete only, same
+       pattern as Letterhead Library v1. -->
+  <div class="card doctools-collapsible" id="cardDocArchive">
+    <button type="button" class="doctools-collapsible-header" id="cardDocArchiveHeader">
+      <div>
+        <div class="empty-title" style="text-align:left;">Document Archive</div>
+        <div class="header-sub">Upload a ready-made document (JPG/PNG/PDF) straight into storage - no editing</div>
+      </div>
+      <i class="ti ti-chevron-down doctools-collapsible-chevron"></i>
+    </button>
+
+    <div class="doctools-collapsible-body" id="cardDocArchiveBody">
+      <div class="doctools-collapsible-body-inner">
+
+        <form id="daSaveForm" class="settings-form">
+          <div class="settings-form-grid">
+            <div class="form-group">
+              <label class="label">Document Name</label>
+              <input type="text" class="input" id="daNameInput" placeholder="e.g. Surat Pernyataan - Budi" required>
+            </div>
+            <div class="form-group">
+              <label class="label">Date</label>
+              <input type="date" class="input" id="daDateInput" required>
+            </div>
+            <div class="form-group">
+              <label class="label">Activity Title</label>
+              <input type="text" class="input" id="daActivityInput" list="sigActivityOptions"
+                     placeholder="Choose an existing one, or type a new title" required>
+            </div>
+          </div>
+
+          <div class="form-group" style="max-width:320px;margin-top:10px;">
+            <label class="label">File (JPG/PNG/PDF)</label>
+            <input type="file" class="input" id="daFileInput" accept="image/*,application/pdf" required>
+          </div>
+
+          <div id="daSaveMessage" class="settings-message"></div>
+
+          <div class="settings-form-actions">
+            <button type="submit" class="btn btn-primary" id="daSaveBtn">Save to Archive</button>
+          </div>
+        </form>
+
+        <div class="doc-accordion" id="daAccordionList" style="margin-top:18px;">
+          <div class="empty-sub">Loading...</div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
 </div>
 </div>
 
@@ -4803,6 +4859,154 @@
               }
               hideModal(confirmOverlay);
               loadLetterheads();
+            })
+            .catch(function () { confirmModalError('Network error.'); });
+        }
+      );
+    }
+  })();
+
+  /* =====================================================================
+     DOCUMENT ARCHIVE (24 Nov 2026) - "Document Editor minus the editing
+     step": upload a ready-made file (JPG/PNG/PDF) straight into storage,
+     no canvas/blocks/convert, the original file is stored as-is. Same
+     shared helpers (openCollapsible/closeCollapsible/refreshOpenHeight,
+     openConfirmModal/confirmOverlay/confirmModalError, showModal/hideModal,
+     loadActivities/sigActivityOptions, todayDateInputValue) as the cards
+     above. List+Delete only, same pattern as Letterhead Library v1. This
+     card's collapsible also isn't matched by the generic #cardSignatures
+     query, so it's wired explicitly here too.
+     ===================================================================== */
+  (function () {
+    var daCard = document.getElementById('cardDocArchive');
+    var daHeader = document.getElementById('cardDocArchiveHeader');
+    daHeader.addEventListener('click', function () {
+      if (daCard.classList.contains('open')) {
+        closeCollapsible(daCard);
+      } else {
+        openCollapsible(daCard);
+        loadArchivedDocuments();
+      }
+    });
+
+    var daSaveForm = document.getElementById('daSaveForm');
+    var daNameInput = document.getElementById('daNameInput');
+    var daDateInput = document.getElementById('daDateInput');
+    var daActivityInput = document.getElementById('daActivityInput');
+    var daFileInput = document.getElementById('daFileInput');
+    var daSaveMessage = document.getElementById('daSaveMessage');
+    var daSaveBtn = document.getElementById('daSaveBtn');
+    var daAccordionList = document.getElementById('daAccordionList');
+
+    daDateInput.value = todayDateInputValue();
+
+    function fmtFileSize(bytes) {
+      if (bytes >= 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+      if (bytes >= 1024) return (bytes / 1024).toFixed(0) + ' KB';
+      return bytes + ' B';
+    }
+
+    // Same "re-sync max-height after every innerHTML change" fix as
+    // Letterhead Library's loadLetterheads() above - see that function's
+    // comment for the full explanation.
+    function loadArchivedDocuments() {
+      daAccordionList.innerHTML = '<div class="empty-sub">Loading...</div>';
+      fetch('ajax/list_archived_documents.php')
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (!data.success || !data.documents.length) {
+            daAccordionList.innerHTML = '<div class="empty-sub">No archived documents yet.</div>';
+            refreshOpenHeight(daCard);
+            return;
+          }
+          daAccordionList.innerHTML = '';
+          data.documents.forEach(function (doc) {
+            var row = document.createElement('div');
+            row.className = 'accordion-item';
+            row.innerHTML =
+              '<div class="accordion-row" style="display:flex;align-items:center;gap:12px;padding:10px 0;">' +
+              '<div style="flex:1;">' +
+              '<div>' + doc.document_name + '</div>' +
+              '<div class="header-sub">' + doc.document_date + ' &middot; ' + doc.activity_title + ' &middot; ' + fmtFileSize(doc.file_size) + '</div>' +
+              '</div>' +
+              '<a class="btn btn-secondary" href="ajax/download_archived_document.php?id=' + doc.id + '" target="_blank"><i class="ti ti-download"></i> Download</a>' +
+              '<button type="button" class="btn btn-danger da-delete-btn" data-id="' + doc.id + '" data-name="' + doc.document_name + '"><i class="ti ti-trash"></i> Delete</button>' +
+              '</div>';
+            daAccordionList.appendChild(row);
+          });
+
+          daAccordionList.querySelectorAll('.da-delete-btn').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+              confirmDeleteArchivedDocument(btn.getAttribute('data-id'), btn.getAttribute('data-name'));
+            });
+          });
+          refreshOpenHeight(daCard);
+        })
+        .catch(function () {
+          daAccordionList.innerHTML = '<div class="empty-sub">Failed to load archived documents.</div>';
+          refreshOpenHeight(daCard);
+        });
+    };
+
+    daSaveForm.addEventListener('submit', function (e) {
+      e.preventDefault();
+      daSaveMessage.textContent = '';
+      daSaveMessage.className = 'settings-message';
+
+      if (!daFileInput.files[0]) {
+        daSaveMessage.textContent = 'Please choose a file to upload.';
+        daSaveMessage.className = 'settings-message settings-message-error';
+        return;
+      }
+
+      var fd = new FormData();
+      fd.append('document_name', daNameInput.value.trim());
+      fd.append('document_date', daDateInput.value);
+      fd.append('activity_title', daActivityInput.value.trim());
+      fd.append('document_file', daFileInput.files[0]);
+
+      daSaveBtn.disabled = true;
+      fetch('ajax/upload_archived_document.php', { method: 'POST', body: fd })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          daSaveBtn.disabled = false;
+          if (!data.success) {
+            daSaveMessage.textContent = data.message || 'Failed to save document.';
+            daSaveMessage.className = 'settings-message settings-message-error';
+            return;
+          }
+          daSaveMessage.textContent = 'Saved to archive.';
+          daSaveMessage.className = 'settings-message settings-message-success';
+          daSaveForm.reset();
+          daDateInput.value = todayDateInputValue();
+          loadActivities();
+          loadArchivedDocuments();
+        })
+        .catch(function () {
+          daSaveBtn.disabled = false;
+          daSaveMessage.textContent = 'Network error.';
+          daSaveMessage.className = 'settings-message settings-message-error';
+        });
+    });
+
+    // Same shared confirm modal (openConfirmModal) as Signature/Letterhead
+    // Library's confirmDeleteSignature()/confirmDeleteLetterhead() above.
+    function confirmDeleteArchivedDocument(id, name) {
+      openConfirmModal(
+        'Delete Document',
+        'This will permanently delete "' + name + '" and its file. This action cannot be undone. Enter your password to confirm.',
+        function () {
+          var fd = new FormData();
+          fd.append('id', id);
+          fetch('ajax/delete_archived_document.php', { method: 'POST', body: fd })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+              if (!data.success) {
+                confirmModalError(data.message || 'Failed to delete document.');
+                return;
+              }
+              hideModal(confirmOverlay);
+              loadArchivedDocuments();
             })
             .catch(function () { confirmModalError('Network error.'); });
         }

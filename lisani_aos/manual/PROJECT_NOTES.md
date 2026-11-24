@@ -649,6 +649,40 @@ Belum dibangun (disengaja, bukan bug):
   `customer_id`, tidak ke sumber credit spesifik).
 - Chip "↑ Disbursement — {tanggal}" + klik scroll+flash untuk baris Disbursement Bank Fee di Ledger (pola refund
   Bank Fee sudah ada, tinggal disalin — lihat §6 Report).
+- **Document Archive** (24 Nov 2026, user request, BELUM DITES): card ke-4 baru di Document Tools, sejajar
+  Signature/Letterhead Library/Document Editor — "Document Editor minus editing": upload file JPG/PNG/PDF langsung
+  disimpan apa adanya (TANPA kanvas Fabric.js, blocks, deskew, atau recombine FPDF). Field sama seperti Document
+  Editor (Document Name, Date, Activity Title — pakai datalist `sigActivityOptions` yang sama). Tabel baru
+  `archived_documents` (`migration_archived_documents.sql`, **jalankan dulu**), storage
+  `storage/company_activity/{y}/{m}/{slug}/archived_documents/{file}`. List+Delete saja (pola sama Letterhead v1) +
+  Download (stream file asli). File baru: `ajax/upload_archived_document.php`, `ajax/list_archived_documents.php`,
+  `ajax/delete_archived_document.php`, `ajax/download_archived_document.php`. Delete pakai `_require_reverify.php`
+  (`aos_require_recent_reverify()`, dikonfirmasi cocok persis setelah file diupload 24 Nov 2026). Delete pindahkan
+  file ke `storage/recycle/archived_documents/` lalu bersihkan folder asli yang jadi kosong (pola sama
+  Signature/Letterhead).
+
+- **Disbursement — Additional Documents** (24 Nov 2026, user request, BELUM DITES): form Disbursement sekarang bisa
+  attach dokumen tambahan (invoice, PO, dll) selain slip transfer — 0 atau lebih file, beda dari slip (yang tetap
+  cuma 1 file, tanpa OCR engine). Tabel baru `disbursement_additional_documents` (id, transaction_id, document_path,
+  original_name, created_at) — **jalankan `migration_disbursement_additional_documents.sql` dulu**. Tanpa FK ke
+  `transactions`, pola sama seperti `refund_bank_fees`/`disbursement_bank_fees`. Disimpan di folder BARU yang
+  di-generate di dalam `.../disbursement/`, namanya = nama file slip transfer yang sudah ada TANPA ekstensi (variabel
+  `$baseName` yang sudah ada di `create_disbursement.php`, mis. slip `pembelian_kardus_20260920.pdf` →
+  folder `.../disbursement/pembelian_kardus_20260920/`), file di dalamnya dinamai `<slug>_<n>.<ext>` berurutan.
+  Validasi file sama persis dengan slip (PDF/JPG/PNG/WEBP, 1 byte–20 MB per file), tidak ada batas jumlah file
+  (keputusan user). POST field `additional_documents[]` (multipart array, optional). Insert ke DB dalam satu
+  transaction yang sama dengan insert `transactions`/`transaction_disbursements`; rollback juga hapus semua file
+  tambahan yang sempat ter-upload (bukan cuma slip). Frontend: input `<input type="file" multiple>` baru
+  (`capAdditionalDocsInput`) di bawah input slip, append-only (tiap pilih file nambah ke array `capAdditionalFiles`,
+  tidak mengganti), preview nama file di `capAdditionalDocsList`, direset di `resetCaptureForm()`.
+  **Melihatnya di Report/Ledger** (24 Nov 2026, BELUM DITES): klik Description pada baris Disbursement tetap lewat
+  `ajax/view_proof.php?source=disbursement&ref_id=...` (frontend `dashboard_content.php` TIDAK berubah). Endpoint ini
+  sekarang cek dulu apakah `disbursement_additional_documents` punya baris untuk `ref_id` itu — kalau ADA, balas
+  halaman HTML kecil berisi link (slip + tiap dokumen tambahan, masing-masing `target="_blank"`) alih-alih langsung
+  stream file; tiap link menunjuk endpoint yang sama dengan param baru `doc` (`doc=slip` utk transfer slip,
+  `doc=<id>` utk satu baris `disbursement_additional_documents`). Kalau TIDAK ada dokumen tambahan, perilaku lama
+  (langsung stream slip) tidak berubah sama sekali — sumber lain (`refund`, `invoice_payment`,
+  `invoice_payment_credit`) juga tidak tersentuh oleh perubahan ini.
 
 Perlu konfirmasi keputusan:
 - Invoice numbering `sequence_number` lanjut per customer lintas bulan (bukan reset bulanan). Kalau ternyata tidak,

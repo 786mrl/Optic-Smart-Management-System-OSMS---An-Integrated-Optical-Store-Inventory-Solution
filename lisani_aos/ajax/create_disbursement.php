@@ -28,6 +28,26 @@
 // the "00-A" activity code and its "Refund & Settlement" department are all
 // gone. This file is back to a plain disbursement saver.
 //
+// Additional Documents (24 Nov 2026, user request): besides the ONE bank
+// transfer slip (`$_FILES['document']`, stored as transactions.document_path
+// — unchanged), the form can now attach ZERO OR MORE supporting documents
+// (invoice, PO, receipt, etc.) via `$_FILES['additional_documents']`
+// (multipart array field, optional). These are a 1-to-many relationship so
+// they live in their own table, `disbursement_additional_documents`
+// (migration_disbursement_additional_documents.sql — run it first), one row
+// per file: transaction_id, document_path, original_name, created_at.
+// Storage: a NEW subfolder is generated under .../disbursement/, named
+// after the transfer slip's own stored filename WITHOUT its extension
+// (same $baseName already used below for the slip, e.g. slip
+// "pembelian_kardus_20260920.pdf" -> folder
+// ".../disbursement/pembelian_kardus_20260920/"), so every additional
+// document for a given disbursement sits together under that one folder.
+// Each additional file gets the same MIME/size validation as the slip
+// (PDF/JPG/PNG/WEBP, 1 byte–20 MB) and is named
+// "<slug>_<n>.<ext>" (n = 1, 2, 3, ... in upload order) inside that folder
+// — no collision handling needed since the folder is new per transaction.
+// No cap on how many files can be attached (user decision).
+//
 // Response contract: { ok: true|false, message: "...", ... }
 
 ini_set('display_errors', '0');
@@ -249,6 +269,45 @@ if (!isset($allowedMimeToExt[$realMime])) {
 }
 $ext = $allowedMimeToExt[$realMime];
 
+// ---------- Additional documents (optional, 0+) ----------
+// Validated UP FRONT (before anything is moved/inserted) so a bad file in
+// the batch fails the whole request cleanly, same as the slip above.
+// Field is a multipart array: additional_documents[] — PHP delivers it as
+// parallel arrays under $_FILES['additional_documents']['name'][i'] etc.
+$additionalFiles = [];
+if (isset($_FILES['additional_documents']) && is_array($_FILES['additional_documents']['name'] ?? null)) {
+    $rawCount = count($_FILES['additional_documents']['name']);
+    for ($i = 0; $i < $rawCount; $i++) {
+        $errCode = $_FILES['additional_documents']['error'][$i];
+        if ($errCode === UPLOAD_ERR_NO_FILE) {
+            continue; // empty slot, skip silently
+        }
+        if ($errCode !== UPLOAD_ERR_OK) {
+            if ($errCode === UPLOAD_ERR_INI_SIZE || $errCode === UPLOAD_ERR_FORM_SIZE) {
+                aos_fail('One of the additional documents is larger than the server upload limit.');
+            }
+            aos_fail('One of the additional documents failed to upload.');
+        }
+
+        $aSize = $_FILES['additional_documents']['size'][$i];
+        if ($aSize <= 0 || $aSize > $maxBytes) {
+            aos_fail('Each additional document must be between 1 byte and 20 MB.');
+        }
+
+        $aTmpName = $_FILES['additional_documents']['tmp_name'][$i];
+        $aRealMime = $finfo->file($aTmpName);
+        if (!isset($allowedMimeToExt[$aRealMime])) {
+            aos_fail('Additional documents must be PDF, JPG, PNG, or WEBP files.');
+        }
+
+        $additionalFiles[] = [
+            'tmp_name'      => $aTmpName,
+            'ext'           => $allowedMimeToExt[$aRealMime],
+            'original_name' => mb_substr(basename((string)$_FILES['additional_documents']['name'][$i]), 0, 255),
+        ];
+    }
+}
+
 $targetDir = AOS_STORAGE_BASE . '/' . $relPath . '/disbursement';
 if (!is_dir($targetDir) && !mkdir($targetDir, 0775, true) && !is_dir($targetDir)) {
     aos_fail('Could not create the storage folder for this slip.');
@@ -276,6 +335,36 @@ if (!move_uploaded_file($file['tmp_name'], $targetFull)) {
 
 $originalName = mb_substr(basename((string)$file['name']), 0, 255);
 $userId = (int)$_SESSION['user_id'];
+
+// ---------- Move additional documents into a NEW subfolder named after
+// the slip's own stored filename (without extension) — e.g. slip
+// "pembelian_kardus_20260920.pdf" -> ".../disbursement/pembelian_kardus_20260920/" ----------
+$additionalSavedPaths = []; // for rollback cleanup if the DB part fails below
+$additionalInserts = [];    // [document_path, original_name] ready for the INSERT loop
+if (!empty($additionalFiles)) {
+    $additionalDir = $targetDir . '/' . $baseName;
+    if (!is_dir($additionalDir) && !mkdir($additionalDir, 0775, true) && !is_dir($additionalDir)) {
+        @unlink($targetFull);
+        aos_fail('Could not create the storage folder for the additional documents.');
+    }
+
+    $n = 1;
+    foreach ($additionalFiles as $af) {
+        $aStoredName = $slug . '_' . $n . '.' . $af['ext'];
+        $aTargetFull = $additionalDir . '/' . $aStoredName;
+        if (!move_uploaded_file($af['tmp_name'], $aTargetFull)) {
+            foreach ($additionalSavedPaths as $p) {
+                @unlink(AOS_STORAGE_BASE . '/' . $p);
+            }
+            @unlink($targetFull);
+            aos_fail('Could not save one of the additional documents.');
+        }
+        $aDocumentPath = $relPath . '/disbursement/' . $baseName . '/' . $aStoredName; // relative to AOS_STORAGE_BASE
+        $additionalSavedPaths[] = $aDocumentPath;
+        $additionalInserts[] = [$aDocumentPath, $af['original_name']];
+        $n++;
+    }
+}
 
 // ---------- Two inserts, one DB transaction ----------
 // Make mysqli throw on failure (default only from PHP 8.1) so the catch below always fires.
@@ -326,18 +415,35 @@ try {
         $ins3->close();
     }
 
+    if (!empty($additionalInserts)) {
+        $ins4 = $lisani_conn->prepare(
+            'INSERT INTO disbursement_additional_documents (transaction_id, document_path, original_name)
+             VALUES (?, ?, ?)'
+        );
+        foreach ($additionalInserts as $pair) {
+            [$aDocPath, $aOrigName] = $pair;
+            $ins4->bind_param('iss', $transactionId, $aDocPath, $aOrigName);
+            $ins4->execute();
+        }
+        $ins4->close();
+    }
+
     $lisani_conn->commit();
 } catch (Throwable $e) {
     $lisani_conn->rollback();
     @unlink($targetFull); // don't leave an orphan file behind
+    foreach ($additionalSavedPaths as $p) {
+        @unlink(AOS_STORAGE_BASE . '/' . $p);
+    }
     error_log('create_disbursement.php: ' . $e->getMessage());
     aos_fail('Failed to save the transaction.');
 }
 
 aos_json([
-    'ok'            => true,
-    'message'       => 'Disbursement saved.',
-    'id'            => $transactionId,
-    'document_path' => $documentPath,
-    'bank_fee'      => $bankFee,
+    'ok'                      => true,
+    'message'                 => 'Disbursement saved.',
+    'id'                      => $transactionId,
+    'document_path'           => $documentPath,
+    'bank_fee'                => $bankFee,
+    'additional_documents'    => $additionalSavedPaths,
 ]);
