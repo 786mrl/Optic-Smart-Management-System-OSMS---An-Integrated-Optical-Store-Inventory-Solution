@@ -2,5 +2,6 @@
     "pc_ip": "192.168.18.64",
     "pc_port": "80",
     "android_ip": "192.168.18.4",
-    "android_port": "8080"
+    "android_port": "8080",
+    "last_used_device": "pc"
 }
